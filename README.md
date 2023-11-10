@@ -1,0 +1,32 @@
+# Transcripts
+
+Whisper transcripts for Youtube videos
+
+# Setup
+
+```bash
+pyenv local 3.11
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# install in editable mode
+pip install -e .
+
+# initialize git-lfs
+git lfs install
+
+# build whisper.cpp
+git clone https://github.com/ggerganov/whisper.cpp
+cd whisper.cpp
+make clean
+make -j
+
+# setup pre-commit
+pre-commit install
+```
+
+# TODO
+
+- [ ] don't use JSON cache, use a slimmer CSV with id, title, upload_date, url, and other necessary fields
+- [ ] Use python bindings instead of calling whisper.cpp directly, can use https://github.com/aarnphm/whispercpp
