@@ -22,6 +22,9 @@ cd whisper.cpp
 make clean
 make -j
 
+# download large-v3 model and put it in whisper.cpp/models
+# https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-large.bin
+
 # setup pre-commit
 pre-commit install
 ```
