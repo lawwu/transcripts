@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Read YouTube IDs from the text file and store them in a variable
-youtube_ids=$(cat ./data/video_ids.txt)
+youtube_ids=$(cat ./data/allin_video_ids.txt)
 
 # Loop through each YouTube ID
 for id in $youtube_ids; do
