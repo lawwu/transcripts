@@ -22,7 +22,7 @@ cd whisper.cpp
 make clean
 make -j
 
-# download large-v3 model and put it in whisper.cpp/models
+# download large-v3 model and put it in models
 # https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-large.bin
 
 # setup pre-commit
@@ -31,5 +31,15 @@ pre-commit install
 
 # TODO
 
+- [ ] organize the transcripts and html pages by channel
+    - https://www.youtube.com/@gracetoyou
+    - https://www.youtube.com/@ligonier/videos
+    - https://www.youtube.com/@allin
+    - https://www.youtube.com/@lexfridman
+    - https://www.youtube.com/@aiexplained-official
+    - https://www.youtube.com/@LatentSpaceTV/videos
+    audio
+    - https://radicalpersonalfinance.libsyn.com/
+    - https://www.latent.space/podcast
 - [ ] don't use JSON cache, use a slimmer CSV with id, title, upload_date, url, and other necessary fields
 - [ ] Use python bindings instead of calling whisper.cpp directly, can use https://github.com/aarnphm/whispercpp
