@@ -29,17 +29,22 @@ make -j
 pre-commit install
 ```
 
+To download all IDs of a channel:
+```bash
+yt-dlp --flat-playlist --print id https://www.youtube.com/@aiexplained-official
+```
+
 # TODO
 
-- [ ] organize the transcripts and html pages by channel
-    - https://www.youtube.com/@gracetoyou
-    - https://www.youtube.com/@ligonier/videos
-    - https://www.youtube.com/@allin
-    - https://www.youtube.com/@lexfridman
-    - https://www.youtube.com/@aiexplained-official
-    - https://www.youtube.com/@LatentSpaceTV/videos
-    audio
-    - https://radicalpersonalfinance.libsyn.com/
-    - https://www.latent.space/podcast
-- [ ] don't use JSON cache, use a slimmer CSV with id, title, upload_date, url, and other necessary fields
+Download history of videos
+- [x] https://www.youtube.com/@allin
+- [ ] https://www.youtube.com/@lexfridman
+- [ ] https://www.youtube.com/@aiexplained-official
+- [ ] https://www.youtube.com/@gracetoyou
+- [ ] https://www.youtube.com/@ligonier/videos
+- [ ] https://radicalpersonalfinance.libsyn.com/
+- [ ] https://www.latent.space/podcast
+
+Organize the transcripts and html pages by channel
+  [ ] don't use JSON cache, use a slimmer CSV with id, title, upload_date, url, and other necessary fields
 - [ ] Use python bindings instead of calling whisper.cpp directly, can use https://github.com/aarnphm/whispercpp
