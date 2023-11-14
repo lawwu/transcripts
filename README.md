@@ -39,7 +39,7 @@ yt-dlp --flat-playlist --print id https://www.youtube.com/@aiexplained-official
 Download history of videos
 - [x] https://www.youtube.com/@allin
 - [ ] https://www.youtube.com/@lexfridman
-- [ ] https://www.youtube.com/@aiexplained-official
+- [x] https://www.youtube.com/@aiexplained-official
 - [ ] https://www.youtube.com/@gracetoyou
 - [ ] https://www.youtube.com/@ligonier/videos
 - [ ] https://radicalpersonalfinance.libsyn.com/
