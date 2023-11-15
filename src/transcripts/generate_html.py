@@ -308,7 +308,7 @@ def convert_cache_to_dataframe(cache):
     flattened_data = []
 
     # Flatten dictionary structure
-    for video, attributes in cache.items():
+    for _, attributes in cache.items():
         # print(video)
         id_ = attributes["id"]
         title = attributes["title"]
@@ -352,16 +352,9 @@ if __name__ == "__main__":
         #     "file": "gracetoyou_ids_done.txt"
         # }
     ]
-    # parser.add_argument(
-    #     "--file",
-    #     type=str,
-    #     help="Text file containing YouTube video IDs, one per line",
-    # )
-    # args = parser.parse_args()
 
     for channel in config:
         video_ids = read_ids_from_file(data_dir / channel["file"])
-        # df_videos = convert_cache_to_dataframe(video_details_cache)
 
         logging.info(f"Found {len(video_ids)} video IDs")
 
