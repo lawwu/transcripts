@@ -28,12 +28,26 @@ def extract_video_id(url):
     if vimeo_match:
         return vimeo_match.group(1)
 
-    # If neither pattern is found
-    return "unknown_id"
+    # If neither pattern is found, return the full url
+    return url
 
 
 def download_audio(url, outfile_name):
     try:
+        # Extract the video ID from the URL using the same logic as extract_video_id
+        video_id = extract_video_id(url)
+
+        # Determine the appropriate URL prefix based on the source
+        if "youtube.com" in url:
+            url_prefix = "https://www.youtube.com/watch?v="
+            full_url = url_prefix + video_id
+        elif "vimeo.com" in url:
+            url_prefix = "https://vimeo.com/"
+            full_url = url_prefix + video_id
+        else:
+            # Use the original URL if it doesn't match known patterns
+            full_url = url
+
         options = {
             "format": "bestaudio/best",
             "postprocessors": [
@@ -46,8 +60,8 @@ def download_audio(url, outfile_name):
             "outtmpl": str(transcripts_dir / outfile_name),
         }
         with YoutubeDL(options) as ydl:
-            print(f"Downloading: {url}")
-            ydl.download([url])
+            print(f"Downloading: {full_url}")
+            ydl.download([full_url])
     except Exception as e:
         print(f"Error in download_audio: {e}")
 
