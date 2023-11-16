@@ -340,12 +340,12 @@ if __name__ == "__main__":
             "file": "aiexplained_video_ids_done.txt",
         },
         {"name": "all_in", "url": None, "file": "allin_video_ids_done.txt"},
-        {
-            "name": "radical_personal_finance",
-            "url": None,
-            "file": "rpf_ids_done.txt",
-        },
         {"name": "lex_fridman", "url": None, "file": "video_ids_done.txt"},
+        # {
+        #     "name": "radical_personal_finance",
+        #     "url": None,
+        #     "file": "rpf_ids_done.txt",
+        # },
         # {
         #     "name": "grace to you",
         #     "url": None,

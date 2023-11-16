@@ -28,8 +28,12 @@ def extract_video_id(url):
     if vimeo_match:
         return vimeo_match.group(1)
 
-    # If neither pattern is found, return the full url
-    return url
+    else:
+        # If neither pattern is found, use yt-dlp to get the id
+        ydl_opts = {"quiet": True}
+        with YoutubeDL(ydl_opts) as ydl:
+            info_dict = ydl.extract_info(url, download=False)
+        return info_dict["id"]
 
 
 def download_audio(url, outfile_name):
@@ -151,7 +155,7 @@ def main():
     parser.add_argument(
         "--model_name",
         type=str,
-        default="ggml-large.bin",
+        default="ggml-large-v2.bin",
         help="Name of the whisper model to use",
     )
     args = parser.parse_args()
