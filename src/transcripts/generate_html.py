@@ -293,7 +293,7 @@ def generate_master_index(config, html_dir=html_dir):
         # TODO: this won't work for Google Podcasts (RPF)
         for channel in config:
             channel_index_file = f'index_{channel["name"]}.html'
-            channel_link = html_dir / channel_index_file
+            channel_link = channel_index_file
             f.write(
                 f'<li><a href="{channel_link}">{channel["name"].replace("_", " ").title()}</a></li>'
             )
