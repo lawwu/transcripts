@@ -34,12 +34,17 @@ To download all IDs of a channel into a `txt` file:
 yt-dlp --flat-playlist --print id https://www.youtube.com/@lexfridman >> data/lex_fridman_ids.txt
 
 # Radical Personal Finance - Google Podcasts
-yt-dlp -v --flat-playlist --dump-single-json https://podcasts.google.com/feed/aHR0cDovL3JhZGljYWxwZXJzb25hbGZpbmFuY2UubGlic3luLmNvbS9yc3M >> data/rpf_json.txt
 yt-dlp -v --flat-playlist --print url https://podcasts.google.com/feed/aHR0cDovL3JhZGljYWxwZXJzb25hbGZpbmFuY2UubGlic3luLmNvbS9yc3M >> data/rpf_ids.txt
+```
 
+To transcribe all of the video ids in a text file:
+```bash
+./bash_transcribe.sh data/rpf_ids.txt
+```
 
-# yt-dlp --flat-playlist --print id https://podcasts.apple.com/us/podcast/radical-personal-finance/id896153632 >> data/rpf_itunes_ids.txt
-yt-dlp --flat-playlist --print id https://feeds.libsyn.com/46144/rss >> data/rpf_libsyn_rss_ids.txt
+To generate the HTML pages
+```bash
+make html
 ```
 
 # TODO
