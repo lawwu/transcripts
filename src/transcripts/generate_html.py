@@ -112,13 +112,35 @@ def timestamp_to_seconds(timestamp):
     return hours * 3600 + minutes * 60 + seconds
 
 
-def fetch_video_details(video_id):
+def get_minimum_info_dict(info_dict):
+    return {
+        "id": info_dict.get("id", None),
+        "title": info_dict.get("title", None),
+        "upload_date": info_dict.get("upload_date", None),
+        "duration": info_dict.get("duration", None),
+        "webpage_url": info_dict.get("webpage_url", None),
+        "thumbnail": info_dict.get("thumbnail", None),
+        "chapters": info_dict.get("chapters", []),
+    }
+
+
+def fetch_video_details(
+    video_id, video_details_cache=video_details_cache, ydl_opts={"quiet": True}
+):
     logging.info(f"Fetching details for video ID {video_id}")
     if video_id in video_details_cache:
         logging.info("Using cached details")
         return video_details_cache[video_id]
 
-    ydl_opts = {"quiet": True}
+    # check if video_id starts with "http"
+    if video_id.startswith("http"):
+        with YoutubeDL(ydl_opts) as ydl:
+            info_dict = ydl.extract_info(video_id, download=False)
+            info_dict = get_minimum_info_dict(info_dict)
+            video_details_cache[video_id] = info_dict
+            save_cache()
+            return info_dict
+
     # Check for YouTube-like pattern (11 alphanumeric characters)
     youtube_match = re.search(r"([a-zA-Z0-9_-]{11})", video_id)
     if youtube_match:
@@ -126,17 +148,7 @@ def fetch_video_details(video_id):
             info_dict = ydl.extract_info(
                 f"https://www.youtube.com/watch?v={video_id}", download=False
             )
-            # slim the info_dict
-            info_dict = {
-                "id": info_dict["id"],
-                "title": info_dict["title"],
-                "upload_date": info_dict["upload_date"],
-                "duration": info_dict["duration"],
-                "webpage_url": info_dict["webpage_url"],
-                "thumbnail": info_dict["thumbnail"],
-                "chapters": info_dict.get("chapters", []),
-            }
-
+            info_dict = get_minimum_info_dict(info_dict)
             video_details_cache[video_id] = info_dict
             save_cache()
             return info_dict
@@ -148,6 +160,7 @@ def fetch_video_details(video_id):
             info_dict = ydl.extract_info(
                 f"https://www.vimeo.com/{video_id}", download=False
             )
+            info_dict = get_minimum_info_dict(info_dict)
             video_details_cache[video_id] = info_dict
             save_cache()
             return info_dict
@@ -207,6 +220,7 @@ def generate_html(video_id):
     youtube_match = re.search(r"([a-zA-Z0-9_-]{11})", video_id)
 
     details = fetch_video_details(video_id)
+    video_id = details["id"]
     video_url = details["webpage_url"]
     if youtube_match:
         thumbnail_url = details["thumbnail"]
