@@ -31,7 +31,7 @@ pre-commit install
 
 To download all IDs of a channel into a `txt` file:
 ```bash
-yt-dlp --flat-playlist --print id https://www.youtube.com/@gracetoyou >> data/gracetoyou_ids.txt
+yt-dlp --flat-playlist --print id https://www.youtube.com/@lexfridman >> data/lex_fridman_ids.txt
 
 # Radical Personal Finance - Google Podcasts
 yt-dlp -v --flat-playlist --dump-single-json https://podcasts.google.com/feed/aHR0cDovL3JhZGljYWxwZXJzb25hbGZpbmFuY2UubGlic3luLmNvbS9yc3M >> data/rpf_json.txt
@@ -55,6 +55,6 @@ Download history of videos
 - [x] Organize the transcripts and html pages by channel
 - [x] don't use JSON cache, use a slimmer CSV with id, title, upload_date, url, and other necessary fields
 - [x] clean up the rpf transcripts, use ids
-- [ ] lex fridman: reverse order of transcripts, transcribe rest of them in `video_ids.txt`
+- [x] lex fridman: reverse order of transcripts, transcribe rest of them in `video_ids.txt`
 - [ ] modify `bash_transcribe_new_videos.sh` to get new videos for each channel, add url to the config
 - [ ] Use python bindings instead of calling whisper.cpp directly, can use https://github.com/aarnphm/whispercpp
