@@ -48,5 +48,6 @@ Download history of videos
 - [x] Organize the transcripts and html pages by channel
 - [x] don't use JSON cache, use a slimmer CSV with id, title, upload_date, url, and other necessary fields
 - [x] clean up the rpf transcripts, use ids
+- [ ] lex fridman: reverse order of transcripts, transcribe rest of them in `video_ids.txt`
 - [ ] modify `bash_transcribe_new_videos.sh` to get new videos for each channel, add url to the config
 - [ ] Use python bindings instead of calling whisper.cpp directly, can use https://github.com/aarnphm/whispercpp
