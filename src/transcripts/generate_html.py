@@ -157,8 +157,9 @@ def generate_index_page(video_ids, channel_name):
     logging.info("Generating index page")
     index_html = html_dir / f"index_{channel_name}.html"
     with open(index_html, "w") as f:
+        channel_title = channel_name.replace("_", " ").title()
         f.write(
-            '<html><head><title>Transcripts</title></head><body><h1>Transcripts</h1><table style="width:100%; border-collapse: collapse;">'
+            f'<html><head><title>{channel_title} Transcripts</title></head><body><h1>{channel_title} Transcripts</h1><table style="width:100%; border-collapse: collapse;">'
         )
         f.write("These transcripts are automatically generated using Whisper.")
         f.write(
@@ -341,11 +342,11 @@ if __name__ == "__main__":
         },
         {"name": "all_in", "url": None, "file": "allin_video_ids_done.txt"},
         {"name": "lex_fridman", "url": None, "file": "video_ids_done.txt"},
-        # {
-        #     "name": "radical_personal_finance",
-        #     "url": None,
-        #     "file": "rpf_ids_done.txt",
-        # },
+        {
+            "name": "radical_personal_finance",
+            "url": None,
+            "file": "rpf_ids_done.txt",
+        },
         # {
         #     "name": "grace to you",
         #     "url": None,
