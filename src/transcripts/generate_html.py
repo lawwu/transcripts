@@ -55,11 +55,40 @@ def read_and_clean_whisper_file(file_path):
     return " ".join(cleaned_text).strip()
 
 
+def calculate_audio_duration(file_path):
+    try:
+        with open(file_path, "r") as file:
+            lines = file.readlines()
+
+        # Find the last line with a timestamp
+        last_line_with_timestamp = None
+        for line in reversed(lines):
+            if "-->" in line:
+                last_line_with_timestamp = line
+                break
+
+        if not last_line_with_timestamp:
+            raise ValueError("No timestamp found in the file.")
+
+        # Extract the last timestamp
+        last_timestamp = last_line_with_timestamp.split("-->")[-1].strip()
+        h, m, s = last_timestamp.split(":")
+        seconds = int(h) * 3600 + int(m) * 60 + round(float(s))
+
+        return seconds
+
+    except FileNotFoundError:
+        print(f"The file {file_path} does not exist.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+
 # Additional function to generate standalone transcript pages.
 def generate_transcript_page(video_id):
     logging.info(f"Generating Transcript page for video ID {video_id}")
 
     details = fetch_video_details(video_id)
+    video_id = details["id"]
     video_url = details["webpage_url"]
     thumbnail_url = details["thumbnail"]
     title = details["title"]
@@ -181,20 +210,33 @@ def generate_index_page(video_ids, channel_name):
 
         for index, video_id in enumerate(video_ids):
             details = fetch_video_details(video_id)
-            duration_in_minutes = details["duration"] // 60
-
-            if duration_in_minutes < 1:
-                # don't generate transcript, these are likely test videos
-                continue
+            video_id = details["id"]
             whisper_transcript_file = f"{video_id}.html"
+
+            if details["duration"]:
+                duration_in_minutes = details["duration"] // 60
+
+                if duration_in_minutes < 1:
+                    # don't generate transcript, these are likely test videos
+                    continue
+            else:
+                duration_in_minutes = 0
+                # TODO use transcript file to get length
+                # input_file = transcripts_dir / f"{video_id}.txt"
+                # duration_in_minutes = calculate_audio_duration(input_file) // 60
+
             transcript_file = (
                 f"transcript_{video_id}.html"  # File name for Transcript Only
             )
-            formatted_date = datetime.strptime(
-                details["upload_date"], "%Y%m%d"
-            ).strftime(
-                "%Y-%m-%d"
-            )  # New date format
+            if details["upload_date"]:
+                formatted_date = datetime.strptime(
+                    details["upload_date"], "%Y%m%d"
+                ).strftime(
+                    "%Y-%m-%d"
+                )  # New date format
+            else:
+                # TODO parse date from video_id
+                formatted_date = ""
 
             f.write(
                 '<tr style="{}">'.format(
