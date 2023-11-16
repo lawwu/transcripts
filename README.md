@@ -29,9 +29,17 @@ make -j
 pre-commit install
 ```
 
-To download all IDs of a channel:
+To download all IDs of a channel into a `txt` file:
 ```bash
-yt-dlp --flat-playlist --print id https://www.youtube.com/@aiexplained-official
+yt-dlp --flat-playlist --print id https://www.youtube.com/@gracetoyou >> data/gracetoyou_ids.txt
+
+# Radical Personal Finance - Google Podcasts
+yt-dlp -v --flat-playlist --dump-single-json https://podcasts.google.com/feed/aHR0cDovL3JhZGljYWxwZXJzb25hbGZpbmFuY2UubGlic3luLmNvbS9yc3M >> data/rpf_json.txt
+yt-dlp -v --flat-playlist --print url https://podcasts.google.com/feed/aHR0cDovL3JhZGljYWxwZXJzb25hbGZpbmFuY2UubGlic3luLmNvbS9yc3M >> data/rpf_ids.txt
+
+
+# yt-dlp --flat-playlist --print id https://podcasts.apple.com/us/podcast/radical-personal-finance/id896153632 >> data/rpf_itunes_ids.txt
+yt-dlp --flat-playlist --print id https://feeds.libsyn.com/46144/rss >> data/rpf_libsyn_rss_ids.txt
 ```
 
 # TODO
@@ -42,7 +50,6 @@ Download history of videos
 - [x] https://www.youtube.com/@aiexplained-official
 - [ ] https://radicalpersonalfinance.libsyn.com/
 - [ ] https://www.youtube.com/@gracetoyou
-- [ ] https://www.youtube.com/@ligonier/videos
 - [ ] https://www.latent.space/podcast
 
 - [x] Organize the transcripts and html pages by channel
