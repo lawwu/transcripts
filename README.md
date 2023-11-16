@@ -38,13 +38,15 @@ yt-dlp --flat-playlist --print id https://www.youtube.com/@aiexplained-official
 
 Download history of videos
 - [x] https://www.youtube.com/@allin
-- [ ] https://www.youtube.com/@lexfridman
+- [x] https://www.youtube.com/@lexfridman
 - [x] https://www.youtube.com/@aiexplained-official
+- [ ] https://radicalpersonalfinance.libsyn.com/
 - [ ] https://www.youtube.com/@gracetoyou
 - [ ] https://www.youtube.com/@ligonier/videos
-- [ ] https://radicalpersonalfinance.libsyn.com/
 - [ ] https://www.latent.space/podcast
 
-Organize the transcripts and html pages by channel
-  [ ] don't use JSON cache, use a slimmer CSV with id, title, upload_date, url, and other necessary fields
+- [x] Organize the transcripts and html pages by channel
+- [x] don't use JSON cache, use a slimmer CSV with id, title, upload_date, url, and other necessary fields
+- [x] clean up the rpf transcripts, use ids
+- [ ] modify `bash_transcribe_new_videos.sh` to get new videos for each channel, add url to the config
 - [ ] Use python bindings instead of calling whisper.cpp directly, can use https://github.com/aarnphm/whispercpp
