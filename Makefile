@@ -27,6 +27,9 @@ install:
 html:
 	python3 src/transcripts/generate_html.py
 
+transcribe_new:
+	python3 src/transcripts/transcribe_new_videos.py
+
 #################################################################################
 # Self Documenting Commands                                                     #
 #################################################################################
