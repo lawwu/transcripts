@@ -63,4 +63,5 @@ Others
 - [x] clean up the rpf transcripts, use ids
 - [x] lex fridman: reverse order of transcripts, transcribe rest of them in `video_ids.txt`
 - [x] modify `bash_transcribe_new_videos.sh` to get new videos for each channel, add url to the config
+- [ ] make one page that has all transcripts by date
 - [ ] Use python bindings instead of calling whisper.cpp directly, can use https://github.com/aarnphm/whispercpp
