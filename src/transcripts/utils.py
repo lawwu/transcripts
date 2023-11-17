@@ -14,6 +14,7 @@ transcripts_dir = data_dir / "transcripts"
 videos_dir = data_dir / "videos"
 html_dir = project_dir / "docs"
 whispercpp_dir = project_dir / "whisper.cpp"
+configs_dir = project_dir / "configs"
 
 
 def timeit(func):

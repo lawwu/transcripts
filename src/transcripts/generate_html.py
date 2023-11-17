@@ -10,6 +10,7 @@ from transcripts.utils import (
     transcripts_dir,
     data_dir,
     html_dir,
+    configs_dir,
 )
 
 logging.basicConfig(
@@ -390,27 +391,11 @@ if __name__ == "__main__":
         description="Generate HTML from YouTube transcript"
     )
 
-    config = [
-        {
-            "name": "ai_explained",
-            "url": None,
-            "file": "aiexplained_video_ids_done.txt",
-        },
-        {"name": "all_in", "url": None, "file": "allin_video_ids_done.txt"},
-        {"name": "lex_fridman", "url": None, "file": "video_ids_done.txt"},
-        {
-            "name": "radical_personal_finance",
-            "url": None,
-            "file": "rpf_ids_done.txt",
-        },
-        # {
-        #     "name": "grace to you",
-        #     "url": None,
-        #     "file": "gracetoyou_ids_done.txt"
-        # }
-    ]
+    # open channels.json in configs_dir
+    with open(configs_dir / "channels.json", "r") as f:
+        config_channels = json.load(f)
 
-    for channel in config:
+    for channel in config_channels:
         video_ids = read_ids_from_file(data_dir / channel["file"])
 
         logging.info(f"Found {len(video_ids)} video IDs")
@@ -432,6 +417,6 @@ if __name__ == "__main__":
         generate_index_page(filtered_ids, channel["name"])
         logging.info(f"Total videos: {len(filtered_ids)}")
 
-    generate_master_index(config)
+    generate_master_index(config_channels)
 
     logging.info("All tasks completed")
