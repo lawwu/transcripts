@@ -54,8 +54,6 @@ Download history of videos
 - [x] https://www.youtube.com/@lexfridman
 - [x] https://www.youtube.com/@aiexplained-official
 - [ ] https://radicalpersonalfinance.libsyn.com/
-- [ ] https://www.youtube.com/@gracetoyou
-- [ ] https://www.latent.space/podcast
 
 Others
 - [x] Organize the transcripts and html pages by channel
