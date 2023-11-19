@@ -2,7 +2,6 @@ import argparse
 import json
 import logging
 import re
-import pandas as pd
 from yt_dlp import YoutubeDL
 from datetime import datetime
 
@@ -498,31 +497,6 @@ def generate_transcript_page(video_id):
         f.write("</body></html>")
 
     logging.info(f"Transcript page generated at {output_file}")
-
-
-def convert_cache_to_dataframe(cache):
-    # Initialize list to store flattened dictionaries
-    flattened_data = []
-
-    # Flatten dictionary structure
-    for _, attributes in cache.items():
-        # print(video)
-        id_ = attributes["id"]
-        title = attributes["title"]
-        upload_date = attributes["upload_date"]
-        upload_date_formatted = datetime.strptime(
-            upload_date, "%Y%m%d"
-        ).strftime("%Y-%m-%d")
-        flattened_dict = {
-            "id": id_,
-            "title": title,
-            "upload_date": upload_date_formatted,
-        }
-        flattened_data.append(flattened_dict)
-
-    df = pd.DataFrame(flattened_data)
-    df = df.sort_values(["upload_date"], ascending=False)
-    return df
 
 
 if __name__ == "__main__":

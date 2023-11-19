@@ -2,6 +2,8 @@ import time
 from pathlib import Path
 from functools import wraps
 import json
+import pandas as pd
+from datetime import datetime
 
 project_dir = Path(__file__).resolve().parents[2]
 data_dir = project_dir / "data"
@@ -35,3 +37,28 @@ def timeit(func):
 def dump_json_to_file(json_object, filename):
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(json_object, f, ensure_ascii=False, indent=4)
+
+
+def convert_cache_to_dataframe(cache):
+    # Initialize list to store flattened dictionaries
+    flattened_data = []
+
+    # Flatten dictionary structure
+    for _, attributes in cache.items():
+        # print(video)
+        id_ = attributes["id"]
+        title = attributes["title"]
+        upload_date = attributes["upload_date"]
+        upload_date_formatted = datetime.strptime(
+            upload_date, "%Y%m%d"
+        ).strftime("%Y-%m-%d")
+        flattened_dict = {
+            "id": id_,
+            "title": title,
+            "upload_date": upload_date_formatted,
+        }
+        flattened_data.append(flattened_dict)
+
+    df = pd.DataFrame(flattened_data)
+    df = df.sort_values(["upload_date"], ascending=False)
+    return df
