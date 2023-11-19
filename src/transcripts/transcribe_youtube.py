@@ -109,6 +109,17 @@ def ensure_wav_16k(filename):
     subprocess.run(command)
 
 
+def is_transcript_valid(filename, directory=transcripts_dir):
+    input_path = directory / f"{filename}.txt"
+
+    try:
+        with open(input_path, "r", encoding="utf-8") as f:
+            f.read()  # Attempt to read the entire file
+        return True
+    except UnicodeDecodeError:
+        return False
+
+
 @timeit
 def run_whisper(filename, model_name, num_threads=7, num_processors=1):
     model_path = model_dir / model_name
@@ -118,6 +129,12 @@ def run_whisper(filename, model_name, num_threads=7, num_processors=1):
     whisper_main = whispercpp_dir / "main"
     command = f"{whisper_main} -m {model_path} -t {num_threads} -p {num_processors} -f {input_path} > {output_path}"
     subprocess.run(command, shell=True)
+
+    # if is_transcript_valid(filename):
+    #     logging.info(f"Transcript for {filename} is valid.")
+    # else:
+    #     logging.info(f"Transcript for {filename} contains invalid bytes.")
+    #     # delete transcript
 
 
 def clean_up_wav_files(base_filename):
