@@ -314,6 +314,7 @@ def generate_index_page(video_ids, channel_name):
         f.write(
             f'</head><body><h1>{channel_title} Transcripts</h1><table style="width:100%; border-collapse: collapse;">'
         )
+        f.write('<a href="index.html">back to index</a>')
         f.write(
             "<tr><th>Date</th><th>Title</th><th>Duration</th><th>Whisper Transcript</th><th>Transcript Only</th></tr>"
         )  # Added a new table header for "Transcript Only"
@@ -398,6 +399,7 @@ def generate_html(video_id):
         f.write(add_google_analytics())  # Include Google Analytics
         f.write("</head><body>")
         f.write("<div class='container'>")
+        # TODO should go to channel index, not index.html
         f.write(
             '<a href="index.html">back to index</a><h2>{}</h2>'.format(title)
         )
@@ -478,7 +480,7 @@ def generate_transcript_page(video_id):
             '<a href="index.html">Back to Index</a><h2>{}</h2>'.format(title)
         )
         f.write(
-            f'<a href="{video_url}" target="_blank"><img src="{thumbnail_url}"  style="width:50%;"></a><div><br></div>'
+            f'<a href="{video_url}" target="_blank"><img src="{thumbnail_url}" style="width:50%;"></a><div><br></div>'
         )
 
         if chapters:
@@ -486,7 +488,7 @@ def generate_transcript_page(video_id):
             for chapter in chapters:
                 start_time = int(chapter["start_time"])
                 f.write(
-                    f'<a href="{video_url}&t={start_time}">{start_time // 60}:{start_time % 60} target="_blank"</a> {chapter["title"]}<br>'
+                    f'<a href="{video_url}&t={start_time} target="_blank"">{start_time // 60}:{start_time % 60}</a> {chapter["title"]}<br>'
                 )
 
         f.write("<h3>Transcript</h3>")
