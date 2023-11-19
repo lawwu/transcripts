@@ -13,9 +13,6 @@ pip install -r requirements.txt
 # install in editable mode
 pip install -e .
 
-# initialize git-lfs
-git lfs install
-
 # build whisper.cpp
 git clone https://github.com/ggerganov/whisper.cpp
 cd whisper.cpp
@@ -60,6 +57,18 @@ Others
 - [x] don't use JSON cache, use a slimmer CSV with id, title, upload_date, url, and other necessary fields
 - [x] clean up the rpf transcripts, use ids
 - [x] lex fridman: reverse order of transcripts, transcribe rest of them in `video_ids.txt`
-- [x] modify `bash_transcribe_new_videos.sh` to get new videos for each channel, add url to the config
-- [ ] make one page that has all transcripts by date
+- [ ] modify `bash_transcribe_new_videos.sh` to get new videos for each channel, add url to the config
+- [ ] check transcript is good, sometimes whisper generates transcripts that have invalid utf-8
+
+```python
+Traceback (most recent call last):
+  File "/Users/lwu-macstudio/github/transcripts/src/transcripts/generate_html.py", line 440, in <module>
+    generate_html(id)
+  File "/Users/lwu-macstudio/github/transcripts/src/transcripts/generate_html.py", line 300, in generate_html
+    lines = f.readlines()
+            ^^^^^^^^^^^^^
+  File "<frozen codecs>", line 322, in decode
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0xeb in position 1264: invalid continuation byte
+```
+
 - [ ] Use python bindings instead of calling whisper.cpp directly, can use https://github.com/aarnphm/whispercpp
