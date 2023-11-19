@@ -299,9 +299,56 @@ def generate_html(video_id):
     with open(input_file, "r") as f:
         lines = f.readlines()
 
+    css_styles = """
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .container {
+            width: 80%;
+            margin: auto;
+            overflow: hidden;
+        }
+        h2, h3 {
+            color: #333;
+            text-align: center;
+        }
+        a {
+            color: #0000FF;  /* Traditional blue color for links */
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        img {
+            display: block;
+            margin: auto;
+            max-width: 100%;
+        }
+        .c {
+            margin: 10px 0;
+        }
+        .s, .t {
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .max-width {
+            max-width: 800px;
+            margin: auto;
+        }
+    </style>
+    """
+
     with open(output_file, "w") as f:
-        f.write("<html><head><title>{}</title></head><body>".format(title))
-        f.write(add_google_analytics())
+        f.write("<html><head><title>{}</title>".format(title))
+        f.write(css_styles)  # Include CSS styles
+        f.write(add_google_analytics())  # Include Google Analytics
+        f.write("</head><body>")
+        f.write("<div class='container'>")
         f.write(
             '<a href="index.html">back to index</a><h2>{}</h2>'.format(title)
         )
@@ -339,14 +386,14 @@ def generate_html(video_id):
                 f.write('<div class="c">')
                 if youtube_match:
                     f.write(
-                        '<span class="s"><a href="{}&t={}">{}</a></span> | '.format(
+                        '<span class="s"><a href="{}&t={}" target="_blank">{}</a></span> | '.format(
                             video_url, total_seconds, start_timestamp
                         )
                     )
                 else:
                     f.write(
                         # vimeo url looks like: https://vimeo.com/24690039#t=90s
-                        '<span class="s"><a href="{}#t={}s">{}</a></span> | '.format(
+                        '<span class="s"><a href="{}#t={}s">{} target="_blank"</a></span> | '.format(
                             video_url, total_seconds, start_timestamp
                         )
                     )
@@ -419,7 +466,7 @@ def generate_master_index(config, html_dir=html_dir):
         f.write(add_google_analytics())  # Include Google Analytics
         f.write("</head><body>")
         f.write("<div class='container'>")
-        f.write("<h1>YouTube Channel Transcripts</h1>")
+        f.write("<h1>Whisper Transcripts</h1>")
         f.write(
             "<p>These transcripts are automatically generated using Whisper.</p>"
         )
