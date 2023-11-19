@@ -39,6 +39,41 @@ To transcribe all of the video ids in a text file:
 ./bash_transcribe.sh data/rpf_ids.txt
 ```
 
+The code uses a config file `configs/channels.json`:
+```python
+[
+    {
+        "name": "ai_explained",
+        "url": "https://www.youtube.com/@aiexplained-official",
+        "in_file": "aiexplained_video_ids.txt",
+        "file": "aiexplained_video_ids_done.txt"
+    },
+    {
+        "name": "all_in",
+        "url": "https://www.youtube.com/@allin",
+        "in_file": "allin_video_ids.txt",
+        "file": "allin_video_ids_done.txt"
+    },
+    {
+        "name": "lex_fridman",
+        "url": "https://www.youtube.com/@lexfridman",
+        "in_file": "video_ids.txt",
+        "file": "video_ids_done.txt"
+    },
+    {
+        "name": "radical_personal_finance",
+        "url": "https://podcasts.google.com/feed/aHR0cDovL3JhZGljYWxwZXJzb25hbGZpbmFuY2UubGlic3luLmNvbS9yc3M",
+        "in_file": "rpf_ids.txt",
+        "file": "rpf_ids_done.txt"
+    }
+]
+```
+
+To transcribe new videos:
+```bash
+make transcribe_new
+```
+
 To generate the HTML pages
 ```bash
 make html
