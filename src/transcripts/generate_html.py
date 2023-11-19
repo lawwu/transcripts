@@ -84,6 +84,20 @@ def calculate_audio_duration(file_path):
         print(f"An error occurred: {e}")
 
 
+def add_google_analytics():
+    return """
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-69VLBMTTP0"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'G-69VLBMTTP0');
+    </script>
+    """
+
+
 # Additional function to generate standalone transcript pages.
 def generate_transcript_page(video_id):
     logging.info(f"Generating Transcript page for video ID {video_id}")
@@ -104,6 +118,7 @@ def generate_transcript_page(video_id):
 
     with open(output_file, "w") as f:
         f.write("<html><head><title>{}</title></head><body>".format(title))
+        f.write(add_google_analytics())  # Insert Google Analytics script
         f.write(
             '<a href="index.html">back to index</a><h2>{}</h2>'.format(title)
         )
@@ -201,10 +216,11 @@ def generate_index_page(video_ids, channel_name):
     index_html = html_dir / f"index_{channel_name}.html"
     with open(index_html, "w") as f:
         channel_title = channel_name.replace("_", " ").title()
+        f.write(f"<html><head><title>{channel_title} Transcripts</title>")
+        f.write(add_google_analytics())
         f.write(
-            f'<html><head><title>{channel_title} Transcripts</title></head><body><h1>{channel_title} Transcripts</h1><table style="width:100%; border-collapse: collapse;">'
+            '</head><body><h1>{channel_title} Transcripts</h1><table style="width:100%; border-collapse: collapse;">'
         )
-        f.write("These transcripts are automatically generated using Whisper.")
         f.write(
             "<tr><th>Date</th><th>Title</th><th>Duration</th><th>Whisper Transcript</th><th>Transcript Only</th></tr>"
         )  # Added a new table header for "Transcript Only"
@@ -285,6 +301,7 @@ def generate_html(video_id):
 
     with open(output_file, "w") as f:
         f.write("<html><head><title>{}</title></head><body>".format(title))
+        f.write(add_google_analytics())
         f.write(
             '<a href="index.html">back to index</a><h2>{}</h2>'.format(title)
         )
@@ -344,6 +361,7 @@ def generate_master_index(config, html_dir=html_dir):
     index_html = html_dir / "index.html"
     with open(index_html, "w") as f:
         f.write("<html><head><title>Channel Index</title></head><body>")
+        f.write(add_google_analytics())
         f.write("<h1>YouTube Channel Transcripts</h1>")
         f.write("These transcripts are automatically generated using Whisper.")
         f.write("<ul>")
