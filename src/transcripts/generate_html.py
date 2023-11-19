@@ -219,7 +219,7 @@ def generate_index_page(video_ids, channel_name):
         f.write(f"<html><head><title>{channel_title} Transcripts</title>")
         f.write(add_google_analytics())
         f.write(
-            '</head><body><h1>{channel_title} Transcripts</h1><table style="width:100%; border-collapse: collapse;">'
+            f'</head><body><h1>{channel_title} Transcripts</h1><table style="width:100%; border-collapse: collapse;">'
         )
         f.write(
             "<tr><th>Date</th><th>Title</th><th>Duration</th><th>Whisper Transcript</th><th>Transcript Only</th></tr>"
@@ -360,13 +360,71 @@ def generate_html(video_id):
 def generate_master_index(config, html_dir=html_dir):
     index_html = html_dir / "index.html"
     with open(index_html, "w") as f:
-        f.write("<html><head><title>Channel Index</title></head><body>")
-        f.write(add_google_analytics())
+        # Adding some basic CSS for styling
+        css_styles = """
+       <style>
+            body {
+                font-family: Arial, sans-serif;
+                margin: 0;
+                padding: 0;
+                background-color: #f4f4f4;
+                color: #333;
+            }
+            .container {
+                width: 80%;
+                margin: auto;
+                overflow: hidden;
+            }
+            h1 {
+                color: #333;
+                text-align: center;
+                padding: 20px 0;
+            }
+            ul {
+                list-style: none;
+                padding: 0;
+            }
+            ul li {
+                background: #fff;
+                margin: 5px 0;
+                padding: 10px;
+                border-radius: 5px;
+            }
+            ul li a {
+                text-decoration: none;
+                color: #0000FF;  /* Traditional blue color for links */
+            }
+            ul li a:hover {
+                color: #0275d8;
+                text-decoration: underline;
+            }
+            footer {
+                text-align: center;
+                padding: 20px 0;
+                font-size: 0.8em;
+            }
+            footer a {
+                color: #0275d8;
+                text-decoration: none;
+            }
+            footer a:hover {
+                text-decoration: underline;
+            }
+        </style>
+        """
+
+        # Writing the HTML content
+        f.write("<html><head><title>Channel Index</title>")
+        f.write(css_styles)  # Include CSS styles
+        f.write(add_google_analytics())  # Include Google Analytics
+        f.write("</head><body>")
+        f.write("<div class='container'>")
         f.write("<h1>YouTube Channel Transcripts</h1>")
-        f.write("These transcripts are automatically generated using Whisper.")
+        f.write(
+            "<p>These transcripts are automatically generated using Whisper.</p>"
+        )
         f.write("<ul>")
 
-        # TODO: this won't work for Google Podcasts (RPF)
         for channel in config:
             channel_index_file = f'index_{channel["name"]}.html'
             channel_link = channel_index_file
@@ -374,7 +432,12 @@ def generate_master_index(config, html_dir=html_dir):
                 f'<li><a href="{channel_link}">{channel["name"].replace("_", " ").title()}</a></li>'
             )
 
-        f.write("</ul></body></html>")
+        f.write("</ul>")
+        f.write("</div>")
+        f.write(
+            "<footer>Source Code: <a href='https://github.com/lawwu/transcripts' target='_blank'>transcripts</a> on GitHub</footer>"
+        )
+        f.write("</body></html>")
 
     logging.info(f"Master index page generated at {index_html}")
 
