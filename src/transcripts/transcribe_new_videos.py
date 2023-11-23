@@ -3,7 +3,7 @@ import json
 import logging
 import os
 from transcripts.utils import data_dir, configs_dir
-
+from datetime import datetime
 
 log_fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 logging.basicConfig(level=logging.INFO, format=log_fmt)
@@ -38,7 +38,7 @@ for channel in channels:
     new_videos_count = len(new_ids)
     logging.info(f"New videos found: {new_videos_count}")
 
-    # Step 4: Update the bcc_live_video_ids_done.txt by adding new ids at the top
+    # Step 4: Update the *_done.txt by adding new ids at the top
     if new_ids:
         with open(data_dir / channel["file"], "w") as f:
             for vid in reversed(new_ids):
@@ -65,7 +65,15 @@ for channel in channels:
 subprocess.run(["python", "src/transcripts/generate_html.py"])
 
 # Commit files
-# subprocess.run(["git", "add", "./data/*.txt"])
-# subprocess.run(["git", "add", "./docs/*.html"])
-# subprocess.run(["git", "commit", "-m", f"AUTO: adding latest messages from {datetime.datetime.now().strftime('%Y-%m-%d')}"])
-# subprocess.run(["git", "push"])
+subprocess.run(["git", "add", "./data/*.txt"])
+subprocess.run(["git", "add", "./docs/*.html"])
+subprocess.run(["git", "add", "./data/video_details_cache.json"])
+subprocess.run(
+    [
+        "git",
+        "commit",
+        "-m",
+        f"AUTO: adding latest messages from {datetime.now().strftime('%Y-%m-%d')}",
+    ]
+)
+subprocess.run(["git", "push"])

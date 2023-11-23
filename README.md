@@ -74,9 +74,15 @@ To transcribe new videos:
 make transcribe_new
 ```
 
-To generate the HTML pages
+To generate the HTML pages:
 ```bash
 make html
+```
+
+To setup a crontab:
+```bash
+crontab -e
+0 */2 * * 1-6 /Users/lwu-macstudio/github/transcripts/src/transcripts/transcribe_new_videos.py
 ```
 
 # TODO
@@ -85,14 +91,16 @@ Download history of videos
 - [x] https://www.youtube.com/@allin
 - [x] https://www.youtube.com/@lexfridman
 - [x] https://www.youtube.com/@aiexplained-official
-- [ ] https://radicalpersonalfinance.libsyn.com/
+- [x] https://radicalpersonalfinance.libsyn.com/
 
 Others
 - [x] Organize the transcripts and html pages by channel
 - [x] don't use JSON cache, use a slimmer CSV with id, title, upload_date, url, and other necessary fields
 - [x] clean up the rpf transcripts, use ids
 - [x] lex fridman: reverse order of transcripts, transcribe rest of them in `video_ids.txt`
-- [ ] modify `bash_transcribe_new_videos.sh` to get new videos for each channel, add url to the config
+- [x] modify `bash_transcribe_new_videos.sh` to get new videos for each channel, add url to the config
+- [ ] create all transcript page ordered by date
+- [ ] create other transcript page
 - [ ] check transcript is good, sometimes whisper generates transcripts that have invalid utf-8
 
 ```python
