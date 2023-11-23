@@ -517,6 +517,9 @@ if __name__ == "__main__":
 
         # generate html for youtube videos
         for id in video_ids:
+            # skip this id since regex isn't working
+            if id == "-hxeDjAxvJ8":
+                continue
             # Generate individual transcript pages
             generate_html(id)
             # Generate individual transcript-only pages
