@@ -1,0 +1,1336 @@
+
+[00:00:00.000 --> 00:00:04.800]   Hello, my name is Andrej and I've been training deep neural networks for a bit more than a decade
+[00:00:04.800 --> 00:00:09.600]   and in this lecture I'd like to show you what neural network training looks like under the hood.
+[00:00:09.600 --> 00:00:14.000]   So in particular we are going to start with a blank Jupyter notebook and by the end of this
+[00:00:14.000 --> 00:00:18.560]   lecture we will define and train a neural net and you'll get to see everything that goes on
+[00:00:18.560 --> 00:00:23.520]   under the hood and exactly sort of how that works on an intuitive level. Now specifically what I
+[00:00:23.520 --> 00:00:29.200]   would like to do is I would like to take you through building of micrograd. Now micrograd
+[00:00:29.200 --> 00:00:33.840]   is this library that I released on github about two years ago but at the time I only uploaded
+[00:00:33.840 --> 00:00:38.480]   the source code and you'd have to go in by yourself and really figure out how it works.
+[00:00:38.480 --> 00:00:42.960]   So in this lecture I will take you through it step by step and kind of comment on all the
+[00:00:42.960 --> 00:00:47.600]   pieces of it. So what is micrograd and why is it interesting? Thank you.
+[00:00:47.600 --> 00:00:54.720]   Micrograd is basically an autograd engine. Autograd is short for automatic gradient and
+[00:00:54.720 --> 00:00:58.640]   really what it does is it implements back propagation. Now back propagation is this
+[00:00:58.640 --> 00:01:04.960]   algorithm that allows you to efficiently evaluate the gradient of some kind of a loss function
+[00:01:04.960 --> 00:01:10.000]   with respect to the weights of a neural network and what that allows us to do then is we can
+[00:01:10.000 --> 00:01:13.920]   iteratively tune the weights of that neural network to minimize the loss function and
+[00:01:13.920 --> 00:01:18.960]   therefore improve the accuracy of the network. So back propagation would be at the mathematical
+[00:01:18.960 --> 00:01:24.800]   core of any modern deep neural network library like say pytorch or jax. So the functionality
+[00:01:24.800 --> 00:01:28.720]   of micrograd is I think best illustrated by an example. So if we just scroll down here
+[00:01:28.720 --> 00:01:33.520]   you'll see that micrograd basically allows you to build out mathematical expressions
+[00:01:33.520 --> 00:01:38.000]   and here what we are doing is we have an expression that we're building out where
+[00:01:38.000 --> 00:01:44.880]   you have two inputs a and b and you'll see that a and b are negative four and two but we are
+[00:01:44.880 --> 00:01:50.480]   wrapping those values into this value object that we are going to build out as part of micrograd.
+[00:01:50.480 --> 00:01:56.080]   So this value object will wrap the numbers themselves and then we are going to build
+[00:01:56.080 --> 00:02:03.120]   out a mathematical expression here where a and b are transformed into c d and eventually e f and g
+[00:02:03.120 --> 00:02:08.800]   and I'm showing some of the functionality of micrograd and the operations that it supports.
+[00:02:08.800 --> 00:02:14.480]   So you can add two value objects, you can multiply them, you can raise them to a constant power,
+[00:02:14.480 --> 00:02:21.520]   you can offset by one, negate, squash at zero, square, divide by a constant, divide by it,
+[00:02:21.520 --> 00:02:27.760]   etc. And so we're building out an expression graph with these two inputs a and b and we're
+[00:02:27.760 --> 00:02:33.600]   creating an output value of g and micrograd will in the background build out this entire
+[00:02:33.600 --> 00:02:39.680]   mathematical expression. So it will for example know that c is also a value, c was a result of
+[00:02:39.680 --> 00:02:47.360]   an addition operation and the child nodes of c are a and b because the and it will maintain
+[00:02:47.360 --> 00:02:52.480]   pointers to a and b value objects so we'll basically know exactly how all of this is laid out.
+[00:02:52.480 --> 00:02:57.520]   And then not only can we do what we call the forward pass where we actually look at the value
+[00:02:57.520 --> 00:03:03.120]   of g of course that's pretty straightforward we will access that using the dot data attribute
+[00:03:03.120 --> 00:03:10.160]   and so the output of the forward pass the value of g is 24.7 it turns out but the big deal is
+[00:03:10.160 --> 00:03:16.240]   that we can also take this g value object and we can call dot backward and this will basically
+[00:03:16.240 --> 00:03:21.920]   initialize backpropagation at the node g. And what backpropagation is going to do is it's going to
+[00:03:21.920 --> 00:03:27.440]   start at g and it's going to go backwards through that expression graph and it's going to recursively
+[00:03:27.440 --> 00:03:33.440]   apply the chain rule from calculus and what that allows us to do then is we're going to evaluate
+[00:03:33.440 --> 00:03:40.400]   basically the derivative of g with respect to all the internal nodes like e d and c but also
+[00:03:40.400 --> 00:03:47.200]   with respect to the inputs a and b and then we can actually query this derivative of g with respect
+[00:03:47.200 --> 00:03:52.880]   to a for example that's a dot grad in this case it happens to be 138 and the derivative of g with
+[00:03:52.880 --> 00:04:00.000]   respect to b which also happens to be here 645 and this derivative we'll see soon is very important
+[00:04:00.000 --> 00:04:06.720]   information because it's telling us how a and b are affecting g through this mathematical expression
+[00:04:06.720 --> 00:04:13.920]   so in particular a dot grad is 138 so if we slightly nudge a and make it slightly larger
+[00:04:13.920 --> 00:04:20.080]   138 is telling us that g will grow and the slope of that growth is going to be 138
+[00:04:20.720 --> 00:04:26.800]   and the slope of growth of b is going to be 645 so that's going to tell us about how g will respond
+[00:04:26.800 --> 00:04:34.720]   if a and b get tweaked a tiny amount in a positive direction okay um now you might be confused about
+[00:04:34.720 --> 00:04:39.680]   what this expression is that we built out here and this expression by the way is completely meaningless
+[00:04:39.680 --> 00:04:44.800]   i just made it up i'm just flexing about the kinds of operations that are supported by micrograd
+[00:04:44.800 --> 00:04:48.720]   and what we actually really care about are neural networks but it turns out that neural networks
+[00:04:48.720 --> 00:04:53.680]   are just mathematical expressions just like this one but actually slightly a bit less crazy even
+[00:04:53.680 --> 00:05:00.080]   neural networks are just a mathematical expression they take the input data as an input and they take
+[00:05:00.080 --> 00:05:04.560]   the weights of a neural network as an input and it's a mathematical expression and the output
+[00:05:04.560 --> 00:05:09.600]   are your predictions of your neural net or the loss function we'll see this in a bit but basically
+[00:05:09.600 --> 00:05:14.800]   neural networks just happen to be a certain class of mathematical expressions but back propagation
+[00:05:14.800 --> 00:05:19.440]   is actually significantly more general it doesn't actually care about neural networks at all it only
+[00:05:19.440 --> 00:05:24.480]   tells us about arbitrary mathematical expressions and then we happen to use that machinery for
+[00:05:24.480 --> 00:05:28.960]   training of neural networks now one more note i would like to make at this stage is that as you
+[00:05:28.960 --> 00:05:34.320]   see here micrograd is a scalar valued autograd engine so it's working on the you know level of
+[00:05:34.320 --> 00:05:38.320]   individual scalars like negative four and two and we're taking neural nets and we're breaking them
+[00:05:38.320 --> 00:05:42.960]   down all the way to these atoms of individual scalars and all the little pluses and times and
+[00:05:42.960 --> 00:05:48.000]   it's just excessive and so obviously you would never be doing any of this in production it's
+[00:05:48.000 --> 00:05:52.000]   really just for done for pedagogical reasons because it allows us to not have to deal with
+[00:05:52.000 --> 00:05:57.280]   these n-dimensional tensors that you would use in modern deep neural network library so this is
+[00:05:57.280 --> 00:06:03.200]   really done so that you understand and refactor out back propagation and chain rule and understanding
+[00:06:03.200 --> 00:06:08.320]   of neural training and then if you actually want to train bigger networks you have to be using these
+[00:06:08.320 --> 00:06:13.120]   tensors but none of the math changes this is done purely for efficiency we are basically taking
+[00:06:13.120 --> 00:06:18.240]   scalar value all the scalar values we're packaging them up into tensors which are just arrays of
+[00:06:18.240 --> 00:06:23.440]   these scalars and then because we have these large arrays we're making operations on those large
+[00:06:23.440 --> 00:06:29.040]   arrays that allows us to take advantage of the parallelism in a computer and all those operations
+[00:06:29.040 --> 00:06:33.520]   can be done in parallel and then the whole thing runs faster but really none of the math changes
+[00:06:33.520 --> 00:06:37.760]   and they've done purely for efficiency so i don't think that it's pedagogically useful to be dealing
+[00:06:37.760 --> 00:06:42.640]   with tensors from scratch and i think and that's why i fundamentally wrote micrograd because you
+[00:06:42.640 --> 00:06:48.320]   can understand how things work at the fundamental level and then you can speed it up later okay so
+[00:06:48.320 --> 00:06:52.800]   here's the fun part my claim is that micrograd is what you need to train your own networks and
+[00:06:52.800 --> 00:06:57.280]   everything else is just efficiency so you'd think that micrograd would be a very complex piece of
+[00:06:57.280 --> 00:07:04.480]   code and that turns out to not be the case so if we just go to micrograd and you'll see that there's
+[00:07:04.480 --> 00:07:09.280]   only two files here in micrograd this is the actual engine it doesn't know anything about
+[00:07:09.280 --> 00:07:16.560]   neural nets and this is the entire neural nets library on top of micrograd so engine and nn.py
+[00:07:16.560 --> 00:07:23.280]   so the actual back propagation autograd engine that gives you the power of neural networks
+[00:07:23.280 --> 00:07:31.120]   is literally 100 lines of code of like very simple python which we'll understand by the end of this
+[00:07:31.120 --> 00:07:37.040]   lecture and then nn.py this neural network library built on top of the autograd engine
+[00:07:37.040 --> 00:07:43.920]   is like a joke it's like we have to define what is a neuron and then we have to define what is a layer
+[00:07:43.920 --> 00:07:48.800]   of neurons and then we define what is a multilayer perceptron which is just a sequence of layers of
+[00:07:48.800 --> 00:07:56.400]   neurons and so it's just a total joke so basically there's a lot of power that comes from only 150
+[00:07:56.400 --> 00:08:01.200]   lines of code and that's all you need to understand to understand neural network training and everything
+[00:08:01.200 --> 00:08:06.880]   else is just efficiency and of course there's a lot to efficiency but fundamentally that's all
+[00:08:06.880 --> 00:08:11.600]   that's happening okay so now let's dive right in and implement micrograd step by step the first
+[00:08:11.600 --> 00:08:15.600]   thing i'd like to do is i'd like to make sure that you have a very good understanding intuitively of
+[00:08:15.600 --> 00:08:21.280]   what a derivative is and exactly what information it gives you so let's start with some basic
+[00:08:21.280 --> 00:08:26.880]   imports that i copy paste in every jupyter notebook always and let's define a function
+[00:08:26.880 --> 00:08:33.520]   a scalar valid function f of x as follows so i just made this up randomly i just wanted a
+[00:08:33.520 --> 00:08:39.280]   scalar valid function that takes a single scalar x and returns a single scalar y and we can call
+[00:08:39.280 --> 00:08:45.520]   this function of course so we can pass and say 3.0 and get 20 back now we can also plot this function
+[00:08:45.520 --> 00:08:50.000]   to get a sense of its shape you can tell from the mathematical expression that this is probably a
+[00:08:50.000 --> 00:08:59.280]   parabola it's a quadratic and so if we just create a set of um um scalar values that we can feed in
+[00:08:59.280 --> 00:09:06.320]   using for example a range from negative 5 to 5 in steps of 0.25 so this is so x is is just from
+[00:09:06.320 --> 00:09:13.120]   negative 5 to 5 not including 5 in steps of 0.25 and we can actually call this function on this
+[00:09:13.120 --> 00:09:20.800]   numpy array as well so we get a set of y's if we call f on x's and these y's are basically also
+[00:09:20.800 --> 00:09:26.400]   applying the function on every one of these elements independently and we can plot this
+[00:09:26.400 --> 00:09:33.760]   using mathplotlib so plt.plot x's and y's and we get a nice parabola so previously here we fed in
+[00:09:33.760 --> 00:09:39.840]   3.0 somewhere here and we received 20 back which is here the y coordinate so now i'd like to think
+[00:09:39.840 --> 00:09:46.160]   through what is the derivative of this function at any single input point x right so what is the
+[00:09:46.160 --> 00:09:51.360]   derivative at different points x of this function now if you remember back to your calculus class
+[00:09:51.360 --> 00:09:56.400]   you've probably derived derivatives so we take this mathematical expression 3x squared minus 4x
+[00:09:56.400 --> 00:10:00.560]   plus 5 and you would write out on a piece of paper and you would you know apply the product rule and
+[00:10:00.560 --> 00:10:05.040]   all the other rules and derive the mathematical expression of the great derivative of the
+[00:10:05.040 --> 00:10:08.720]   original function and then you could plug in different taxes and see what the derivative is
+[00:10:08.720 --> 00:10:14.800]   we're not going to actually do that because no one in neural networks actually writes out the
+[00:10:14.800 --> 00:10:19.600]   expression for the neural net it would be a massive expression it would be you know thousands tens of
+[00:10:19.600 --> 00:10:24.240]   thousands of terms no one actually derives the derivative of course and so we're not going to
+[00:10:24.240 --> 00:10:28.160]   take this kind of like symbolic approach instead what i'd like to do is i'd like to look at the
+[00:10:28.160 --> 00:10:31.920]   definition of derivative and just make sure that we really understand what the derivative is
+[00:10:31.920 --> 00:10:36.720]   measuring what it's telling you about the function and so if we just look up derivative
+[00:10:36.720 --> 00:10:46.560]   we see that um okay so this is not a very good definition of derivative this is a definition
+[00:10:46.560 --> 00:10:51.120]   of what it means to be differentiable but if you remember from your calculus it is the limit as h
+[00:10:51.120 --> 00:10:58.960]   goes to zero of f of x plus h minus f of x over h so basically what it's saying is if you slightly
+[00:10:58.960 --> 00:11:04.000]   bump up you're at some point x that you're interested in or a and if you slightly bump up
+[00:11:04.000 --> 00:11:09.760]   you know you slightly increase it by a small number h how does the function respond with what
+[00:11:09.760 --> 00:11:14.480]   sensitivity does it respond where is the slope at that point does the function go up or does it go
+[00:11:14.480 --> 00:11:20.880]   down and by how much and that's the slope of that function the the slope of that response at that
+[00:11:20.880 --> 00:11:26.880]   point and so we can basically evaluate the derivative here numerically by taking a very
+[00:11:26.880 --> 00:11:31.760]   small h of course the definition would ask us to take h to zero we're just going to pick a very
+[00:11:31.760 --> 00:11:38.240]   small h 0.001 and let's say we're interested in 0.3.0 so we can look at f of x of course as 20
+[00:11:38.240 --> 00:11:44.560]   and now f of x plus h so if we slightly nudge x in a positive direction how is the function going to
+[00:11:44.560 --> 00:11:50.320]   respond and just looking at this do you expand do you expect f of x plus h to be slightly greater
+[00:11:50.320 --> 00:11:57.040]   than 20 or do you expect to be slightly lower than 20 and since this 3 is here and this is 20
+[00:11:57.040 --> 00:12:02.160]   if we slightly go positively the function will respond positively so you'd expect this to be
+[00:12:02.160 --> 00:12:08.640]   slightly greater than 20 and now by how much is telling you the sort of the the strength of that
+[00:12:08.640 --> 00:12:14.720]   slope right the the size of the slope so f of x plus h minus f of x this is how much the function
+[00:12:14.720 --> 00:12:21.360]   responded in the positive direction and we have to normalize by the run so we have the rise over
+[00:12:21.360 --> 00:12:27.440]   run to get the slope so this of course is just a numerical approximation of the slope because we
+[00:12:27.440 --> 00:12:34.560]   have to make h very very small to converge to the exact amount now if i'm doing too many zeros
+[00:12:34.560 --> 00:12:40.400]   at some point i'm going to get an incorrect answer because we're using floating point arithmetic
+[00:12:40.400 --> 00:12:45.280]   and the representations of all these numbers in computer memory is finite and at some point we're
+[00:12:45.280 --> 00:12:50.960]   getting into trouble so we can converge towards the right answer with this approach but basically
+[00:12:50.960 --> 00:12:59.200]   at 3 the slope is 14 and you can see that by taking 3x squared minus 4x plus 5 and differentiating it
+[00:12:59.200 --> 00:13:08.000]   in our head so 3x squared would be 6x minus 4 and then we plug in x equals 3 so that's 18 minus 4
+[00:13:08.000 --> 00:13:18.480]   is 14 so this is correct so that's at 3 now how about the slope at say negative 3 would you expect
+[00:13:18.480 --> 00:13:23.200]   what would you expect for the slope now telling the exact value is really hard but what is the
+[00:13:23.200 --> 00:13:30.400]   sign of that slope so at negative 3 if we slightly go in the positive direction at x the function
+[00:13:30.400 --> 00:13:34.560]   would actually go down and so that tells you that the slope would be negative so we'll get a slight
+[00:13:34.560 --> 00:13:42.160]   number below 20 and so if we take the slope we expect something negative negative 22 okay
+[00:13:42.160 --> 00:13:48.320]   and at some point here of course the slope would be zero now for this specific function
+[00:13:48.320 --> 00:13:55.360]   i looked it up previously and it's at point 2 over 3 so at roughly 2 over 3 that's somewhere here
+[00:13:57.040 --> 00:14:01.120]   this derivative would be zero so basically at that precise point
+[00:14:01.120 --> 00:14:08.160]   yeah at that precise point if we nudge in a positive direction the function doesn't respond
+[00:14:08.160 --> 00:14:12.560]   this stays the same almost and so that's why the slope is zero okay now let's look at a bit more
+[00:14:12.560 --> 00:14:18.320]   complex case so we're going to start you know complexifying a bit so now we have a function
+[00:14:19.680 --> 00:14:27.280]   here with output variable b that is a function of three scalar inputs a b and c so a b and c are
+[00:14:27.280 --> 00:14:33.440]   some specific values three inputs into our expression graph and a single output d and so
+[00:14:33.440 --> 00:14:38.720]   if we just print d we get four and now what i'd like to do is i'd like to again look at the
+[00:14:38.720 --> 00:14:45.600]   derivatives of d with respect to a b and c and think through again just the intuition of what
+[00:14:45.600 --> 00:14:51.040]   this derivative is telling us so in order to evaluate this derivative we're going to get a
+[00:14:51.040 --> 00:14:56.960]   bit hacky here we're going to again have a very small value of h and then we're going to fix the
+[00:14:56.960 --> 00:15:03.360]   inputs at some values that we're interested in so these are the this is the point a b c at which
+[00:15:03.360 --> 00:15:08.800]   we're going to be evaluating the derivative of d with respect to all a b and c at that point
+[00:15:08.800 --> 00:15:14.880]   so there are the inputs and now we have d1 is that expression and then we're going to for example
+[00:15:14.880 --> 00:15:20.400]   look at the derivative of d with respect to a so we'll take a and we'll bump it by h and then we'll
+[00:15:20.400 --> 00:15:30.000]   get d2 to be the exact same function and now we're going to print um you know f1 d1 is d1
+[00:15:30.000 --> 00:15:42.800]   d2 is d2 and print slope so the derivative or slope here will be um of course d2 minus d1
+[00:15:42.800 --> 00:15:52.560]   divide h so d2 minus d1 is how much the function increased when we bumped the uh the specific
+[00:15:52.560 --> 00:16:00.000]   input that we're interested in by a tiny amount and this is the normalized by h to get the slope
+[00:16:02.720 --> 00:16:14.240]   so um yeah so this so i just run this we're going to print d1 which we know is four
+[00:16:14.240 --> 00:16:22.960]   now d2 will be bumped a will be bumped by h so let's just think through a little bit
+[00:16:23.760 --> 00:16:33.200]   what d2 will be uh printed out here in particular d1 will be four will d2 be a number slightly
+[00:16:33.200 --> 00:16:38.320]   greater than four or slightly lower than four and that's going to tell us the the the sign
+[00:16:38.320 --> 00:16:49.760]   of the derivative so we're bumping a by h b is minus three c is 10 so you can just intuitively
+[00:16:49.760 --> 00:16:55.840]   think through this derivative and what it's doing a will be slightly more positive and but b is a
+[00:16:55.840 --> 00:17:03.840]   negative number so if a is slightly more positive because b is negative three we're actually going
+[00:17:03.840 --> 00:17:12.640]   to be adding less to d so you'd actually expect that the value of the function will go down
+[00:17:13.760 --> 00:17:22.000]   so let's just see this yeah and so we went from four to 3.9996 and that tells you that the slope
+[00:17:22.000 --> 00:17:29.440]   will be negative and then um will be a negative number because we went down and then the exact
+[00:17:29.440 --> 00:17:34.880]   number of slope will be exact amount of slope is negative three and you can also convince yourself
+[00:17:34.880 --> 00:17:39.280]   that negative three is the right answer uh mathematically and analytically because if you
+[00:17:39.280 --> 00:17:45.440]   have a times b plus c and you are you know you have calculus then uh differentiating a times b
+[00:17:45.440 --> 00:17:51.040]   plus c with respect to a gives you just b and indeed the value of b is negative three which
+[00:17:51.040 --> 00:17:56.320]   is the derivative that we have so you can tell that that's correct so now if we do this with b
+[00:17:56.320 --> 00:18:03.040]   so if we bump b by a little bit in a positive direction we'd get different slopes so what is
+[00:18:03.040 --> 00:18:09.520]   the influence of b on the output d so if we bump b by a tiny amount in a positive direction then
+[00:18:09.520 --> 00:18:16.960]   because a is positive we'll be adding more to d right so um and now what is the what is the
+[00:18:16.960 --> 00:18:21.840]   sensitivity what is the slope of that addition and it might not surprise you that this should be
+[00:18:21.840 --> 00:18:30.720]   two and why is it two because d of d by db differentiating with respect to b would be would
+[00:18:30.720 --> 00:18:37.040]   give us a and the value of a is two so that's also working well and then if c gets bumped a tiny
+[00:18:37.040 --> 00:18:44.240]   amount in h by h then of course a times b is unaffected and now c becomes slightly bit higher
+[00:18:44.240 --> 00:18:48.240]   what does that do to the function it makes it slightly bit higher because we're simply adding c
+[00:18:48.240 --> 00:18:53.840]   and it makes it slightly bit higher by the exact same amount that we added to c and so that tells
+[00:18:53.840 --> 00:19:05.360]   you that the slope is one that will be the the rate at which d will increase as we scale c okay
+[00:19:05.360 --> 00:19:09.280]   so we now have some intuitive sense of what this derivative is telling you about the function
+[00:19:09.280 --> 00:19:13.120]   and we'd like to move to neural networks now as i mentioned neural networks will be pretty massive
+[00:19:13.120 --> 00:19:17.680]   expressions mathematical expressions so we need some data structures that maintain these expressions
+[00:19:17.680 --> 00:19:23.680]   and that's what we're going to start to build out now so we're going to build out this value object
+[00:19:23.760 --> 00:19:31.440]   that i showed you in the readme page of micrograd so let me copy paste a skeleton of the first very
+[00:19:31.440 --> 00:19:38.640]   simple value object so class value takes a single scalar value that it wraps and keeps track of
+[00:19:38.640 --> 00:19:47.760]   and that's it so we can for example do value of 2.0 and then we can get we can look at its content
+[00:19:47.760 --> 00:19:57.280]   and python will internally use the wrapper function to return this string oops like that
+[00:19:57.280 --> 00:20:04.080]   so this is a value object with data equals two that we're creating here now we'd like to do is
+[00:20:04.080 --> 00:20:12.000]   like we'd like to be able to have not just like two values but we'd like to do a plus b right we'd
+[00:20:12.000 --> 00:20:17.760]   like to add them so currently you would get an error because python doesn't know how to add
+[00:20:17.760 --> 00:20:22.880]   two value objects so we have to tell it so here's addition
+[00:20:22.880 --> 00:20:30.880]   so you have to basically use these special double underscore methods in python to define these
+[00:20:30.880 --> 00:20:39.760]   operators for these objects so if we call um the uh if we use this plus operator python will
+[00:20:39.760 --> 00:20:47.280]   internally call a dot add of b that's what will happen internally and so b will be the other
+[00:20:47.280 --> 00:20:54.000]   and self will be a and so we see that what we're going to return is a new value object
+[00:20:54.000 --> 00:21:01.360]   and it's just uh it's going to be wrapping the plus of their data but remember now because
+[00:21:01.360 --> 00:21:07.360]   data is the actual like numbered python number so this operator here is just the typical floating
+[00:21:07.360 --> 00:21:13.680]   point plus addition now it's not an addition of value objects and we'll return a new value
+[00:21:13.680 --> 00:21:19.200]   so now a plus b should work and it should print value of negative one because that's two plus
+[00:21:19.200 --> 00:21:25.920]   minus three there we go okay let's now implement multiply just so we can recreate this expression
+[00:21:25.920 --> 00:21:32.880]   here so multiply i think it won't surprise you will be fairly similar so instead of add we're
+[00:21:32.880 --> 00:21:38.640]   going to be using mul and then here of course we want to do times and so now we can create a c value
+[00:21:38.640 --> 00:21:45.280]   object which will be 10.0 and now we should be able to do a times b well let's just do a times b
+[00:21:45.280 --> 00:21:52.960]   first um that's value of negative six now and by the way i skipped over this a little bit uh suppose
+[00:21:52.960 --> 00:21:57.680]   that i didn't have the wrapper function here uh then it's just that you'll get some kind of an
+[00:21:57.680 --> 00:22:03.120]   ugly expression so what wrapper is doing is it's providing us a way to print out like a nicer
+[00:22:03.120 --> 00:22:09.040]   looking expression in python uh so we don't just have something cryptic we actually are you know
+[00:22:09.040 --> 00:22:16.560]   it's value of negative six so this gives us a times and then this we should now be able to add
+[00:22:16.560 --> 00:22:22.240]   c to it because we've defined and told the python how to do mul and add and so this will call this
+[00:22:22.240 --> 00:22:31.760]   will basically be equivalent to a dot mul of b and then this new value object will be dot add of c
+[00:22:31.760 --> 00:22:37.680]   and so let's see if that worked yep so that worked well that gave us four which is what we expect
+[00:22:37.680 --> 00:22:45.600]   from before and i believe you can just call them manually as well there we go so yeah okay so now
+[00:22:45.600 --> 00:22:50.000]   what we are missing is the connected tissue of this expression as i mentioned we want to keep
+[00:22:50.000 --> 00:22:55.440]   these expression graphs so we need to know and keep pointers about what values produce what other
+[00:22:55.440 --> 00:23:00.320]   values so here for example we are going to introduce a new variable which we'll call
+[00:23:00.320 --> 00:23:05.120]   children and by default it will be an empty tuple and then we're actually going to keep a slightly
+[00:23:05.120 --> 00:23:10.320]   different variable in the class which we'll call underscore prev which will be the set of children
+[00:23:10.320 --> 00:23:16.320]   this is how i done i did it in the original micrograd looking at my code here i can't remember
+[00:23:16.320 --> 00:23:20.800]   exactly the reason i believe it was efficiency but this underscore children will be a tuple
+[00:23:20.800 --> 00:23:24.400]   for convenience but then when we actually maintain it in the class it will be just this set
+[00:23:24.400 --> 00:23:32.800]   i believe for efficiency so now when we are creating a value like this with a constructor
+[00:23:32.800 --> 00:23:37.360]   children will be empty and prep will be the empty set but when we are creating a value through
+[00:23:37.360 --> 00:23:43.520]   addition or multiplication we're going to feed in the children of this value which in this case
+[00:23:43.520 --> 00:23:54.160]   is self and other so those are the children here so now we can do d dot prev and we'll see that
+[00:23:54.160 --> 00:24:00.880]   the children of the we now know are this a value of negative six and value of 10 and this of course
+[00:24:00.880 --> 00:24:08.400]   is the value resulting from a times b and the c value which is 10 now the last piece of information
+[00:24:08.400 --> 00:24:12.960]   we don't know so we know now the children of every single value but we don't know what operation
+[00:24:12.960 --> 00:24:19.920]   created this value so we need one more element here let's call it underscore up and by default
+[00:24:19.920 --> 00:24:26.880]   this is the empty set for leaves and then we'll just maintain it here and now the operation will
+[00:24:26.880 --> 00:24:32.000]   be just a simple string and in the case of addition it's plus in the case of multiplication
+[00:24:32.000 --> 00:24:39.600]   it's times so now we not just have d dot prep we also have a d dot up and we know that d was
+[00:24:39.600 --> 00:24:45.040]   produced by an addition of those two values and so now we have the full mathematical expression
+[00:24:45.040 --> 00:24:50.320]   and we're building out this data structure and we know exactly how each value came to be by what
+[00:24:50.320 --> 00:24:56.880]   expression and from what other values now because these expressions are about to get quite a bit
+[00:24:56.880 --> 00:25:02.560]   larger we'd like a way to nicely visualize these expressions that we're building out so for that
+[00:25:02.560 --> 00:25:07.840]   i'm going to copy paste a bunch of slightly scary code that's going to visualize this
+[00:25:07.840 --> 00:25:13.040]   these expression graphs for us so here's the code and i'll explain it in a bit but first let me just
+[00:25:13.040 --> 00:25:18.400]   show you what this code does basically what it does is it creates a new function draw dot that
+[00:25:18.400 --> 00:25:25.040]   we can call on some root node and then it's going to visualize it so if we call draw dot on d which
+[00:25:25.040 --> 00:25:32.240]   is this final value here that is a times b plus c it creates something like this so this is d
+[00:25:32.240 --> 00:25:38.880]   and you see that this is a times b creating an integer value plus c gives us this output node d
+[00:25:38.880 --> 00:25:45.840]   so that's draw dot of b and i'm not going to go through this in complete detail you can take a
+[00:25:45.840 --> 00:25:50.800]   look at graphvis and its api graphvis is a open source graph visualization software
+[00:25:50.800 --> 00:25:57.600]   and what we're doing here is we're building out this graph in graphvis api and you can basically
+[00:25:57.600 --> 00:26:02.160]   see that trace is this helper function that enumerates all the nodes and edges in the graph
+[00:26:02.160 --> 00:26:06.720]   so that just builds a set of all the nodes and edges and then we iterate through all the nodes
+[00:26:06.720 --> 00:26:15.120]   and we create special node objects for them in using dot node and then we also create edges
+[00:26:15.120 --> 00:26:20.400]   using dot dot edge and the only thing that's like slightly tricky here is you'll notice that i
+[00:26:20.400 --> 00:26:25.680]   basically add these fake nodes which are these operation nodes so for example this node here
+[00:26:25.680 --> 00:26:36.240]   is just like a plus node and i create these special op nodes here and i connect them accordingly
+[00:26:36.240 --> 00:26:42.960]   so these nodes of course are not actual nodes in the original graph they're not actually a value
+[00:26:42.960 --> 00:26:48.960]   object the only value objects here are the things in squares those are actual value objects or
+[00:26:48.960 --> 00:26:54.160]   representations thereof and these op nodes are just created in this draw dot routine so that it
+[00:26:54.160 --> 00:27:00.320]   looks nice let's also add labels to these graphs just so we know what variables are where so let's
+[00:27:00.320 --> 00:27:08.560]   create a special underscore label or let's just do label equals empty by default and save it in each
+[00:27:08.560 --> 00:27:25.680]   node and then here we're going to do label as a label is b label is c and then let's create a
+[00:27:25.680 --> 00:27:37.200]   special e equals a times b and e dot label will be e it's kind of naughty and e will be e plus c
+[00:27:37.200 --> 00:27:45.840]   and a d dot label will be b okay so nothing really changes i just added this new e function
+[00:27:45.840 --> 00:27:54.080]   that new e variable and then here when we are printing this i'm going to print the label here
+[00:27:54.080 --> 00:27:58.240]   so this will be a percent s bar and this will be n dot label
+[00:27:58.240 --> 00:28:07.680]   and so now we have the label on the left here so it says a b creating e and then e plus c
+[00:28:07.680 --> 00:28:13.520]   creates d just like we have it here and finally let's make this expression just one layer deeper
+[00:28:13.520 --> 00:28:20.960]   so d will not be the final output node instead after d we are going to create a new value object
+[00:28:21.760 --> 00:28:27.920]   called f we're going to start running out of variables soon f will be negative 2.0 and its
+[00:28:27.920 --> 00:28:36.160]   label will of course just be f and then L capital L will be the output of our graph and L will be
+[00:28:36.160 --> 00:28:47.520]   d times f okay so L will be negative 8 is the output so now we don't just draw a d we draw L
+[00:28:50.000 --> 00:28:57.680]   okay and somehow the label of L is undefined oops all that label has to be explicitly
+[00:28:57.680 --> 00:29:03.600]   sort of given to it there we go so L is the output so let's quickly recap what we've done so far
+[00:29:03.600 --> 00:29:08.160]   we are able to build out mathematical expressions using only plus and times so far
+[00:29:08.160 --> 00:29:15.440]   they are scalar valued along the way and we can do this forward pass and build out a mathematical
+[00:29:15.440 --> 00:29:21.520]   expression so we have multiple inputs here a b c and f going into a mathematical expression
+[00:29:21.520 --> 00:29:28.000]   that produces a single output L and this here is visualizing the forward pass so the output of the
+[00:29:28.000 --> 00:29:33.920]   forward pass is negative 8 that's the value now what we'd like to do next is we'd like to run
+[00:29:33.920 --> 00:29:39.600]   back propagation and in back propagation we are going to start here at the end and we're going to
+[00:29:39.600 --> 00:29:45.920]   reverse and calculate the gradient along along all these intermediate values and really what
+[00:29:45.920 --> 00:29:52.800]   we're computing for every single value here we're going to compute the derivative of that node with
+[00:29:52.800 --> 00:30:01.520]   respect to L so the derivative of L with respect to L is just one and then we're going to derive
+[00:30:01.520 --> 00:30:06.960]   what is the derivative of L with respect to f with respect to d with respect to c with respect to e
+[00:30:07.600 --> 00:30:13.040]   with respect to b and with respect to a and in a neural network setting you'd be very interested
+[00:30:13.040 --> 00:30:18.800]   in the derivative of basically this loss function L with respect to the weights of a neural network
+[00:30:18.800 --> 00:30:23.840]   and here of course we have just these variables a b c and f but some of these will eventually
+[00:30:23.840 --> 00:30:29.200]   represent the weights of a neural net and so we'll need to know how those weights are impacting the
+[00:30:29.200 --> 00:30:33.760]   loss function so we'll be interested basically in the derivative of the output with respect to some
+[00:30:33.760 --> 00:30:38.800]   of its leaf nodes and those leaf nodes will be the weights of the neural net and the other leaf
+[00:30:38.800 --> 00:30:43.920]   nodes of course will be the data itself but usually we will not want or use the derivative of
+[00:30:43.920 --> 00:30:49.680]   the loss function with respect to data because the data is fixed but the weights will be iterated on
+[00:30:49.680 --> 00:30:55.440]   using the gradient information so next we are going to create a variable inside the value class
+[00:30:55.440 --> 00:31:03.040]   that maintains the derivative of L with respect to that value and we will call this variable grad
+[00:31:03.840 --> 00:31:10.320]   so there's a dot data and there's a self dot grad and initially it will be zero and remember that
+[00:31:10.320 --> 00:31:15.520]   zero is basically means no effect so at initialization we're assuming that every value
+[00:31:15.520 --> 00:31:21.920]   does not impact does not affect the output right because if the gradient is zero that means that
+[00:31:21.920 --> 00:31:27.680]   changing this variable is not changing the loss function so by default we assume that the gradient
+[00:31:27.680 --> 00:31:38.080]   is zero and then now that we have grad and it's you know 0.0 we are going to be able to visualize
+[00:31:38.080 --> 00:31:47.040]   it here after data so here grad is 0.4f and this will be in dot grad and now we are going to be
+[00:31:47.040 --> 00:31:55.600]   showing both the data and the grad initialized at zero and we are just about getting ready to
+[00:31:55.600 --> 00:32:00.400]   calculate the back propagation and of course this grad again as I mentioned is representing
+[00:32:00.400 --> 00:32:06.320]   the derivative of the output in this case L with respect to this value so with respect to so this
+[00:32:06.320 --> 00:32:11.680]   is the derivative of L with respect to f with respect to d and so on so let's now fill in those
+[00:32:11.680 --> 00:32:15.840]   gradients and actually do back propagation manually so let's start filling in these gradients
+[00:32:15.840 --> 00:32:20.400]   and start all the way at the end as I mentioned here first we are interested to fill in this
+[00:32:20.400 --> 00:32:26.800]   gradient here so what is the derivative of L with respect to L in other words if I change L
+[00:32:26.800 --> 00:32:35.440]   by a tiny amount h how much does L change it changes by h so it's proportional and therefore
+[00:32:35.440 --> 00:32:40.320]   the derivative will be one we can of course measure these or estimate these numerical
+[00:32:40.320 --> 00:32:46.800]   gradients numerically just like we've seen before so if I take this expression and I create a def
+[00:32:46.800 --> 00:32:53.840]   lol function here and put this here now the reason I'm creating a gating function lol here is because
+[00:32:53.840 --> 00:32:57.840]   I don't want to pollute or mess up the global scope here this is just kind of like a little
+[00:32:57.840 --> 00:33:02.560]   staging area and as you know in Python all of these will be local variables to this function
+[00:33:02.560 --> 00:33:07.520]   so I'm not changing any of the global scope here so here L1 will be L
+[00:33:07.520 --> 00:33:14.880]   and then copy pasting this expression we're going to add a small amount h
+[00:33:15.280 --> 00:33:24.480]   and for example a right and this would be measuring the derivative of L with respect to a
+[00:33:24.480 --> 00:33:33.280]   so here this will be L2 and then we want to print that derivative so print L2 minus L1 which is how
+[00:33:33.280 --> 00:33:40.400]   much L changed and then normalize it by h so this is the rise over run and we have to be careful
+[00:33:40.400 --> 00:33:48.880]   because L is a value node so we actually want its data so that these are floats dividing by h
+[00:33:48.880 --> 00:33:53.920]   and this should print the derivative of L with respect to a because a is the one that we bumped
+[00:33:53.920 --> 00:34:02.400]   a little bit by h so what is the derivative of L with respect to a it's six okay and obviously
+[00:34:03.520 --> 00:34:14.000]   if we change L by h then that would be here effectively this looks really awkward but
+[00:34:14.000 --> 00:34:22.560]   changing L by h you see the derivative here is one that's kind of like the base case of
+[00:34:22.560 --> 00:34:29.600]   what we are doing here so basically we can come up here and we can manually set L.grad to one
+[00:34:29.600 --> 00:34:37.280]   this is our manual back propagation L.grad is one and let's redraw and we'll see that we filled in
+[00:34:37.280 --> 00:34:42.160]   grad is one for L we're now going to continue the back propagation so let's here look at the
+[00:34:42.160 --> 00:34:49.120]   derivatives of L with respect to D and F let's do a D first so what we are interested in if I
+[00:34:49.120 --> 00:34:54.560]   create a markdown on here is we'd like to know basically we have that L is D times F and we'd
+[00:34:54.560 --> 00:35:04.400]   like to know what is D L by D D what is that and if you know your calculus L is D times F so what
+[00:35:04.400 --> 00:35:11.200]   is D L by D D it would be F and if you don't believe me we can also just derive it because
+[00:35:11.200 --> 00:35:18.560]   the proof would be fairly straightforward we go to the definition of the derivative which is F of x
+[00:35:18.560 --> 00:35:26.160]   plus h minus F of x divide h as a limit limit of h goes to zero of this kind of expression so when
+[00:35:26.160 --> 00:35:34.480]   we have L is D times F then increasing D by h would give us the output of D plus h times F
+[00:35:34.480 --> 00:35:44.880]   that's basically F of x plus h right minus D times F and then divide h and symbolically
+[00:35:44.880 --> 00:35:51.600]   expanding out here we would have basically D times F plus h times F minus D times F divide h
+[00:35:51.600 --> 00:35:56.160]   and then you see how the D F minus D F cancels so you're left with h times F
+[00:35:56.160 --> 00:36:04.960]   divide h which is F so in the limit as h goes to zero of you know derivative
+[00:36:06.720 --> 00:36:17.120]   definition we just get F in the case of D times F so symmetrically D L by D F will just be D
+[00:36:17.120 --> 00:36:25.120]   so what we have is that F dot grad we see now is just the value of D which is four
+[00:36:25.120 --> 00:36:33.600]   and we see that D dot grad is just the value of F
+[00:36:34.560 --> 00:36:41.600]   and so the value of F is negative two so we'll set those manually
+[00:36:41.600 --> 00:36:46.640]   let me erase this markdown node and then let's redraw what we have
+[00:36:46.640 --> 00:36:55.040]   okay and let's just make sure that these were correct so we seem to think that D L by D D is
+[00:36:55.040 --> 00:37:00.400]   negative two so let's double check um let me erase this plus h from before and now we want the
+[00:37:00.400 --> 00:37:05.840]   derivative with respect to F so let's just come here when I create F and let's do a plus h here
+[00:37:05.840 --> 00:37:11.360]   and this should print a derivative of L with respect to F so we expect to see four yeah and
+[00:37:11.360 --> 00:37:21.440]   this is four up to floating point funkiness and then D L by D D should be F which is negative two
+[00:37:22.320 --> 00:37:26.080]   grad is negative two so if we again come here and we change D
+[00:37:26.080 --> 00:37:35.040]   D dot data plus equals h right here so we expect so we've added a little h and then we see how L
+[00:37:35.040 --> 00:37:45.760]   changed and we expect to print negative two there we go so we've numerically verified what we're
+[00:37:45.760 --> 00:37:50.720]   doing here is kind of like an inline gradient check gradient check is when we are deriving
+[00:37:50.720 --> 00:37:54.720]   this like back propagation and getting the derivative with respect to all the intermediate
+[00:37:54.720 --> 00:38:01.760]   results and then numerical gradient is just you know um estimating it using small step size now
+[00:38:01.760 --> 00:38:08.320]   we're getting to the crux of back propagation so this will be the most important node to understand
+[00:38:08.320 --> 00:38:12.720]   because if you understand the gradient for this node you understand the gradient for this node
+[00:38:12.720 --> 00:38:17.040]   because if you understand the gradient for this node you understand all of back propagation and
+[00:38:17.040 --> 00:38:23.920]   all of training of neural nets basically so we need to derive D L by D C in other words the
+[00:38:23.920 --> 00:38:29.840]   derivative of L with respect to C because we've computed all these other gradients already now
+[00:38:29.840 --> 00:38:35.840]   we're coming here and we're continuing the back propagation manually so we want D L by D C and
+[00:38:35.840 --> 00:38:44.640]   we'll also derive D L by D E now here's the problem how do we derive D L by D C we actually
+[00:38:44.640 --> 00:38:52.240]   know the derivative L with respect to D so we know how L is sensitive to D but how is L sensitive to
+[00:38:52.240 --> 00:38:59.840]   C so if we wiggle C how does that impact L through D so we know D L by D C
+[00:39:01.920 --> 00:39:06.800]   and we also here know how C impacts D and so just very intuitively if you know the
+[00:39:06.800 --> 00:39:12.720]   impact that C is having on D and the impact that D is having on L then you should be able to somehow
+[00:39:12.720 --> 00:39:18.480]   put that information together to figure out how C impacts L and indeed this is what we can actually
+[00:39:18.480 --> 00:39:24.400]   do so in particular we know just concentrating on D first let's look at how what is the derivative
+[00:39:24.400 --> 00:39:33.040]   basically of D with respect to C so in other words what is D D by D C so here we know that D
+[00:39:33.040 --> 00:39:40.400]   is C times C plus E that's what we know and now we're interested in D D by D C if you just know
+[00:39:40.400 --> 00:39:44.880]   your calculus again and you remember then differentiating C plus E with respect to C
+[00:39:44.880 --> 00:39:50.880]   you know that that gives you 1.0 and we can also go back to the basics and derive this
+[00:39:50.880 --> 00:39:57.280]   because again we can go to our f of x plus h minus f of x divide by h that's the definition
+[00:39:57.280 --> 00:40:05.120]   of a derivative as h goes to zero and so here focusing on C and its effect on D we can basically
+[00:40:05.120 --> 00:40:12.160]   do the f of x plus h will be C is incremented by h plus E that's the first evaluation of our
+[00:40:12.160 --> 00:40:21.840]   function minus C plus E and then divide h and so what is this just expanding this out this will be
+[00:40:21.840 --> 00:40:29.680]   C plus h plus C minus C minus E divide h and then you see here how C minus C cancels E minus E
+[00:40:29.680 --> 00:40:41.680]   cancels we're left with h over h which is 1.0 and so by symmetry also D D by D E will be 1.0 as well
+[00:40:42.000 --> 00:40:48.240]   so basically the derivative of a sum expression is very simple and this is the local derivative
+[00:40:48.240 --> 00:40:52.480]   so I call this the local derivative because we have the final output value all the way at the
+[00:40:52.480 --> 00:40:58.320]   end of this graph and we're now like a small node here and this is a little plus node and
+[00:40:58.320 --> 00:41:02.880]   it the little plus node doesn't know anything about the rest of the graph that it's embedded
+[00:41:02.880 --> 00:41:09.760]   in all it knows is that it did plus it took a C and an E added them and created D and this plus
+[00:41:09.760 --> 00:41:16.000]   node also knows the local influence of C on D or rather the derivative of D with respect to C
+[00:41:16.000 --> 00:41:21.520]   and it also knows the derivative of D with respect to E but that's not what we want that's just the
+[00:41:21.520 --> 00:41:29.120]   local derivative what we actually want is D L by D C and L is here just one step away
+[00:41:29.120 --> 00:41:33.760]   but in the general case this little plus node could be embedded in like a massive graph
+[00:41:34.560 --> 00:41:41.360]   so again we know how L impacts D and now we know how C and E impact D how do we put that
+[00:41:41.360 --> 00:41:46.880]   information together to write D L by D C and the answer of course is the chain rule in calculus
+[00:41:46.880 --> 00:41:55.520]   and so I pulled up chain rule here from Wikipedia and I'm going to go through this very briefly
+[00:41:55.520 --> 00:41:59.760]   so chain rule Wikipedia sometimes can be very confusing and calculus can
+[00:42:00.480 --> 00:42:06.960]   be very confusing like this is the way I learned chain rule and it was very confusing like what
+[00:42:06.960 --> 00:42:11.200]   is happening it's just complicated so I like this expression much better
+[00:42:11.200 --> 00:42:16.960]   if a variable Z depends on a variable Y which itself depends on a variable X
+[00:42:16.960 --> 00:42:21.680]   then Z depends on X as well obviously through the intermediate variable Y
+[00:42:21.680 --> 00:42:30.160]   and in this case the chain rule is expressed as if you want D Z by D X then you take the D Z by D Y
+[00:42:30.400 --> 00:42:38.240]   and you multiply it by D Y by D X so the chain rule fundamentally is telling you how we chain
+[00:42:38.240 --> 00:42:45.440]   these derivatives together correctly so to differentiate through a function composition
+[00:42:45.440 --> 00:42:53.360]   we have to apply a multiplication of those derivatives so that's really what chain rule
+[00:42:53.360 --> 00:42:58.560]   is telling us and there's a nice little intuitive explanation here which I also think is kind of cute
+[00:42:59.120 --> 00:43:02.880]   the chain rule states that knowing the instantaneous rate of change of Z with respect to Y
+[00:43:02.880 --> 00:43:07.120]   and Y relative to X allows one to calculate the instantaneous rate of change of Z relative to X
+[00:43:07.120 --> 00:43:14.480]   as a product of those two rates of change simply the product of those two so here's a good one if
+[00:43:14.480 --> 00:43:19.200]   a car travels twice as fast as a bicycle and the bicycle is four times as fast as walking men
+[00:43:19.200 --> 00:43:26.800]   then the car travels two times four eight times as fast as the man and so this makes it very clear
+[00:43:26.800 --> 00:43:33.680]   that the correct thing to do sort of is to multiply so car is twice as fast as bicycle
+[00:43:33.680 --> 00:43:39.440]   and bicycle is four times as fast as man so the car will be eight times as fast as the man
+[00:43:39.440 --> 00:43:45.760]   and so we can take these intermediate rates of change if you will and multiply them together
+[00:43:45.760 --> 00:43:52.560]   and that justifies the chain rule intuitively so have a look at chain rule but here really what
+[00:43:52.560 --> 00:43:58.000]   it means for us is there's a very simple recipe for deriving what we want which is dL by dc
+[00:43:58.000 --> 00:44:11.760]   and what we have so far is we know want and we know what is the impact of d on L so we know dL
+[00:44:11.760 --> 00:44:18.240]   by dd the derivative of L with respect to dd we know that that's negative two and now because of
+[00:44:18.240 --> 00:44:28.000]   this local reasoning that we've done here we know dd by dc so how does c impact d and in particular
+[00:44:28.000 --> 00:44:34.720]   this is a plus node so the local derivative is simply 1.0 it's very simple and so the chain
+[00:44:34.720 --> 00:44:42.400]   rule tells us that dL by dc going through this intermediate variable will just be simply dL by
+[00:44:44.000 --> 00:44:57.120]   dd times dd by dc that's chain rule so this is identical to what's happening here except
+[00:44:57.120 --> 00:45:07.440]   z is our L y is our d and x is our c so we literally just have to multiply these and because
+[00:45:10.320 --> 00:45:17.680]   these local derivatives like dd by dc are just one we basically just copy over dL by dd because
+[00:45:17.680 --> 00:45:24.640]   this is just times one so what does it do so because dL by dd is negative two what is dL by dc
+[00:45:24.640 --> 00:45:32.880]   well it's the local gradient 1.0 times dL by dd which is negative two so literally what a plus
+[00:45:32.880 --> 00:45:37.760]   node does you can look at it that way is it literally just routes the gradient because
+[00:45:37.760 --> 00:45:44.400]   the plus nodes local derivatives are just one and so in the chain rule one times dL by dd
+[00:45:44.400 --> 00:45:54.560]   is just dL by dd and so that derivative just gets routed to both c and to e in this case
+[00:45:54.560 --> 00:46:01.760]   so basically we have that e dot grad or let's start with c since that's the one we've looked at
+[00:46:02.480 --> 00:46:12.080]   is negative two times one negative two and in the same way by symmetry e dot grad will be negative
+[00:46:12.080 --> 00:46:20.880]   two that's the claim so we can set those we can redraw and you see how we just assign negative
+[00:46:20.880 --> 00:46:25.680]   two negative two so this back propagating signal which is carrying the information of like what is
+[00:46:25.680 --> 00:46:30.080]   the derivative of L with respect to all the intermediate nodes we can imagine it almost
+[00:46:30.080 --> 00:46:34.800]   like flowing backwards through the graph and a plus node will simply distribute the derivative
+[00:46:34.800 --> 00:46:40.480]   to all the leaf nodes sorry to all the children nodes of it so this is the claim and now let's
+[00:46:40.480 --> 00:46:46.400]   verify it so let me remove the plus h here from before and now instead what we're going to do is
+[00:46:46.400 --> 00:46:52.080]   we want to increment c so c dot data will be incremented by h and when I run this we expect
+[00:46:52.080 --> 00:47:00.960]   to see negative two negative two and then of course for e so e dot data plus equals h and
+[00:47:00.960 --> 00:47:10.160]   we expect to see negative two simple so those are the derivatives of these internal nodes
+[00:47:10.160 --> 00:47:17.200]   and now we're going to recurse our way backwards again and we're again going to apply the chain
+[00:47:17.200 --> 00:47:21.920]   rule so here we go our second application of chain rule and we will apply it all the way
+[00:47:21.920 --> 00:47:27.840]   through the graph we just happen to only have one more node remaining we have that dl by de
+[00:47:27.840 --> 00:47:33.920]   as we have just calculated is negative two so we know that so we know the derivative of l with
+[00:47:33.920 --> 00:47:46.320]   respect to e and now we want dl by da right and the chain rule is telling us that that's just dl by de
+[00:47:46.800 --> 00:47:58.000]   times the local gradient so what is the local gradient basically de by da we have to look at
+[00:47:58.000 --> 00:48:06.960]   that so i'm a little times node inside a massive graph and i only know that i did a times b and i
+[00:48:06.960 --> 00:48:14.400]   produced an e so now what is de by da and de by db that's the only thing that i sort of know about
+[00:48:14.400 --> 00:48:22.480]   that's my local gradient so because we have that e is a times b we're asking what is de by da
+[00:48:22.480 --> 00:48:31.040]   and of course we just did that here we had a times so i'm not going to re-derive it but if you want
+[00:48:31.040 --> 00:48:37.680]   to differentiate this with respect to a you'll just get b right the value of b which in this case
+[00:48:37.680 --> 00:48:47.520]   is negative 3.0 so basically we have that dl by da well let me just do it right here we have that
+[00:48:47.520 --> 00:48:54.800]   a dot grad and we are applying chain rule here is dl by de which we see here is negative two
+[00:48:54.800 --> 00:49:05.280]   times what is de by da it's the value of b which is negative three that's it
+[00:49:05.680 --> 00:49:13.440]   and then we have b dot grad is again dl by de which is negative two just the same way times
+[00:49:13.440 --> 00:49:26.080]   what is de by d db is the value of a which is 2.0 that's the value of a so these are our claimed
+[00:49:26.080 --> 00:49:33.440]   derivatives let's redraw and we see here that a dot grad turns out to be six because that is
+[00:49:33.440 --> 00:49:40.080]   negative two times negative three and b dot grad is negative four times sorry is negative two times
+[00:49:40.080 --> 00:49:45.440]   two which is negative four so those are our claims let's delete this and let's verify them
+[00:49:47.680 --> 00:49:59.360]   we have a here a dot data plus equals h so the claim is that a dot grad is six let's verify
+[00:49:59.360 --> 00:50:09.760]   six and we have b dot data plus equals h so nudging b by h and looking at what happens
+[00:50:10.320 --> 00:50:16.080]   we claim it's negative four and indeed it's negative four plus minus again float oddness
+[00:50:16.080 --> 00:50:26.880]   and that's it this that was the manual back propagation all the way from here to all the
+[00:50:26.880 --> 00:50:32.400]   leaf nodes and we've done it piece by piece and really all we've done is as you saw we iterated
+[00:50:32.400 --> 00:50:37.280]   through all the nodes one by one and locally applied the chain rule we also applied the
+[00:50:37.280 --> 00:50:42.880]   one and locally applied the chain rule we always know what is the derivative of l with respect to
+[00:50:42.880 --> 00:50:47.600]   this little output and then we look at how this output was produced this output was produced
+[00:50:47.600 --> 00:50:53.200]   through some operation and we have the pointers to the children nodes of this operation and so
+[00:50:53.200 --> 00:50:57.920]   in this little operation we know what the local derivatives are and we just multiply them onto
+[00:50:57.920 --> 00:51:04.080]   the derivative always so we just go through and recursively multiply on the local derivatives
+[00:51:04.080 --> 00:51:08.160]   and that's what back propagation is it's just a recursive application of chain rule
+[00:51:08.160 --> 00:51:13.680]   backwards through the computation graph let's see this power in action just very briefly what
+[00:51:13.680 --> 00:51:20.560]   we're going to do is we're going to nudge our inputs to try to make l go up so in particular
+[00:51:20.560 --> 00:51:26.000]   what we're doing is we want a dot data we're going to change it and if we want l to go up
+[00:51:26.000 --> 00:51:31.840]   that means we just have to go in the direction of the gradient so a should increase in the
+[00:51:31.840 --> 00:51:37.040]   direction of gradient by like some small step amount this is the step size and we don't just
+[00:51:37.040 --> 00:51:49.280]   want this for b but also for b also for c also for f those are leaf nodes which we usually have
+[00:51:49.280 --> 00:51:55.120]   control over and if we nudge in direction of the gradient we expect a positive influence on l
+[00:51:55.680 --> 00:52:02.640]   so we expect l to go up positively so it should become less negative it should go up to say
+[00:52:02.640 --> 00:52:08.240]   negative you know six or something like that it's hard to tell exactly and we'd have to
+[00:52:08.240 --> 00:52:18.960]   rerun the forward pass so let me just do that here this would be the forward pass f would be
+[00:52:18.960 --> 00:52:26.080]   unchanged this is effectively the forward pass and now if we print l dot data we expect because
+[00:52:26.080 --> 00:52:30.640]   we nudged all the values all the inputs in the direction of gradient we expected less negative
+[00:52:30.640 --> 00:52:37.520]   l we expect it to go up so maybe it's negative six or so let's see what happens okay negative seven
+[00:52:37.520 --> 00:52:45.120]   and this is basically one step of an optimization that will end up running and really this gradient
+[00:52:45.120 --> 00:52:49.760]   just give us some power because we know how to influence the final outcome and this will be
+[00:52:49.760 --> 00:52:56.080]   extremely useful for training neural nets as well as cnc so now i would like to do one more example
+[00:52:56.080 --> 00:53:02.960]   of manual back propagation using a bit more complex and useful example we are going to
+[00:53:02.960 --> 00:53:10.160]   back propagate through a neuron so we want to eventually build up neural networks and in the
+[00:53:10.160 --> 00:53:14.800]   simplest case these are multi-layer perceptrons as they're called so this is a two-layer neural
+[00:53:14.800 --> 00:53:19.040]   net and it's got these hidden layers made up of neurons and these neurons are fully connected to
+[00:53:19.040 --> 00:53:23.920]   each other now biologically neurons are very complicated devices but we have very simple
+[00:53:23.920 --> 00:53:29.360]   mathematical models of them and so this is a very simple mathematical model of a neuron
+[00:53:29.360 --> 00:53:35.600]   you have some inputs x's and then you have these synapses that have weights on them so
+[00:53:35.600 --> 00:53:43.360]   the w's are weights and then the synapse interacts with the input to this neuron
+[00:53:43.360 --> 00:53:50.720]   multiplicatively so what flows to the cell body of this neuron is w times x but there's multiple
+[00:53:50.720 --> 00:53:56.960]   inputs so there's many w times x's flowing to the cell body the cell body then has also like some
+[00:53:56.960 --> 00:54:04.240]   bias so this is kind of like the in innate sort of trigger happiness of this neuron so this bias
+[00:54:04.240 --> 00:54:08.960]   can make it a bit more trigger happy or a bit less trigger happy regardless of the input but basically
+[00:54:08.960 --> 00:54:15.040]   we're taking all the w times x of all the inputs adding the bias and then we take it through an
+[00:54:15.040 --> 00:54:19.760]   activation function and this activation function is usually some kind of a squashing function
+[00:54:19.760 --> 00:54:26.320]   like a sigmoid or 10h or something like that so as an example we're going to use the 10h in this
+[00:54:26.320 --> 00:54:38.080]   example numpy has a np.10h so we can call it on a range and we can plot it this is the 10h function
+[00:54:38.080 --> 00:54:44.000]   and you see that the inputs as they come in get squashed on the y coordinate here so
+[00:54:44.000 --> 00:54:50.080]   right at zero we're going to get exactly zero and then as you go more positive in the input
+[00:54:50.080 --> 00:54:57.200]   then you'll see that the function will only go up to one and then plateau out and so if you pass in
+[00:54:57.200 --> 00:55:02.320]   very positive inputs we're going to cap it smoothly at one and on the negative side we're going to cap
+[00:55:02.320 --> 00:55:09.040]   it smoothly to negative one so that's 10h and that's the squashing function or an activation
+[00:55:09.040 --> 00:55:14.000]   function and what comes out of this neuron is just the activation function applied to the
+[00:55:14.000 --> 00:55:24.560]   dot product of the weights and the inputs so let's write one out i'm going to copy paste because
+[00:55:27.360 --> 00:55:33.360]   i don't want to type too much but okay so here we have the inputs x1 x2 so this is a two-dimensional
+[00:55:33.360 --> 00:55:38.160]   neuron so two inputs are going to come in these are thought of as the weights of this neuron
+[00:55:38.160 --> 00:55:45.600]   weights w1 w2 and these weights again are the synaptic strengths for each input and this is
+[00:55:45.600 --> 00:55:53.440]   the bias of the neuron b and now what we want to do is according to this model we need to multiply
+[00:55:53.440 --> 00:56:02.720]   x1 times w1 and x2 times w2 and then we need to add bias on top of it and it gets a little messy
+[00:56:02.720 --> 00:56:10.320]   here but all we are trying to do is x1 w1 plus x2 w2 plus b and these are multiplied here except
+[00:56:10.320 --> 00:56:15.040]   i'm doing it in small steps so that we actually have pointers to all these intermediate nodes
+[00:56:15.040 --> 00:56:23.120]   so we have x1 w1 variable x times x2 w2 variable and i'm also labeling them so n is now
+[00:56:23.760 --> 00:56:29.680]   the cell body raw activation without the activation function for now
+[00:56:29.680 --> 00:56:34.560]   and this should be enough to basically plot it so draw dot of n
+[00:56:34.560 --> 00:56:46.640]   gives us x1 times w1 x2 times w2 being added then the bias gets added on top of this and this n
+[00:56:47.280 --> 00:56:53.440]   is this sum so we're now going to take it through an activation function and let's say we use the
+[00:56:53.440 --> 00:56:59.600]   tan h so that we produce the output so what we'd like to do here is we'd like to do the output
+[00:56:59.600 --> 00:57:08.880]   and i'll call it o is n dot tan h okay but we haven't yet written the tan h now the reason
+[00:57:08.880 --> 00:57:16.000]   that we need to implement another tan h function here is that tan h is a hyperbolic function and
+[00:57:16.000 --> 00:57:20.960]   we've only so far implemented plus and the times and you can't make a tan h out of just pluses and
+[00:57:20.960 --> 00:57:27.840]   times you also need exponentiation so tan h is this kind of a formula here you can use either
+[00:57:27.840 --> 00:57:32.560]   one of these and you see that there's exponentiation involved which we have not implemented yet for
+[00:57:32.560 --> 00:57:36.800]   our low value node here so we're not going to be able to produce tan h yet and we have to go back
+[00:57:36.800 --> 00:57:44.240]   up and implement something like it now one option here is we could actually implement
+[00:57:44.880 --> 00:57:51.760]   exponentiation right and we could return the exp of a value instead of a tan h of a value
+[00:57:51.760 --> 00:57:58.560]   because if we had exp then we have everything else that we need so because we know how to add
+[00:57:58.560 --> 00:58:04.960]   and we know how to we know how to add and we know how to multiply so we'd be able to create tan h
+[00:58:04.960 --> 00:58:09.280]   if we knew how to exp but for the purposes of this example i specifically wanted to
+[00:58:10.000 --> 00:58:18.160]   show you that we don't necessarily need to have the most atomic pieces in this value object
+[00:58:18.160 --> 00:58:25.200]   we can actually like create functions at arbitrary points of abstraction they can be complicated
+[00:58:25.200 --> 00:58:30.000]   functions but they can be also very very simple functions like a plus and it's totally up to us
+[00:58:30.000 --> 00:58:34.160]   the only thing that matters is that we know how to differentiate through any one function
+[00:58:34.160 --> 00:58:38.560]   so we take some inputs and we make an output the only thing that matters it can be arbitrarily
+[00:58:38.560 --> 00:58:43.360]   complex function as long as you know how to create the local derivative if you know the
+[00:58:43.360 --> 00:58:47.760]   local derivative of how the inputs impact the output then that's all you need so we're going
+[00:58:47.760 --> 00:58:53.200]   to cluster up all of this expression and we're not going to break it down to its atomic pieces
+[00:58:53.200 --> 00:59:00.320]   we're just going to directly implement tan h so let's do that dev tan h and then out will be a
+[00:59:00.320 --> 00:59:11.040]   value of and we need this expression here so um let me actually copy paste
+[00:59:11.040 --> 00:59:22.560]   let's grab n which is a sub theta and then this i believe is the tan h math.exp of
+[00:59:24.560 --> 00:59:34.320]   two no n minus one over two n plus one maybe i can call this x just so that it matches exactly
+[00:59:34.320 --> 00:59:44.800]   okay and now this will be t and uh children of this node there's just one child and i'm
+[00:59:44.800 --> 00:59:50.240]   wrapping it in a tuple so this is a tuple of one object just self and here the name of this
+[00:59:50.240 --> 01:00:00.640]   operation will be tan h and we're going to return that okay so now value should be
+[01:00:00.640 --> 01:00:06.560]   implementing tan h and now we can scroll all the way down here and we can actually do n dot tan h
+[01:00:06.560 --> 01:00:13.360]   and that's going to return the tan h output of n and now we should be able to draw dot of o
+[01:00:13.360 --> 01:00:23.200]   not of n so let's see how that worked there we go n went through tan h to produce this output
+[01:00:23.200 --> 01:00:31.120]   so now tan h is a sort of uh our little micro grad supported node here as an operation
+[01:00:31.120 --> 01:00:38.240]   and as long as we know the derivative of tan h then we'll be able to back propagate through it
+[01:00:38.240 --> 01:00:43.280]   now let's see this tan h in action currently it's not squashing too much because the input to it is
+[01:00:43.600 --> 01:00:51.680]   pretty low so the bias was increased to say eight then we'll see that what's flowing into the tan h
+[01:00:51.680 --> 01:00:59.920]   now is two and tan h is squashing it to 0.96 so we're already hitting the tail of this tan h and
+[01:00:59.920 --> 01:01:04.240]   it will sort of smoothly go up to one and then plateau out over there okay so now i'm going to
+[01:01:04.240 --> 01:01:11.040]   do something slightly strange i'm going to change this bias from eight to this number 6.88 etc
+[01:01:11.840 --> 01:01:16.400]   and i'm going to do this for specific reasons because we're about to start back propagation
+[01:01:16.400 --> 01:01:21.600]   and i want to make sure that our numbers come out nice they're not like very crazy numbers
+[01:01:21.600 --> 01:01:25.840]   they're nice numbers that we can sort of understand in our head let me also add those
+[01:01:25.840 --> 01:01:35.120]   label o is short for output here so that's the r okay so 0.88 flows into tan h comes out 0.7
+[01:01:35.120 --> 01:01:39.440]   so on so now we're going to do back propagation and we're going to fill in all the gradients
+[01:01:40.240 --> 01:01:47.280]   so what is the derivative o with respect to all the inputs here and of course in a typical neural
+[01:01:47.280 --> 01:01:52.720]   network setting what we really care about the most is the derivative of these neurons on the
+[01:01:52.720 --> 01:01:57.760]   weights specifically the w2 and w1 because those are the weights that we're going to be changing
+[01:01:57.760 --> 01:02:02.240]   part of the optimization and the other thing that we have to remember is here we have only a single
+[01:02:02.240 --> 01:02:05.440]   neuron but in the neural net you typically have many neurons and they're connected
+[01:02:07.120 --> 01:02:11.280]   so this is only like a one small neuron a piece of a much bigger puzzle and eventually there's a
+[01:02:11.280 --> 01:02:15.440]   loss function that sort of measures the accuracy of the neural net and we're back propagating with
+[01:02:15.440 --> 01:02:21.280]   respect to that accuracy and trying to increase it so let's start off back propagation here and
+[01:02:21.280 --> 01:02:27.920]   what is the derivative of o with respect to o the base case sort of we know always is that
+[01:02:27.920 --> 01:02:40.320]   the gradient is just 1.0 so let me fill it in and then let me split out the drawing function here
+[01:02:40.320 --> 01:02:52.320]   and then here cell clear this output here okay so now when we draw o we'll see that
+[01:02:52.320 --> 01:02:57.840]   o that grad is 1 so now we're going to back propagate through the tan h so to back propagate
+[01:02:57.840 --> 01:03:07.200]   through tan h we need to know the local derivative of tan h so if we have that o is tan h of n
+[01:03:07.200 --> 01:03:14.640]   then what is do by dn now what you could do is you could come here and you could take this
+[01:03:14.640 --> 01:03:20.880]   expression and you could do your calculus derivative taking and that would work but
+[01:03:20.880 --> 01:03:27.520]   we can also just scroll down wikipedia here into a section that hopefully tells us that derivative
+[01:03:27.520 --> 01:03:34.480]   d by dx of tan h of x is any of these i like this one 1 minus tan h square of x
+[01:03:34.480 --> 01:03:42.800]   so this is 1 minus tan h of x squared so basically what this is saying is that do by dn
+[01:03:43.760 --> 01:03:55.760]   is 1 minus tan h of n squared and we already have tan h of n it's just o so it's 1 minus o squared
+[01:03:55.760 --> 01:04:06.880]   so o is the output here so the output is this number o dot data is this number and then
+[01:04:08.080 --> 01:04:14.880]   what this is saying is that do by dn is 1 minus this squared so 1 minus o dot data squared
+[01:04:14.880 --> 01:04:23.120]   is 0.5 conveniently so the local derivative of this tan h operation here is 0.5
+[01:04:23.120 --> 01:04:30.640]   and so that would be do by dn so we can fill in that n dot grad
+[01:04:30.640 --> 01:04:35.200]   is 0.5 we'll just fill it in
+[01:04:35.440 --> 01:04:47.680]   so this is exactly 0.5 one half so now we're going to continue the back propagation
+[01:04:47.680 --> 01:04:55.680]   this is 0.5 and this is a plus node so how is backprop going to what is backprop going to do
+[01:04:55.680 --> 01:05:02.160]   here and if you remember our previous example a plus is just a distributor of gradient so this
+[01:05:02.160 --> 01:05:06.960]   gradient will simply flow to both of these equally and that's because the local derivative of this
+[01:05:06.960 --> 01:05:14.880]   operation is one for every one of its nodes so one times 0.5 is 0.5 so therefore we know that
+[01:05:14.880 --> 01:05:23.600]   this node here which we called this it's grad it's just 0.5 and we know that b dot grad is also 0.5
+[01:05:24.800 --> 01:05:33.280]   so let's set those and let's draw so those are 0.5 continuing we have another plus 0.5 again
+[01:05:33.280 --> 01:05:39.520]   we'll just distribute so 0.5 will flow to both of these so we can set theirs
+[01:05:39.520 --> 01:05:51.280]   x2 w2 as well dot grad is 0.5 and let's redraw pluses are my favorite uh operations to back
+[01:05:51.280 --> 01:05:57.760]   propagate through because it's very simple so now what's flowing into these expressions is 0.5
+[01:05:57.760 --> 01:06:01.360]   and so really again keep in mind what the derivative is telling us at every point in time
+[01:06:01.360 --> 01:06:06.480]   along here this is saying that if we want the output of this neuron to increase
+[01:06:06.480 --> 01:06:13.760]   then the influence on these expressions is positive on the output both of them are positive
+[01:06:13.760 --> 01:06:18.080]   contribution to the output
+[01:06:20.480 --> 01:06:27.120]   so now back propagating to x1 w2 first this is a times node so we know that the local derivative
+[01:06:27.120 --> 01:06:31.440]   is you know the other term so if we want to calculate x2 dot grad
+[01:06:31.440 --> 01:06:35.120]   then can you think through what it's going to be
+[01:06:35.120 --> 01:06:49.200]   so x2 dot grad will be w2 dot data times this x2 w2 dot grad right
+[01:06:49.840 --> 01:06:57.840]   and w2 dot grad will be x2 dot data times x2 w2 dot grad
+[01:06:57.840 --> 01:07:03.040]   right so that's the little local piece of chain rule
+[01:07:03.040 --> 01:07:10.560]   let's set them and let's redraw so here we see that the gradient on our weight
+[01:07:10.560 --> 01:07:18.560]   2 is 0 because x2's data was 0 right but x2 will have the gradient 0.5 because data here was 1
+[01:07:18.560 --> 01:07:25.440]   and so what's interesting here right is because the input x2 was 0 then because of the way the
+[01:07:25.440 --> 01:07:30.640]   times works of course this gradient will be 0 and think about intuitively why that is
+[01:07:30.640 --> 01:07:39.200]   derivative always tells us the influence of this on the final output if i wiggle w2 how is the
+[01:07:39.200 --> 01:07:44.400]   output changing it's not changing because we're multiplying by 0 so because it's not changing
+[01:07:44.400 --> 01:07:49.600]   there is no derivative and 0 is the correct answer because we're squashing that 0
+[01:07:49.600 --> 01:07:58.240]   and let's do it here 0.5 should come here and flow through this times and so we'll have that
+[01:07:58.240 --> 01:08:03.920]   x1 dot grad is can you think through a little bit what what this should be
+[01:08:06.160 --> 01:08:14.240]   the local derivative of times with respect to x1 is going to be w1 so w1's data times
+[01:08:14.240 --> 01:08:25.760]   x1 w1 dot grad and w1 dot grad will be x1 dot data times x1 w2 w1 dot grad
+[01:08:25.760 --> 01:08:33.360]   let's see what those came out to be so this is 0.5 so this would be negative 1.5 and this would be
+[01:08:33.360 --> 01:08:39.040]   1 and we've back propagated through this expression these are the actual final derivatives
+[01:08:39.040 --> 01:08:45.440]   so if we want this neuron's output to increase we know that what's necessary is that
+[01:08:45.440 --> 01:08:52.640]   w2 we have no gradient w2 doesn't actually matter to this neuron right now but this neuron this
+[01:08:52.640 --> 01:08:59.360]   weight should go up so if this weight goes up then this neuron's output would have gone up
+[01:08:59.360 --> 01:09:04.080]   and proportionally because the gradient is 1 okay so doing the back propagation manually is
+[01:09:04.080 --> 01:09:08.560]   obviously ridiculous so we are now going to put an end to this suffering and we're going to see
+[01:09:08.560 --> 01:09:13.280]   how we can implement the backward pass a bit more automatically we're not going to be doing all of
+[01:09:13.280 --> 01:09:18.560]   it manually out here it's now pretty obvious to us by example how these pluses and times are back
+[01:09:18.560 --> 01:09:25.520]   propagating gradients so let's go up to the value object and we're going to start codifying what
+[01:09:25.520 --> 01:09:32.720]   we've seen in the examples below so we're going to do this by storing a special self.backward
+[01:09:32.720 --> 01:09:39.920]   and underscore backward and this will be a function which is going to do that little piece
+[01:09:39.920 --> 01:09:45.520]   of chain rule at each little node that compute that took inputs and produced output we're going
+[01:09:45.520 --> 01:09:53.040]   to store how we are going to chain the outputs gradient into the inputs gradients so by default
+[01:09:54.000 --> 01:10:01.600]   this will be a function that doesn't do anything so and you can also see that here in the value in
+[01:10:01.600 --> 01:10:09.040]   micro grad so we have this backward function by default doesn't do anything this is an empty
+[01:10:09.040 --> 01:10:13.360]   function and that would be sort of the case for example for a leaf node for leaf node there's
+[01:10:13.360 --> 01:10:22.160]   nothing to do but now if when we're creating these out values these out values are an addition of
+[01:10:22.160 --> 01:10:30.560]   self and other and so we will want to sell set outs backward to be the function that
+[01:10:30.560 --> 01:10:37.200]   propagates the gradient so let's define what should happen
+[01:10:37.200 --> 01:10:45.680]   and we're going to store it in a closure let's define what should happen when we call outs grad
+[01:10:47.760 --> 01:10:56.960]   for addition our job is to take outs grad and propagate it into selves grad and other dot grad
+[01:10:56.960 --> 01:11:02.720]   so basically we want to solve self dot grad to something and we want to set others dot grad
+[01:11:02.720 --> 01:11:10.720]   to something okay and the way we saw below how chain rule works we want to take the local derivative
+[01:11:10.720 --> 01:11:16.240]   times the um sort of global derivative i should call it which is the derivative of the final
+[01:11:16.240 --> 01:11:25.680]   output of the expression with respect to outs data with respect to out so the local derivative
+[01:11:25.680 --> 01:11:35.120]   of self in an addition is 1.0 so it's just 1.0 times outs grad that's the chain rule
+[01:11:35.120 --> 01:11:40.960]   and others dot grad will be 1.0 times out grad and what you basically what you're seeing here
+[01:11:40.960 --> 01:11:47.760]   is that outs grad will simply be copied onto selves grad and others grad as we saw happens
+[01:11:47.760 --> 01:11:53.440]   for an addition operation so we're going to later call this function to propagate the gradient
+[01:11:53.440 --> 01:11:59.280]   having done an addition let's now do multiplication we're going to also define backward
+[01:11:59.280 --> 01:12:05.280]   and we're going to set its backward to be backward
+[01:12:07.760 --> 01:12:11.840]   and we want to chain out grad into self dot grad
+[01:12:11.840 --> 01:12:19.600]   and others dot grad and this will be a little piece of chain rule for multiplication
+[01:12:19.600 --> 01:12:23.920]   so we'll have so what should this be can you think through
+[01:12:23.920 --> 01:12:33.200]   so what is the local derivative here the local derivative was others dot data
+[01:12:35.360 --> 01:12:40.960]   and then oops others dot data and then times out dot grad that's channel
+[01:12:40.960 --> 01:12:46.400]   and here we have self dot data times out dot grad that's what we've been doing
+[01:12:46.400 --> 01:12:52.320]   and finally here for tan h that's backward
+[01:12:52.320 --> 01:12:58.160]   and then we want to set outs backwards to be just backward
+[01:13:00.480 --> 01:13:07.440]   and here we need to back propagate we have out dot grad and we want to chain it into self dot grad
+[01:13:07.440 --> 01:13:14.880]   and self dot grad will be the local derivative of this operation that we've done here which is
+[01:13:14.880 --> 01:13:22.000]   tan h and so we saw that the local gradient is 1 minus the tan h of x squared which here is t
+[01:13:22.000 --> 01:13:27.360]   that's the local derivative because that's t is the output of this tan h
+[01:13:27.360 --> 01:13:33.840]   so 1 minus t squared is the local derivative and then gradient has to be multiplied because of the
+[01:13:33.840 --> 01:13:40.000]   chain rule so outs grad is chained through the local gradient into self dot grad and that should
+[01:13:40.000 --> 01:13:46.160]   be basically it so we're going to redefine our value node we're going to swing all the way down
+[01:13:46.160 --> 01:13:55.520]   here and we're going to redefine our expression make sure that all the grads are zero okay
+[01:13:56.240 --> 01:14:01.120]   but now we don't have to do this manually anymore we are going to basically be calling
+[01:14:01.120 --> 01:14:09.040]   the dot backward in the right order so first we want to call outs dot backward
+[01:14:09.040 --> 01:14:20.960]   so o was the outcome of tan h right so calling those those backward
+[01:14:22.160 --> 01:14:28.480]   will be this function this is what it will do now we have to be careful because
+[01:14:28.480 --> 01:14:34.640]   there's a times out dot grad and out dot grad remember is initialized to zero
+[01:14:34.640 --> 01:14:45.280]   so here we see grad zero so as a base case we need to set oath dot grad to 1.0
+[01:14:46.640 --> 01:14:56.560]   to initialize this with one and then once this is one we can call o dot backward
+[01:14:56.560 --> 01:15:03.360]   and what that should do is it should propagate this grad through tan h so the local derivative
+[01:15:03.360 --> 01:15:08.640]   times the global derivative which is initialized at one so this should
+[01:15:08.640 --> 01:15:11.620]   um
+[01:15:16.000 --> 01:15:21.120]   dope so i thought about redoing it but i figured i should just leave the error in here because it's
+[01:15:21.120 --> 01:15:28.880]   pretty funny why is not an object not callable it's because i screwed up we're trying to save
+[01:15:28.880 --> 01:15:35.040]   these functions so this is correct this here you don't want to call the function because that
+[01:15:35.040 --> 01:15:40.640]   returns none these functions return none we just want to store the function so let me redefine the
+[01:15:40.640 --> 01:15:47.120]   value object and then we're going to come back in redefine the expression draw dot everything is
+[01:15:47.120 --> 01:15:56.960]   great o dot grad is one o dot grad is one and now now this should work of course okay so all that
+[01:15:56.960 --> 01:16:04.160]   backward should this grad should now be 0.5 if we redraw and if everything went correctly 0.5 yay
+[01:16:05.200 --> 01:16:07.760]   okay so now we need to call ns dot grad
+[01:16:07.760 --> 01:16:15.600]   ns dot backward sorry ns backward so that seems to have worked
+[01:16:15.600 --> 01:16:23.040]   so ns dot backward routed the gradient to both of these so this is looking great
+[01:16:23.040 --> 01:16:30.800]   now we could of course called uh called b dot grad b dot backward sorry what's going to happen
+[01:16:32.000 --> 01:16:38.960]   well b doesn't have a backward b's backward because b is a leaf node b's backward is by
+[01:16:38.960 --> 01:16:44.960]   initialization the empty function so nothing would happen but we can call call it on it
+[01:16:44.960 --> 01:16:50.720]   but when we call this one it's backward
+[01:16:50.720 --> 01:16:59.840]   then we expect this 0.5 to get further routed right so there we go 0.5 0.5
+[01:17:00.960 --> 01:17:07.120]   and then finally we want to call it here on x2 w2
+[01:17:07.120 --> 01:17:11.840]   and on x1 w1
+[01:17:11.840 --> 01:17:25.360]   let's do both of those and there we go so we get 0.5 negative 1.5 and 1 exactly as we did before
+[01:17:25.360 --> 01:17:33.520]   but now we've done it through calling that backward sort of manually so we have the one
+[01:17:33.520 --> 01:17:38.640]   last piece to get rid of which is us calling underscore backward manually so let's think
+[01:17:38.640 --> 01:17:43.920]   through what we are actually doing we've laid out a mathematical expression and now we're trying to
+[01:17:43.920 --> 01:17:49.840]   go backwards through that expression so going backwards through the expression just means that
+[01:17:49.840 --> 01:17:58.800]   we never want to call a dot backward for any node before we've done sort of everything after it
+[01:17:58.800 --> 01:18:03.840]   so we have to do everything after it before we're ever going to call dot backward on any one node
+[01:18:03.840 --> 01:18:08.960]   we have to get all of its full dependencies everything that it depends on has to propagate
+[01:18:08.960 --> 01:18:15.680]   to it before we can continue back propagation so this ordering of graphs can be achieved using
+[01:18:15.680 --> 01:18:23.280]   something called topological sort so topological sort is basically a laying out of a graph such
+[01:18:23.280 --> 01:18:28.720]   that all the edges go only from left to right basically so here we have a graph it's a
+[01:18:28.720 --> 01:18:35.520]   direct acyclic graph a dag and this is two different topological orders of it i believe
+[01:18:35.520 --> 01:18:39.520]   where basically you'll see that it's a laying out of the nodes such that all the edges go only one
+[01:18:39.520 --> 01:18:46.240]   way from left to right and implementing topological sort you can look in wikipedia and so on i'm not
+[01:18:46.240 --> 01:18:54.960]   going to go through it in detail but basically this is what builds a topological graph we maintain a
+[01:18:54.960 --> 01:19:03.040]   set of visited nodes and then we are going through starting at some root node which for us is o
+[01:19:03.040 --> 01:19:08.720]   that's where we want to start the topological sort and starting at o we go through all of its children
+[01:19:08.720 --> 01:19:16.080]   and we need to lay them out from left to right and basically this starts at o if it's not visited
+[01:19:16.080 --> 01:19:22.080]   then it marks it as visited and then it iterates through all of its children and calls build
+[01:19:22.080 --> 01:19:29.040]   topological on them and then after it's gone through all the children it adds itself so basically
+[01:19:29.040 --> 01:19:36.480]   this node that we're going to call it on like say o is only going to add itself to the topo list
+[01:19:36.480 --> 01:19:42.160]   after all of the children have been processed and that's how this function is guaranteeing that
+[01:19:42.160 --> 01:19:46.480]   you're only going to be in the list once all your children are in the list and that's the invariant
+[01:19:46.480 --> 01:19:53.120]   that is being maintained so if we built up on o and then inspect this list we're going to see that
+[01:19:53.120 --> 01:20:00.800]   it ordered our value objects and the last one is the value of 0.707 which is the output
+[01:20:01.760 --> 01:20:08.000]   so this is o and then this is n and then all the other nodes get laid out before it
+[01:20:08.000 --> 01:20:14.720]   so that builds the topological graph and really what we're doing now is we're just calling
+[01:20:14.720 --> 01:20:21.360]   dot underscore backward on all of the nodes in a topological order so if we just reset the
+[01:20:21.360 --> 01:20:30.400]   gradients they're all zero what did we do we started by setting o dot grad to be one
+[01:20:30.400 --> 01:20:35.920]   that's the base case then we built a topological order
+[01:20:35.920 --> 01:20:50.080]   and then we went for node in reversed of topo now in in the reverse order because this list goes from
+[01:20:50.800 --> 01:20:59.040]   you know we need to go through it in reversed order so starting at o node backward and this
+[01:20:59.040 --> 01:21:08.880]   should be it there we go those are the correct derivatives finally we are going to hide this
+[01:21:08.880 --> 01:21:15.200]   functionality so i'm going to copy this and we're going to hide it inside the value class because
+[01:21:15.200 --> 01:21:20.160]   we don't want to have all that code lying around so instead of an underscore backward we're now
+[01:21:20.160 --> 01:21:26.640]   going to define an actual backward so that backward without the underscore and that's
+[01:21:26.640 --> 01:21:31.200]   going to do all the stuff that we just derived so let me just clean this up a little bit so
+[01:21:31.200 --> 01:21:33.360]   we're first going to
+[01:21:33.360 --> 01:21:46.000]   build a topological graph starting at self so build topo of self will populate the topological
+[01:21:46.000 --> 01:21:51.440]   order into the topo list which is a local variable then we set self dot grads to be one
+[01:21:51.440 --> 01:21:58.160]   and then for each node in the reversed list so starting at us and going to all the children
+[01:21:58.160 --> 01:22:09.840]   underscore backward and that should be it so save come down here we define
+[01:22:11.120 --> 01:22:17.360]   okay all the grads are zero and now what we can do is o dot backward without the underscore and
+[01:22:17.360 --> 01:22:24.960]   there we go and that's uh that's back propagation
+[01:22:24.960 --> 01:22:32.000]   place for one neuron now we shouldn't be too happy with ourselves actually because we have a
+[01:22:32.000 --> 01:22:37.840]   bad bug and we have not surfaced the bug because of some specific conditions that we are we have
+[01:22:37.840 --> 01:22:45.760]   to think about right now so here's the simplest case that shows the bug say i create a single node a
+[01:22:45.760 --> 01:22:52.480]   and then i create a b that is a plus a and then i call backward
+[01:22:52.480 --> 01:23:00.960]   so what's going to happen is a is three and then a b is a plus a so there's two arrows on top of
+[01:23:00.960 --> 01:23:08.640]   each other here then we can see that b is of course the forward pass works b is just a plus a
+[01:23:08.640 --> 01:23:14.240]   which is six but the gradient here is not actually correct that we calculate it automatically
+[01:23:14.240 --> 01:23:23.200]   and that's because um of course uh just doing calculus in your head the derivative of b with
+[01:23:23.200 --> 01:23:32.240]   respect to a should be uh two one plus one it's not one intuitively what's happening here right
+[01:23:32.240 --> 01:23:38.800]   so b is the result of a plus a and then we call backward on it so let's go up and see what that
+[01:23:38.800 --> 01:23:50.160]   does um b is the result of addition so out as b and then when we call backward what happened is
+[01:23:50.880 --> 01:23:59.120]   self dot grad was set to one and then other that grad was set to one but because we're doing a plus
+[01:23:59.120 --> 01:24:06.000]   a self and other are actually the exact same object so we are overriding the gradient we are
+[01:24:06.000 --> 01:24:12.160]   setting it to one and then we are setting it again to one and that's why it stays at one
+[01:24:12.160 --> 01:24:18.000]   so that's a problem there's another way to see this in a little bit more complicated expression
+[01:24:18.320 --> 01:24:30.320]   so here we have a and b and then d will be the multiplication of the two and e will be the
+[01:24:30.320 --> 01:24:36.560]   addition of the two and then we multiply e times d to get f and then we call f dot backward
+[01:24:36.560 --> 01:24:43.120]   and these gradients if you check will be incorrect so fundamentally what's happening here again is
+[01:24:45.040 --> 01:24:48.560]   basically we're going to see an issue any time we use a variable more than once
+[01:24:48.560 --> 01:24:53.520]   until now in these expressions above every variable is used exactly once so we didn't
+[01:24:53.520 --> 01:24:57.920]   see the issue but here if a variable is used more than once what's going to happen during
+[01:24:57.920 --> 01:25:04.720]   backward pass we're back propagating from f to e to d so far so good but now e calls a backward
+[01:25:04.720 --> 01:25:11.520]   and it deposits its gradients to a and b but then we come back to d and call backward and it overwrites
+[01:25:11.520 --> 01:25:19.280]   those gradients at a and b so that's obviously a problem and the solution here if you look at
+[01:25:19.280 --> 01:25:25.040]   the multivariate case of the chain rule and its generalization there the solution there is
+[01:25:25.040 --> 01:25:31.600]   basically that we have to accumulate these gradients these gradients add and so instead of
+[01:25:31.600 --> 01:25:38.320]   setting those gradients we can simply do plus equals we need to accumulate those gradients
+[01:25:39.120 --> 01:25:48.400]   plus equals plus equals plus equals plus equals and this will be okay remember because we are
+[01:25:48.400 --> 01:25:55.920]   initializing them at zero so they start at zero and then any contribution that flows backwards
+[01:25:55.920 --> 01:26:05.440]   will simply add so now if we redefine this one because the plus equals this now works
+[01:26:06.000 --> 01:26:11.840]   because a dot grad started at zero and we called b dot backward we deposit one and then we deposit
+[01:26:11.840 --> 01:26:17.440]   one again and now this is two which is correct and here this will also work and we'll get correct
+[01:26:17.440 --> 01:26:22.320]   gradients because when we call e dot backward we will deposit the gradients from this branch
+[01:26:22.320 --> 01:26:27.440]   and then we get to back to d dot backward it will deposit its own gradients and then those
+[01:26:27.440 --> 01:26:32.080]   gradients simply add on top of each other and so we just accumulate those gradients and that
+[01:26:32.080 --> 01:26:37.680]   fixes the issue okay now before we move on let me actually do a bit of cleanup here and delete
+[01:26:37.680 --> 01:26:42.880]   some of these some of this intermediate work so i'm not going to need any of this now that
+[01:26:42.880 --> 01:26:48.720]   we've derived all of it um we are going to keep this because i want to come back to it
+[01:26:48.720 --> 01:26:58.640]   delete the 10h delete our modeling example delete the step delete this keep the code that draws
+[01:26:59.680 --> 01:27:04.160]   and then delete this example and leave behind only the definition of value
+[01:27:04.160 --> 01:27:09.920]   and now let's come back to this non-linearity here that we implemented the 10h now i told you
+[01:27:09.920 --> 01:27:15.840]   that we could have broken down 10h into its explicit atoms in terms of other expressions
+[01:27:15.840 --> 01:27:21.760]   if we had the exp function so if you remember 10h is defined like this and we chose to develop 10h
+[01:27:21.760 --> 01:27:26.000]   as a single function and we can do that because we know it's derivative and we can back propagate
+[01:27:26.000 --> 01:27:31.600]   through it but we can also break down 10h into and express it as a function of exp and i would
+[01:27:31.600 --> 01:27:35.280]   like to do that now because i want to prove to you that you get all the same results and all the same
+[01:27:35.280 --> 01:27:40.880]   gradients um but also because it forces us to implement a few more expressions it forces us to
+[01:27:40.880 --> 01:27:45.760]   do exponentiation addition subtraction division and things like that and i think it's a good
+[01:27:45.760 --> 01:27:51.200]   exercise to go through a few more of these okay so let's scroll up to the definition of value
+[01:27:52.080 --> 01:27:59.040]   and here one thing that we currently can't do is we can't do like a value of say 2.0 but we can't
+[01:27:59.040 --> 01:28:03.920]   do you know here for example we want to add a constant one and we can't do something like this
+[01:28:03.920 --> 01:28:10.160]   and we can't do it because it says int object has no attribute data that's because a plus one
+[01:28:10.160 --> 01:28:16.160]   comes right here to add and then other is the integer one and then here python is trying to
+[01:28:16.160 --> 01:28:21.280]   access one dot data and that's not a thing and that's because basically one is not a value object
+[01:28:21.280 --> 01:28:26.800]   and we only have addition for value objects so as a matter of convenience so that we can create
+[01:28:26.800 --> 01:28:30.640]   expressions like this and make them make sense we can simply do something like this
+[01:28:30.640 --> 01:28:38.000]   basically we let other alone if other is an instance of value but if it's not an instance
+[01:28:38.000 --> 01:28:41.840]   of value we're going to assume that it's a number like an integer or float and we're going to simply
+[01:28:41.840 --> 01:28:46.880]   wrap it in in value and then other will just become value of other and then other will have
+[01:28:46.880 --> 01:28:52.560]   a data attribute and this should work so if i just say this redefine value then this should work
+[01:28:52.560 --> 01:28:57.680]   there we go okay and now let's do the exact same thing for multiply because we can't do something
+[01:28:57.680 --> 01:29:05.600]   like this again for the exact same reason so we just have to go to mul and if other is not a value
+[01:29:05.600 --> 01:29:12.080]   then let's wrap it in value let's redefine value and now this works now here's a kind of unfortunate
+[01:29:12.080 --> 01:29:18.320]   and not obvious part a times two works we saw that but two times a is that going to work
+[01:29:18.320 --> 01:29:25.120]   you'd expect it to right but actually it will not and the reason it won't is because python doesn't
+[01:29:25.120 --> 01:29:32.000]   know like when when you do a times two basically um so a times two python will go and it will
+[01:29:32.000 --> 01:29:38.000]   basically do something like a dot mul of two that's basically what it will call but to it
+[01:29:38.000 --> 01:29:45.840]   two times a is the same as two dot mul of a and it doesn't two can't multiply value and so it's
+[01:29:45.840 --> 01:29:50.800]   really confused about that so instead what happens is in python the way this works is you are free to
+[01:29:50.800 --> 01:29:58.800]   define something called the armol and armol is kind of like a fallback so if a python can't do
+[01:29:58.800 --> 01:30:06.720]   two times a it will check if um if by any chance a knows how to multiply two and that will be called
+[01:30:06.720 --> 01:30:13.680]   into armol so because python can't do two times a it will check is there an armol in value and
+[01:30:13.680 --> 01:30:19.520]   because there is it will now call that and what we'll do here is we will swap the order of the
+[01:30:19.520 --> 01:30:26.000]   operands so basically two times a will redirect to armol and armol will basically call a times two
+[01:30:26.000 --> 01:30:32.880]   and that's how that will work so redefining that with armol two times a becomes four okay now
+[01:30:32.880 --> 01:30:36.320]   looking at the other elements that we still need we need to know how to exponentiate and how to
+[01:30:36.320 --> 01:30:41.920]   divide so let's first do the explanation to the exponentiation part we're going to introduce a
+[01:30:41.920 --> 01:30:48.880]   single function exp here and exp is going to mirror tanh in the sense that it's a simple
+[01:30:48.880 --> 01:30:54.000]   single function that transforms a single scalar value and outputs a single scalar value so we pop
+[01:30:54.000 --> 01:30:59.520]   out the python number we use math.exp to exponentiate it create a new value object everything
+[01:30:59.520 --> 01:31:03.840]   that we've seen before the tricky part of course is how do you back propagate through e to the x
+[01:31:04.800 --> 01:31:10.000]   and so here you can potentially pause the video and think about what should go here
+[01:31:10.000 --> 01:31:19.520]   okay so basically we need to know what is the local derivative of e to the x so d by dx of e
+[01:31:19.520 --> 01:31:25.520]   to the x is famously just e to the x and we've already just calculated e to the x and it's inside
+[01:31:25.520 --> 01:31:32.640]   out that data so we can do out that data times and out that grad that's the chain rule so we're just
+[01:31:32.640 --> 01:31:37.680]   chaining on to the current running grad and this is what the expression looks like it looks a little
+[01:31:37.680 --> 01:31:43.600]   confusing but this is what it is and that's the exponentiation so redefining we should now be able
+[01:31:43.600 --> 01:31:49.600]   to call a.exp and hopefully the backward pass works as well okay and the last thing we'd like
+[01:31:49.600 --> 01:31:54.880]   to do of course is we'd like to be able to divide now i actually will implement something slightly
+[01:31:54.880 --> 01:31:58.960]   more powerful than division because division is just a special case of something a bit more
+[01:31:58.960 --> 01:32:06.880]   powerful so in particular just by rearranging if we have some kind of a b equals value of 4.0 here
+[01:32:06.880 --> 01:32:10.720]   we'd like to basically be able to do a divide b and we'd like this to be able to give us 0.5
+[01:32:10.720 --> 01:32:17.280]   now division actually can be reshuffled as follows if we have a divide b that's actually
+[01:32:17.280 --> 01:32:23.040]   the same as a multiplying 1 over b and that's the same as a multiplying b to the power of negative
+[01:32:23.040 --> 01:32:29.440]   1 and so what i'd like to do instead is i basically like to implement the operation of x to the k for
+[01:32:29.440 --> 01:32:36.160]   some constant k so it's an integer or a float and we would like to be able to differentiate this and
+[01:32:36.160 --> 01:32:42.960]   then as a special case negative 1 will be division and so i'm doing that just because it's more
+[01:32:42.960 --> 01:32:48.480]   general and yeah you might as well do it that way so basically what i'm saying is we can redefine
+[01:32:49.760 --> 01:32:56.800]   division which we will put here somewhere yeah we can put it here somewhere what i'm saying is that
+[01:32:56.800 --> 01:33:03.040]   we can redefine division so self divide other this can actually be rewritten as self times
+[01:33:03.040 --> 01:33:10.000]   other to the power of negative one and now value raised to the power of negative one we have now
+[01:33:10.000 --> 01:33:17.280]   defined that so here's so we need to implement the pow function where am i going to put the pow
+[01:33:17.280 --> 01:33:23.840]   function maybe here somewhere there's this coliform for it so this function will be called
+[01:33:23.840 --> 01:33:29.520]   when we try to raise a value to some power and other will be that power now i'd like to make
+[01:33:29.520 --> 01:33:35.360]   sure that other is only an int or a float usually other is some kind of a different value object
+[01:33:35.360 --> 01:33:42.320]   but here other will be forced to be an int or a float otherwise the math won't work for for
+[01:33:42.320 --> 01:33:46.480]   what we're trying to achieve in the specific case that would be a different derivative expression
+[01:33:46.480 --> 01:33:52.880]   if we wanted other to be a value so here we create the up the value which is just uh you know this
+[01:33:52.880 --> 01:33:57.280]   data raised to the power of other and other here could be for example negative one that's what we
+[01:33:57.280 --> 01:34:03.600]   are hoping to achieve and then uh this is the backward stub and this is the fun part which is
+[01:34:03.600 --> 01:34:12.320]   what is the uh chain rule expression here for back for um back propagating through the power function
+[01:34:12.320 --> 01:34:17.040]   where the power is to the power of some kind of a constant so this is the exercise and maybe
+[01:34:17.040 --> 01:34:20.720]   pause the video here and see if you can figure it out yourself as to what we should put here
+[01:34:20.720 --> 01:34:33.360]   okay so um you can actually go here and look at derivative rules as an example and we see lots of
+[01:34:33.360 --> 01:34:37.600]   derivative rules that you can hopefully know from calculus in particular what we're looking for is
+[01:34:37.600 --> 01:34:42.880]   the power rule because that's telling us that if we're trying to take d by dx of x to the n which
+[01:34:42.880 --> 01:34:52.160]   is what we're doing here then that is just n times x to the n minus one right okay so that's telling
+[01:34:52.160 --> 01:34:59.760]   us about the local derivative of this power operation so all we want here basically n is now
+[01:34:59.760 --> 01:35:10.800]   other and self.data is x and so this now becomes other which is n times self.data which is now a
+[01:35:10.800 --> 01:35:17.600]   python int or a float it's not a value object we're accessing the data attribute raised to the
+[01:35:17.600 --> 01:35:23.440]   power of other minus one or n minus one i can put brackets around this but this doesn't matter
+[01:35:23.440 --> 01:35:29.840]   because power takes precedence over multiply and python so that would have been okay and that's
+[01:35:29.840 --> 01:35:34.560]   the local derivative only but now we have to chain it and we change it just simply by multiplying by
+[01:35:34.560 --> 01:35:42.240]   our top grand that's chain rule and this should technically work and we're going to find out soon
+[01:35:42.240 --> 01:35:49.760]   but now if we do this this should now work and we get 0.5 so the forward pass works but does the
+[01:35:49.760 --> 01:35:55.520]   backward pass work and i realized that we actually also have to know how to subtract so right now a
+[01:35:55.520 --> 01:36:04.080]   minus b will not work to make it work we need one more piece of code here and basically this is the
+[01:36:04.080 --> 01:36:09.440]   subtraction and the way we're going to implement subtraction is we're going to implement it by
+[01:36:09.440 --> 01:36:13.760]   addition of a negation and then to implement negation we're going to multiply by negative one
+[01:36:13.760 --> 01:36:18.400]   so just again using the stuff we've already built and just expressing it in terms of what we have
+[01:36:18.960 --> 01:36:23.840]   and a minus b is not working okay so now let's scroll again to this expression here for this
+[01:36:23.840 --> 01:36:32.160]   neuron and let's just compute the backward pass here once we've defined o and let's draw it so
+[01:36:32.160 --> 01:36:36.880]   here's the gradients for all these leaf nodes for this two-dimensional neuron that has a 10h that
+[01:36:36.880 --> 01:36:43.520]   we've seen before so now what i'd like to do is i'd like to break up this 10h into this expression
+[01:36:43.520 --> 01:36:51.280]   here so let me copy paste this here and now instead of we'll preserve the label and we will
+[01:36:51.280 --> 01:36:57.200]   change how we define o so in particular we're going to implement this formula here so we need
+[01:36:57.200 --> 01:37:04.960]   e to the 2x minus 1 over e to the x plus 1 so e to the 2x we need to take 2 times n and we need to
+[01:37:04.960 --> 01:37:10.800]   exponentiate it that's e to the 2x and then because we're using it twice let's create an intermediate
+[01:37:10.800 --> 01:37:21.840]   variable e and then define o as e plus 1 over e minus 1 over e plus 1 e minus 1 over e plus 1
+[01:37:21.840 --> 01:37:29.120]   and that should be it and then we should be able to draw dot of o so now before i run this what do
+[01:37:29.120 --> 01:37:35.280]   we expect to see number one we're expecting to see a much longer graph here because we've broken up
+[01:37:35.280 --> 01:37:40.480]   10h into a bunch of other operations but those operations are mathematically equivalent and so
+[01:37:40.480 --> 01:37:46.000]   what we're expecting to see is number one the same result here so the forward pass works and
+[01:37:46.000 --> 01:37:50.800]   number two because of that mathematical equivalence we expect to see the same backward pass and the
+[01:37:50.800 --> 01:37:56.400]   same gradients on these leaf nodes so these gradients should be identical so let's run this
+[01:37:56.400 --> 01:38:04.880]   so number one let's verify that instead of a single 10h node we have now exp and we have plus
+[01:38:04.880 --> 01:38:11.120]   we have times negative one this is the division and we end up with the same forward pass here
+[01:38:11.120 --> 01:38:14.800]   and then the gradients we have to be careful because they're in slightly different order
+[01:38:14.800 --> 01:38:23.440]   potentially the gradients for w2 x2 should be 0 and 0.5 w2 and x2 are 0 and 0.5 and w1 x1 are 1
+[01:38:23.440 --> 01:38:30.160]   and negative 1.5 1 and negative 1.5 so that means that both our forward passes and backward passes
+[01:38:30.160 --> 01:38:36.640]   were correct because this turned out to be equivalent to 10h before and so the reason
+[01:38:36.640 --> 01:38:40.960]   I wanted to go through this exercise is number one we got to practice a few more operations
+[01:38:40.960 --> 01:38:46.320]   and writing more backwards passes and number two I wanted to illustrate the point that the
+[01:38:46.320 --> 01:38:52.400]   level at which you implement your operations is totally up to you you can implement backward
+[01:38:52.400 --> 01:38:57.040]   passes for tiny expressions like a single individual plus or a single times or you can
+[01:38:57.040 --> 01:39:02.960]   implement them for say 10h which is a kind of a potentially you can see it as a composite operation
+[01:39:02.960 --> 01:39:07.280]   because it's made up of all these more atomic operations but really all of this is kind of
+[01:39:07.280 --> 01:39:11.360]   like a fake concept all that matters is we have some kind of inputs and some kind of an output
+[01:39:11.360 --> 01:39:15.360]   and this output is a function of the inputs in some way and as long as you can do forward pass
+[01:39:15.360 --> 01:39:21.440]   and the backward pass of that little operation it doesn't matter what that operation is and how
+[01:39:21.440 --> 01:39:25.840]   composite it is if you can write the local gradients you can chain the gradient and you
+[01:39:25.840 --> 01:39:30.800]   can continue back propagation so the design of what those functions are is completely up to you
+[01:39:30.800 --> 01:39:36.000]   so now I would like to show you how you can do the exact same thing but using a modern deep neural
+[01:39:36.000 --> 01:39:44.080]   network library like for example PyTorch which I've roughly modeled micro grad by and so PyTorch
+[01:39:44.080 --> 01:39:48.080]   is something you would use in production and I'll show you how you can do the exact same thing but
+[01:39:48.080 --> 01:39:52.800]   in PyTorch API so I'm just going to copy paste it in and walk you through it a little bit this is
+[01:39:52.800 --> 01:40:00.000]   what it looks like so we're going to import PyTorch and then we need to define these value
+[01:40:00.000 --> 01:40:07.440]   objects like we have here now micro grad is a scalar valued engine so we only have scalar values
+[01:40:07.440 --> 01:40:13.120]   like 2.0 but in PyTorch everything is based around tensors and like I mentioned tensors are just
+[01:40:13.120 --> 01:40:18.640]   n-dimensional arrays of scalars so that's why things get a little bit more complicated here
+[01:40:18.640 --> 01:40:24.720]   I just need a scalar valued tensor a tensor with just a single element but by default when you work
+[01:40:24.720 --> 01:40:31.600]   with PyTorch you would use more complicated tensors like this so if I import PyTorch
+[01:40:31.600 --> 01:40:40.080]   then I can create tensors like this and this tensor for example is a two by three array of
+[01:40:40.080 --> 01:40:47.120]   scalars in a single compact representation so you can check its shape we see that it's a two by three
+[01:40:47.120 --> 01:40:54.160]   array and so on so this is usually what you would work with in the actual libraries so here I'm
+[01:40:54.160 --> 01:41:03.920]   creating a tensor that has only a single element 2.0 and then I'm casting it to be double because
+[01:41:03.920 --> 01:41:08.560]   Python is by default using double precision for its floating point numbers so I'd like everything
+[01:41:08.560 --> 01:41:15.280]   to be identical by default the data type of these tensors will be float 32 so it's only using a
+[01:41:15.280 --> 01:41:21.600]   single precision float so I'm casting it to double so that we have float 64 just like in Python
+[01:41:21.600 --> 01:41:28.640]   so I'm casting to double and then we get something similar to value of 2.0 the next thing I have to
+[01:41:28.640 --> 01:41:33.760]   do is because these are leaf nodes by default PyTorch assumes that they do not require gradients
+[01:41:33.760 --> 01:41:38.960]   so I need to explicitly say that all of these nodes require gradients okay so this is going
+[01:41:38.960 --> 01:41:44.880]   to construct scalar valued one element tensors make sure that PyTorch knows that they require
+[01:41:44.880 --> 01:41:50.240]   gradients now by default these are set to false by the way because of efficiency reasons because
+[01:41:50.240 --> 01:41:55.760]   usually you would not want gradients for leaf nodes like the inputs to the network and this
+[01:41:55.760 --> 01:42:01.440]   is just trying to be efficient in the most common cases so once we've defined all of our values
+[01:42:01.440 --> 01:42:06.240]   in PyTorch land we can perform arithmetic just like we can here in micrograd land so this would
+[01:42:06.240 --> 01:42:12.960]   just work and then there's a torch.tanh also and when we get back as a tensor again and we can
+[01:42:13.520 --> 01:42:19.200]   just like in micrograd it's got a data attribute and it's got grad attributes so these tensor
+[01:42:19.200 --> 01:42:24.800]   objects just like in micrograd have a dot data and a dot grad and the only difference here is that
+[01:42:24.800 --> 01:42:33.120]   we need to call a dot item because otherwise PyTorch dot item basically takes a single tensor
+[01:42:33.120 --> 01:42:38.800]   of one element and it just returns that element stripping out the tensor so let me just run this
+[01:42:38.800 --> 01:42:45.360]   and hopefully we are going to get this is going to print the forward pass which is 0.707 and this
+[01:42:45.360 --> 01:42:52.240]   will be the gradients which hopefully are 0.50 negative 1.5 and 1 so if we just run this
+[01:42:52.240 --> 01:42:59.680]   there we go 0.7 so the forward pass agrees and then 0.50 negative 1.5 and 1
+[01:42:59.680 --> 01:43:06.400]   so PyTorch agrees with us and just to show you here basically oh here's a tensor with a single
+[01:43:06.400 --> 01:43:13.440]   element and it's a double and we can call dot item on it to just get the single number out
+[01:43:13.440 --> 01:43:19.920]   so that's what item does and o is a tensor object like i mentioned and it's got a backward function
+[01:43:19.920 --> 01:43:25.440]   just like we've implemented and then all of these also have a dot grad so like x2 for example has
+[01:43:25.440 --> 01:43:32.000]   a grad and it's a tensor and we can pop out the individual number with dot item so basically
+[01:43:32.880 --> 01:43:38.960]   Torches Torch can do what we did in micro grad as a special case when your tensors are all single
+[01:43:38.960 --> 01:43:44.080]   element tensors but the big deal with PyTorch is that everything is significantly more efficient
+[01:43:44.080 --> 01:43:48.800]   because we are working with these tensor objects and we can do lots of operations in parallel
+[01:43:48.800 --> 01:43:55.040]   on all of these tensors but otherwise what we've built very much agrees with the API of PyTorch
+[01:43:55.040 --> 01:43:59.760]   okay so now that we have some machinery to build out pretty complicated mathematical expressions
+[01:43:59.760 --> 01:44:04.480]   we can also start building up neural nets and as I mentioned neural nets are just a specific class
+[01:44:04.480 --> 01:44:09.280]   of mathematical expressions so we're going to start building out a neural net piece by piece
+[01:44:09.280 --> 01:44:13.920]   and eventually we'll build out a two-layer multi-layer layer perceptron as it's called
+[01:44:13.920 --> 01:44:18.080]   and I'll show you exactly what that means let's start with a single individual neuron we've
+[01:44:18.080 --> 01:44:22.720]   implemented one here but here I'm going to implement one that also subscribes to the
+[01:44:22.720 --> 01:44:28.800]   PyTorch API in how it designs its neural network modules so just like we saw that we can like
+[01:44:28.800 --> 01:44:34.400]   match the API of PyTorch on the autograd side we're going to try to do that on the neural
+[01:44:34.400 --> 01:44:41.760]   network modules so here's class neuron and just for the sake of efficiency I'm going to copy paste
+[01:44:41.760 --> 01:44:48.640]   some sections that are relatively straightforward so the constructor will take number of inputs to
+[01:44:48.640 --> 01:44:54.000]   this neuron which is how many inputs come to a neuron so this one for example has three inputs
+[01:44:55.120 --> 01:44:59.440]   and then it's going to create a weight that is some random number between negative one and one
+[01:44:59.440 --> 01:45:04.640]   for every one of those inputs and a bias that controls the overall trigger happiness of this
+[01:45:04.640 --> 01:45:12.720]   neuron and then we're going to implement a def underscore underscore call of self and x
+[01:45:12.720 --> 01:45:18.800]   sum input x and really what we don't want to do here is w times x plus b where w times x here is
+[01:45:18.800 --> 01:45:26.000]   a dot product specifically now if you haven't seen call let me just return 0.0 here for now
+[01:45:26.000 --> 01:45:32.160]   the way this works now is we can have an x which is say like 2.0 3.0 then we can initialize a neuron
+[01:45:32.160 --> 01:45:36.720]   that is two-dimensional because these are two numbers and then we can feed those two numbers
+[01:45:36.720 --> 01:45:44.000]   into that neuron to get an output and so when you use this notation n of x python will use call
+[01:45:44.960 --> 01:45:52.960]   so currently call just returns 0.0 now we'd like to actually do the forward pass of this neuron
+[01:45:52.960 --> 01:45:59.920]   instead so we're going to do here first is we need to basically multiply all of the elements of
+[01:45:59.920 --> 01:46:05.200]   w with all of the elements of x pairwise we need to multiply them so the first thing we're going
+[01:46:05.200 --> 01:46:13.280]   to do is we're going to zip up salta w and x and in python zip takes two iterators and it creates
+[01:46:13.280 --> 01:46:18.960]   a new iterator that iterates over the tuples of their corresponding entries so for example just
+[01:46:18.960 --> 01:46:34.880]   to show you we can print this list and still return 0.0 here sorry i'm in my so we see that
+[01:46:34.880 --> 01:46:42.640]   these w's are paired up with the x's w with x and now what we want to do is
+[01:46:42.640 --> 01:46:56.960]   for wi xi in we want to multiply w times wi times xi and then we want to sum all of that together
+[01:46:56.960 --> 01:47:04.160]   to come up with an activation and add also salta b on top so that's the raw activation and then
+[01:47:04.160 --> 01:47:07.760]   of course we need to pass that through a non-linearity so what we're going to be returning
+[01:47:07.760 --> 01:47:16.080]   is act dot 10h and here's out so now we see that we are getting some outputs and we get a different
+[01:47:16.080 --> 01:47:21.280]   output from a neuron each time because we are initializing different weights and biases and
+[01:47:21.280 --> 01:47:27.200]   then to be a bit more efficient here actually sum by the way takes a second optional parameter
+[01:47:27.200 --> 01:47:34.080]   which is the start and by default the start is zero so these elements of this sum will be added
+[01:47:34.080 --> 01:47:39.280]   on top of zero to begin with but actually we can just start with cell.b and then we just have an
+[01:47:39.280 --> 01:47:48.480]   expression like this and then the generator expression here must be parenthesized in python
+[01:47:49.360 --> 01:47:58.400]   there we go yep so now we can forward a single neuron next up we're going to define a layer of
+[01:47:58.400 --> 01:48:06.320]   neurons so here we have a schematic for a MLP so we see that these MLPs each layer this is one layer
+[01:48:06.320 --> 01:48:09.760]   has actually a number of neurons and they're not connected to each other but all of them are fully
+[01:48:09.760 --> 01:48:14.560]   connected to the input so what is a layer of neurons it's just it's just a set of neurons
+[01:48:14.560 --> 01:48:21.360]   evaluated independently so in the interest of time i'm going to do something fairly straightforward
+[01:48:21.360 --> 01:48:30.640]   here it's literally a layer is just a list of neurons and then how many neurons do we have
+[01:48:30.640 --> 01:48:35.120]   we take that as an input argument here how many neurons do you want in your layer number of outputs
+[01:48:35.120 --> 01:48:41.280]   in this layer and so we just initialize completely independent neurons with this given dimensionality
+[01:48:41.280 --> 01:48:48.000]   and when we call on it we just independently evaluate them so now instead of a neuron we can
+[01:48:48.000 --> 01:48:52.720]   make a layer of neurons they are two-dimensional neurons and let's have three of them and now we
+[01:48:52.720 --> 01:48:59.680]   see that we have three independent evaluations of three different neurons right okay and finally
+[01:48:59.680 --> 01:49:05.200]   let's complete this picture and define an entire multi-layer perceptron or MLP and as we can see
+[01:49:05.200 --> 01:49:10.480]   here in an MLP these layers just feed into each other sequentially so let's come here and i'm
+[01:49:10.480 --> 01:49:17.200]   just going to copy the code here in interest of time so an MLP is very similar we're taking the
+[01:49:17.200 --> 01:49:22.240]   number of inputs as before but now instead of saying taking a single n out which is number of
+[01:49:22.240 --> 01:49:27.440]   neurons in a single layer we're going to take a list of n outs and this list defines the sizes
+[01:49:27.440 --> 01:49:32.720]   of all the layers that we want in our MLP so here we just put them all together and then iterate
+[01:49:32.720 --> 01:49:38.560]   over consecutive pairs of these sizes and create layer objects for them and then in the call
+[01:49:38.560 --> 01:49:43.520]   function we are just calling them sequentially so that's an MLP really and let's actually
+[01:49:43.520 --> 01:49:48.320]   re-implement this picture so we want three input neurons and then two layers of four and an output
+[01:49:48.320 --> 01:49:57.680]   unit so we want a three-dimensional input say this is an example input we want three inputs into two
+[01:49:57.680 --> 01:50:05.360]   layers of four and one output and this of course is an MLP and there we go that's a forward pass
+[01:50:05.360 --> 01:50:10.320]   of an MLP to make this a little bit nicer you see how we have just a single element but it's wrapped
+[01:50:10.320 --> 01:50:18.320]   in a list because layer always returns lists so for convenience return outs at zero if len outs
+[01:50:18.320 --> 01:50:24.560]   is exactly a single element else return fullest and this will allow us to just get a single value
+[01:50:24.560 --> 01:50:30.000]   out at the last layer that only has a single neuron and finally we should be able to draw dot
+[01:50:30.000 --> 01:50:35.440]   of n of x and as you might imagine these expressions are now getting
+[01:50:35.440 --> 01:50:40.880]   relatively involved so this is an entire MLP that we're defining now
+[01:50:40.880 --> 01:50:51.920]   all the way until a single output okay and so obviously you would never differentiate on pen
+[01:50:51.920 --> 01:50:56.720]   and paper these expressions but with micrograd we will be able to back propagate all the way
+[01:50:56.720 --> 01:51:04.080]   through this and back propagate into these weights of all these neurons so let's see how that works
+[01:51:04.080 --> 01:51:09.920]   okay so let's create ourselves a very simple example data set here so this data set has four
+[01:51:09.920 --> 01:51:17.440]   examples and so we have four possible inputs into the neural net and we have four desired targets
+[01:51:17.440 --> 01:51:24.880]   so we'd like the neural net to assign or output 1.0 when it's fed this example negative one when
+[01:51:24.880 --> 01:51:29.600]   it's fed these examples and one when it's fed this example so it's a very simple binary classifier
+[01:51:29.600 --> 01:51:34.320]   neural net basically that we would like here now let's think what the neural net currently thinks
+[01:51:34.320 --> 01:51:40.160]   about these four examples we can just get their predictions basically we can just call n of x
+[01:51:40.160 --> 01:51:47.680]   for x and x's and then we can print so these are the outputs of the neural net on those four
+[01:51:47.680 --> 01:51:55.920]   examples so the first one is 0.91 but we'd like it to be 1 so we should push this one higher this
+[01:51:55.920 --> 01:52:03.600]   one we want to be higher this one says 0.88 and we want this to be negative 1 this is 0.88 we
+[01:52:03.600 --> 01:52:10.000]   want it to be negative 1 and this one is 0.88 we want it to be 1 so how do we make the neural net
+[01:52:10.000 --> 01:52:18.080]   and how do we tune the weights to better predict the desired targets and the trick used in deep
+[01:52:18.080 --> 01:52:24.000]   learning to achieve this is to calculate a single number that somehow measures the total performance
+[01:52:24.000 --> 01:52:32.320]   of your neural net and we call this single number the loss so the loss first is a single number that
+[01:52:32.320 --> 01:52:36.480]   we're going to define that basically measures how well the neural net is performing right now we
+[01:52:36.480 --> 01:52:40.080]   have the intuitive sense that it's not performing very well because we're not very much close to
+[01:52:40.080 --> 01:52:45.760]   this so the loss will be high and we'll want to minimize the loss so in particular in this case
+[01:52:45.760 --> 01:52:50.480]   what we're going to do is we're going to implement the mean squared error loss so what this is doing
+[01:52:50.480 --> 01:53:01.120]   is we're going to basically iterate for y ground truth and y output in zip of y's and y_red
+[01:53:01.120 --> 01:53:07.360]   so we're going to pair up the ground truths with the predictions and the zip iterates over
+[01:53:07.360 --> 01:53:14.240]   tuples of them and for each y ground truth and y output we're going to subtract them
+[01:53:14.240 --> 01:53:21.680]   and square them so let's first see what these losses are these are individual loss components
+[01:53:21.680 --> 01:53:29.440]   and so basically for each one of the four we are taking the prediction and the ground truth
+[01:53:29.440 --> 01:53:36.240]   we are subtracting them and squaring them so because this one is so close to its target
+[01:53:36.240 --> 01:53:43.360]   0.91 is almost one subtracting them gives a very small number so here we would get like a negative
+[01:53:43.360 --> 01:53:50.160]   0.1 and then squaring it just makes sure that regardless of whether we are more negative or
+[01:53:50.160 --> 01:53:56.000]   more positive we always get a positive number instead of squaring we should we could also take
+[01:53:56.000 --> 01:54:00.880]   for example the absolute value we need to discard the sign and so you see that the expression is
+[01:54:00.880 --> 01:54:07.120]   ranged so that you only get zero exactly when y out is equal to y ground truth when those two are
+[01:54:07.120 --> 01:54:11.920]   equal so your prediction is exactly the target you are going to get zero and if your prediction is
+[01:54:11.920 --> 01:54:17.200]   not the target you are going to get some other number so here for example we are way off and so
+[01:54:17.200 --> 01:54:25.120]   that's why the loss is quite high and the more off we are the greater the loss will be so we don't
+[01:54:25.120 --> 01:54:32.720]   want high loss we want low loss and so the final loss here will be just the sum of all of these
+[01:54:32.720 --> 01:54:41.200]   numbers so you see that this should be zero roughly plus zero roughly but plus seven so
+[01:54:41.200 --> 01:54:48.720]   loss should be about seven here and now we want to minimize the loss we want the loss to be low
+[01:54:49.280 --> 01:54:57.120]   because if loss is low then every one of the predictions is equal to its target so the loss
+[01:54:57.120 --> 01:55:02.560]   the lowest it can be is zero and the greater it is the worse off the neural net is predicting
+[01:55:02.560 --> 01:55:09.760]   so now of course if we do loss.backward something magical happened when i hit enter
+[01:55:09.760 --> 01:55:15.280]   and the magical thing of course that happened is that we can look at n.layers.neuron
+[01:55:15.280 --> 01:55:20.000]   and that layers at say like the first layer that neurons at zero
+[01:55:20.000 --> 01:55:28.720]   because remember that mlp has the layers which is a list and each layer has neurons which is a list
+[01:55:28.720 --> 01:55:32.000]   and that gives us an individual neuron and then it's got some weights
+[01:55:32.000 --> 01:55:35.520]   and so we can for example look at the weights at zero
+[01:55:40.160 --> 01:55:48.000]   oops it's not called weights it's called w and that's a value but now this value also has a grad
+[01:55:48.000 --> 01:55:54.240]   because of the backward pass and so we see that because this gradient here on this particular
+[01:55:54.240 --> 01:55:58.480]   weight of this particular neuron of this particular layer is negative we see that
+[01:55:58.480 --> 01:56:03.760]   its influence on the loss is also negative so slightly increasing this particular weight
+[01:56:03.760 --> 01:56:10.400]   of this neuron of this layer would make the loss go down and we actually have this information for
+[01:56:10.400 --> 01:56:14.640]   every single one of our neurons and all their parameters actually it's worth looking at
+[01:56:14.640 --> 01:56:20.720]   also the draw dot of loss by the way so previously we looked at the draw dot of a single neuron
+[01:56:20.720 --> 01:56:25.920]   neuron forward pass and that was already a large expression but what is this expression we actually
+[01:56:25.920 --> 01:56:31.360]   forwarded every one of those four examples and then we have the loss on top of them with the
+[01:56:31.360 --> 01:56:38.400]   mean squared error and so this is a really massive graph because this graph that we've built up now
+[01:56:38.400 --> 01:56:45.440]   oh my gosh this graph that we've built up now which is kind of excessive it's excessive because
+[01:56:45.440 --> 01:56:50.080]   it has four forward passes of a neural net for every one of the examples and then it has the
+[01:56:50.080 --> 01:56:56.240]   loss on top and it ends with the value of the loss which was 7.12 and this loss will now back
+[01:56:56.240 --> 01:57:01.520]   propagate through all the four forward passes all the way through just every single intermediate
+[01:57:01.520 --> 01:57:06.640]   value of the neural net all the way back to of course the parameters of the weights which are
+[01:57:06.640 --> 01:57:14.320]   the input so these weight parameters here are inputs to this neural net and these numbers here
+[01:57:14.320 --> 01:57:20.080]   these scalars are inputs to the neural net so if we went around here we will probably find
+[01:57:20.640 --> 01:57:26.480]   some of these examples this 1.0 potentially maybe this 1.0 or you know some of the others and you'll
+[01:57:26.480 --> 01:57:32.160]   see that they all have gradients as well the thing is these gradients on the input data are not that
+[01:57:32.160 --> 01:57:39.040]   useful to us and that's because the input data seems to be not changeable it's it's a given to
+[01:57:39.040 --> 01:57:43.120]   the problem and so it's a fixed input we're not going to be changing it or messing with it even
+[01:57:43.120 --> 01:57:50.320]   though we do have gradients for it but some of these gradients here will be for the neural network
+[01:57:50.320 --> 01:57:56.640]   parameters the w's and the b's and those we of course we want to change okay so now we're going
+[01:57:56.640 --> 01:58:01.920]   to want some convenience code to gather up all of the parameters of the neural net so that we can
+[01:58:01.920 --> 01:58:09.040]   operate on all of them simultaneously and every one of them we will nudge a tiny amount based on
+[01:58:09.040 --> 01:58:14.080]   the gradient information so let's collect the parameters of the neural net all in one array
+[01:58:14.800 --> 01:58:21.360]   so let's create a parameters of self that just returns self.w which is a list
+[01:58:21.360 --> 01:58:30.640]   concatenated with a list of self.b so this will just return a list list plus list just
+[01:58:30.640 --> 01:58:36.080]   you know gives you a list so that's parameters of neuron and i'm calling it this way because
+[01:58:36.080 --> 01:58:42.240]   also pytorch has a parameters on every single nn module and it does exactly what we're doing here
+[01:58:42.240 --> 01:58:50.320]   it just returns the parameter tensors for us it's the parameter scalars now layer is also a module
+[01:58:50.320 --> 01:58:57.680]   so it will have parameters self and basically what we want to do here is something like this like
+[01:58:57.680 --> 01:59:09.120]   params is here and then for neuron in self.neurons we want to get neuron.parameters
+[01:59:10.560 --> 01:59:17.280]   and we want to params.extend right so these are the parameters of this neuron and then we want
+[01:59:17.280 --> 01:59:23.920]   to put them on top of params so params.extend of piece and then we want to return params
+[01:59:23.920 --> 01:59:32.000]   so this there's way too much code so actually there's a way to simplify this which is return
+[01:59:33.920 --> 01:59:44.000]   p for neuron in self.neurons for p in neuron.parameters
+[01:59:44.000 --> 01:59:50.400]   so it's a single list comprehension in python you can sort of nest them like this and you can
+[01:59:50.400 --> 01:59:58.320]   then create the desired array so this is these are identical we can take this out
+[02:00:00.000 --> 02:00:01.440]   and then let's do the same here
+[02:00:01.440 --> 02:00:17.440]   def parameters self and return a parameter for layer in self.layers for p in layer.parameters
+[02:00:17.440 --> 02:00:28.960]   and that should be good now let me pop out this so we don't re-initialize our network
+[02:00:28.960 --> 02:00:31.680]   because we need to re-initialize our
+[02:00:31.680 --> 02:00:39.120]   okay so unfortunately we will have to probably re-initialize the network because
+[02:00:39.120 --> 02:00:43.840]   we just had functionality because this class of course we i want to get
+[02:00:43.840 --> 02:00:48.240]   all the end up parameters but that's not going to work because this is the old class
+[02:00:48.240 --> 02:00:54.480]   okay so unfortunately we do have to re-initialize the network which will change some of the numbers
+[02:00:55.680 --> 02:00:59.280]   but let me do that so that we pick up the new api we can now do end up parameters
+[02:00:59.280 --> 02:01:08.720]   and these are all the weights and biases inside the entire neural net so in total this mlp has 41
+[02:01:08.720 --> 02:01:18.560]   parameters and now we'll be able to change them if we recalculate the loss here we see that
+[02:01:18.560 --> 02:01:24.080]   unfortunately we have slightly different predictions and slightly different loss
+[02:01:24.880 --> 02:01:33.200]   um but that's okay okay so we see that this neuron's gradient is slightly negative we can
+[02:01:33.200 --> 02:01:39.840]   also look at its data right now which is 0.85 so this is the current value of this neuron and this
+[02:01:39.840 --> 02:01:47.040]   is its gradient on the loss so what we want to do now is we want to iterate for every p in
+[02:01:47.040 --> 02:01:53.360]   end up parameters so for all the 41 parameters of this neural net we actually want to change
+[02:01:53.360 --> 02:02:01.360]   p.data slightly according to the gradient information okay so dot dot dot to do here
+[02:02:01.360 --> 02:02:09.520]   but this will be basically a tiny update in this gradient descent scheme and gradient descent
+[02:02:09.520 --> 02:02:17.120]   we are thinking of the gradient as a vector pointing in the direction of increased loss
+[02:02:19.120 --> 02:02:26.480]   and so in gradient descent we are modifying p.data by a small step size in the direction
+[02:02:26.480 --> 02:02:30.960]   of the gradient so the step size as an example could be like a very small number like 0.01 is
+[02:02:30.960 --> 02:02:39.120]   the step size times p.grad right but we have to think through some of the signs here so
+[02:02:39.120 --> 02:02:46.320]   in particular working with this specific example here we see that if we just left it like this
+[02:02:47.040 --> 02:02:52.560]   then this neuron's value would be currently increased by a tiny amount of the gradient
+[02:02:52.560 --> 02:02:58.480]   the gradient is negative so this value of this neuron would go slightly down it would become
+[02:02:58.480 --> 02:03:07.280]   like 0.84 or something like that but if this neuron's value goes lower that would actually
+[02:03:07.280 --> 02:03:16.560]   increase the loss that's because the derivative of this neuron is negative so increasing
+[02:03:16.560 --> 02:03:22.880]   this makes the loss go down so increasing it is what we want to do instead of decreasing it
+[02:03:22.880 --> 02:03:25.440]   so basically what we're missing here is we're actually missing a negative sign
+[02:03:25.440 --> 02:03:30.880]   and again this other interpretation and that's because we want to minimize the loss we don't
+[02:03:30.880 --> 02:03:35.600]   want to maximize the loss we want to decrease it and the other interpretation as i mentioned
+[02:03:35.600 --> 02:03:39.680]   is you can think of the gradient vector so basically just the vector of all the gradients
+[02:03:40.400 --> 02:03:46.800]   as pointing in the direction of increasing the loss but then we want to decrease it so we actually
+[02:03:46.800 --> 02:03:51.360]   want to go in the opposite direction and so you can convince yourself that this sort of like does
+[02:03:51.360 --> 02:03:56.480]   the right thing here with the negative because we want to minimize the loss so if we nudge all the
+[02:03:56.480 --> 02:04:04.640]   parameters by a tiny amount then we'll see that this data will have changed a little bit so now
+[02:04:04.640 --> 02:04:15.600]   this neuron is a tiny amount greater value so 0.854 went to 0.857 and that's a good thing because
+[02:04:15.600 --> 02:04:23.120]   slightly increasing this neuron data makes the loss go down according to the gradient and so
+[02:04:23.120 --> 02:04:29.360]   the correcting has happened sine wise and so now what we would expect of course is that because
+[02:04:29.360 --> 02:04:35.680]   we've changed all these parameters we expect that the loss should have gone down a bit so we want to
+[02:04:35.680 --> 02:04:42.960]   re-evaluate the loss let me basically this is just a data definition that hasn't changed but the
+[02:04:42.960 --> 02:04:51.920]   forward pass here of the network we can recalculate and actually let me do it outside here so that we
+[02:04:51.920 --> 02:04:59.280]   can compare the two loss values so here if i recalculate the loss we'd expect the new loss now
+[02:04:59.280 --> 02:05:04.240]   to be slightly lower than this number so hopefully what we're getting now is a tiny bit lower than
+[02:05:04.240 --> 02:05:13.440]   4.36 okay and remember the way we've arranged this is that low loss means that our predictions
+[02:05:13.440 --> 02:05:18.800]   are matching the targets so our predictions now are probably slightly closer to the targets
+[02:05:20.240 --> 02:05:23.440]   and now all we have to do is we have to iterate this process
+[02:05:23.440 --> 02:05:29.280]   so again we've done the forward pass and this is the loss now we can loss that backward
+[02:05:29.280 --> 02:05:36.320]   let me take these out and we can do a step size and now we should have a slightly lower loss
+[02:05:36.320 --> 02:05:43.680]   4.36 goes to 3.9 and okay so we've done the forward pass here's the backward pass
+[02:05:44.320 --> 02:05:47.520]   nudge and now the loss is 3.66
+[02:05:47.520 --> 02:05:57.520]   3.47 and you get the idea we just continue doing this and this is gradient descent we're just
+[02:05:57.520 --> 02:06:02.880]   iteratively doing forward pass backward pass update forward pass backward pass update and
+[02:06:02.880 --> 02:06:10.160]   the neural net is improving its predictions so here if we look at y pred now y pred
+[02:06:12.720 --> 02:06:18.400]   we see that this value should be getting closer to one so this value should be getting more positive
+[02:06:18.400 --> 02:06:21.840]   these should be getting more negative and this one should be also getting more positive
+[02:06:21.840 --> 02:06:24.640]   so if we just iterate this a few more times
+[02:06:24.640 --> 02:06:31.040]   actually we may be able to afford to go a bit faster let's try a slightly higher learning rate
+[02:06:31.040 --> 02:06:36.560]   oops okay there we go so now we're at 0.31
+[02:06:39.200 --> 02:06:44.400]   if you go too fast by the way if you try to make it too big of a step you may actually overstep
+[02:06:44.400 --> 02:06:51.280]   overconfidence because again remember we don't actually know exactly about the loss function
+[02:06:51.280 --> 02:06:56.320]   the loss function has all kinds of structure and we only know about the very local dependence of
+[02:06:56.320 --> 02:07:01.520]   all these parameters on the loss but if we step too far we may step into you know a part of the
+[02:07:01.520 --> 02:07:05.840]   loss that is completely different and that can destabilize training and make your loss actually
+[02:07:05.840 --> 02:07:13.600]   blow up even so the loss is now 0.04 so actually the predictions should be really quite close let's
+[02:07:13.600 --> 02:07:20.080]   take a look so you see how this is almost one almost negative one almost one we can continue
+[02:07:20.080 --> 02:07:30.880]   going so yep backward update oops there we go so we went way too fast and we actually overstepped
+[02:07:31.440 --> 02:07:40.080]   so we got too eager where are we now oops okay 7e negative 9 so this is very very low loss
+[02:07:40.080 --> 02:07:48.880]   and the predictions are basically perfect so somehow we basically we were doing way too big
+[02:07:48.880 --> 02:07:52.880]   updates and we briefly exploded but then somehow we ended up getting into a really good spot
+[02:07:52.880 --> 02:07:58.640]   so usually this learning rate and the tuning of it is a subtle art you want to set your learning
+[02:07:58.640 --> 02:08:03.280]   rate if it's too low you're going to take way too long to converge but if it's too high the
+[02:08:03.280 --> 02:08:07.760]   whole thing gets unstable and you might actually even explode the loss depending on your loss
+[02:08:07.760 --> 02:08:13.040]   function so finding the step size to be just right it's it's a pretty subtle art sometimes
+[02:08:13.040 --> 02:08:17.680]   when you're using sort of vanilla gradient descent but we happen to get into a good spot
+[02:08:17.680 --> 02:08:27.520]   we can look at n dot parameters so this is the setting of weights and biases that makes our
+[02:08:27.520 --> 02:08:37.120]   network predict the desired targets very very close and basically we've successfully trained
+[02:08:37.120 --> 02:08:42.240]   a neural net okay let's make this a tiny bit more respectable and implement an actual training loop
+[02:08:42.240 --> 02:08:47.120]   and what that looks like so this is the data definition that stays this is the forward pass
+[02:08:48.320 --> 02:08:55.040]   so for k in range you know we're going to take a bunch of steps
+[02:08:55.040 --> 02:09:01.040]   first you do the forward pass we validate the loss
+[02:09:01.040 --> 02:09:06.960]   let's reinitialize the neural net from scratch and here's the data
+[02:09:06.960 --> 02:09:12.080]   and we first do forward pass then we do the backward pass
+[02:09:12.480 --> 02:09:21.680]   and then we do an update that's gradient descent
+[02:09:21.680 --> 02:09:29.600]   and then we should be able to iterate this and we should be able to print the current step
+[02:09:29.600 --> 02:09:39.040]   the current loss let's just print the sort of number of the loss and that should be it
+[02:09:40.480 --> 02:09:44.960]   and then the learning rate 0.01 is a little too small 0.1 we saw is like a little bit dangerous
+[02:09:44.960 --> 02:09:51.680]   with ui let's go somewhere in between and we'll optimize this for not 10 steps but let's go for
+[02:09:51.680 --> 02:10:00.800]   say 20 steps let me erase all of this junk and let's run the optimization
+[02:10:00.800 --> 02:10:09.280]   and you see how we've actually converged slower in a more controlled manner and got to a loss that
+[02:10:09.280 --> 02:10:16.240]   is very low so i expect y_pred to be quite good there we go
+[02:10:16.240 --> 02:10:27.600]   and that's it okay so this is kind of embarrassing but we actually have a really terrible bug
+[02:10:27.600 --> 02:10:33.920]   in here and it's a subtle bug and it's a very common bug and i can't believe i've done it for
+[02:10:33.920 --> 02:10:39.600]   the 20th time in my life especially on camera and i could have re-shot the whole thing but i think
+[02:10:39.600 --> 02:10:44.720]   it's pretty funny and you know you get to appreciate a bit what working with neural
+[02:10:44.720 --> 02:10:53.520]   nuts maybe is like sometimes we are guilty of a common bug i've actually tweeted the most common
+[02:10:53.520 --> 02:11:01.520]   neural mistakes a long time ago now and i'm not really gonna explain any of these except for
+[02:11:01.520 --> 02:11:06.800]   we are guilty of number three you forgot to zero grad before dot backward what is that
+[02:11:06.800 --> 02:11:12.160]   basically what's happening and it's a subtle bug and i'm not sure if you saw it
+[02:11:12.160 --> 02:11:21.120]   is that all of these weights here have a dot data and a dot grad and the dot grad starts at zero
+[02:11:21.120 --> 02:11:27.520]   and then we do backward and we fill in the gradients and then we do an update on the data
+[02:11:27.520 --> 02:11:34.400]   but we don't flush the grad it stays there so when we do the second forward pass and we do
+[02:11:34.400 --> 02:11:39.760]   backward again remember that all the backward operations do a plus equals on the grad and so
+[02:11:39.760 --> 02:11:47.280]   these gradients just add up and they never get reset to zero so basically we didn't zero grad
+[02:11:47.280 --> 02:11:52.640]   so here's how we zero grad before backward we need to iterate over all the parameters
+[02:11:54.160 --> 02:12:01.040]   and we need to make sure that p dot grad is set to zero we need to reset it to zero just like it is
+[02:12:01.040 --> 02:12:07.360]   in the constructor so remember all the way here for all these value nodes grad is reset to zero
+[02:12:07.360 --> 02:12:12.240]   and then all these backward passes do a plus equals from that grad but we need to make sure
+[02:12:12.240 --> 02:12:18.640]   that we reset these graphs to zero so that when we do backward all of them start at zero and the
+[02:12:18.640 --> 02:12:26.960]   actual backward pass accumulates the loss derivatives into the grads so this is zero grad
+[02:12:26.960 --> 02:12:33.760]   in pytorch and we will slightly we'll get a slightly different optimization let's reset the
+[02:12:33.760 --> 02:12:40.240]   neural net the data is the same this is now i think correct and we get a much more you know
+[02:12:40.240 --> 02:12:47.280]   we get a much more slower descent we still end up with pretty good results and we can continue this
+[02:12:47.280 --> 02:12:57.600]   a bit more to get down lower and lower and lower yeah so the only reason that the previous thing
+[02:12:57.600 --> 02:13:04.880]   worked it's extremely buggy the only reason that worked is that this is a very very simple problem
+[02:13:04.880 --> 02:13:12.000]   and it's very easy for this neural net to fit this data and so the grads ended up accumulating
+[02:13:12.000 --> 02:13:16.880]   and it effectively gave us a massive step size and it made us converge extremely fast
+[02:13:16.880 --> 02:13:23.600]   but basically now we have to do more steps to get to very low values of loss
+[02:13:23.600 --> 02:13:29.040]   and get y pred to be really good we can try to step a bit greater
+[02:13:29.040 --> 02:13:40.640]   yeah we're gonna get closer and closer to one minus one and one so working with neural nets
+[02:13:40.640 --> 02:13:49.280]   is sometimes tricky because you may have lots of bugs in the code and your network might actually
+[02:13:49.280 --> 02:13:55.200]   work just like ours worked but chances are is that if we had a more complex problem then actually
+[02:13:55.200 --> 02:13:59.520]   this bug would have made us not optimize the loss very well and we were only able to get away with
+[02:13:59.520 --> 02:14:05.680]   it because the problem is very simple so let's now bring everything together and summarize what
+[02:14:05.680 --> 02:14:12.000]   we learned what are neural nets neural nets are these mathematical expressions fairly simple
+[02:14:12.000 --> 02:14:18.320]   mathematical expressions in the case of multilear perceptron that take input as the data and they
+[02:14:18.320 --> 02:14:23.360]   take input the weights and the parameters of the neural net mathematical expression for the forward
+[02:14:23.360 --> 02:14:28.320]   pass followed by a loss function and the loss function tries to measure the accuracy of the
+[02:14:28.320 --> 02:14:33.440]   predictions and usually the loss will be low when your predictions are matching your targets or
+[02:14:33.440 --> 02:14:38.960]   where the network is basically behaving well so we we manipulate the loss function so that when
+[02:14:38.960 --> 02:14:45.440]   the loss is low the network is doing what you want it to do on your problem and then we backward the
+[02:14:45.440 --> 02:14:50.800]   loss use back propagation to get the gradient and then we know how to tune all the parameters to
+[02:14:50.800 --> 02:14:55.200]   decrease the loss locally but then we have to iterate that process many times in what's called
+[02:14:55.200 --> 02:15:00.960]   the gradient descent so we simply follow the gradient information and that minimizes the loss
+[02:15:00.960 --> 02:15:05.120]   and the loss is arranged so that when the loss is minimized the network is doing what you want it to
+[02:15:05.120 --> 02:15:12.640]   do and yeah so we just have a blob of neural stuff and we can make it do arbitrary things
+[02:15:12.640 --> 02:15:17.120]   and that's what gives neural nets their power it's you know this is a very tiny network with
+[02:15:17.120 --> 02:15:24.160]   41 parameters but you can build significantly more complicated neural nets with billions at
+[02:15:24.160 --> 02:15:29.840]   this point almost trillions of parameters and it's a massive blob of neural tissue simulated neural
+[02:15:29.840 --> 02:15:36.560]   tissue roughly speaking and you can make it do extremely complex problems and these neural nets
+[02:15:36.560 --> 02:15:42.800]   then have all kinds of very fascinating emergent properties in when you try to make them do
+[02:15:42.800 --> 02:15:49.680]   significantly hard problems as in the case of gpt for example we have massive amounts of text from
+[02:15:49.680 --> 02:15:54.400]   the internet and we're trying to get a neural net to predict to take like a few words and try to
+[02:15:54.400 --> 02:15:58.480]   predict the next word in a sequence that's the learning problem and it turns out that when you
+[02:15:58.480 --> 02:16:02.880]   train this on all of internet the neural net actually has like really remarkable emergent
+[02:16:02.880 --> 02:16:08.400]   properties but that neural net would have hundreds of billions of parameters but it works on
+[02:16:08.400 --> 02:16:13.360]   fundamentally the exact same principles the neural net of course will be a bit more complex but
+[02:16:13.360 --> 02:16:20.080]   otherwise the evaluating the gradient is there and will be identical and the gradient descent would
+[02:16:20.080 --> 02:16:24.720]   be there and would be basically identical but people usually use slightly different updates
+[02:16:24.720 --> 02:16:30.640]   this is a very simple stochastic gradient descent update and the loss function would not be a mean
+[02:16:30.640 --> 02:16:34.880]   squared error they would be using something called the cross entropy loss for predicting the next
+[02:16:34.880 --> 02:16:38.560]   token so there's a few more details but fundamentally the neural network setup and
+[02:16:38.560 --> 02:16:44.800]   neural network training is identical and pervasive and now you understand intuitively how that works
+[02:16:44.800 --> 02:16:48.800]   under the hood in the beginning of this video i told you that by the end of it you would understand
+[02:16:48.800 --> 02:16:53.040]   everything in micrograd and then would slowly build it up let me briefly prove that to you
+[02:16:54.000 --> 02:16:58.640]   so i'm going to step through all the code that is in micrograd as of today actually potentially some
+[02:16:58.640 --> 02:17:02.160]   of the code will change by the time you watch this video because i intend to continue developing
+[02:17:02.160 --> 02:17:07.680]   micrograd but let's look at what we have so far at least init.py is empty when you go to
+[02:17:07.680 --> 02:17:13.600]   engine.py that has the value everything here you should mostly recognize so we have the data.data.grad
+[02:17:13.600 --> 02:17:18.320]   attributes we have the backward function we have the previous set of children and the operation
+[02:17:18.320 --> 02:17:24.320]   that produced this value we have addition multiplication and raising to a scalar power
+[02:17:24.320 --> 02:17:29.200]   we have the relu non-linearity which is slightly different type of non-linearity than tanh that
+[02:17:29.200 --> 02:17:34.160]   we used in this video both of them are non-linearities and notably tanh is not actually
+[02:17:34.160 --> 02:17:39.680]   present in micrograd as of right now but i intend to add it later we have the backward which is
+[02:17:39.680 --> 02:17:45.440]   identical and then all of these other operations which are built up on top of operations here
+[02:17:45.440 --> 02:17:49.040]   so value should be very recognizable except for the non-linearity used in this video
+[02:17:49.040 --> 02:17:55.200]   there's no massive difference between relu and tanh and sigmoid and these other non-linearities
+[02:17:55.200 --> 02:18:00.240]   they're all roughly equivalent and can be used in MLPs so i use tanh because it's a bit smoother
+[02:18:00.240 --> 02:18:04.480]   and because it's a little bit more complicated than relu and therefore it's stressed a little
+[02:18:04.480 --> 02:18:09.440]   bit more the local gradients and working with those derivatives which i thought would be useful
+[02:18:09.440 --> 02:18:15.120]   and then .py is the neural networks library as i mentioned so you should recognize
+[02:18:15.120 --> 02:18:21.840]   identical implementation of neuron layer and MLP notably or not so much we have a class module here
+[02:18:21.840 --> 02:18:27.120]   there's a parent class of all these modules i did that because there's an nn.module class
+[02:18:27.120 --> 02:18:32.720]   in pytorch and so this exactly matches that api and nn.module in pytorch has also a zero grad
+[02:18:32.720 --> 02:18:40.720]   which i refactored out here so that's the end of micrograd really then there's a test which you'll
+[02:18:40.720 --> 02:18:47.520]   see basically creates two chunks of code one in micrograd and one in pytorch and we'll make sure
+[02:18:47.520 --> 02:18:51.920]   that the forward and the backward paths agree identically for a slightly less complicated
+[02:18:51.920 --> 02:18:57.360]   expression a slightly more complicated expression everything agrees so we agree with pytorch and all
+[02:18:57.360 --> 02:19:02.880]   of these operations and finally there's a demo.pypy.ymb here and it's a bit more complicated
+[02:19:02.880 --> 02:19:07.680]   binary classification demo than the one i covered in this lecture so we only had a tiny data set
+[02:19:07.680 --> 02:19:13.680]   of four examples here we have a bit more complicated example with lots of blue points and lots of red
+[02:19:13.680 --> 02:19:18.800]   points and we're trying to again build a binary classifier to distinguish two-dimensional points
+[02:19:18.800 --> 02:19:25.440]   as red or blue it's a bit more complicated MLP here with it's a bigger MLP the loss is a bit
+[02:19:25.440 --> 02:19:31.680]   more complicated because it supports batches so because our data set was so tiny we always did a
+[02:19:31.680 --> 02:19:36.400]   forward pass on the entire data set of four examples but when your data set is like a million
+[02:19:36.400 --> 02:19:42.000]   examples what we usually do in practice is we basically pick out some random subset we call
+[02:19:42.000 --> 02:19:47.120]   that a batch and then we only process the batch forward backward and update so we don't have to
+[02:19:47.120 --> 02:19:52.640]   forward the entire training set so this supports batching because there's a lot more examples here
+[02:19:52.640 --> 02:19:58.720]   we do a forward pass the loss is slightly more different this is a max margin loss that i
+[02:19:58.720 --> 02:20:03.760]   implement here the one that we used was the mean squared error loss because it's the simplest one
+[02:20:04.560 --> 02:20:09.040]   there's also the binary cross-entropy loss all of them can be used for binary classification
+[02:20:09.040 --> 02:20:12.720]   and don't make too much of a difference in the simple examples that we looked at so far
+[02:20:12.720 --> 02:20:18.640]   there's something called L2 regularization used here this has to do with generalization of the
+[02:20:18.640 --> 02:20:23.920]   neural net and controls the overfitting in machine learning setting but i did not cover these concepts
+[02:20:23.920 --> 02:20:29.520]   in concepts in this video potentially later and the training loop you should recognize so forward
+[02:20:29.520 --> 02:20:36.720]   backward with zero grad and update and so on you'll notice that in the update here the learning rate
+[02:20:36.720 --> 02:20:42.720]   is scaled as a function of number of iterations and it shrinks and this is something called
+[02:20:42.720 --> 02:20:47.040]   learning rate decay so in the beginning you have a high learning rate and as the network
+[02:20:47.040 --> 02:20:52.000]   sort of stabilizes near the end you bring down the learning rate to get some of the fine details in
+[02:20:52.000 --> 02:20:57.440]   the end and in the end we see the decision surface of the neural net and we see that it learns to
+[02:20:57.440 --> 02:21:02.880]   separate out the red and the blue area based on the data points so that's the slightly more
+[02:21:02.880 --> 02:21:08.720]   complicated example in the demo demo.hypeiymb that you're free to go over but yeah as of today
+[02:21:08.720 --> 02:21:13.040]   that is micrograd i also wanted to show you a little bit of real stuff so that you get to see
+[02:21:13.040 --> 02:21:17.760]   how this is actually implemented in a production grade library like pytorch so in particular i
+[02:21:17.760 --> 02:21:23.520]   wanted to show i wanted to find and show you the backward pass for 10h in pytorch so here in
+[02:21:23.520 --> 02:21:30.560]   micrograd we see that the backward pass for 10h is 1 minus t square where t is the output of the 10h
+[02:21:30.560 --> 02:21:37.360]   of x times of that grad which is the chain rule so we're looking for something that looks like this
+[02:21:37.360 --> 02:21:45.760]   now i went to pytorch which has an open source github codebase and i looked through a lot of
+[02:21:45.760 --> 02:21:52.800]   its code and honestly i i spent about 15 minutes and i couldn't find 10h and that's because these
+[02:21:52.800 --> 02:21:58.320]   libraries unfortunately they grow in size and entropy and if you just search for 10h you get
+[02:21:58.320 --> 02:22:05.760]   apparently 2800 results and 400 and 406 files so i don't know what these files are doing honestly
+[02:22:05.760 --> 02:22:11.920]   and why there are so many mentions of 10h but unfortunately these libraries are quite complex
+[02:22:11.920 --> 02:22:19.840]   they're meant to be used not really inspected eventually i did stumble on someone who tries to
+[02:22:19.840 --> 02:22:24.880]   change the 10h backward code for some reason and someone here pointed to the cpu kernel and the
+[02:22:24.880 --> 02:22:31.440]   cuda kernel for 10h backward so this so basically depends on if you're using pytorch on a cpu device
+[02:22:31.440 --> 02:22:36.080]   or on a gpu which these are different devices and i haven't covered this but this is the 10h
+[02:22:36.080 --> 02:22:45.200]   backward kernel for cpu and the reason it's so large is that number one this is like if you're
+[02:22:45.200 --> 02:22:49.280]   using a complex type which we haven't even talked about if you're using a specific data type of
+[02:22:49.280 --> 02:22:56.560]   bfloat16 which we haven't talked about and then if you're not then this is the kernel and deep here
+[02:22:56.560 --> 02:23:04.720]   we see something that resembles our backward pass so they have a times 1 minus b square so this b
+[02:23:04.720 --> 02:23:12.560]   b here must be the output of the 10h and this is the out.grad so here we found it deep inside
+[02:23:14.080 --> 02:23:19.600]   pytorch on this location for some reason inside binary ops kernel when 10h is not actually binary
+[02:23:19.600 --> 02:23:29.280]   op and then this is the gpu kernel we're not complex we're here and here we go with one
+[02:23:29.280 --> 02:23:35.440]   line of code so we did find it but basically unfortunately these code bases are very large and
+[02:23:35.440 --> 02:23:39.760]   micrograd is very very simple but if you actually want to use real stuff
+[02:23:40.400 --> 02:23:45.840]   finding the code for it you'll actually find that difficult i also wanted to show you a little
+[02:23:45.840 --> 02:23:50.560]   example here where pytorch is showing you how you can register a new type of function that you want
+[02:23:50.560 --> 02:23:57.280]   to add to pytorch as a lego building block so here if you want to for example add a legendre polynomial
+[02:23:57.280 --> 02:24:05.600]   3 here's how you could do it you will register it as a class that subclasses torch.rgrad.function
+[02:24:06.320 --> 02:24:12.080]   and then you have to tell pytorch how to forward your new function and how to backward through it
+[02:24:12.080 --> 02:24:16.240]   so as long as you can do the forward pass of this little function piece that you want to add
+[02:24:16.240 --> 02:24:20.480]   and as long as you know the the local derivative the local gradients which are implemented in the
+[02:24:20.480 --> 02:24:24.960]   backward pytorch will be able to back propagate through your function and then you can use this
+[02:24:24.960 --> 02:24:30.320]   as a lego block in a larger lego castle of all the different lego blocks that pytorch already has
+[02:24:30.320 --> 02:24:34.240]   and so that's the only thing you have to tell pytorch and everything would just work
+[02:24:34.240 --> 02:24:39.360]   and you can register new types of functions in this way following this example and that is
+[02:24:39.360 --> 02:24:43.440]   everything that i wanted to cover in this lecture so i hope you enjoyed building out micrograd with
+[02:24:43.440 --> 02:24:50.560]   me i hope you find it interesting insightful and yeah i will post a lot of the links that are
+[02:24:50.560 --> 02:24:55.280]   related to this video in the video description below i will also probably post a link to a
+[02:24:55.280 --> 02:25:00.800]   discussion forum or discussion group where you can ask questions related to this video and then i can
+[02:25:00.800 --> 02:25:05.760]   answer or someone else can answer your questions and i may also do a follow-up video that answers
+[02:25:05.760 --> 02:25:11.360]   some of the most common questions but for now that's it i hope you enjoyed it if you did then
+[02:25:11.360 --> 02:25:14.880]   please like and subscribe so that youtube knows to feature this video to more people
+[02:25:14.880 --> 02:25:17.360]   and that's it for now i'll see you later
+[02:25:22.480 --> 02:25:29.520]   now here's the problem we know dl by wait what is the problem
+[02:25:29.520 --> 02:25:34.960]   and that's everything i wanted to cover in this lecture so i hope
+[02:25:34.960 --> 02:25:39.120]   you enjoyed us building up micro grabbed micro grab
+[02:25:39.120 --> 02:25:45.520]   okay now let's do the exact same thing for multiply because we can't do something like
+[02:25:45.520 --> 02:25:51.600]   a times two whoops i know what happened there
+
