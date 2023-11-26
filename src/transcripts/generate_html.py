@@ -10,7 +10,6 @@ from transcripts.utils import (
     data_dir,
     html_dir,
     configs_dir,
-    convert_cache_to_dataframe,
 )
 
 logging.basicConfig(
@@ -305,13 +304,13 @@ def generate_master_index(
 
 
 def generate_all_video_index(
-    config, html_dir=html_dir, css_styles=css_styles_index
+    ids, html_dir=html_dir, css_styles=css_styles_index
 ):
     """Generate a single index page for all channels"""
     logging.info("Generating index page for all channels")
 
     # load videos from video_details_cache.json
-    all_videos = convert_cache_to_dataframe(video_details_cache)
+    # all_videos = convert_cache_to_dataframe(video_details_cache)
 
     # Write to a single HTML file
     index_html = html_dir / "index_all_channels.html"
@@ -326,14 +325,19 @@ def generate_all_video_index(
             "<tr><th>Date</th><th>Title</th><th>Channel</th><th>Duration</th><th>Whisper Transcript</th><th>Transcript Only</th></tr>"
         )
 
-        for index, row in all_videos.iterrows():
-            video_id = row["id"]
+        for index, video_id in enumerate(ids):
+            # video_id = row["id"]
+            details = video_details_cache[video_id]
             whisper_transcript_file = f"{video_id}.html"
             transcript_file = f"transcript_{video_id}.html"
-            formatted_date = datetime.strptime(
-                row["upload_date"], "%Y-%m-%d"
-            ).strftime("%Y-%m-%d")
-            # channel_title = row['channel'].replace("_", " ").title()
+            try:
+                formatted_date = datetime.strptime(
+                    details["upload_date"], "%Y-%m-%d"
+                ).strftime("%Y-%m-%d")
+            except ValueError:
+                formatted_date = datetime.strptime(
+                    details["upload_date"], "%Y%m%d"
+                ).strftime("%Y%m%d")
 
             f.write(
                 '<tr style="{}">'.format(
@@ -341,9 +345,8 @@ def generate_all_video_index(
                 )
             )
             f.write(f"<td>{formatted_date}</td>")
-            f.write(f'<td>{row["title"]}</td>')
-            # f.write(f"<td>{channel_title}</td>")
-            f.write(f"<td>{row['duration'] // 60} min</td>")
+            f.write(f'<td>{details["title"]}</td>')
+            f.write(f"<td>{details['duration'] // 60} min</td>")
             f.write(
                 f'<td><a href="./{whisper_transcript_file}">Whisper Transcript</a></td>'
             )
@@ -609,7 +612,7 @@ if __name__ == "__main__":
         generate_index_page(filtered_ids, channel["name"])
         logging.info(f"Total videos: {len(filtered_ids)}")
 
-    # generate_all_video_index(config_channels)
+    generate_all_video_index(filtered_ids)
     generate_master_index(config_channels)
 
     logging.info("All tasks completed")
