@@ -49,9 +49,12 @@ def convert_cache_to_dataframe(cache):
         id_ = attributes["id"]
         title = attributes["title"]
         upload_date = attributes["upload_date"]
-        upload_date_formatted = datetime.strptime(
-            upload_date, "%Y%m%d"
-        ).strftime("%Y-%m-%d")
+        if upload_date is None:
+            upload_date_formatted = None
+        else:
+            upload_date_formatted = datetime.strptime(
+                upload_date, "%Y%m%d"
+            ).strftime("%Y-%m-%d")
         flattened_dict = {
             "id": id_,
             "title": title,
