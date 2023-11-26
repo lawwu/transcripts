@@ -10,6 +10,7 @@ from transcripts.utils import (
     data_dir,
     html_dir,
     configs_dir,
+    convert_cache_to_dataframe,
 )
 
 logging.basicConfig(
@@ -72,6 +73,58 @@ css_styles = """
     }
     tr:nth-child(odd) {
         background-color: #e6e6e6;
+    }
+</style>
+"""
+
+css_styles_index = """
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #f4f4f4;
+        color: #333;
+    }
+    .container {
+        width: 80%;
+        margin: auto;
+        overflow: hidden;
+    }
+    h1 {
+        color: #333;
+        text-align: center;
+        padding: 20px 0;
+    }
+    ul {
+        list-style: none;
+        padding: 0;
+    }
+    ul li {
+        background: #fff;
+        margin: 5px 0;
+        padding: 10px;
+        border-radius: 5px;
+    }
+    ul li a {
+        text-decoration: none;
+        color: #0000FF;  /* Traditional blue color for links */
+    }
+    ul li a:hover {
+        color: #0275d8;
+        text-decoration: underline;
+    }
+    footer {
+        text-align: center;
+        padding: 20px 0;
+        font-size: 0.8em;
+    }
+    footer a {
+        color: #0275d8;
+        text-decoration: none;
+    }
+    footer a:hover {
+        text-decoration: underline;
     }
 </style>
 """
@@ -216,63 +269,12 @@ def fetch_video_details(
             return info_dict
 
 
-def generate_master_index(config, html_dir=html_dir):
+def generate_master_index(
+    config, html_dir=html_dir, css_styles=css_styles_index
+):
     """Main Index Page - index.html"""
     index_html = html_dir / "index.html"
     with open(index_html, "w") as f:
-        # Adding some basic CSS for styling
-        css_styles = """
-       <style>
-            body {
-                font-family: Arial, sans-serif;
-                margin: 0;
-                padding: 0;
-                background-color: #f4f4f4;
-                color: #333;
-            }
-            .container {
-                width: 80%;
-                margin: auto;
-                overflow: hidden;
-            }
-            h1 {
-                color: #333;
-                text-align: center;
-                padding: 20px 0;
-            }
-            ul {
-                list-style: none;
-                padding: 0;
-            }
-            ul li {
-                background: #fff;
-                margin: 5px 0;
-                padding: 10px;
-                border-radius: 5px;
-            }
-            ul li a {
-                text-decoration: none;
-                color: #0000FF;  /* Traditional blue color for links */
-            }
-            ul li a:hover {
-                color: #0275d8;
-                text-decoration: underline;
-            }
-            footer {
-                text-align: center;
-                padding: 20px 0;
-                font-size: 0.8em;
-            }
-            footer a {
-                color: #0275d8;
-                text-decoration: none;
-            }
-            footer a:hover {
-                text-decoration: underline;
-            }
-        </style>
-        """
-
         # Writing the HTML content
         f.write("<html><head><title>Channel Index</title>")
         f.write(css_styles)  # Include CSS styles
@@ -300,6 +302,57 @@ def generate_master_index(config, html_dir=html_dir):
         f.write("</body></html>")
 
     logging.info(f"Master index page generated at {index_html}")
+
+
+def generate_all_video_index(
+    config, html_dir=html_dir, css_styles=css_styles_index
+):
+    """Generate a single index page for all channels"""
+    logging.info("Generating index page for all channels")
+
+    # load videos from video_details_cache.json
+    all_videos = convert_cache_to_dataframe(video_details_cache)
+
+    # Write to a single HTML file
+    index_html = html_dir / "index_all_channels.html"
+    with open(index_html, "w") as f:
+        f.write("<html><head><title>All Channels Transcripts</title>")
+        f.write(css_styles)
+        f.write(add_google_analytics())
+        f.write(
+            '</head><body><h1>All Channels Transcripts</h1><table style="width:100%; border-collapse: collapse;">'
+        )
+        f.write(
+            "<tr><th>Date</th><th>Title</th><th>Channel</th><th>Duration</th><th>Whisper Transcript</th><th>Transcript Only</th></tr>"
+        )
+
+        for index, row in all_videos.iterrows():
+            video_id = row["id"]
+            whisper_transcript_file = f"{video_id}.html"
+            transcript_file = f"transcript_{video_id}.html"
+            formatted_date = datetime.strptime(
+                row["upload_date"], "%Y-%m-%d"
+            ).strftime("%Y-%m-%d")
+            # channel_title = row['channel'].replace("_", " ").title()
+
+            f.write(
+                '<tr style="{}">'.format(
+                    "background-color: #f2f2f2;" if index % 2 == 0 else ""
+                )
+            )
+            f.write(f"<td>{formatted_date}</td>")
+            f.write(f'<td>{row["title"]}</td>')
+            # f.write(f"<td>{channel_title}</td>")
+            f.write(f"<td>{row['duration'] // 60} min</td>")
+            f.write(
+                f'<td><a href="./{whisper_transcript_file}">Whisper Transcript</a></td>'
+            )
+            f.write(
+                f'<td><a href="./{transcript_file}">Transcript Only</a></td>'
+            )
+            f.write("</tr>")
+
+        f.write("</table></body></html>")
 
 
 def generate_index_page(video_ids, channel_name):
@@ -517,15 +570,36 @@ if __name__ == "__main__":
 
         # generate html for youtube videos
         for id in video_ids:
-            # skip this id since regex isn't working
-            if id == "-hxeDjAxvJ8":
+            # skip this id since these transcripts do not exist
+            # if id in ["-hxeDjAxvJ8", "-QbjYf-sWpI", "-pdmry5gU7g", "-2ZBCUVXciw", "-8huxdlxe0I"]:
+            if id[0] == "-":
+                continue
+
+            # these videos are private
+            private_videos = [
+                "LvGJeivoJ_U",
+                "_YgOjzrZook",
+                "4vI4iKLSP5c",
+                "9dz2t3CbkzI",
+                "hstHUxkkBSQ",
+                "BM33MCMfBd4",
+                "Qv0YGAAJkmI",
+                "LE10gdGnFS4",
+                "uWediDOjcSA",
+                "RSw12R-UARk",
+                "gSEJOE1pCEA",
+                "rViJJ_XQQlM",
+                "whcUYpv3cz0",
+                "Knk90Kw0Ypc",
+            ]
+            if id in private_videos:
                 continue
             # Generate individual transcript pages
             generate_html(id)
             # Generate individual transcript-only pages
             generate_transcript_page(id)
 
-        exclude_list = []
+        exclude_list = private_videos
 
         all_ids = video_ids
         # exclude videos in exclude list
@@ -535,6 +609,7 @@ if __name__ == "__main__":
         generate_index_page(filtered_ids, channel["name"])
         logging.info(f"Total videos: {len(filtered_ids)}")
 
+    # generate_all_video_index(config_channels)
     generate_master_index(config_channels)
 
     logging.info("All tasks completed")
