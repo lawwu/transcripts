@@ -28,10 +28,18 @@ pre-commit install
 
 To download all IDs of a channel into a `txt` file:
 ```bash
-yt-dlp --flat-playlist --print id https://www.youtube.com/@lexfridman >> data/lex_fridman_ids.txt
+yt-dlp --flat-playlist --print id https://www.youtube.com/@lexfridman >> data/video_ids_done.txt
 
 # Radical Personal Finance - Google Podcasts
 yt-dlp -v --flat-playlist --print url https://podcasts.google.com/feed/aHR0cDovL3JhZGljYWxwZXJzb25hbGZpbmFuY2UubGlic3luLmNvbS9yc3M >> data/rpf_ids.txt
+
+yt-dlp -v --flat-playlist --print id https://www.youtube.com/watch?v=G3QoF4dqdE0&list=PLFF7F6AE365DA3564 >> data/apj_ids.txt
+
+yt-dlp -v --flat-playlist --print id https://www.youtube.com/@AndrejKarpathy >> data/andrej_karpathy_ids_done.txt
+
+yt-dlp -v --flat-playlist --print id https://www.youtube.com/@CalNewportMedia >> data/calnewport_ids_done.txt
+
+yt-dlp -v --flat-playlist --print id https://www.youtube.com/watch?v=G3QoF4dqdE0&list=PLFF7F6AE365DA3564 >> data/apj_ids_done.txt
 ```
 
 To transcribe all of the video ids in a text file:
