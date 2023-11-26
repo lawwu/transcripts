@@ -99,6 +99,7 @@ Others
 - [x] clean up the rpf transcripts, use ids
 - [x] lex fridman: reverse order of transcripts, transcribe rest of them in `video_ids.txt`
 - [x] modify `bash_transcribe_new_videos.sh` to get new videos for each channel, add url to the config
+- [x] schedule a crontab every 2 hours
 - [ ] create all transcript page ordered by date
 - [ ] create other transcript page
 - [ ] check transcript is good, sometimes whisper generates transcripts that have invalid utf-8
