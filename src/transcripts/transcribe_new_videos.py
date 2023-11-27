@@ -73,7 +73,7 @@ subprocess.run(
         "git",
         "commit",
         "-m",
-        f"AUTO: adding latest messages from {datetime.now().strftime('%Y-%m-%d')}",
+        f"AUTO: adding latest transcripts from {datetime.now().strftime('%Y-%m-%d')}",
     ]
 )
 subprocess.run(["git", "push"])
