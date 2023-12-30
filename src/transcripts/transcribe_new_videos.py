@@ -16,6 +16,7 @@ with open(configs_dir / "channels.json", "r") as f:
 for channel in channels:
     # Step 1: Get all video list from the channel
     # Use ID for YouTube, Google Podcast, use URL
+    logging.info(f"Processing: {channel['name']}")
     if channel["name"] == "radical_personal_finance":
         cmd = f"yt-dlp -v --flat-playlist --print url {channel['url']}"
     else:
@@ -46,17 +47,17 @@ for channel in channels:
             for existing in existing_ids:
                 f.write(f"{existing}\n")
 
-        # Step 5: Write new video ids to bcc_live_video_ids.txt
+        # Step 5: Write new video ids to in_file.txt
         with open(data_dir / channel["in_file"], "w") as f:
             for vid in reversed(new_ids):
                 f.write(f"{vid}\n")
     else:
         logging.info("No new videos found")
-        # make sure bcc_live_video_ids.txt is blank
+        # make sure in_file.txt is blank
         with open(data_dir / channel["in_file"], "w") as f:
             f.write("")
 
-    # Check if bcc_live_video_ids.txt is empty
+    # Check if in_file.txt is empty
     if os.path.getsize(f"./data/{channel['in_file']}") > 0:
         # Transcribe new videos
         subprocess.run(["./bash_transcribe.sh", f"./data/{channel['in_file']}"])
