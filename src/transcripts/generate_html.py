@@ -601,6 +601,9 @@ if __name__ == "__main__":
                 "Hj8_6SRNd7M",
                 "I0rH86ForOc",
                 "3RQkbByS3VU",
+                "0vXdMhwAfTk",
+                "JaMVzW9yiBc",
+                "qZOF4TQK4Ug",
             ]
             if id in private_videos:
                 continue
