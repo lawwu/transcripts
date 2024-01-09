@@ -1,0 +1,1513 @@
+
+[00:00:00.000 --> 00:00:08.040]   So this is lecture 15.
+[00:00:08.040 --> 00:00:11.160]   And today we'll be talking about code generation.
+[00:00:11.160 --> 00:00:14.880]   So a little bit unusual, since we'll
+[00:00:14.880 --> 00:00:17.360]   be generating unnatural languages this time.
+[00:00:17.360 --> 00:00:18.920]   But it will connect in a number of ways
+[00:00:18.920 --> 00:00:20.760]   to natural language generation.
+[00:00:20.760 --> 00:00:24.000]   So before we start, just a few announcements.
+[00:00:24.000 --> 00:00:26.480]   The project milestone is due this Thursday.
+[00:00:26.480 --> 00:00:31.040]   You are certainly all aware of that.
+[00:00:31.040 --> 00:00:34.320]   And also, when doing the projects,
+[00:00:34.320 --> 00:00:37.120]   it's always good to keep track of how much you're
+[00:00:37.120 --> 00:00:39.640]   spending on Azure and AWS.
+[00:00:39.640 --> 00:00:42.760]   And one thing to notice is that disk costs money.
+[00:00:42.760 --> 00:00:46.040]   Like, it doesn't cost that much compared to GPUs,
+[00:00:46.040 --> 00:00:48.640]   but it still costs something.
+[00:00:48.640 --> 00:00:54.320]   Be sure to not be spending all your money on disk.
+[00:00:54.320 --> 00:00:57.240]   So tomorrow, John will be running a discussion
+[00:00:57.240 --> 00:00:59.520]   on training large language models.
+[00:00:59.520 --> 00:01:01.320]   It'll be really cool.
+[00:01:01.320 --> 00:01:04.600]   So it'll be at 3:30 in the Scania auditorium.
+[00:01:04.600 --> 00:01:06.560]   There's more details on that.
+[00:01:06.560 --> 00:01:10.760]   And this Thursday, we'll have our first invited talk
+[00:01:10.760 --> 00:01:13.000]   in our regular lecture time.
+[00:01:13.000 --> 00:01:14.120]   And attendance is expected.
+[00:01:14.120 --> 00:01:16.720]   So please, everyone show up.
+[00:01:16.720 --> 00:01:17.640]   It'll be really cool.
+[00:01:17.640 --> 00:01:24.160]   All right, so let's get started.
+[00:01:24.160 --> 00:01:29.480]   So we'll be talking about a problem that, in the literature,
+[00:01:29.480 --> 00:01:30.600]   is called program synthesis.
+[00:01:30.600 --> 00:01:34.320]   And let's see what that means.
+[00:01:34.320 --> 00:01:38.680]   So program synthesis is actually a pretty old challenge
+[00:01:38.680 --> 00:01:40.680]   of artificial intelligence.
+[00:01:40.680 --> 00:01:42.160]   And the goal is to write programs,
+[00:01:42.160 --> 00:01:45.040]   to create programs that can take some sort of specification
+[00:01:45.040 --> 00:01:47.360]   and write a program that satisfies that specification.
+[00:01:47.360 --> 00:01:49.880]   So it's a program that writes a program.
+[00:01:49.880 --> 00:01:52.480]   So that's what a program synthesizer is.
+[00:01:52.480 --> 00:01:56.000]   It's a program that takes your specification
+[00:01:56.000 --> 00:01:59.280]   and is able to generate some program.
+[00:01:59.280 --> 00:02:03.120]   And then you can ask, what kind of specification?
+[00:02:03.120 --> 00:02:05.520]   So one possible specification, for example,
+[00:02:05.520 --> 00:02:06.640]   could be a logical formula.
+[00:02:06.640 --> 00:02:09.120]   It could be like a mathematical formula
+[00:02:09.120 --> 00:02:12.480]   that specifies what behavior we want from the program.
+[00:02:12.480 --> 00:02:14.360]   It could be an equivalence program.
+[00:02:14.360 --> 00:02:16.960]   So I could say, OK, here is a slow implementation
+[00:02:16.960 --> 00:02:20.040]   of a sorting algorithm, mobile sort, for example.
+[00:02:20.040 --> 00:02:21.520]   And it runs in O of n squared.
+[00:02:21.520 --> 00:02:24.040]   And I want to synthesize another program that's equivalent.
+[00:02:24.040 --> 00:02:27.880]   So it generates all the same outputs given the same inputs.
+[00:02:27.880 --> 00:02:28.840]   But it's maybe faster.
+[00:02:28.840 --> 00:02:32.480]   So that could be a form of specification.
+[00:02:32.480 --> 00:02:33.680]   I could give examples.
+[00:02:33.680 --> 00:02:36.840]   I could say, OK, I want a program that, if I gave it
+[00:02:36.840 --> 00:02:38.680]   this input, it should generate this output.
+[00:02:38.680 --> 00:02:42.840]   If I give this string, it should give me back this string.
+[00:02:42.840 --> 00:02:47.560]   Or, as more popular these days, we could also,
+[00:02:47.560 --> 00:02:50.960]   maybe in addition to or instead of these other kinds
+[00:02:50.960 --> 00:02:53.040]   of specifications, also give a natural language description.
+[00:02:53.040 --> 00:02:56.280]   I could just write, I want a program that
+[00:02:56.280 --> 00:03:00.400]   performs a certain operation.
+[00:03:00.400 --> 00:03:04.240]   And so just to warm up, let's see
+[00:03:04.240 --> 00:03:08.640]   how this synthesis from logical specifications could look like.
+[00:03:08.640 --> 00:03:12.640]   So when would it make sense to use the program synthesizer
+[00:03:12.640 --> 00:03:14.880]   at all?
+[00:03:14.880 --> 00:03:16.760]   So it would only make sense to use a program
+[00:03:16.760 --> 00:03:19.680]   to write a program for us if that's in some way
+[00:03:19.680 --> 00:03:22.600]   easier than writing the program ourselves.
+[00:03:22.600 --> 00:03:25.520]   So it should be easier to specify
+[00:03:25.520 --> 00:03:28.760]   what the program does compared to exactly how
+[00:03:28.760 --> 00:03:31.760]   it should do that.
+[00:03:31.760 --> 00:03:34.760]   And this is different than natural language generation
+[00:03:34.760 --> 00:03:37.080]   in an important way in that we usually
+[00:03:37.080 --> 00:03:39.520]   have ways to test our output automatically.
+[00:03:39.520 --> 00:03:42.720]   So if I give the synthesizer, OK,
+[00:03:42.720 --> 00:03:44.960]   I want a program that, given these inputs,
+[00:03:44.960 --> 00:03:45.960]   generates these outputs.
+[00:03:45.960 --> 00:03:48.040]   And the synthesizer gives me back a program.
+[00:03:48.040 --> 00:03:51.640]   I can go in there and execute the program on the inputs
+[00:03:51.640 --> 00:03:55.760]   that I gave and verify that it generates the correct outputs.
+[00:03:55.760 --> 00:03:59.000]   And this is different than a natural language task.
+[00:03:59.000 --> 00:04:03.400]   For example, if I ask it to summarize an article
+[00:04:03.400 --> 00:04:06.040]   or a paragraph, and it gives me back a response.
+[00:04:06.040 --> 00:04:07.960]   And I can evaluate it in some ways.
+[00:04:07.960 --> 00:04:11.560]   I can compare it to human reference summaries,
+[00:04:11.560 --> 00:04:16.080]   or I can use a language model to evaluate the output
+[00:04:16.080 --> 00:04:17.200]   of another language model.
+[00:04:17.200 --> 00:04:19.880]   But I can't execute the summary and verify
+[00:04:19.880 --> 00:04:23.000]   that it's a good summary.
+[00:04:23.000 --> 00:04:24.440]   So yes?
+[00:04:24.440 --> 00:04:28.680]   How can you make certain that the output is always
+[00:04:28.680 --> 00:04:31.440]   correct, considering--
+[00:04:31.440 --> 00:04:33.560]   I mean, without formal verification,
+[00:04:33.560 --> 00:04:37.280]   how can you just make sure that the output program is correct,
+[00:04:37.280 --> 00:04:40.520]   since you'll be posturing to the I/Os on the test cases only?
+[00:04:40.520 --> 00:04:41.680]   Yeah, that's a good question.
+[00:04:41.680 --> 00:04:44.440]   So the question was, how can you make sure that the output is
+[00:04:44.440 --> 00:04:46.480]   correct in general?
+[00:04:46.480 --> 00:04:48.840]   Well, it depends on what specification we have.
+[00:04:48.840 --> 00:04:50.920]   If the specification is input/output examples,
+[00:04:50.920 --> 00:04:53.320]   all we can do is verify that it satisfies those examples.
+[00:04:53.320 --> 00:04:55.520]   We'll talk about the problem of that in a little bit.
+[00:04:55.520 --> 00:05:01.080]   Any other questions about this?
+[00:05:01.080 --> 00:05:03.840]   I'll give an example, so it will be very concrete starting
+[00:05:03.840 --> 00:05:06.400]   from there.
+[00:05:06.400 --> 00:05:09.000]   OK, so let's see how this could work.
+[00:05:09.000 --> 00:05:11.960]   Let's try to specify a program using
+[00:05:11.960 --> 00:05:15.120]   this sort of logical specification.
+[00:05:15.120 --> 00:05:17.680]   So our first attempt will be to specify,
+[00:05:17.680 --> 00:05:19.080]   how do I sort an array?
+[00:05:19.080 --> 00:05:21.960]   I want a program that receives an array as input
+[00:05:21.960 --> 00:05:24.560]   and returns a sorted array.
+[00:05:24.560 --> 00:05:27.480]   So how would I write that mathematically?
+[00:05:27.480 --> 00:05:29.240]   Our first attempt could be, well,
+[00:05:29.240 --> 00:05:32.040]   let's say that this program takes an array A
+[00:05:32.040 --> 00:05:36.600]   and outputs an array B. I can specify that I want the array B
+[00:05:36.600 --> 00:05:37.640]   to be sorted.
+[00:05:37.640 --> 00:05:40.200]   So mathematically, I could write that as,
+[00:05:40.200 --> 00:05:42.560]   for all of the indices i of the output,
+[00:05:42.560 --> 00:05:46.040]   I want the element at that index to be smaller than the--
+[00:05:46.040 --> 00:05:48.480]   or at most, the next element.
+[00:05:48.480 --> 00:05:51.760]   So like, sorted in increasing order.
+[00:05:51.760 --> 00:05:54.480]   So I can look at this statement and say, OK,
+[00:05:54.480 --> 00:05:57.680]   so if the output satisfies that, then it's a sorted array.
+[00:05:57.680 --> 00:06:01.400]   Does this look good?
+[00:06:01.400 --> 00:06:06.320]   Maybe, right?
+[00:06:06.320 --> 00:06:09.360]   So I can give that specification to a synthesizer,
+[00:06:09.360 --> 00:06:11.600]   and then it'll go and search for programs
+[00:06:11.600 --> 00:06:14.120]   that satisfy this, and then it returns
+[00:06:14.120 --> 00:06:17.200]   this program, which is called sort, takes an array A,
+[00:06:17.200 --> 00:06:20.440]   and returns the array 1, 2.
+[00:06:20.440 --> 00:06:22.160]   So if you look at the mathematical form,
+[00:06:22.160 --> 00:06:25.480]   let's say, well, for all of the indices of the output,
+[00:06:25.480 --> 00:06:28.440]   that element is smaller than or equal to the next element.
+[00:06:28.440 --> 00:06:31.280]   So it satisfies the specification that we gave,
+[00:06:31.280 --> 00:06:33.040]   but of course, not the program we wanted.
+[00:06:33.040 --> 00:06:39.160]   And then, OK, so maybe we missed something.
+[00:06:39.160 --> 00:06:43.560]   We missed that the output not only should be sorted,
+[00:06:43.560 --> 00:06:46.040]   but also should have the same elements as the input.
+[00:06:46.040 --> 00:06:49.760]   So I can specify that as, like, I
+[00:06:49.760 --> 00:06:52.280]   want the array B to have the same length as array A,
+[00:06:52.280 --> 00:06:55.120]   and it has to be a permutation for each element of the output.
+[00:06:55.120 --> 00:06:59.080]   It has to be somewhere there in the input.
+[00:06:59.080 --> 00:07:02.600]   And then writing a little bit more formally
+[00:07:02.600 --> 00:07:05.280]   in the first of the logic, it would look like that.
+[00:07:05.280 --> 00:07:07.880]   Don't have to try to parse it.
+[00:07:07.880 --> 00:07:09.720]   And then if I give that to the synthesizer,
+[00:07:09.720 --> 00:07:11.640]   maybe it will go and search for some programs
+[00:07:11.640 --> 00:07:15.040]   and return, like, quick sort or some function that
+[00:07:15.040 --> 00:07:16.560]   actually sorts the array.
+[00:07:16.560 --> 00:07:23.600]   So note that the problem here is quite non-trivial,
+[00:07:23.600 --> 00:07:25.800]   because the formula, as ugly as it is,
+[00:07:25.800 --> 00:07:27.480]   it doesn't tell us how to sort the array.
+[00:07:27.480 --> 00:07:30.680]   It just says that the array should be sorted in some way.
+[00:07:30.680 --> 00:07:33.160]   So it's not just a syntactical translation
+[00:07:33.160 --> 00:07:39.360]   between the formula that we gave and the programming language
+[00:07:39.360 --> 00:07:42.400]   that we're targeting.
+[00:07:42.400 --> 00:07:43.960]   But the thing that's obvious here
+[00:07:43.960 --> 00:07:45.600]   is that these logical specifications are
+[00:07:45.600 --> 00:07:46.960]   quite hard to read.
+[00:07:46.960 --> 00:07:50.280]   They're quite hard to write, of course, and also to check.
+[00:07:50.280 --> 00:07:54.720]   If I just gave you the formula that says an array sorted,
+[00:07:54.720 --> 00:07:57.920]   maybe at first it's not easy to see the corner case that just
+[00:07:57.920 --> 00:08:01.640]   being sorted is not enough.
+[00:08:01.640 --> 00:08:06.640]   And I mean, if I tell you that we are making a synthesizer
+[00:08:06.640 --> 00:08:09.600]   that takes this formula and returns a function that
+[00:08:09.600 --> 00:08:11.920]   sorts an array, you could reasonably
+[00:08:11.920 --> 00:08:16.280]   say that maybe it's just easier to write the function yourself.
+[00:08:16.280 --> 00:08:22.000]   But it is quite a challenge to do so, even then.
+[00:08:22.000 --> 00:08:24.640]   Any questions about the setup here?
+[00:08:29.240 --> 00:08:33.120]   So maybe logical formulas are too much.
+[00:08:33.120 --> 00:08:36.720]   We don't want to be specifying even simple programs
+[00:08:36.720 --> 00:08:40.240]   like sorting with those ugly first order formulas.
+[00:08:40.240 --> 00:08:41.560]   We could try something simpler.
+[00:08:41.560 --> 00:08:43.320]   We could try examples.
+[00:08:43.320 --> 00:08:45.480]   So input/output examples is a very natural kind
+[00:08:45.480 --> 00:08:46.240]   of specification.
+[00:08:46.240 --> 00:08:49.480]   And in fact, when writing programs,
+[00:08:49.480 --> 00:08:51.000]   software engineers usually already
+[00:08:51.000 --> 00:08:54.760]   write tests, which are kind of like input/output examples.
+[00:08:54.760 --> 00:08:57.280]   Like if I call the function with this input, it should return
+[00:08:57.280 --> 00:08:57.760]   this.
+[00:08:57.760 --> 00:09:00.640]   And I assert that it does that.
+[00:09:00.640 --> 00:09:04.320]   So how could I specify sorting in that case?
+[00:09:04.320 --> 00:09:07.560]   I could say, well, if I give the array 3, 2, 1, 0,
+[00:09:07.560 --> 00:09:09.920]   it should return 0, 1, 2, 3.
+[00:09:09.920 --> 00:09:13.000]   For 1, 4, 2, it should return 1, 2, 4.
+[00:09:13.000 --> 00:09:15.320]   And for 9, it should return 9.
+[00:09:15.320 --> 00:09:18.920]   Any human looking at these inputs and outputs
+[00:09:18.920 --> 00:09:21.320]   could reasonably guess that, oh, maybe it's
+[00:09:21.320 --> 00:09:26.080]   just sorting the input array.
+[00:09:26.080 --> 00:09:30.760]   But as we just saw with the logical synthesizer,
+[00:09:30.760 --> 00:09:34.040]   we could also get a program that looks like this.
+[00:09:34.040 --> 00:09:35.880]   Well, if the array has exactly four elements,
+[00:09:35.880 --> 00:09:38.360]   return 0, 1, 2, 3.
+[00:09:38.360 --> 00:09:41.760]   And if it has three, return this exact array.
+[00:09:41.760 --> 00:09:43.760]   And otherwise, always return 9.
+[00:09:43.760 --> 00:09:45.680]   Satisfies the input/output examples.
+[00:09:45.680 --> 00:09:50.840]   But somehow, it's still not what we want.
+[00:09:50.840 --> 00:09:56.560]   Of course, this is kind of an adversarial output.
+[00:09:56.560 --> 00:10:00.960]   And synthesis by example was actually massively
+[00:10:00.960 --> 00:10:04.240]   used in the last decade because of this feature in Excel
+[00:10:04.240 --> 00:10:10.040]   called Flash Fill, which was released in 2013.
+[00:10:10.040 --> 00:10:13.280]   And it was, for a while, one of the hottest things
+[00:10:13.280 --> 00:10:16.000]   to have happen to Microsoft Excel.
+[00:10:16.000 --> 00:10:18.680]   So Flash Fill is this really cool feature
+[00:10:18.680 --> 00:10:22.320]   where the goal is for Excel to guess what string
+[00:10:22.320 --> 00:10:23.920]   transformation you're applying.
+[00:10:23.920 --> 00:10:26.480]   So you can write, for example, if you
+[00:10:26.480 --> 00:10:30.120]   have a column that has people's first and last names,
+[00:10:30.120 --> 00:10:33.200]   and you want to just get the first name, for example,
+[00:10:33.200 --> 00:10:35.360]   of everyone, and you create a second column,
+[00:10:35.360 --> 00:10:39.320]   and you type, like in this example, Ned,
+[00:10:39.320 --> 00:10:43.240]   then Excel, if you click on the Flash Fill button,
+[00:10:43.240 --> 00:10:45.240]   it will magically guess that what you're doing is
+[00:10:45.240 --> 00:10:47.160]   you're splitting on the space and maybe taking
+[00:10:47.160 --> 00:10:51.080]   the first of those strings and suggest to complete that
+[00:10:51.080 --> 00:10:52.360]   as the second column.
+[00:10:52.360 --> 00:10:54.520]   And it can actually do quite complex transformations,
+[00:10:54.520 --> 00:10:56.440]   and usually from one or two examples.
+[00:10:56.440 --> 00:10:57.920]   And it's quite cool.
+[00:10:57.920 --> 00:11:07.800]   But as is clear at this point, synthesis from examples
+[00:11:07.800 --> 00:11:10.400]   has this inherent problem of ambiguity.
+[00:11:10.400 --> 00:11:14.240]   For any set of input/output examples that I give,
+[00:11:14.240 --> 00:11:16.920]   there will be usually an infinite number of programs
+[00:11:16.920 --> 00:11:20.280]   that have exactly that behavior on those examples.
+[00:11:20.280 --> 00:11:25.760]   But somehow, that's very non-human,
+[00:11:25.760 --> 00:11:29.560]   because humans, for some reason, have
+[00:11:29.560 --> 00:11:33.280]   a very specific preference over this infinite space
+[00:11:33.280 --> 00:11:35.280]   of programs.
+[00:11:35.280 --> 00:11:39.080]   If I look at this program that does this,
+[00:11:39.080 --> 00:11:42.480]   even if I don't tell you what kind of program
+[00:11:42.480 --> 00:11:44.400]   was I looking at in the first place,
+[00:11:44.400 --> 00:11:46.720]   it's very obvious that the program is probably
+[00:11:46.720 --> 00:11:49.000]   not useful for anything.
+[00:11:49.000 --> 00:11:52.360]   But it's obvious for you, not to a synthesizer, necessarily,
+[00:11:52.360 --> 00:11:56.560]   that's trying to find a program.
+[00:11:56.560 --> 00:12:00.080]   So for example, what program am I specifying here
+[00:12:00.080 --> 00:12:01.160]   with these two examples?
+[00:12:01.160 --> 00:12:07.200]   Gen transforms to January and transforms to February.
+[00:12:07.200 --> 00:12:11.760]   Any human guesses about what this should do?
+[00:12:11.760 --> 00:12:15.280]   It takes a short name from [INAUDIBLE]
+[00:12:15.280 --> 00:12:16.480]   Yeah, exactly.
+[00:12:16.480 --> 00:12:18.280]   It should obviously do that.
+[00:12:18.280 --> 00:12:22.200]   But for a while, I think maybe not--
+[00:12:22.200 --> 00:12:23.880]   I'm not sure if this fix was released
+[00:12:23.880 --> 00:12:25.000]   or is going to be released.
+[00:12:25.000 --> 00:12:28.720]   But for a while, this is what Flash would do.
+[00:12:28.720 --> 00:12:31.720]   It would complete Feb with February, March with Mar-y-er,
+[00:12:31.720 --> 00:12:35.640]   Mar-y-er, Mar-y-er-y, April, April-ary, and so on.
+[00:12:35.640 --> 00:12:38.400]   So it guessed from one example, what you're doing
+[00:12:38.400 --> 00:12:41.440]   is just concatenating you-ary on the string that you had.
+[00:12:41.440 --> 00:12:45.640]   So clearly extrapolates from any other possible string
+[00:12:45.640 --> 00:12:47.440]   that you might want.
+[00:12:47.440 --> 00:12:54.400]   So how do we deal with this ambiguity?
+[00:12:54.400 --> 00:12:55.880]   We'll talk a little bit about that.
+[00:12:55.880 --> 00:12:58.760]   But just to summarize what we've seen so far,
+[00:12:58.760 --> 00:13:00.240]   a synthesizer is this program that
+[00:13:00.240 --> 00:13:03.240]   takes some form of specification of what a program should do
+[00:13:03.240 --> 00:13:05.840]   and then generates a program.
+[00:13:05.840 --> 00:13:08.760]   And if we get this to work, this would actually
+[00:13:08.760 --> 00:13:11.240]   have massive impact in a number of ways.
+[00:13:11.240 --> 00:13:14.240]   It can lower the barrier to access programming
+[00:13:14.240 --> 00:13:16.880]   to a lot of people that maybe don't
+[00:13:16.880 --> 00:13:21.560]   want to spend four years taking CS classes.
+[00:13:21.560 --> 00:13:24.640]   So for example, people can automate a lot of things
+[00:13:24.640 --> 00:13:26.040]   just by using Flash fuel in Excel,
+[00:13:26.040 --> 00:13:29.120]   things that would take a lot more time.
+[00:13:29.120 --> 00:13:31.760]   And even programmers ourselves can
+[00:13:31.760 --> 00:13:33.200]   benefit from much higher productivity
+[00:13:33.200 --> 00:13:36.320]   if we can program in higher level ways.
+[00:13:36.320 --> 00:13:39.240]   So this is quite an interesting goal.
+[00:13:39.240 --> 00:13:40.900]   But it, of course, has many challenges.
+[00:13:40.900 --> 00:13:42.560]   It has this infinite space of programs.
+[00:13:42.560 --> 00:13:47.320]   A lot of them are unreasonable in this human way.
+[00:13:47.320 --> 00:13:50.960]   And here we're talking about, at least for now,
+[00:13:50.960 --> 00:13:53.680]   searching in a space of programs in a very specific language
+[00:13:53.680 --> 00:13:55.120]   where we can do search.
+[00:13:55.120 --> 00:13:56.800]   But it's, of course, impractical to do
+[00:13:56.800 --> 00:14:00.800]   search in any real world language like Python.
+[00:14:00.800 --> 00:14:03.240]   And we have this ambiguity problem.
+[00:14:03.240 --> 00:14:05.080]   How do you capture human preferences?
+[00:14:05.080 --> 00:14:10.720]   So we'll talk here about the connection between this problem
+[00:14:10.720 --> 00:14:13.500]   of ambiguity in program synthesis
+[00:14:13.500 --> 00:14:16.180]   and ambiguity in natural language, which
+[00:14:16.180 --> 00:14:18.980]   is extremely common.
+[00:14:18.980 --> 00:14:21.880]   So human languages are extremely ambiguous.
+[00:14:21.880 --> 00:14:24.500]   And if you stop to look at it more closely,
+[00:14:24.500 --> 00:14:26.380]   it's actually quite surprising that we
+[00:14:26.380 --> 00:14:30.060]   manage to communicate so well and so easily.
+[00:14:30.060 --> 00:14:32.820]   Even though if you look up almost any word
+[00:14:32.820 --> 00:14:35.980]   in the dictionary, it'll have a large number of meanings
+[00:14:35.980 --> 00:14:37.140]   that it might have.
+[00:14:37.140 --> 00:14:39.100]   Even sentences out of context can usually
+[00:14:39.100 --> 00:14:41.260]   have multiple interpretations.
+[00:14:41.260 --> 00:14:43.800]   But we somehow do just fine talking
+[00:14:43.800 --> 00:14:47.780]   in English in this very ambiguous medium.
+[00:14:47.780 --> 00:14:53.340]   And in fact, ambiguity is not even a bug of human languages.
+[00:14:53.340 --> 00:14:54.780]   It's a feature.
+[00:14:54.780 --> 00:14:56.380]   And it's a feature for efficiency.
+[00:14:56.380 --> 00:14:58.700]   So actually, there's this paper here
+[00:14:58.700 --> 00:15:02.540]   that's really cool that provides true arguments based
+[00:15:02.540 --> 00:15:07.180]   on information theory that any communication channel where
+[00:15:07.180 --> 00:15:10.020]   basically the meaning of words can
+[00:15:10.020 --> 00:15:13.060]   be disambiguated in context will make those words at some point
+[00:15:13.060 --> 00:15:16.020]   collide to make them both short.
+[00:15:16.020 --> 00:15:20.580]   So for example, if I have bear, the animal, and bear, the verb,
+[00:15:20.580 --> 00:15:24.020]   they usually appear in very different contexts.
+[00:15:24.020 --> 00:15:26.340]   So it would actually be very inefficient to create
+[00:15:26.340 --> 00:15:28.740]   your word to separate those.
+[00:15:28.740 --> 00:15:33.180]   Because at some point, I would be adding both more and longer
+[00:15:33.180 --> 00:15:34.500]   words to my vocabulary.
+[00:15:34.500 --> 00:15:37.820]   So if they can be disambiguated, it
+[00:15:37.820 --> 00:15:40.500]   should be optimal in a formal communication perspective
+[00:15:40.500 --> 00:15:44.540]   or actually get ambiguated at some point.
+[00:15:44.540 --> 00:15:48.300]   And there is one very interesting challenge
+[00:15:48.300 --> 00:15:50.940]   for computers to resolve this kind of ambiguity
+[00:15:50.940 --> 00:15:54.340]   called the Rinograd Schema Challenge.
+[00:15:54.340 --> 00:15:56.580]   And if you read the examples, they're quite entertaining.
+[00:15:56.580 --> 00:15:59.140]   Because you read them, and it's very obvious what's going on.
+[00:15:59.140 --> 00:16:01.980]   But it's also obvious what's the challenge.
+[00:16:01.980 --> 00:16:04.220]   So here, we have these two sentences.
+[00:16:04.220 --> 00:16:07.060]   The city councilman refused the demonstrators a permit
+[00:16:07.060 --> 00:16:09.060]   because they feared violence.
+[00:16:09.060 --> 00:16:10.640]   And the obvious ambiguity here is
+[00:16:10.640 --> 00:16:13.540]   that they could refer to the city councilman
+[00:16:13.540 --> 00:16:15.460]   or the demonstrators.
+[00:16:15.460 --> 00:16:18.180]   But when you hear they feared violence,
+[00:16:18.180 --> 00:16:22.940]   what's the obvious candidate here for what they refer to?
+[00:16:22.940 --> 00:16:24.540]   Yeah, exactly.
+[00:16:24.540 --> 00:16:26.980]   And when you say they advocated violence,
+[00:16:26.980 --> 00:16:30.340]   then you suddenly process the sentence in a different way.
+[00:16:30.340 --> 00:16:33.100]   And syntactically, the sentences are exactly the same.
+[00:16:33.100 --> 00:16:35.220]   But just because of your prior knowledge
+[00:16:35.220 --> 00:16:39.300]   about how these actors behave in the world,
+[00:16:39.300 --> 00:16:42.380]   you use that to disambiguate the two different meanings.
+[00:16:42.380 --> 00:16:48.620]   Yeah, so this is very easy for us,
+[00:16:48.620 --> 00:16:50.980]   handling this kind of ambiguity.
+[00:16:50.980 --> 00:16:52.020]   How do we do it?
+[00:16:52.020 --> 00:16:54.100]   It's an interesting question.
+[00:16:54.100 --> 00:16:56.140]   How do humans do this?
+[00:16:56.140 --> 00:17:01.380]   And the linguistic term for the kind of reasoning
+[00:17:01.380 --> 00:17:05.060]   that we do in this setting is called pragmatic reasoning.
+[00:17:05.060 --> 00:17:06.800]   So in linguistics, we have this distinction
+[00:17:06.800 --> 00:17:09.780]   between semantics and pragmatics of how do we
+[00:17:09.780 --> 00:17:11.300]   attribute meaning to things.
+[00:17:11.300 --> 00:17:14.260]   Semantics talks about the intrinsic meaning
+[00:17:14.260 --> 00:17:15.420]   of words in a certain sense.
+[00:17:15.420 --> 00:17:19.900]   And pragmatics, how does that change in context?
+[00:17:19.900 --> 00:17:23.900]   And to do this kind of resolution of ambiguity,
+[00:17:23.900 --> 00:17:28.140]   we have to operate with some sort of assumption
+[00:17:28.140 --> 00:17:30.140]   that helps us get off the ground.
+[00:17:30.140 --> 00:17:31.500]   And one important assumption here
+[00:17:31.500 --> 00:17:34.260]   is this assumption of cooperativity.
+[00:17:34.260 --> 00:17:36.340]   So when we're talking to someone,
+[00:17:36.340 --> 00:17:38.300]   we assume that they're trying to help us
+[00:17:38.300 --> 00:17:39.620]   understand what they're saying.
+[00:17:39.620 --> 00:17:44.340]   So they won't be adversarial, as the program synthesizer
+[00:17:44.340 --> 00:17:47.140]   was in those examples.
+[00:17:47.140 --> 00:17:51.140]   And we can use that assumption to do reasoning in context
+[00:17:51.140 --> 00:17:53.780]   and perform pragmatic reasoning.
+[00:17:53.780 --> 00:17:58.980]   So I'll show here one model of pragmatic reasoning
+[00:17:58.980 --> 00:18:01.140]   called the RSA, or Rational Speech Acts,
+[00:18:01.140 --> 00:18:03.340]   which is a Bayesian model of how this
+[00:18:03.340 --> 00:18:04.940]   could work in simple scenarios.
+[00:18:04.940 --> 00:18:08.020]   So here, we assume that we have two people,
+[00:18:08.020 --> 00:18:09.420]   like a speaker and a listener.
+[00:18:09.420 --> 00:18:15.940]   The speaker wants to refer to a certain object or person.
+[00:18:15.940 --> 00:18:17.860]   And it's going to choose an utterance for that,
+[00:18:17.860 --> 00:18:21.220]   like a word or a sentence to refer to that object.
+[00:18:21.220 --> 00:18:23.100]   And then the listener on the other side
+[00:18:23.100 --> 00:18:25.620]   is receiving this utterance and trying to infer, OK,
+[00:18:25.620 --> 00:18:28.460]   what does the speaker mean?
+[00:18:28.460 --> 00:18:30.900]   What are they referring to?
+[00:18:30.900 --> 00:18:32.900]   What object or what person?
+[00:18:32.900 --> 00:18:35.460]   So one really cool example here on the right
+[00:18:35.460 --> 00:18:38.420]   is this, where you have these two people.
+[00:18:38.420 --> 00:18:40.980]   And then the person on the right has, my friend has glasses.
+[00:18:40.980 --> 00:18:42.620]   And there are three people here.
+[00:18:42.620 --> 00:18:46.500]   There is one person wearing no glasses and no hat.
+[00:18:46.500 --> 00:18:48.100]   There's a person just wearing glasses,
+[00:18:48.100 --> 00:18:51.940]   and a person wearing a glass and a hat.
+[00:18:51.940 --> 00:18:55.940]   When you hear that this person is saying,
+[00:18:55.940 --> 00:18:57.940]   my friend has glasses, well, it's, of course,
+[00:18:57.940 --> 00:19:00.440]   ambiguous in this case, because there are two people wearing
+[00:19:00.440 --> 00:19:01.020]   glasses.
+[00:19:01.020 --> 00:19:04.460]   But does anyone have an intuition
+[00:19:04.460 --> 00:19:06.660]   of who would you guess they're talking about?
+[00:19:06.660 --> 00:19:07.160]   Yeah.
+[00:19:07.160 --> 00:19:09.100]   Can you just the middle one?
+[00:19:09.100 --> 00:19:12.740]   It's the most distinguished, or the only distinguishing factor
+[00:19:12.740 --> 00:19:14.140]   that they have.
+[00:19:14.140 --> 00:19:17.540]   Yeah, the middle one is the one you go to.
+[00:19:17.540 --> 00:19:19.220]   Oh, yeah, because if you wanted to refer
+[00:19:19.220 --> 00:19:20.460]   to the one on the right, you would have said,
+[00:19:20.460 --> 00:19:21.580]   my friend has a hat.
+[00:19:21.580 --> 00:19:22.460]   Yeah, exactly.
+[00:19:22.460 --> 00:19:24.540]   So you just described our state, basically.
+[00:19:24.540 --> 00:19:28.980]   So we do this kind of recursive reasoning, apparently,
+[00:19:28.980 --> 00:19:30.700]   where we think, OK, so if they wanted
+[00:19:30.700 --> 00:19:33.540]   to refer to the person with the hat, they could have said hat.
+[00:19:33.540 --> 00:19:35.580]   And that would have not been ambiguous.
+[00:19:35.580 --> 00:19:38.820]   But they did not say hat, which probably
+[00:19:38.820 --> 00:19:43.580]   means something about what they intended to refer to.
+[00:19:43.580 --> 00:19:48.180]   So RSA is a very simple Bayesian model of exactly this process.
+[00:19:48.180 --> 00:19:49.700]   So just to work through an example,
+[00:19:49.700 --> 00:19:54.780]   let's say that we have these three objects, a blue square,
+[00:19:54.780 --> 00:19:58.460]   a circle, which is also blue, and then a green square.
+[00:19:58.460 --> 00:20:01.300]   And we have these four utterances that we can use,
+[00:20:01.300 --> 00:20:05.780]   a very small vocabulary, blue, green, circle, and square.
+[00:20:05.780 --> 00:20:09.100]   So in RSA, we will bootstrap this process
+[00:20:09.100 --> 00:20:13.060]   from a literal listener, which is a listener that can only
+[00:20:13.060 --> 00:20:14.300]   understand literal meaning.
+[00:20:14.300 --> 00:20:22.340]   So if you give this listener some utterance u,
+[00:20:22.340 --> 00:20:24.740]   the literal listener, which we'll call L0,
+[00:20:24.740 --> 00:20:27.340]   will put uniform probability on all the objects
+[00:20:27.340 --> 00:20:29.740]   that satisfy u.
+[00:20:29.740 --> 00:20:31.220]   So if you say blue, it will put--
+[00:20:31.220 --> 00:20:34.660]   so uniform over all the blue objects.
+[00:20:34.660 --> 00:20:37.060]   If you say square, it will put uniform probability
+[00:20:37.060 --> 00:20:39.460]   over the squares.
+[00:20:39.460 --> 00:20:42.980]   And that's the distribution of beliefs
+[00:20:42.980 --> 00:20:46.820]   that the literal listener puts.
+[00:20:46.820 --> 00:20:49.420]   So assuming that you're talking to that literal listener,
+[00:20:49.420 --> 00:20:51.500]   now you can create a pragmatic speaker, which
+[00:20:51.500 --> 00:20:56.500]   will choose some utterance to refer to an object based
+[00:20:56.500 --> 00:20:58.580]   on the probability that the literal listener will
+[00:20:58.580 --> 00:21:00.860]   understand what they're saying.
+[00:21:00.860 --> 00:21:03.880]   So basically, for each of the words in our utterances
+[00:21:03.880 --> 00:21:06.460]   that I could say, maybe it could be extremely specific.
+[00:21:06.460 --> 00:21:09.580]   Like, it could write a text exactly describing that object.
+[00:21:09.580 --> 00:21:10.860]   But that would be very costly.
+[00:21:10.860 --> 00:21:12.740]   So I want to be concise.
+[00:21:12.740 --> 00:21:15.180]   But at the same time, I can't be too concise,
+[00:21:15.180 --> 00:21:18.540]   because otherwise I might not specify what I want to say.
+[00:21:18.540 --> 00:21:20.020]   Like, I will not be understood.
+[00:21:20.020 --> 00:21:24.260]   So I can imagine this pragmatic speaker
+[00:21:24.260 --> 00:21:27.140]   as one which is trying to maximize
+[00:21:27.140 --> 00:21:28.620]   this balance between the probability
+[00:21:28.620 --> 00:21:32.980]   that the literal listener will guess the intended
+[00:21:32.980 --> 00:21:36.460]   object minus some cost, which in this case
+[00:21:36.460 --> 00:21:39.660]   could be uniform probability.
+[00:21:39.660 --> 00:21:42.660]   And then from that pragmatic listener,
+[00:21:42.660 --> 00:21:44.460]   now I can create a pragmatic speaker
+[00:21:44.460 --> 00:21:48.900]   that will choose an utterance based on the probability
+[00:21:48.900 --> 00:21:53.540]   that the pragmatic speaker would have chosen that utterance
+[00:21:53.540 --> 00:21:55.780]   to refer to that object.
+[00:21:55.780 --> 00:21:59.580]   Sorry, the listener alone will choose an object,
+[00:21:59.580 --> 00:22:05.140]   will guess a belief over the object based on the probability
+[00:22:05.140 --> 00:22:08.500]   that the speaker as one would have chosen that utterance
+[00:22:08.500 --> 00:22:11.020]   to refer to each of the objects.
+[00:22:11.020 --> 00:22:12.100]   And here I could recurse.
+[00:22:12.100 --> 00:22:14.420]   I could create a listener L2, which
+[00:22:14.420 --> 00:22:18.740]   reasons about the speaker--
+[00:22:18.740 --> 00:22:20.620]   sorry, I could choose a speaker S2,
+[00:22:20.620 --> 00:22:25.140]   which is talking with the listener L1 in their head,
+[00:22:25.140 --> 00:22:27.740]   and then a listener L2, and so on.
+[00:22:27.740 --> 00:22:33.580]   But usually this listener speaker pair S1, L1
+[00:22:33.580 --> 00:22:38.180]   is often enough to model human judgments in these settings.
+[00:22:38.180 --> 00:22:42.820]   Does this make sense, how this recursive process is happening?
+[00:22:42.820 --> 00:22:43.320]   OK.
+[00:22:43.320 --> 00:22:51.500]   Yeah, so assuming these three objects and a speaker says
+[00:22:51.500 --> 00:22:55.900]   blue, again, following the same example of the glasses
+[00:22:55.900 --> 00:22:58.940]   and hats, what would you guess?
+[00:22:58.940 --> 00:23:01.500]   Or what's your first intuition about what
+[00:23:01.500 --> 00:23:03.540]   object they would refer to?
+[00:23:03.540 --> 00:23:04.660]   The square.
+[00:23:04.660 --> 00:23:06.020]   Yeah.
+[00:23:06.020 --> 00:23:09.140]   The square is typically what people do.
+[00:23:09.140 --> 00:23:11.140]   So a literal listener would say, OK, it's
+[00:23:11.140 --> 00:23:13.700]   completely ambiguous, like 50% on the square
+[00:23:13.700 --> 00:23:14.940]   and on the circle.
+[00:23:14.940 --> 00:23:17.460]   But if you set up a human experiment where people are
+[00:23:17.460 --> 00:23:20.060]   receiving these utterances and say how much they believe
+[00:23:20.060 --> 00:23:23.540]   each of the objects is the intended object,
+[00:23:23.540 --> 00:23:25.340]   they will put around 40% probability
+[00:23:25.340 --> 00:23:28.060]   on the circle and 60% on the square, which
+[00:23:28.060 --> 00:23:30.780]   is very close to what RSA predicts.
+[00:23:34.580 --> 00:23:38.420]   OK, so this gives a mechanism for resolving ambiguity
+[00:23:38.420 --> 00:23:41.620]   in this listener speaker setting.
+[00:23:41.620 --> 00:23:46.500]   And one way to see program synthesis
+[00:23:46.500 --> 00:23:50.940]   is as a setting where we are the speakers,
+[00:23:50.940 --> 00:23:53.180]   we're talking to the synthesizer,
+[00:23:53.180 --> 00:23:55.420]   and we are speaking, for example, input output examples.
+[00:23:55.420 --> 00:24:00.260]   And we want to refer to a certain program,
+[00:24:00.260 --> 00:24:01.620]   like from a set of programs.
+[00:24:01.620 --> 00:24:04.500]   And we're speaking examples.
+[00:24:04.500 --> 00:24:06.980]   And the synthesizer is our listener,
+[00:24:06.980 --> 00:24:11.660]   which is trying to refer what program are we referring to.
+[00:24:11.660 --> 00:24:17.100]   And the examples that we were seeing,
+[00:24:17.100 --> 00:24:20.580]   the synthesizer was being extremely literal, right?
+[00:24:20.580 --> 00:24:25.100]   So like, oh, if you say that given A, it should return B,
+[00:24:25.100 --> 00:24:30.540]   could be any of the programs that exist that return B.
+[00:24:30.540 --> 00:24:33.780]   But now we have a process that can maybe
+[00:24:33.780 --> 00:24:35.580]   refine this reasoning a little bit, right?
+[00:24:35.580 --> 00:24:37.020]   We have RSA.
+[00:24:37.020 --> 00:24:40.060]   And we can almost directly apply it
+[00:24:40.060 --> 00:24:44.580]   in the setting where we can build this meaning matrix,
+[00:24:44.580 --> 00:24:48.100]   where in one dimension, we have all the programs.
+[00:24:48.100 --> 00:24:51.140]   So let's assume for simplicity that we
+[00:24:51.140 --> 00:24:53.460]   have a finite set of programs and also
+[00:24:53.460 --> 00:24:55.180]   a finite set of examples that can
+[00:24:55.180 --> 00:24:58.300]   be given to the synthesizer.
+[00:24:58.300 --> 00:25:00.700]   So in that setting, we can make this matrix
+[00:25:00.700 --> 00:25:05.180]   where each entry corresponds to a program being
+[00:25:05.180 --> 00:25:07.060]   ran on one example.
+[00:25:07.060 --> 00:25:10.020]   And we have one if the program satisfies that example,
+[00:25:10.020 --> 00:25:12.300]   like returns true on that example, for example,
+[00:25:12.300 --> 00:25:14.300]   and zero otherwise.
+[00:25:14.300 --> 00:25:17.780]   So this matrix directly gives us a literal listener
+[00:25:17.780 --> 00:25:19.100]   for this setting.
+[00:25:19.100 --> 00:25:21.380]   Like, if I say-- if I give an example,
+[00:25:21.380 --> 00:25:24.620]   and a literal synthesizer could just look at this table
+[00:25:24.620 --> 00:25:26.860]   and say, OK, these are all the programs that satisfy
+[00:25:27.300 --> 00:25:30.860]   maybe I'll sample one of those at random.
+[00:25:30.860 --> 00:25:33.340]   But I could use the RSA recursion to true
+[00:25:33.340 --> 00:25:35.500]   derive L1 and L2.
+[00:25:35.500 --> 00:25:40.500]   And those would be pragmatic synthesizers.
+[00:25:40.500 --> 00:25:43.220]   And in a human experiment ran in this paper, which
+[00:25:43.220 --> 00:25:45.620]   won't get a lot of detail in their setting,
+[00:25:45.620 --> 00:25:49.860]   but they ran this experiment where
+[00:25:49.860 --> 00:25:52.260]   people were trying to specify a program that
+[00:25:52.260 --> 00:25:55.900]   draws a pattern on a grid.
+[00:25:55.900 --> 00:25:59.380]   And the specification was through examples
+[00:25:59.380 --> 00:26:02.580]   by basically saying, OK, the pattern contains this square
+[00:26:02.580 --> 00:26:04.780]   or does not contain this square.
+[00:26:04.780 --> 00:26:07.460]   And people had a much easier time
+[00:26:07.460 --> 00:26:09.740]   communicating the pattern that they
+[00:26:09.740 --> 00:26:14.500]   wanted with a pragmatic synthesizer, which
+[00:26:14.500 --> 00:26:17.540]   is a quite cool result, I think.
+[00:26:17.540 --> 00:26:19.460]   Yeah, so of course, the assumptions
+[00:26:19.460 --> 00:26:22.660]   here are that the set of programs and of examples
+[00:26:22.660 --> 00:26:25.660]   is finite, which is quite restrictive.
+[00:26:25.660 --> 00:26:28.740]   It's not true of real programming languages.
+[00:26:28.740 --> 00:26:32.700]   But it does present an interesting challenge.
+[00:26:32.700 --> 00:26:34.940]   Can we extend this kind of approach
+[00:26:34.940 --> 00:26:39.260]   to an infinite set of programs like real programming
+[00:26:39.260 --> 00:26:40.180]   languages?
+[00:26:40.180 --> 00:26:44.140]   And maybe also we want richer kinds of specifications.
+[00:26:44.140 --> 00:26:47.820]   Instead of just saying the behavior of the program
+[00:26:47.820 --> 00:26:52.180]   in specific examples, we could try to handle natural language.
+[00:26:52.180 --> 00:26:55.660]   Any questions about this connection between--
+[00:26:55.660 --> 00:26:56.660]   yes?
+[00:26:56.660 --> 00:27:00.820]   Are we able to consider in this whole program synthesis
+[00:27:00.820 --> 00:27:02.940]   just generally how we would typically
+[00:27:02.940 --> 00:27:07.180]   want a simple-- like with the sorted example,
+[00:27:07.180 --> 00:27:11.820]   how we had different edge cases and the if, if, if.
+[00:27:11.820 --> 00:27:13.860]   Do we account for the fact that--
+[00:27:13.860 --> 00:27:17.380]   would we penalize a longer program or more complicated
+[00:27:17.380 --> 00:27:20.380]   program when trying to consider something like that?
+[00:27:20.380 --> 00:27:21.060]   Yeah.
+[00:27:21.060 --> 00:27:25.860]   So the question was, in program synthesis,
+[00:27:25.860 --> 00:27:28.780]   do people use biases like find the shortest program,
+[00:27:28.780 --> 00:27:31.180]   for example, or the simplest program that
+[00:27:31.180 --> 00:27:33.100]   satisfies this specification?
+[00:27:33.100 --> 00:27:39.220]   And the question is both yes and no.
+[00:27:39.220 --> 00:27:45.460]   It's yes in the sense that most search-based synthesizers
+[00:27:45.460 --> 00:27:50.340]   would usually find very short programs,
+[00:27:50.340 --> 00:27:54.980]   but not because people use that as a bias necessarily
+[00:27:54.980 --> 00:27:59.140]   for disambiguating, but just because it's much easier
+[00:27:59.140 --> 00:28:00.660]   to find shorter programs.
+[00:28:00.660 --> 00:28:04.020]   So if you're doing search in a space of programs,
+[00:28:04.020 --> 00:28:06.100]   the chance that you find a 100-line program that
+[00:28:06.100 --> 00:28:08.820]   satisfies this specification is naturally much smaller
+[00:28:08.820 --> 00:28:11.660]   than you find a short one.
+[00:28:11.660 --> 00:28:14.260]   Now, to be able to do search in the first time,
+[00:28:14.260 --> 00:28:17.500]   a lot of research in this area in the last decades
+[00:28:17.500 --> 00:28:21.420]   has been through exactly how to design specific languages
+[00:28:21.420 --> 00:28:25.180]   and search spaces so that this can be done.
+[00:28:25.180 --> 00:28:26.140]   Does that make sense?
+[00:28:26.140 --> 00:28:30.980]   Any other questions?
+[00:28:30.980 --> 00:28:37.340]   OK.
+[00:28:37.340 --> 00:28:42.660]   So we've been talking a lot about language models
+[00:28:42.660 --> 00:28:43.900]   in the class.
+[00:28:43.900 --> 00:28:49.500]   And as you know, if I give a prefix of anything that
+[00:28:49.500 --> 00:28:51.740]   can show up in the internet, language model
+[00:28:51.740 --> 00:28:54.380]   gives me a distribution of what can come next.
+[00:28:54.380 --> 00:28:57.180]   So for example, if I say Stanford University is located
+[00:28:57.180 --> 00:29:00.820]   in the state of the model having been trained
+[00:29:00.820 --> 00:29:04.020]   on Wikipedia and other sources, would put much higher
+[00:29:04.020 --> 00:29:07.500]   probability on the sentence continuing with California
+[00:29:07.500 --> 00:29:09.140]   rather than another US state.
+[00:29:11.900 --> 00:29:14.100]   Language model is quite hard.
+[00:29:14.100 --> 00:29:16.340]   It's a really, really hard problem
+[00:29:16.340 --> 00:29:19.740]   because, as John talked about in his lecture,
+[00:29:19.740 --> 00:29:21.900]   a lot of things can be reduced to language modeling.
+[00:29:21.900 --> 00:29:27.340]   So if I say Theodore Landon Streletsky, a former grad
+[00:29:27.340 --> 00:29:30.420]   student in mathematics at Stanford, for example,
+[00:29:30.420 --> 00:29:34.020]   and I ask you if you three to give plausible completions,
+[00:29:34.020 --> 00:29:34.740]   it gives--
+[00:29:34.740 --> 00:29:38.700]   became known for his advocacy of the use of psychedelic drugs
+[00:29:38.700 --> 00:29:42.060]   or a homeless advocate.
+[00:29:42.060 --> 00:29:45.140]   And I mean, this sounds plausible maybe.
+[00:29:45.140 --> 00:29:46.940]   The ground truth in this case from Wikipedia
+[00:29:46.940 --> 00:29:49.780]   is he murdered his former advisor,
+[00:29:49.780 --> 00:29:52.660]   which might be quite hard to predict given this prefix.
+[00:29:52.660 --> 00:30:01.220]   And it turns out that if I give GPT-3 a prefix such as,
+[00:30:01.220 --> 00:30:02.620]   the following is a Python function
+[00:30:02.620 --> 00:30:06.340]   that when given the list, 132 returns 123,
+[00:30:06.340 --> 00:30:11.100]   it will complete exactly with this program, def sort list,
+[00:30:11.100 --> 00:30:19.660]   lst.sort, return list, which depending on what year you were
+[00:30:19.660 --> 00:30:22.340]   born is quite surprising.
+[00:30:22.340 --> 00:30:24.740]   It's quite amazing that a model that
+[00:30:24.740 --> 00:30:27.780]   can predict California from Stanford University
+[00:30:27.780 --> 00:30:30.420]   is located in with the exact same mechanism
+[00:30:30.420 --> 00:30:33.700]   can generate valid Python code.
+[00:30:33.700 --> 00:30:38.220]   So this was a realization that people made very quickly
+[00:30:38.220 --> 00:30:41.140]   after GPT-3 came out.
+[00:30:41.140 --> 00:30:43.340]   Given simple Python doc strings, it
+[00:30:43.340 --> 00:30:46.820]   was able to generate Python functions that
+[00:30:46.820 --> 00:30:49.900]   implemented those doc strings even without having been
+[00:30:49.900 --> 00:30:51.580]   trained explicitly for that.
+[00:30:51.580 --> 00:30:56.940]   Or even code was not a large part of GPT-3's training set
+[00:30:56.940 --> 00:30:59.420]   anyway.
+[00:30:59.420 --> 00:31:03.060]   So the natural question was, how far
+[00:31:03.060 --> 00:31:04.740]   can we push that capability?
+[00:31:04.740 --> 00:31:08.540]   So code is massively available on the internet.
+[00:31:08.540 --> 00:31:15.340]   GitHub has tens of millions of open source repositories.
+[00:31:15.340 --> 00:31:21.940]   Actually, over 120 million as of, I think, end of last year.
+[00:31:21.940 --> 00:31:23.780]   So what happens if you just train a language
+[00:31:23.780 --> 00:31:26.260]   model on a lot of code?
+[00:31:26.260 --> 00:31:30.780]   So that was basically the idea behind OpenAI Codecs,
+[00:31:30.780 --> 00:31:33.020]   which is the name of the language model that
+[00:31:33.020 --> 00:31:34.660]   backs GitHub Copilot.
+[00:31:34.660 --> 00:31:38.260]   Just out of curiosity, how many of you have used Copilot?
+[00:31:38.260 --> 00:31:44.860]   OK, less than I would have thought.
+[00:31:44.860 --> 00:31:48.340]   Maybe 30%?
+[00:31:48.340 --> 00:31:55.140]   Yeah, so Copilot is this basically autocomplete
+[00:31:55.140 --> 00:31:59.980]   on steroids that runs this language model called Codecs
+[00:31:59.980 --> 00:32:01.740]   on the back end.
+[00:32:01.740 --> 00:32:07.100]   And as a lot of papers in this age we live in,
+[00:32:07.100 --> 00:32:10.300]   the technical description of what was done
+[00:32:10.300 --> 00:32:12.860]   was we took the architecture of GPT-3,
+[00:32:12.860 --> 00:32:14.500]   maybe changed the number of parameters,
+[00:32:14.500 --> 00:32:16.420]   and trained on this data.
+[00:32:16.420 --> 00:32:16.920]   Yes?
+[00:32:16.920 --> 00:32:19.380]   When you're evaluating these types of models,
+[00:32:19.380 --> 00:32:24.500]   would you just be looking for similarity
+[00:32:24.500 --> 00:32:26.260]   to gold standard code?
+[00:32:26.260 --> 00:32:29.660]   Or are you also checking for correctness of the code
+[00:32:29.660 --> 00:32:32.380]   that will compile just like the original one does?
+[00:32:32.380 --> 00:32:33.620]   Yeah, that's a great question.
+[00:32:33.620 --> 00:32:37.220]   We'll talk a lot about how these models are
+[00:32:37.220 --> 00:32:39.180]   evaluated in some settings.
+[00:32:39.180 --> 00:32:45.860]   The answer, just jumping ahead a little bit,
+[00:32:45.860 --> 00:32:47.700]   will be that we'll mostly execute the code
+[00:32:47.700 --> 00:32:49.700]   and see what it does, rather than just comparing
+[00:32:49.700 --> 00:32:50.980]   to reference solutions.
+[00:32:50.980 --> 00:32:56.500]   There is a literature on how to evaluate
+[00:32:56.500 --> 00:32:57.740]   when you can't do that.
+[00:32:57.740 --> 00:33:00.780]   But as happens with natural language,
+[00:33:00.780 --> 00:33:03.220]   people realize that blue scores and adaptations
+[00:33:03.220 --> 00:33:06.780]   are not actually very good for functional correctness.
+[00:33:06.780 --> 00:33:09.940]   Especially in code where you can change one token and not
+[00:33:09.940 --> 00:33:13.980]   change the blue score by much, but completely change
+[00:33:13.980 --> 00:33:17.660]   the semantics of the program.
+[00:33:17.660 --> 00:33:19.540]   Yes?
+[00:33:19.540 --> 00:33:25.100]   In the training data, did we include natural language?
+[00:33:25.100 --> 00:33:28.300]   If we have a function in Python, just natural language
+[00:33:28.300 --> 00:33:31.940]   describing what the function does in a comment or something?
+[00:33:31.940 --> 00:33:34.580]   Yeah, so the question was, did they include natural language
+[00:33:34.580 --> 00:33:36.020]   in the training data?
+[00:33:36.020 --> 00:33:37.980]   And yes, in two forms.
+[00:33:37.980 --> 00:33:40.820]   So code already has a lot of natural language,
+[00:33:40.820 --> 00:33:42.740]   like comments and strings.
+[00:33:42.740 --> 00:33:44.980]   And this was all kept.
+[00:33:44.980 --> 00:33:47.620]   None of it was stripped.
+[00:33:47.620 --> 00:33:50.220]   So that's one form of natural language that Codex got.
+[00:33:50.220 --> 00:33:53.540]   And the other one was just a subset of the training set
+[00:33:53.540 --> 00:33:54.780]   of GPT-3.
+[00:33:54.780 --> 00:33:57.500]   So it was not training 100% just code.
+[00:33:57.500 --> 00:33:59.940]   It also had--
+[00:33:59.940 --> 00:34:01.940]   In the training data, were there examples
+[00:34:01.940 --> 00:34:04.180]   of a natural language description of a function
+[00:34:04.180 --> 00:34:05.860]   and then the corresponding Python?
+[00:34:05.860 --> 00:34:11.140]   So the question was, was there a description--
+[00:34:11.140 --> 00:34:13.540]   were there examples in the training data of a description
+[00:34:13.540 --> 00:34:14.620]   and then the function?
+[00:34:14.620 --> 00:34:15.120]   Yeah.
+[00:34:15.120 --> 00:34:19.300]   Yes.
+[00:34:19.300 --> 00:34:22.180]   So there are some examples of that form
+[00:34:22.180 --> 00:34:24.860]   that naturally appear on GitHub.
+[00:34:24.860 --> 00:34:30.140]   They're not a lot compared to all code that exists.
+[00:34:30.140 --> 00:34:31.460]   We'll talk a little bit about--
+[00:34:31.460 --> 00:34:33.620]   Aren't there a ton of those on Stack Overflow?
+[00:34:33.620 --> 00:34:34.120]   Yes.
+[00:34:34.120 --> 00:34:36.060]   [INAUDIBLE]
+[00:34:36.060 --> 00:34:39.060]   Yeah, so the web has a lot of that kind of thing in general.
+[00:34:39.060 --> 00:34:43.660]   We'll be talking about one experiment
+[00:34:43.660 --> 00:34:45.780]   that they did on fine tuning exactly that format.
+[00:34:45.780 --> 00:34:49.940]   And it has an impact because most code is not
+[00:34:49.940 --> 00:34:51.540]   written like that on the internet,
+[00:34:51.540 --> 00:34:53.040]   although some fraction definitely is.
+[00:34:53.040 --> 00:34:58.180]   That answer the question?
+[00:34:58.180 --> 00:35:00.340]   Yeah.
+[00:35:00.340 --> 00:35:00.900]   Yes.
+[00:35:00.900 --> 00:35:05.700]   So the version 1 of Codecs was essentially
+[00:35:05.700 --> 00:35:09.460]   the same architecture as GPT-3, which is a decoder-only
+[00:35:09.460 --> 00:35:13.860]   transformed model, but with 12 billion parameters,
+[00:35:13.860 --> 00:35:17.500]   and then trained on a training set that was constructed mostly
+[00:35:17.500 --> 00:35:20.060]   from GitHub, but also natural language sources.
+[00:35:20.060 --> 00:35:27.140]   Yeah, so how do we evaluate a model?
+[00:35:27.140 --> 00:35:30.420]   We trained it, and we can prompt it with a few examples
+[00:35:30.420 --> 00:35:32.540]   and see that it does interesting things.
+[00:35:32.540 --> 00:35:36.380]   But how do we get a better sense of its capability?
+[00:35:36.380 --> 00:35:41.940]   So the authors in the Codecs paper,
+[00:35:41.940 --> 00:35:44.580]   they set up this challenge of given a Python docstring,
+[00:35:44.580 --> 00:35:47.480]   just generate a function that implements that docstring.
+[00:35:47.480 --> 00:35:51.500]   And where the docstring always had input/output examples
+[00:35:51.500 --> 00:35:53.180]   in the form of assertions.
+[00:35:53.180 --> 00:35:57.700]   So in this example here on the right,
+[00:35:57.700 --> 00:36:02.340]   which is one from the paper, so the first one,
+[00:36:02.340 --> 00:36:05.300]   the goal is to return a list with all the elements
+[00:36:05.300 --> 00:36:06.500]   increased by one.
+[00:36:06.500 --> 00:36:09.980]   So you would infer that the elements are numbers.
+[00:36:09.980 --> 00:36:13.580]   And then they give two examples, which are like PyDoc tests.
+[00:36:13.580 --> 00:36:17.640]   You can actually run these tests automatically.
+[00:36:17.640 --> 00:36:21.360]   So if I call it with 1, 2, 3, it should return 2, 3, 4.
+[00:36:21.360 --> 00:36:23.600]   And they give one more example.
+[00:36:23.600 --> 00:36:29.000]   And besides those examples, because as machine learning
+[00:36:29.000 --> 00:36:31.040]   people, you should know, if you just
+[00:36:31.040 --> 00:36:33.960]   give all the examples that are evaluating on,
+[00:36:33.960 --> 00:36:35.920]   you're subject to the program just
+[00:36:35.920 --> 00:36:38.280]   working on those examples, but not on held out examples.
+[00:36:38.280 --> 00:36:40.240]   So for each of these problems, they, of course,
+[00:36:40.700 --> 00:36:43.940]   held out inputs that the model was evaluated on.
+[00:36:43.940 --> 00:36:48.660]   But since this model has seen a lot more code
+[00:36:48.660 --> 00:36:51.100]   than any person has any chance of ever looking
+[00:36:51.100 --> 00:36:54.300]   at in their lifespan, how do you even
+[00:36:54.300 --> 00:36:56.140]   know that the problems that you're giving
+[00:36:56.140 --> 00:36:57.980]   have not been seen before?
+[00:36:57.980 --> 00:37:01.460]   So this becomes an increasingly difficult challenge
+[00:37:01.460 --> 00:37:03.220]   with these large models.
+[00:37:03.220 --> 00:37:06.060]   So they did a best attempt, which
+[00:37:06.080 --> 00:37:10.360]   was to create a data set of their own.
+[00:37:10.360 --> 00:37:13.320]   Since the goal here is not to train on that data set,
+[00:37:13.320 --> 00:37:15.520]   you don't need that many examples,
+[00:37:15.520 --> 00:37:18.560]   as you would need to train a model from scratch.
+[00:37:18.560 --> 00:37:24.840]   So they came up with these 164 problems of this form
+[00:37:24.840 --> 00:37:26.920]   that they basically manually authored.
+[00:37:26.920 --> 00:37:32.880]   So that's a way of saying that, OK, the model at least
+[00:37:32.880 --> 00:37:37.100]   hasn't seen these problems in this exact form.
+[00:37:37.100 --> 00:37:39.980]   And for each one, they had a set of hidden tests.
+[00:37:39.980 --> 00:37:43.140]   So here, the evaluation will be, does the generated program
+[00:37:43.140 --> 00:37:47.060]   run correctly on all the tests, the seen and unseen ones?
+[00:37:47.060 --> 00:37:49.620]   And the main metric that we'll be looking at
+[00:37:49.620 --> 00:37:52.740]   is what they call pass at k, which is the probability
+[00:37:52.740 --> 00:37:54.600]   that out of k samples of programs
+[00:37:54.600 --> 00:37:56.700]   that I take from the model, at least one of them
+[00:37:56.700 --> 00:38:00.340]   passes all of the tests.
+[00:38:00.340 --> 00:38:08.420]   And the main result here is that GPT-3, which is also
+[00:38:08.420 --> 00:38:10.900]   a quite large model trained on a lot of code,
+[00:38:10.900 --> 00:38:17.180]   relatively speaking, does exactly at 0
+[00:38:17.180 --> 00:38:20.420]   in this benchmark that they came up with.
+[00:38:20.420 --> 00:38:23.340]   So it doesn't solve any of the problems, which is good.
+[00:38:23.340 --> 00:38:27.140]   They're at least not trivial problems.
+[00:38:27.140 --> 00:38:29.220]   And all of the codecs models have
+[00:38:29.220 --> 00:38:31.020]   some non-trivial performance.
+[00:38:31.020 --> 00:38:34.340]   So codecs alone, looking at pass at 1,
+[00:38:34.340 --> 00:38:38.180]   which is just sample one program from the model,
+[00:38:38.180 --> 00:38:40.260]   does above 20%.
+[00:38:40.260 --> 00:38:44.220]   And of course, we have to take all these numbers relative.
+[00:38:44.220 --> 00:38:46.300]   20% in general doesn't mean much,
+[00:38:46.300 --> 00:38:49.340]   but it solves some problems that GPT-3 alone doesn't solve.
+[00:38:54.140 --> 00:39:00.660]   And if they generated a set of problems
+[00:39:00.660 --> 00:39:05.300]   with this exact format of Python doc string and other function,
+[00:39:05.300 --> 00:39:08.420]   to evaluate if this format was kind of unusual for the model,
+[00:39:08.420 --> 00:39:14.820]   so they kind of synthetically generated a training set
+[00:39:14.820 --> 00:39:18.300]   to fine tune and called the resulting model codecs s.
+[00:39:18.300 --> 00:39:21.420]   And yes, codecs s does a little bit better.
+[00:39:21.420 --> 00:39:28.620]   So it seems like there's a little bit
+[00:39:28.620 --> 00:39:33.700]   of benefit of design training data exactly with this format.
+[00:39:33.700 --> 00:39:39.860]   And besides just sampling one program
+[00:39:39.860 --> 00:39:42.620]   and returning that as your answer,
+[00:39:42.620 --> 00:39:44.940]   one thing that we'll see here is that it's usually
+[00:39:44.940 --> 00:39:46.780]   worth to sample a lot more programs
+[00:39:46.780 --> 00:39:50.700]   and somehow choose which one is your best bet.
+[00:39:50.700 --> 00:39:52.060]   One simple way to do that is just
+[00:39:52.060 --> 00:39:55.100]   by taking the model's log probability over the sample.
+[00:39:55.100 --> 00:39:59.540]   So this is the red line here, which
+[00:39:59.540 --> 00:40:01.540]   improves on top of the others.
+[00:40:01.540 --> 00:40:04.420]   And if you look at the examples--
+[00:40:04.420 --> 00:40:04.920]   sorry?
+[00:40:04.920 --> 00:40:07.300]   [INAUDIBLE]
+[00:40:07.300 --> 00:40:08.020]   Oh, yes.
+[00:40:08.020 --> 00:40:11.020]   So the purple line is the Oracle re-ranking,
+[00:40:11.020 --> 00:40:12.900]   which is basically like if I take all the programs that
+[00:40:12.900 --> 00:40:17.060]   are generated and actually run them on the hidden tests
+[00:40:17.060 --> 00:40:20.460]   and take the ones that pass the hidden tests, then--
+[00:40:20.460 --> 00:40:21.840]   so what the purple line is saying
+[00:40:21.840 --> 00:40:23.980]   is that it's often the case that codecs generates
+[00:40:23.980 --> 00:40:26.460]   some program that satisfies all the tests.
+[00:40:26.460 --> 00:40:29.300]   But it might be hard to identify without actually
+[00:40:29.300 --> 00:40:30.880]   running the program, which one is it.
+[00:40:30.880 --> 00:40:37.420]   Yeah, so if you look at the examples of samples
+[00:40:37.420 --> 00:40:40.580]   from the model, it's quite non-trivial.
+[00:40:40.580 --> 00:40:44.140]   So if I describe a function like def s prime,
+[00:40:44.140 --> 00:40:48.780]   returns true if a number is prime, which is, of course,
+[00:40:48.780 --> 00:40:53.340]   a problem that the model has seen before in some form.
+[00:40:53.340 --> 00:40:56.100]   It will fail a lot of times.
+[00:40:56.100 --> 00:40:58.780]   But most of the times, it will do something reasonable.
+[00:40:58.780 --> 00:41:00.900]   So here, you see that it's trying
+[00:41:00.900 --> 00:41:04.460]   to test for divisors of the number.
+[00:41:04.460 --> 00:41:08.020]   In this case, it's just missing the corner case that's true,
+[00:41:08.020 --> 00:41:08.660]   I think.
+[00:41:08.660 --> 00:41:12.300]   Or no, that one is returning as a prime number.
+[00:41:12.300 --> 00:41:15.420]   It often returns the same program.
+[00:41:15.420 --> 00:41:19.620]   So by resampling, you don't have any guarantees.
+[00:41:19.620 --> 00:41:22.100]   It was trained on GitHub, so it's also
+[00:41:22.100 --> 00:41:23.660]   seen a lot of incomplete code.
+[00:41:23.660 --> 00:41:28.460]   So it might say, true do, pass, do it later.
+[00:41:28.460 --> 00:41:29.700]   But yeah, sometimes it works.
+[00:41:29.700 --> 00:41:33.380]   Sometimes it will do exactly the primality test
+[00:41:33.380 --> 00:41:36.020]   with all the corner cases involved.
+[00:41:36.020 --> 00:41:40.220]   And if you specify a more complicated function
+[00:41:40.220 --> 00:41:43.860]   with maybe some more corner cases, it will again--
+[00:41:43.860 --> 00:41:46.260]   in this case, it will not solve it completely
+[00:41:46.260 --> 00:41:48.780]   with any of the samples.
+[00:41:48.780 --> 00:41:52.140]   But a lot of the samples are surprisingly reasonable.
+[00:41:52.140 --> 00:41:55.900]   It will often at least partially do what
+[00:41:55.900 --> 00:41:57.660]   the specification is asking to.
+[00:41:57.660 --> 00:41:58.660]   Yes?
+[00:41:58.660 --> 00:41:59.660]   [INAUDIBLE]
+[00:42:10.780 --> 00:42:15.540]   Yeah, so the question is, how hard are the tests in general?
+[00:42:15.540 --> 00:42:22.220]   And these problems are not hard for human programmers
+[00:42:22.220 --> 00:42:23.020]   in general.
+[00:42:23.020 --> 00:42:27.660]   So they test basically basic capabilities
+[00:42:27.660 --> 00:42:29.060]   of coding in Python.
+[00:42:29.060 --> 00:42:37.900]   So this is maybe a problem of median difficulty
+[00:42:37.900 --> 00:42:40.580]   in the training set, in the data set.
+[00:42:40.580 --> 00:42:44.340]   A function that counts vowels but has a special case for y.
+[00:42:44.340 --> 00:42:47.780]   y should only be a vowel if it's at the end, for example.
+[00:42:47.780 --> 00:42:51.220]   So this is the general flavor of these problems
+[00:42:51.220 --> 00:42:52.100]   in the codecs paper.
+[00:42:52.100 --> 00:42:55.620]   We'll talk about different data sets later.
+[00:42:55.620 --> 00:42:58.220]   Does that make sense?
+[00:42:58.220 --> 00:43:00.100]   Yeah, so the finding here--
+[00:43:00.100 --> 00:43:01.580]   oh, yes.
+[00:43:01.580 --> 00:43:05.580]   So it fails in a lot of cases, but many times
+[00:43:05.580 --> 00:43:11.220]   produces reasonable guesses of what the function should do.
+[00:43:11.220 --> 00:43:17.940]   And one thing to notice is that--
+[00:43:17.940 --> 00:43:20.140]   one thing that I noticed, which was
+[00:43:20.140 --> 00:43:23.140]   an important observation for many of the works that
+[00:43:23.140 --> 00:43:26.500]   came after, is that there seems to be
+[00:43:26.500 --> 00:43:29.060]   quite a large benefit in just sampling more programs
+[00:43:29.060 --> 00:43:31.100]   and trying more.
+[00:43:31.100 --> 00:43:34.460]   So the space of programs that the model can generate
+[00:43:34.460 --> 00:43:37.900]   usually contains some correct programs.
+[00:43:37.900 --> 00:43:41.980]   And when sampling more, there is a trade-off
+[00:43:41.980 --> 00:43:44.860]   between the sampling temperature and how likely
+[00:43:44.860 --> 00:43:46.540]   it is that the program is correct.
+[00:43:46.540 --> 00:43:49.660]   So if I sample with temperature 0,
+[00:43:49.660 --> 00:43:51.580]   then I basically get deterministic behavior.
+[00:43:51.580 --> 00:43:55.340]   I don't get any benefit from resampling.
+[00:43:55.340 --> 00:43:57.260]   But if I sample with too high of a temperature,
+[00:43:57.260 --> 00:43:59.500]   then I get more and more random outputs.
+[00:43:59.500 --> 00:44:00.000]   Right?
+[00:44:00.000 --> 00:44:11.660]   Yeah, so-- but of course, just sampling more programs
+[00:44:11.660 --> 00:44:15.260]   is maybe fine for this kind of evaluation with the benchmark.
+[00:44:15.260 --> 00:44:18.660]   But when interacting with a user,
+[00:44:18.660 --> 00:44:21.700]   I, of course, don't want to give the user 100 options
+[00:44:21.700 --> 00:44:22.460]   to choose from.
+[00:44:22.460 --> 00:44:25.020]   There is a high probability that one of these many programs
+[00:44:25.020 --> 00:44:27.580]   satisfies what you want, but I don't know which one.
+[00:44:27.580 --> 00:44:30.980]   It would not be very usable.
+[00:44:30.980 --> 00:44:33.020]   So of course, I could just sample a small number
+[00:44:33.020 --> 00:44:33.520]   of programs.
+[00:44:33.520 --> 00:44:36.180]   But knowing that it's usually the case
+[00:44:36.180 --> 00:44:39.900]   that in a large number of samples, one of them
+[00:44:39.900 --> 00:44:43.120]   will be correct, it a lot of times
+[00:44:43.120 --> 00:44:45.580]   makes sense to sample a large number of programs
+[00:44:45.580 --> 00:44:47.780]   and then try to re-rank them in some way,
+[00:44:47.780 --> 00:44:51.140]   and then only show maybe my top guesses.
+[00:44:51.140 --> 00:44:55.240]   So the oracle here would be I run all the programs
+[00:44:55.240 --> 00:44:58.620]   in a test, but a lot of times I don't have that.
+[00:44:58.620 --> 00:45:00.820]   Like if I'm in the middle of writing a function,
+[00:45:00.820 --> 00:45:04.220]   I want some guess for how to write
+[00:45:04.220 --> 00:45:05.500]   a certain line of the function.
+[00:45:05.500 --> 00:45:09.980]   I might not have tests for that specific line.
+[00:45:09.980 --> 00:45:12.740]   But I can, for example, use the models on log probabilities
+[00:45:12.740 --> 00:45:14.460]   to rank.
+[00:45:14.460 --> 00:45:19.020]   And yeah, what they found was that basically taking
+[00:45:19.020 --> 00:45:21.900]   the average token log probability
+[00:45:21.900 --> 00:45:27.680]   among a number of slightly more fancy ways of trying to rank
+[00:45:27.680 --> 00:45:32.160]   was the best that they could get.
+[00:45:32.160 --> 00:45:36.720]   And here, we were trying to sample code given docstring.
+[00:45:36.720 --> 00:45:38.520]   But one of the magics of language models
+[00:45:38.520 --> 00:45:42.560]   is that I can just condition on anything
+[00:45:42.560 --> 00:45:44.040]   to try to get anything.
+[00:45:44.040 --> 00:45:49.640]   I'm not guaranteed to get good things, but I can always try.
+[00:45:49.640 --> 00:45:53.480]   So what if you try to use a model to give me
+[00:45:53.480 --> 00:45:54.860]   a docstring given the code?
+[00:45:54.860 --> 00:45:57.360]   So basically, describe what a function does.
+[00:45:57.360 --> 00:45:59.520]   So that's a very natural inversion of the problem
+[00:45:59.520 --> 00:46:01.520]   that we had before.
+[00:46:01.520 --> 00:46:06.240]   And that kind of data is certainly way less frequent
+[00:46:06.240 --> 00:46:08.540]   in the training set, although it certainly
+[00:46:08.540 --> 00:46:11.720]   exists in some cases, because naturally in Python,
+[00:46:11.720 --> 00:46:14.200]   docstrings come before the code.
+[00:46:14.200 --> 00:46:19.520]   But this is also a very common thing with code data.
+[00:46:19.520 --> 00:46:21.720]   I can usually manufacture synthetic data
+[00:46:21.720 --> 00:46:25.000]   sets that change the structure in some ways.
+[00:46:25.000 --> 00:46:28.200]   So I can basically write a deterministic program that
+[00:46:28.200 --> 00:46:29.600]   takes Python functions and inverts
+[00:46:29.600 --> 00:46:31.720]   the code in the docstring and make
+[00:46:31.720 --> 00:46:33.600]   a training set for this task.
+[00:46:33.600 --> 00:46:35.880]   And in this case, I lose the ability
+[00:46:35.880 --> 00:46:38.840]   to automatically evaluate if a docstring actually
+[00:46:38.840 --> 00:46:41.600]   describes the code that well.
+[00:46:41.600 --> 00:46:44.280]   I get a problem with natural language generation, where
+[00:46:44.280 --> 00:46:46.760]   Lisa talked about evaluation is quite hard.
+[00:46:46.760 --> 00:46:49.400]   In the codex paper, they evaluated this by hand.
+[00:46:49.400 --> 00:46:52.840]   So basically, pass at k, where pass
+[00:46:52.840 --> 00:46:54.800]   is a human set that the docstring describes
+[00:46:54.800 --> 00:46:56.000]   the function.
+[00:46:56.000 --> 00:46:58.680]   And surprisingly, this task seems
+[00:46:58.680 --> 00:47:03.640]   to be harder than generating code from docstrings itself.
+[00:47:03.640 --> 00:47:06.760]   So even a fine-tuned model--
+[00:47:06.760 --> 00:47:12.600]   so here, codex S is the codex that we
+[00:47:12.600 --> 00:47:15.200]   saw that was fine-tuned to solve the tasks.
+[00:47:15.200 --> 00:47:18.680]   And codex D was fine-tuned on this data set
+[00:47:18.680 --> 00:47:21.040]   of generating docstrings-given code.
+[00:47:21.040 --> 00:47:23.440]   And in this case, they didn't get any benefit
+[00:47:23.440 --> 00:47:27.600]   from fine-tuning or any improvement from the base model
+[00:47:27.600 --> 00:47:29.920]   that they started with.
+[00:47:29.920 --> 00:47:32.240]   So it seems like maybe describing code
+[00:47:32.240 --> 00:47:34.840]   is not that easy compared to writing the code.
+[00:47:34.840 --> 00:47:41.960]   So-- sorry, you have a question?
+[00:47:41.960 --> 00:47:44.840]   Yeah, I was wondering, how do we ensure
+[00:47:44.840 --> 00:47:47.720]   that the programs that are generated compile?
+[00:47:47.720 --> 00:47:51.520]   Do we take advantage of parsing trees and stuff?
+[00:47:51.520 --> 00:47:54.720]   Yeah, so the question is, how do we know that they compile?
+[00:47:54.720 --> 00:47:57.160]   In this case, they just literally saved the code
+[00:47:57.160 --> 00:47:59.840]   and ran it with a Python jQuery.
+[00:47:59.840 --> 00:48:03.160]   So if it threw an exception, it failed, basically.
+[00:48:03.160 --> 00:48:06.320]   If it ran and produced the exact output, then it succeeded.
+[00:48:06.320 --> 00:48:13.720]   I'm just curious, for the second task,
+[00:48:13.720 --> 00:48:15.480]   to what degree could we just think of it
+[00:48:15.480 --> 00:48:18.200]   as a reading comprehension task?
+[00:48:18.200 --> 00:48:23.040]   And because I can actually pick up a measurement there,
+[00:48:23.040 --> 00:48:26.200]   but is there any similarity between that task
+[00:48:26.200 --> 00:48:30.960]   and the way to evaluate that task and the specific task
+[00:48:30.960 --> 00:48:33.720]   to describe it?
+[00:48:33.720 --> 00:48:35.720]   Yeah, so the question was, can we
+[00:48:35.720 --> 00:48:37.280]   see it as a reading comprehension
+[00:48:37.280 --> 00:48:39.920]   task of sorts for code?
+[00:48:39.920 --> 00:48:43.560]   And yes, basically, it's a way to probe
+[00:48:43.560 --> 00:48:46.640]   how well can the model "understand"
+[00:48:46.640 --> 00:48:48.760]   what the code does.
+[00:48:48.760 --> 00:48:55.240]   That is one task that is of code understanding, so to speak.
+[00:48:55.240 --> 00:48:57.240]   Another one is code execution.
+[00:48:57.240 --> 00:49:01.120]   Given this code and this input, what output does it produce?
+[00:49:01.120 --> 00:49:03.240]   Which I'll talk a little bit about,
+[00:49:03.240 --> 00:49:07.400]   but it's also quite a hard task for these models.
+[00:49:07.400 --> 00:49:10.680]   So they're often able to produce code that works.
+[00:49:10.680 --> 00:49:13.040]   But if you give it the code and the input,
+[00:49:13.040 --> 00:49:18.080]   it's hard to predict what the code does from the model.
+[00:49:18.080 --> 00:49:20.080]   Does that make sense?
+[00:49:20.080 --> 00:49:21.080]   [INAUDIBLE]
+[00:49:21.080 --> 00:49:38.360]   Yeah, so how is code a different purpose?
+[00:49:38.360 --> 00:49:42.680]   Is it more difficult? Yeah, I think
+[00:49:42.680 --> 00:49:45.240]   more or less difficult depends to whom.
+[00:49:45.240 --> 00:49:47.720]   An average human certainly can describe
+[00:49:47.720 --> 00:49:50.240]   what a Python function does, but not necessarily
+[00:49:50.240 --> 00:49:54.200]   because it's inherently a more complex task.
+[00:49:54.200 --> 00:49:56.000]   So I guess it depends on who you ask.
+[00:49:56.000 --> 00:50:05.080]   For the examples that the model got wrong,
+[00:50:05.080 --> 00:50:08.240]   is there a way to do an analysis of the source of the error,
+[00:50:08.240 --> 00:50:10.600]   like if it was an error with the algorithm versus just
+[00:50:10.600 --> 00:50:12.280]   like a syntax error?
+[00:50:12.280 --> 00:50:15.120]   Yeah, so the question is, what kind of errors
+[00:50:15.120 --> 00:50:17.760]   does the model make?
+[00:50:17.760 --> 00:50:20.360]   And can we evaluate it automatically?
+[00:50:20.360 --> 00:50:23.640]   Yes, I didn't include this here, but one of the papers
+[00:50:23.640 --> 00:50:25.360]   that I'll talk a little bit about
+[00:50:25.360 --> 00:50:29.760]   did this analysis of what kind of error
+[00:50:29.760 --> 00:50:33.040]   does the model make at different scales.
+[00:50:33.040 --> 00:50:37.840]   And the result there was that as the models grow
+[00:50:37.840 --> 00:50:40.080]   in number of parameters, they tend
+[00:50:40.080 --> 00:50:43.720]   to make less syntactic errors and less compilation errors
+[00:50:43.720 --> 00:50:45.520]   and have more semantic errors.
+[00:50:45.520 --> 00:50:49.680]   Program still runs but fails on some tests.
+[00:50:49.680 --> 00:50:53.960]   And at the smaller sizes, it's way more common
+[00:50:53.960 --> 00:50:56.520]   to get syntax errors, like didn't close a parenthesis
+[00:50:56.520 --> 00:50:57.520]   or something like that.
+[00:50:57.520 --> 00:51:08.120]   OK, so as you've noticed, the base technology here
+[00:51:08.120 --> 00:51:10.040]   was still just transformers.
+[00:51:10.040 --> 00:51:12.160]   We're sampling from a transformer
+[00:51:12.160 --> 00:51:15.720]   and running the code, and maybe sampling more and re-ranking
+[00:51:15.720 --> 00:51:18.720]   using log probabilities, but nothing extremely specific
+[00:51:18.720 --> 00:51:22.400]   to code besides the fact that we can execute the output.
+[00:51:22.400 --> 00:51:29.120]   DeepMind came up with AlphaCode, which was very talked about.
+[00:51:29.120 --> 00:51:31.640]   I'm sure at least some of you have heard of it,
+[00:51:31.640 --> 00:51:34.160]   which was basically a system that
+[00:51:34.160 --> 00:51:36.960]   expanded on these ideas of training language
+[00:51:36.960 --> 00:51:38.640]   models to generate code.
+[00:51:38.640 --> 00:51:40.880]   And in this case, their target was
+[00:51:40.880 --> 00:51:45.360]   to solve programming computation problems, which some of you
+[00:51:45.360 --> 00:51:46.440]   might have heard about.
+[00:51:46.440 --> 00:51:48.760]   These are competitions just like math competitions,
+[00:51:48.760 --> 00:51:52.120]   but where the challenge is to come up with algorithms
+[00:51:52.120 --> 00:51:57.480]   then write code that solve a computational problem.
+[00:51:57.480 --> 00:52:02.200]   And the base, the foundation of AlphaCode
+[00:52:02.200 --> 00:52:04.400]   was still sampling from transformers.
+[00:52:04.400 --> 00:52:08.120]   A lot of their technical design choices
+[00:52:08.120 --> 00:52:11.080]   were basically targeted at allowing faster sampling.
+[00:52:11.080 --> 00:52:16.640]   So they came up with a cheaper version of attention,
+[00:52:16.640 --> 00:52:21.360]   where you share the key value heads,
+[00:52:21.360 --> 00:52:24.600]   but have multiple query heads.
+[00:52:24.600 --> 00:52:28.600]   That was an engineering bottleneck in their sampling.
+[00:52:28.600 --> 00:52:31.600]   And they used an encoder-decoder transformer
+[00:52:31.600 --> 00:52:34.280]   because it was faster to just encode the problem once.
+[00:52:34.280 --> 00:52:41.480]   But aside from that, very similar ideas.
+[00:52:41.480 --> 00:52:47.080]   So they pre-trained their transformer on basically,
+[00:52:47.080 --> 00:52:50.000]   in this case, mostly code.
+[00:52:50.000 --> 00:52:52.240]   I think from their description, it
+[00:52:52.240 --> 00:52:56.240]   was basically just a data set composed of GitHub code,
+[00:52:56.240 --> 00:52:57.800]   where the encoder was additionally
+[00:52:57.800 --> 00:53:00.280]   trained with mass language modeling loss.
+[00:53:01.280 --> 00:53:05.200]   And they fine-tuned the model then
+[00:53:05.200 --> 00:53:08.040]   on a much smaller data set of human solutions
+[00:53:08.040 --> 00:53:09.560]   to programming competition problems,
+[00:53:09.560 --> 00:53:14.560]   which are much sparser than arbitrary GitHub code.
+[00:53:14.560 --> 00:53:17.360]   They used one variant of reinforcement learning
+[00:53:17.360 --> 00:53:19.960]   fine-tuning called GoldNOT or LHF,
+[00:53:19.960 --> 00:53:25.640]   but kind of similar idea, just in the spirit
+[00:53:25.640 --> 00:53:28.160]   that you don't want to penalize the model for not
+[00:53:28.160 --> 00:53:29.960]   being able to produce all valid solutions.
+[00:53:29.960 --> 00:53:32.080]   You just want it to be able to output some solution.
+[00:53:32.080 --> 00:53:35.080]   So if sampling from the model is giving you some solution,
+[00:53:35.080 --> 00:53:38.800]   then it should be getting the reward.
+[00:53:38.800 --> 00:53:42.680]   And one interesting trick that they did
+[00:53:42.680 --> 00:53:43.760]   was value conditioning.
+[00:53:43.760 --> 00:53:47.040]   So basically, since we don't have that many submissions
+[00:53:47.040 --> 00:53:50.040]   to these competitive programming problems,
+[00:53:50.040 --> 00:53:52.960]   it's a little bit bad to simply discard
+[00:53:52.960 --> 00:53:55.120]   all of the wrong solutions, which
+[00:53:55.120 --> 00:53:57.160]   we have a lot more wrong solutions than correct
+[00:53:57.160 --> 00:53:58.200]   solutions.
+[00:53:58.200 --> 00:54:00.360]   So we want to train on them somehow,
+[00:54:00.360 --> 00:54:03.560]   but we don't want to make the model generate
+[00:54:03.560 --> 00:54:04.920]   wrong solutions.
+[00:54:04.920 --> 00:54:06.960]   But there are still some interesting statistics
+[00:54:06.960 --> 00:54:09.120]   to be learned there.
+[00:54:09.120 --> 00:54:13.920]   So to train on those solutions, they basically
+[00:54:13.920 --> 00:54:15.960]   designed the training set so that the code starts
+[00:54:15.960 --> 00:54:19.600]   with a comment that says whether it's correct or incorrect.
+[00:54:19.600 --> 00:54:23.600]   So I can make training examples where the correct solution
+[00:54:23.600 --> 00:54:25.640]   start with, this is a correct solution.
+[00:54:25.640 --> 00:54:28.840]   And the incorrect ones say, this is an incorrect solution.
+[00:54:28.840 --> 00:54:31.320]   And then at test time, of course,
+[00:54:31.320 --> 00:54:33.600]   when generating a program that I want to be correct,
+[00:54:33.600 --> 00:54:36.560]   I start with a comment, this is a correct solution.
+[00:54:36.560 --> 00:54:39.120]   But that lets the model in some way
+[00:54:39.120 --> 00:54:43.040]   benefit from seeing correct solutions as well.
+[00:54:43.040 --> 00:54:45.840]   And the thing that they really pushed in this paper
+[00:54:45.840 --> 00:54:46.760]   was sampling.
+[00:54:46.760 --> 00:54:52.760]   So in the Codex paper, we were talking of up to 100 samples
+[00:54:52.760 --> 00:54:56.880]   per problem, which is already a lot.
+[00:54:56.880 --> 00:54:59.200]   It's something that just using the Codex API,
+[00:54:59.200 --> 00:55:01.480]   you would have a lot of trouble doing.
+[00:55:01.480 --> 00:55:03.760]   In AlphaCode, they massively parallelized this
+[00:55:03.760 --> 00:55:07.160]   and did 100,000 samples per problem.
+[00:55:07.160 --> 00:55:11.080]   And as we were talking, if you were
+[00:55:11.080 --> 00:55:12.960]   to participate in a programming competition--
+[00:55:12.960 --> 00:55:16.760]   and they actually did run AlphaCode on a real one--
+[00:55:16.760 --> 00:55:21.200]   you can't afford at all to submit 100,000 attempts
+[00:55:21.200 --> 00:55:22.640]   of solving a problem.
+[00:55:22.640 --> 00:55:24.840]   So in some way, you have to narrow that down
+[00:55:24.840 --> 00:55:26.160]   to a very small set.
+[00:55:26.160 --> 00:55:29.040]   And in this case, they set the limit
+[00:55:29.040 --> 00:55:31.720]   of making up to 10 submissions, which
+[00:55:31.720 --> 00:55:37.840]   is kind of in the range of what a human participant would do.
+[00:55:37.840 --> 00:55:38.960]   So how do we do that?
+[00:55:38.960 --> 00:55:41.080]   Well, the first obvious step is filtering.
+[00:55:41.080 --> 00:55:43.920]   So each of these problems comes with some examples
+[00:55:43.920 --> 00:55:46.080]   of inputs and outputs.
+[00:55:46.080 --> 00:55:48.840]   So I can immediately discard all the programs
+[00:55:48.840 --> 00:55:52.920]   that don't satisfy even those example inputs.
+[00:55:52.920 --> 00:55:59.960]   That's already removed like 90% of these 100k samples.
+[00:55:59.960 --> 00:56:03.640]   Then we still have a quite significant number
+[00:56:03.640 --> 00:56:06.360]   of programs that work at least on the basic tests.
+[00:56:06.360 --> 00:56:07.840]   So what do we do?
+[00:56:07.840 --> 00:56:09.920]   So what they did was they trained a separate model
+[00:56:09.920 --> 00:56:14.280]   that generates inputs for a program.
+[00:56:14.280 --> 00:56:18.840]   And for these generated inputs, we
+[00:56:18.840 --> 00:56:22.360]   don't really know what's the expected output,
+[00:56:22.360 --> 00:56:24.840]   unless we are really good at interpreting the problem
+[00:56:24.840 --> 00:56:25.720]   statement.
+[00:56:25.720 --> 00:56:28.400]   But even without knowing what's the expected output,
+[00:56:28.400 --> 00:56:31.000]   I can use those generated inputs to basically group
+[00:56:31.000 --> 00:56:33.560]   the programs that I have by behavior.
+[00:56:33.560 --> 00:56:37.280]   So if I generate a string and I run all the programs
+[00:56:37.280 --> 00:56:39.720]   on that input string, some of them produce this result
+[00:56:39.720 --> 00:56:42.080]   and some of that produce that result,
+[00:56:42.080 --> 00:56:46.760]   then I can infer that maybe these programs are
+[00:56:46.760 --> 00:56:48.320]   semantically the same.
+[00:56:48.320 --> 00:56:50.440]   So if I had two submissions to make,
+[00:56:50.440 --> 00:56:52.120]   maybe I would do one of each instead
+[00:56:52.120 --> 00:56:53.680]   of two in the same cluster.
+[00:56:53.680 --> 00:56:55.120]   So this is basically what they did.
+[00:56:55.120 --> 00:56:58.760]   They generated a lot of inputs, clustered the programs
+[00:56:58.760 --> 00:57:01.160]   based on their behavior on those inputs,
+[00:57:01.160 --> 00:57:03.640]   and then picked one submission from each
+[00:57:03.640 --> 00:57:05.560]   of the largest clusters.
+[00:57:05.560 --> 00:57:06.060]   All right.
+[00:57:06.060 --> 00:57:08.960]   What is the point of using incorrect submissions
+[00:57:08.960 --> 00:57:10.840]   to augment training?
+[00:57:10.840 --> 00:57:13.880]   How does that help the model to do better?
+[00:57:13.880 --> 00:57:14.380]   Yeah.
+[00:57:14.380 --> 00:57:18.520]   So the question is, how do the wrong solutions
+[00:57:18.520 --> 00:57:21.240]   help the model in any way?
+[00:57:21.240 --> 00:57:23.200]   So they didn't really do an ablation
+[00:57:23.200 --> 00:57:25.480]   of not training the model on the incorrect solutions
+[00:57:25.480 --> 00:57:28.240]   to measure the benefit of that specifically.
+[00:57:28.240 --> 00:57:32.680]   But the intuition is that even the incorrect solutions
+[00:57:32.680 --> 00:57:35.280]   have some interesting information
+[00:57:35.280 --> 00:57:36.400]   for you to learn from.
+[00:57:36.400 --> 00:57:38.740]   So you might learn that they are incorrect, for example.
+[00:57:38.740 --> 00:57:40.880]   You might learn bug patterns.
+[00:57:40.880 --> 00:57:44.400]   So you might learn that if somewhere in the code
+[00:57:44.400 --> 00:57:48.280]   I forget to close a parenthesis, for example,
+[00:57:48.280 --> 00:57:50.920]   it was probably incorrect.
+[00:57:50.920 --> 00:57:53.280]   And since in this case, we don't really
+[00:57:53.280 --> 00:57:56.320]   have that much training data, any way
+[00:57:56.320 --> 00:57:59.360]   that you can get to use the training data that you have
+[00:57:59.360 --> 00:58:00.320]   probably helps.
+[00:58:00.320 --> 00:58:01.200]   Does that make sense?
+[00:58:01.200 --> 00:58:05.840]   Yeah, but that's a good question.
+[00:58:05.840 --> 00:58:09.540]   It's not exactly clear what the model learns
+[00:58:09.540 --> 00:58:11.340]   from the wrong solution.
+[00:58:11.340 --> 00:58:14.340]   In the programming context I was exposed to,
+[00:58:14.340 --> 00:58:17.820]   you do usually get a grade at least.
+[00:58:17.820 --> 00:58:19.580]   You don't see the specific test, but you
+[00:58:19.580 --> 00:58:23.100]   get a grade for your submissions before time is up.
+[00:58:23.100 --> 00:58:26.260]   Was this the best use of that information
+[00:58:26.260 --> 00:58:29.420]   by not looking at that at all, since you submit dot,
+[00:58:29.420 --> 00:58:31.260]   and you get that clustering instead
+[00:58:31.260 --> 00:58:33.860]   of trying to incorporate the feedback you
+[00:58:33.860 --> 00:58:35.140]   get from the grader?
+[00:58:35.140 --> 00:58:37.460]   Yeah, so in the competitions that they tried,
+[00:58:37.460 --> 00:58:39.180]   which was basically code for us, you only
+[00:58:39.180 --> 00:58:40.900]   get a binary response.
+[00:58:40.900 --> 00:58:44.300]   Was it accepted or not?
+[00:58:44.300 --> 00:58:49.900]   Yes, it's harsher than I/OI, for example.
+[00:58:49.900 --> 00:58:54.720]   Yeah, so the result in offline experiments
+[00:58:54.720 --> 00:58:57.460]   of basically solving these problems from a benchmark
+[00:58:57.460 --> 00:59:00.580]   that they collected was basically
+[00:59:00.580 --> 00:59:05.500]   that if you sample more, you solve more problems.
+[00:59:05.500 --> 00:59:08.100]   So they get this log linear scaling
+[00:59:08.100 --> 00:59:12.460]   with how many programs they sample at all of the model
+[00:59:12.460 --> 00:59:15.540]   scales that they tried, which essentially means
+[00:59:15.540 --> 00:59:19.300]   that if you sample 10 times more programs,
+[00:59:19.300 --> 00:59:22.380]   your solve rate increases in this linear rate of 6%,
+[00:59:22.380 --> 00:59:24.660]   approximately.
+[00:59:24.660 --> 00:59:29.460]   And also with compute, so with how many TPU days
+[00:59:29.460 --> 00:59:31.420]   they took to train the model.
+[00:59:31.420 --> 00:59:35.700]   It has also roughly log linear scale,
+[00:59:35.700 --> 00:59:40.220]   and also TPU seconds spent sampling for each problem.
+[00:59:40.220 --> 00:59:44.580]   And so that was in an offline evaluation,
+[00:59:44.580 --> 00:59:46.780]   a set of problems that they collected.
+[00:59:46.780 --> 00:59:50.220]   But they also tried this model live on competitions
+[00:59:50.220 --> 00:59:52.500]   on this website called Codeforces.
+[00:59:52.500 --> 00:59:56.420]   And their model did get non-trivial performance
+[00:59:56.420 --> 00:59:58.620]   in a bunch of contests.
+[00:59:58.620 --> 01:00:01.300]   So they actually ran this in past contests.
+[01:00:01.300 --> 01:00:03.540]   They didn't run it live.
+[01:00:03.540 --> 01:00:08.340]   But they tried to simulate as much as possible the setting
+[01:00:08.340 --> 01:00:10.500]   where you would be in the competition.
+[01:00:10.500 --> 01:00:13.060]   And yeah, in some of the contests,
+[01:00:13.060 --> 01:00:16.300]   they would place in the top 30, top 50%,
+[01:00:16.300 --> 01:00:20.260]   like a medium coder, in division 2,
+[01:00:20.260 --> 01:00:22.420]   which is important to know this.
+[01:00:22.420 --> 01:00:24.820]   So as they describe in the paper,
+[01:00:24.820 --> 01:00:28.620]   this is like approximately a few months to a year
+[01:00:28.620 --> 01:00:30.980]   of training and programming, which
+[01:00:30.980 --> 01:00:37.340]   is not to say that they'll win these competitions anytime
+[01:00:37.340 --> 01:00:39.780]   soon, but it's at the same time not trivial.
+[01:00:39.780 --> 01:00:50.420]   And the main component of getting the performance
+[01:00:50.420 --> 01:00:53.940]   that they did was sampling, sampling more programs.
+[01:00:53.940 --> 01:00:56.740]   So they did all this engineering to make sure
+[01:00:56.740 --> 01:01:02.540]   that they could sample 100K programs per problem.
+[01:01:02.540 --> 01:01:06.900]   And they had an accumulation of techniques,
+[01:01:06.900 --> 01:01:11.340]   like the MLM for training on the encoder,
+[01:01:11.340 --> 01:01:14.740]   like sampling with random problem tags,
+[01:01:14.740 --> 01:01:16.660]   and the gold fine tuning, and all that.
+[01:01:16.660 --> 01:01:19.820]   And none of them would have helped if, at test time,
+[01:01:19.820 --> 01:01:21.700]   they were just doing 1,000 samples.
+[01:01:21.700 --> 01:01:24.820]   So the effects of basically all of those techniques
+[01:01:24.820 --> 01:01:28.260]   only showed up when they scaled it up to 100K
+[01:01:28.260 --> 01:01:30.660]   to a million samples.
+[01:01:30.660 --> 01:01:33.980]   So on one hand, this shows the potential
+[01:01:33.980 --> 01:01:36.340]   of a very simple set of techniques
+[01:01:36.340 --> 01:01:39.340]   that you've seen in this class of just sampling things
+[01:01:39.340 --> 01:01:44.500]   from transformers, but taken at this extreme scale.
+[01:01:44.500 --> 01:01:47.900]   But of course, this also shows a limit.
+[01:01:47.900 --> 01:01:52.700]   So at this rate of having to take 10x more samples
+[01:01:52.700 --> 01:01:55.700]   to get 6% more problems solved, this
+[01:01:55.700 --> 01:01:58.100]   won't get to division one anytime soon.
+[01:01:58.100 --> 01:02:00.620]   So we'll have to do something different if that's the goal.
+[01:02:00.620 --> 01:02:07.580]   And one kind of problem that seems
+[01:02:07.580 --> 01:02:10.780]   to be inherent to these models, if all you're doing
+[01:02:10.780 --> 01:02:13.260]   is just sampling complete programs,
+[01:02:13.260 --> 01:02:15.580]   is this challenge that humans don't really
+[01:02:15.580 --> 01:02:18.300]   have with compositionality.
+[01:02:18.300 --> 01:02:19.980]   So this is back to a result that was
+[01:02:19.980 --> 01:02:21.420]   presented in the Codex paper.
+[01:02:21.420 --> 01:02:28.140]   And if you ask a person that knows basic Python programming
+[01:02:28.140 --> 01:02:30.220]   how to solve problem x, and they say it's trivial,
+[01:02:30.220 --> 01:02:32.620]   like reverse a string, for example.
+[01:02:32.620 --> 01:02:35.460]   And if you separately ask them, how
+[01:02:35.460 --> 01:02:37.980]   do you compute the length of a string,
+[01:02:37.980 --> 01:02:40.900]   and they also think that's trivial.
+[01:02:40.900 --> 01:02:44.260]   If you give them the problem, can you reverse a string
+[01:02:44.260 --> 01:02:45.300]   and then take the length?
+[01:02:45.300 --> 01:02:47.500]   They'll say, OK, of course.
+[01:02:47.500 --> 01:02:51.860]   That's a very simple composition of two things that are trivial.
+[01:02:51.860 --> 01:02:54.900]   But that does not seem to be the case with these code language
+[01:02:54.900 --> 01:02:55.780]   models.
+[01:02:55.780 --> 01:03:01.300]   So the Codex authors did the experiment
+[01:03:01.300 --> 01:03:04.380]   where they manufactured tasks by basically chaining
+[01:03:04.380 --> 01:03:06.420]   these very simple tasks.
+[01:03:06.420 --> 01:03:09.180]   And the result was that as the number of these components
+[01:03:09.180 --> 01:03:12.700]   grow, the probability that the samples from the model
+[01:03:12.700 --> 01:03:17.580]   solves the composite problem decays exponentially,
+[01:03:17.580 --> 01:03:21.180]   even if the model knows how to do each of the components
+[01:03:21.180 --> 01:03:22.580]   individually.
+[01:03:22.580 --> 01:03:28.100]   So this is something which is a challenge to these models
+[01:03:28.100 --> 01:03:29.220]   and not to people yet.
+[01:03:29.220 --> 01:03:36.620]   Yeah, so just some quick takeaways.
+[01:03:36.620 --> 01:03:39.820]   It seems like transformers just trained at scale and code,
+[01:03:39.820 --> 01:03:42.620]   have non-trivial performance in this task.
+[01:03:42.620 --> 01:03:46.420]   And these results, maybe for people
+[01:03:46.420 --> 01:03:50.380]   that download, co-pilot, and just test it,
+[01:03:50.380 --> 01:03:53.740]   and it sort of works, don't seem that surprising.
+[01:03:53.740 --> 01:03:55.900]   But for the program synthesis field
+[01:03:55.900 --> 01:03:57.620]   that had been for decades working
+[01:03:57.620 --> 01:03:59.940]   on these very specific, very constrained domain-specific
+[01:03:59.940 --> 01:04:03.300]   languages, these results were just unimaginable a few years
+[01:04:03.300 --> 01:04:04.500]   ago.
+[01:04:04.500 --> 01:04:07.900]   And it seems like sampling and testing and filtering
+[01:04:07.900 --> 01:04:10.300]   can get quite far.
+[01:04:10.300 --> 01:04:11.940]   But it also gets expensive quite fast.
+[01:04:11.940 --> 01:04:15.580]   So the alpha code, for example, just training and evaluating
+[01:04:15.580 --> 01:04:19.980]   their largest model used the equivalent energy
+[01:04:19.980 --> 01:04:24.940]   of 16 American households a year, for example.
+[01:04:24.940 --> 01:04:28.780]   We can also have everyone using these models at this scale
+[01:04:28.780 --> 01:04:29.300]   all the time.
+[01:04:29.300 --> 01:04:35.740]   And the other caveat here, of course,
+[01:04:35.740 --> 01:04:39.300]   is that this setting where you get the extremely well
+[01:04:39.300 --> 01:04:43.620]   specified problem, which has tests,
+[01:04:43.620 --> 01:04:46.340]   and you can run the program and determine exactly when it
+[01:04:46.340 --> 01:04:49.020]   passes all the tests, is very different from real-world
+[01:04:49.020 --> 01:04:51.220]   programming, where most of the time
+[01:04:51.220 --> 01:04:53.860]   is spent understanding what's the problem,
+[01:04:53.860 --> 01:04:56.740]   deciding what you do, revising the tests.
+[01:04:56.740 --> 01:05:00.420]   A lot of time spent editing code, and so on.
+[01:05:00.420 --> 01:05:03.820]   So there's a lot of progress being made.
+[01:05:03.820 --> 01:05:07.580]   But this, of course, still has a lot to go.
+[01:05:07.580 --> 01:05:09.220]   Yes?
+[01:05:09.220 --> 01:05:12.060]   One question is--
+[01:05:12.060 --> 01:05:14.460]   it's similar to a question I was asked earlier.
+[01:05:14.460 --> 01:05:15.620]   We can do error analysis.
+[01:05:15.620 --> 01:05:18.740]   Is it possible-- because one thing when we're doing this type
+[01:05:18.740 --> 01:05:21.940]   of code generation is if we just assume it to be right,
+[01:05:21.940 --> 01:05:24.460]   it's a lot harder for us to debug our code,
+[01:05:24.460 --> 01:05:26.060]   because we didn't write it ourselves.
+[01:05:26.060 --> 01:05:30.140]   Are there any kind of ideas or things
+[01:05:30.140 --> 01:05:32.380]   people are considering in the field
+[01:05:32.380 --> 01:05:35.860]   for how to go about debugging code that was written by an AI?
+[01:05:35.860 --> 01:05:38.100]   Are there AI debuggers as well?
+[01:05:38.100 --> 01:05:41.980]   Yeah, so the question was about debugging.
+[01:05:41.980 --> 01:05:44.940]   I think there are two things.
+[01:05:44.940 --> 01:05:46.340]   So one of them is--
+[01:05:46.340 --> 01:05:49.260]   yeah, I had a lot more things that I didn't get to.
+[01:05:49.260 --> 01:05:57.580]   But one of them was this notion of automation bias
+[01:05:57.580 --> 01:06:00.620]   which people have, which is we have a general tendency
+[01:06:00.620 --> 01:06:03.060]   to believe things that are automated.
+[01:06:03.060 --> 01:06:05.140]   And this is quite a problem.
+[01:06:05.140 --> 01:06:07.420]   For example, there was this study run here at Stanford
+[01:06:07.420 --> 01:06:12.580]   even where it seemed like Codex introduces security bugs
+[01:06:12.580 --> 01:06:14.860]   at a non-trivial rate, for example.
+[01:06:14.860 --> 01:06:21.380]   And it's still hard to use these models without understanding
+[01:06:21.380 --> 01:06:22.700]   what they're doing.
+[01:06:22.700 --> 01:06:27.460]   And the problem of doing this process more interactively,
+[01:06:27.460 --> 01:06:32.260]   of writing the program and then looking at what it does,
+[01:06:32.260 --> 01:06:35.980]   and then maybe revising the code,
+[01:06:35.980 --> 01:06:38.580]   is still much harder than just trying to write
+[01:06:38.580 --> 01:06:40.100]   the program from scratch.
+[01:06:40.100 --> 01:06:42.900]   Exactly because-- well, one of the reasons
+[01:06:42.900 --> 01:06:45.300]   is certainly that we don't have that much data
+[01:06:45.300 --> 01:06:47.300]   on that process happening with people.
+[01:06:47.300 --> 01:06:50.740]   We see GitHub, which is kind of the published
+[01:06:50.740 --> 01:06:51.620]   version of the code.
+[01:06:51.620 --> 01:06:55.500]   But all the process to get from an empty file to that
+[01:06:55.500 --> 01:06:57.300]   is still not recorded.
+[01:07:00.340 --> 01:07:03.580]   But yeah, that's a very active area of research as well,
+[01:07:03.580 --> 01:07:08.500]   like models to revise and edit and debug.
+[01:07:08.500 --> 01:07:13.500]   Yes, so are we at time?
+[01:07:13.500 --> 01:07:15.900]   We have up to 5.50 actually.
+[01:07:15.900 --> 01:07:16.700]   5.50, oh, OK.
+[01:07:16.700 --> 01:07:18.620]   So we do have time to talk about something.
+[01:07:18.620 --> 01:07:22.340]   OK, awesome.
+[01:07:22.340 --> 01:07:27.900]   Yes, so I'll try to go over a little bit.
+[01:07:27.900 --> 01:07:35.740]   So one fun thing connecting to what we talked about back
+[01:07:35.740 --> 01:07:39.100]   is that Codex can do some simple pragmatic reasoning.
+[01:07:39.100 --> 01:07:44.340]   So for example, if I give you these inputs, list 1, 3, 2
+[01:07:44.340 --> 01:07:46.900]   returns 1, 2, 3, you would probably say sorting.
+[01:07:46.900 --> 01:07:49.380]   It sorts the list.
+[01:07:49.380 --> 01:07:52.100]   But what about 1, 2, 3 returns 1, 2, 3?
+[01:07:52.100 --> 01:07:53.820]   Probably just identity.
+[01:07:53.820 --> 01:07:55.300]   But it could also be sorting, right?
+[01:07:55.300 --> 01:07:58.180]   It's consistent with sorting as well.
+[01:07:58.180 --> 01:07:59.980]   But you would reason that if I wanted
+[01:07:59.980 --> 01:08:01.980]   to specify the sorting function, I would probably
+[01:08:01.980 --> 01:08:03.260]   give a different input.
+[01:08:03.260 --> 01:08:05.340]   And if I give these inputs to Codex,
+[01:08:05.340 --> 01:08:07.380]   it does predict that the first one is sorting,
+[01:08:07.380 --> 01:08:10.500]   but the second one is identity, which
+[01:08:10.500 --> 01:08:14.820]   is an interesting thing to come out of just regular language
+[01:08:14.820 --> 01:08:17.100]   modeling training.
+[01:08:17.100 --> 01:08:19.500]   There are also experiments with using these models
+[01:08:19.500 --> 01:08:23.620]   in a dialogue style, which is a little bit more about--
+[01:08:23.620 --> 01:08:24.980]   like the question asked.
+[01:08:24.980 --> 01:08:27.180]   So if I can ask it to write a function,
+[01:08:27.180 --> 01:08:31.180]   and then the model comes up with some implementation,
+[01:08:31.180 --> 01:08:35.540]   but maybe has an error, they can sometimes describe the change.
+[01:08:35.540 --> 01:08:39.220]   Like, oh, but can you do it in sorting reverse,
+[01:08:39.220 --> 01:08:41.540]   or only return the top four results?
+[01:08:41.540 --> 01:08:45.780]   And you can often revise what it did,
+[01:08:45.780 --> 01:08:50.020]   which is quite interesting.
+[01:08:50.020 --> 01:08:56.780]   Yes, so last topic here is using programs not as the output
+[01:08:56.780 --> 01:08:59.100]   that you have-- that you want from the model directly,
+[01:08:59.100 --> 01:09:02.420]   but rather as a representation for other things.
+[01:09:02.420 --> 01:09:05.780]   So one general thing about humans
+[01:09:05.780 --> 01:09:09.020]   is that our efficacy in a lot of tasks
+[01:09:09.020 --> 01:09:11.660]   depends on using external tools, right?
+[01:09:11.660 --> 01:09:14.580]   So if I ask you to multiply these two numbers--
+[01:09:14.580 --> 01:09:17.340]   1, 2, 3, 4, 5, 6--
+[01:09:17.340 --> 01:09:21.020]   you can do it, but you probably won't just do it in your head.
+[01:09:21.020 --> 01:09:22.460]   You use a calculator.
+[01:09:22.460 --> 01:09:24.260]   Or if I ask you, what time is it?
+[01:09:24.260 --> 01:09:26.420]   Well, you don't keep track of time that precisely,
+[01:09:26.420 --> 01:09:27.780]   so you use a clock.
+[01:09:27.780 --> 01:09:30.380]   Or what are the five largest airports in the world?
+[01:09:30.380 --> 01:09:31.500]   You do some Google search.
+[01:09:31.500 --> 01:09:36.540]   You figure it out, but you won't just take it out of your head.
+[01:09:36.540 --> 01:09:38.700]   And when we are training a language model
+[01:09:38.700 --> 01:09:41.820]   to just give us answers, conditional on the question,
+[01:09:41.820 --> 01:09:46.060]   or maybe on some context, we're basically
+[01:09:46.060 --> 01:09:50.020]   asking it to come up with the answer all by itself.
+[01:09:50.020 --> 01:09:54.060]   And a lot of these problems aren't reasonably
+[01:09:54.060 --> 01:09:56.020]   solved in that manner.
+[01:09:56.020 --> 01:09:58.360]   The problem of just telling what time is it, for example,
+[01:09:58.360 --> 01:10:00.140]   is one that you fundamentally can't get out
+[01:10:00.140 --> 01:10:02.820]   of a model that was trained and frozen
+[01:10:02.820 --> 01:10:06.540]   and has to produce an output.
+[01:10:06.540 --> 01:10:11.180]   And for example, there was this language model
+[01:10:11.180 --> 01:10:13.580]   that came out last year called Minerva, which was trained
+[01:10:13.580 --> 01:10:15.980]   on mathematical problems.
+[01:10:15.980 --> 01:10:17.780]   And solutions.
+[01:10:17.780 --> 01:10:20.780]   And it a lot of times get the strategy right
+[01:10:20.780 --> 01:10:22.620]   in solving these problems, but still makes
+[01:10:22.620 --> 01:10:25.140]   a lot of arithmetic errors.
+[01:10:25.140 --> 01:10:26.480]   So it says, OK, the solution will
+[01:10:26.480 --> 01:10:29.580]   be this number plus this number equals something wrong,
+[01:10:29.580 --> 01:10:31.180]   for example.
+[01:10:31.180 --> 01:10:34.900]   So it seems limiting that we're asking the model to do
+[01:10:34.900 --> 01:10:38.780]   all these things by itself.
+[01:10:38.780 --> 01:10:43.460]   So this open AI paper from 2021 had this very simple idea
+[01:10:43.460 --> 01:10:47.860]   of solving math word problems using language models,
+[01:10:47.860 --> 01:10:50.220]   but providing them with a calculator.
+[01:10:50.220 --> 01:10:53.700]   And the way to let the model use a calculator
+[01:10:53.700 --> 01:10:58.180]   is basically to assign a special input
+[01:10:58.180 --> 01:11:00.340]   token, a special token in the input,
+[01:11:00.340 --> 01:11:03.140]   such that when the model generates that token,
+[01:11:03.140 --> 01:11:06.740]   your decoder, instead of keeping conditioning on the model's
+[01:11:06.740 --> 01:11:09.660]   probabilities, will then deterministically
+[01:11:09.660 --> 01:11:11.580]   do something with input, like call a calculator
+[01:11:11.580 --> 01:11:16.900]   and paste the output in the model's output sequence.
+[01:11:16.900 --> 01:11:20.660]   So they generated this training set semi-automatically,
+[01:11:20.660 --> 01:11:23.220]   where solutions to math word problems
+[01:11:23.220 --> 01:11:27.220]   would have these annotations in angle brackets.
+[01:11:27.220 --> 01:11:32.260]   And by seeing those annotations in the training set--
+[01:11:32.260 --> 01:11:33.660]   and for training, you don't really
+[01:11:33.660 --> 01:11:35.180]   need to do anything special--
+[01:11:35.180 --> 01:11:38.180]   at test time, you can give the model a calculator
+[01:11:38.180 --> 01:11:41.420]   by basically watching until the moment where it outputs
+[01:11:41.420 --> 01:11:42.740]   an equal sign.
+[01:11:42.740 --> 01:11:46.820]   And then once it does, instead of generating from the model,
+[01:11:46.820 --> 01:11:50.620]   you can take the numbers that come before, call a calculator,
+[01:11:50.620 --> 01:11:55.380]   and then just paste the exact output after.
+[01:11:55.380 --> 01:12:00.500]   And this, as you can imagine, gives a quite significant boost
+[01:12:00.500 --> 01:12:03.260]   in solving these problems, because you kind of isolate
+[01:12:03.260 --> 01:12:05.060]   one kind of error.
+[01:12:05.060 --> 01:12:10.140]   The model won't make arithmetic errors anymore.
+[01:12:10.140 --> 01:12:14.660]   This same idea, but taken a little bit farther,
+[01:12:14.660 --> 01:12:15.980]   was used to solve word problems.
+[01:12:15.980 --> 01:12:20.260]   But instead of the model outputting the solution
+[01:12:20.260 --> 01:12:22.780]   in natural language, it kind of interspersed natural language
+[01:12:22.780 --> 01:12:24.180]   with Python code.
+[01:12:24.180 --> 01:12:27.700]   And the final answer was not given by the model,
+[01:12:27.700 --> 01:12:30.900]   but by running the Python code that it provided.
+[01:12:30.900 --> 01:12:31.900]   So here's an example.
+[01:12:31.900 --> 01:12:35.060]   You can look at it in more detail later.
+[01:12:35.060 --> 01:12:38.020]   And this also gives a big benefit
+[01:12:38.020 --> 01:12:40.660]   over just having the model try to figure out
+[01:12:40.660 --> 01:12:43.940]   what's the answer in its own.
+[01:12:43.940 --> 01:12:47.540]   And more generally, there was this paper
+[01:12:47.540 --> 01:12:52.220]   that came up on archive called Toolformer, where they
+[01:12:52.220 --> 01:12:56.060]   basically extended this idea a little bit farther
+[01:12:56.060 --> 01:12:58.700]   with a self-supervised approach of, let's say,
+[01:12:58.700 --> 01:13:00.580]   you come up with a list of tools,
+[01:13:00.580 --> 01:13:05.660]   and you want to teach a model how to use those tools.
+[01:13:05.660 --> 01:13:10.500]   And in this case, they tried quite a few tools.
+[01:13:10.500 --> 01:13:11.860]   So one of them was a calculator.
+[01:13:11.860 --> 01:13:13.660]   Another was a machine translation system.
+[01:13:13.660 --> 01:13:17.260]   So when the model outputs in its--
+[01:13:17.260 --> 01:13:20.340]   when decoding from the model, it outputs like empty in a string.
+[01:13:20.340 --> 01:13:22.340]   You go and call another neural network,
+[01:13:22.340 --> 01:13:24.980]   which is the translation, and do the translation,
+[01:13:24.980 --> 01:13:26.700]   then paste that back.
+[01:13:26.700 --> 01:13:30.220]   Another one was doing search on Wikipedia, for example,
+[01:13:30.220 --> 01:13:33.260]   or calling a question answering system.
+[01:13:33.260 --> 01:13:37.580]   And with the right set of techniques
+[01:13:37.580 --> 01:13:40.820]   to teach the model how to output these sequences,
+[01:13:40.820 --> 01:13:43.460]   you can get very interesting behavior of the model,
+[01:13:43.460 --> 01:13:47.060]   kind of deciding on the fly which tool to use.
+[01:13:47.060 --> 01:13:50.700]   And yeah, so this is basically--
+[01:13:50.700 --> 01:13:54.820]   the program here is not the final result that you want.
+[01:13:54.820 --> 01:13:57.140]   But it's rather just a way to represent
+[01:13:57.140 --> 01:13:58.700]   this usage of external tools.
+[01:14:02.460 --> 01:14:05.820]   Yes, so we talked a little bit about this before.
+[01:14:05.820 --> 01:14:09.380]   So I guess one natural question for people graduating
+[01:14:09.380 --> 01:14:12.220]   computer science is, will I have a job after I graduate,
+[01:14:12.220 --> 01:14:14.260]   or will Codex replace me?
+[01:14:14.260 --> 01:14:18.980]   And as it turns out, in software engineering, a lot of time
+[01:14:18.980 --> 01:14:21.900]   is not spent writing code in the real world.
+[01:14:21.900 --> 01:14:24.300]   So there's this one study, but there
+[01:14:24.300 --> 01:14:28.460]   are a lot more that show that when it tracked developers'
+[01:14:28.460 --> 01:14:33.700]   time, they spent a lot of time just reading code,
+[01:14:33.700 --> 01:14:35.220]   a lot of time outside of the IDE.
+[01:14:35.220 --> 01:14:37.420]   This is just IDE time, navigating.
+[01:14:37.420 --> 01:14:39.660]   And 5% is actually editing code.
+[01:14:39.660 --> 01:14:41.140]   And even editing code, a lot of time
+[01:14:41.140 --> 01:14:45.380]   is not writing new code, but rather fixing bugs
+[01:14:45.380 --> 01:14:47.460]   and maintaining it.
+[01:14:47.460 --> 01:14:49.100]   So there's quite a lot of time that's
+[01:14:49.100 --> 01:14:50.580]   not spent writing code for people
+[01:14:50.580 --> 01:14:53.700]   that are paid to write code.
+[01:14:53.700 --> 01:14:57.660]   And yeah, and there's this whole process
+[01:14:57.660 --> 01:14:59.740]   of deciding what to build, which is usually
+[01:14:59.740 --> 01:15:02.300]   more important than just writing,
+[01:15:02.300 --> 01:15:03.340]   just building the thing.
+[01:15:03.340 --> 01:15:10.860]   And this is still quite far from what Codex can do.
+[01:15:10.860 --> 01:15:15.140]   And yeah, there's this notion we talked a little bit about,
+[01:15:15.140 --> 01:15:16.820]   that debugging is very interactive.
+[01:15:16.820 --> 01:15:18.740]   We run, go back, revise.
+[01:15:18.740 --> 01:15:22.140]   And this process is mostly lost by just sampling more
+[01:15:22.140 --> 01:15:25.980]   from the model and trying again, basically from scratch.
+[01:15:25.980 --> 01:15:29.460]   And there's active research, even here at Stanford,
+[01:15:29.460 --> 01:15:33.220]   on using models also to fix bugs automatically.
+[01:15:33.220 --> 01:15:36.340]   Write a program, have some syntax error,
+[01:15:36.340 --> 01:15:38.700]   how to go back and maybe change.
+[01:15:38.700 --> 01:15:41.340]   But still very different from the more open-ended kind
+[01:15:41.340 --> 01:15:45.180]   of debugging that people can do.
+[01:15:45.180 --> 01:15:47.940]   Yeah, of course, even all the code on GitHub
+[01:15:47.940 --> 01:15:49.940]   is still not all the code that you can imagine.
+[01:15:49.940 --> 01:15:52.340]   There are new libraries all the time.
+[01:15:52.340 --> 01:15:54.500]   There's internal libraries for companies
+[01:15:54.500 --> 01:15:57.900]   that will just not be on GitHub at any point.
+[01:15:57.900 --> 01:15:59.580]   So there are challenges in teaching
+[01:15:59.580 --> 01:16:02.820]   models to use those as well.
+[01:16:02.820 --> 01:16:07.140]   And as we mentioned, even if models can generate code,
+[01:16:07.140 --> 01:16:10.660]   they still fail a lot of code understanding challenges,
+[01:16:10.660 --> 01:16:13.220]   like just executing code, for example,
+[01:16:13.220 --> 01:16:16.860]   like asking what this code outputs.
+[01:16:16.860 --> 01:16:21.540]   And even fine tuning doesn't seem to solve that problem.
+[01:16:21.540 --> 01:16:24.100]   And yeah, and the other thing is that public code also
+[01:16:24.100 --> 01:16:25.780]   has a lot of bugs, as you can imagine.
+[01:16:25.780 --> 01:16:27.280]   And they're being fixed all the time.
+[01:16:27.280 --> 01:16:31.060]   So training on buggy code will also
+[01:16:31.060 --> 01:16:33.300]   mean that sometimes you generate buggy code.
+[01:16:33.300 --> 01:16:35.700]   And so you still have to understand
+[01:16:35.700 --> 01:16:37.900]   what the model outputs.
+[01:16:37.900 --> 01:16:41.500]   And there are security bugs that can be introduced
+[01:16:41.500 --> 01:16:44.060]   by language models as well.
+[01:16:44.060 --> 01:16:51.140]   And yes, so just to conclude, a little bit past time,
+[01:16:51.140 --> 01:16:54.460]   a lot of these capabilities were completely out of reach
+[01:16:54.460 --> 01:16:55.460]   even a few years ago.
+[01:16:55.460 --> 01:16:57.340]   So this is a really exciting time
+[01:16:57.340 --> 01:17:00.460]   to be watching this happen.
+[01:17:00.460 --> 01:17:03.140]   And I think there's a fascinating intersection here
+[01:17:03.140 --> 01:17:04.940]   between natural language, which is
+[01:17:04.940 --> 01:17:08.180]   extremely ambiguous and flexible and contextual,
+[01:17:08.180 --> 01:17:10.820]   and we do it so easily, and programming languages
+[01:17:10.820 --> 01:17:14.420]   are these truly rigid languages.
+[01:17:14.420 --> 01:17:16.460]   You forget a parenthesis, and the compiler
+[01:17:16.460 --> 01:17:19.580]   has no idea what you're trying to do anymore.
+[01:17:19.580 --> 01:17:22.460]   And we can bridge between these two worlds very easily.
+[01:17:22.460 --> 01:17:25.980]   And now language models are also starting to.
+[01:17:25.980 --> 01:17:28.180]   And besides models that write programs,
+[01:17:28.180 --> 01:17:31.620]   programs are also just a general interesting representation
+[01:17:31.620 --> 01:17:32.700]   for reasoning.
+[01:17:32.700 --> 01:17:35.860]   You can represent mathematics, legal contracts,
+[01:17:35.860 --> 01:17:40.460]   this notion of calling and combining different tools.
+[01:17:40.460 --> 01:17:44.940]   Yeah, so all of these are very active topics of research.
+[01:17:44.940 --> 01:17:47.780]   So hope you guys enjoy.
+[01:17:48.780 --> 01:17:49.300]   Thanks.
+[01:17:49.300 --> 01:17:52.340]   [APPLAUSE]
+[01:17:52.340 --> 01:18:02.340]   [BLANK_AUDIO]
+

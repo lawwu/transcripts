@@ -1,0 +1,476 @@
+
+[00:00:00.000 --> 00:00:06.160]   Welcome back everyone.
+[00:00:06.160 --> 00:00:09.240]   This is part 4 in our series on information retrieval.
+[00:00:09.240 --> 00:00:11.840]   We come to the heart of it, neural information retrieval.
+[00:00:11.840 --> 00:00:16.200]   This is the class of models that has done so much to bring NLP and IR
+[00:00:16.200 --> 00:00:20.480]   back together again and open new doors for both of those fields.
+[00:00:20.480 --> 00:00:23.040]   In the background throughout the screencast,
+[00:00:23.040 --> 00:00:25.800]   I think you should imagine that the name of the game is to take
+[00:00:25.800 --> 00:00:31.320]   a pre-trained BERT model and fine-tune it for information retrieval.
+[00:00:31.320 --> 00:00:34.240]   In that context, cross-encoders are
+[00:00:34.240 --> 00:00:37.400]   conceptually the simplest approach that you could take.
+[00:00:37.400 --> 00:00:40.720]   For cross-encoders, we're going to concatenate
+[00:00:40.720 --> 00:00:44.920]   the query text and the document text together into one single text,
+[00:00:44.920 --> 00:00:47.020]   process that text with BERT,
+[00:00:47.020 --> 00:00:52.720]   and then use representations in that BERT model as the basis for IR fine-tuning.
+[00:00:52.720 --> 00:00:55.040]   In a bit more detail, we'd process the query in
+[00:00:55.040 --> 00:01:00.080]   the document and then probably take the final output state above the class token,
+[00:01:00.080 --> 00:01:03.120]   add some task specific parameters on top,
+[00:01:03.120 --> 00:01:07.440]   and fine-tune the model against our information retrieval objective.
+[00:01:07.440 --> 00:01:11.080]   That will be incredibly semantically expressive because we have all of
+[00:01:11.080 --> 00:01:15.680]   these interesting interactions between query and document in this mode.
+[00:01:15.680 --> 00:01:17.760]   In a bit more detail, in the background here,
+[00:01:17.760 --> 00:01:21.800]   I'm imagining that we have a dataset of triples where we have a query,
+[00:01:21.800 --> 00:01:25.280]   one positive document for that query, and some number,
+[00:01:25.280 --> 00:01:28.920]   one or more negative documents for that query.
+[00:01:28.920 --> 00:01:32.360]   The basis for scoring is as I described it before,
+[00:01:32.360 --> 00:01:34.480]   we're going to take our BERT encoder,
+[00:01:34.480 --> 00:01:37.680]   concatenate the query in the document and process that text,
+[00:01:37.680 --> 00:01:42.400]   and then retrieve the final output state above the class token that's given here,
+[00:01:42.400 --> 00:01:46.760]   and that's fed through a dense layer that is used for scoring.
+[00:01:46.760 --> 00:01:49.820]   Then the loss function for the model is typically
+[00:01:49.820 --> 00:01:52.840]   the negative log likelihood of the positive passage.
+[00:01:52.840 --> 00:01:55.400]   In the numerator here, we have our score for
+[00:01:55.400 --> 00:01:58.360]   the positive passage according to our scoring function,
+[00:01:58.360 --> 00:02:01.440]   and the denominator is that positive passage score again,
+[00:02:01.440 --> 00:02:05.760]   sum together with the total for all the negative passages.
+[00:02:05.760 --> 00:02:09.560]   Let's step back. This will be incredibly semantically rich,
+[00:02:09.560 --> 00:02:11.400]   but it simply won't scale.
+[00:02:11.400 --> 00:02:13.360]   The richness comes from us using
+[00:02:13.360 --> 00:02:16.760]   the BERT model to jointly encode the query and the documents.
+[00:02:16.760 --> 00:02:19.700]   We have all these rich token level interactions,
+[00:02:19.700 --> 00:02:21.760]   but that is the model's downfall.
+[00:02:21.760 --> 00:02:26.860]   This won't scale because we need to encode every document at query time.
+[00:02:26.860 --> 00:02:29.780]   In principle, this means that if we have a billion documents,
+[00:02:29.780 --> 00:02:34.100]   we need to do a billion forward passes with the BERT model,
+[00:02:34.100 --> 00:02:37.100]   one for every document with respect to our query,
+[00:02:37.100 --> 00:02:38.300]   get all those scores,
+[00:02:38.300 --> 00:02:40.220]   and then make decisions on that basis,
+[00:02:40.220 --> 00:02:42.940]   and that will be simply infeasible.
+[00:02:42.940 --> 00:02:46.180]   Although there's something conceptually right about this approach,
+[00:02:46.180 --> 00:02:50.380]   it's simply intractable for modern search.
+[00:02:50.380 --> 00:02:52.820]   DPR can be seen as a model
+[00:02:52.820 --> 00:02:54.700]   that's at the other end of the spectrum.
+[00:02:54.700 --> 00:02:57.080]   This stands for dense passage retriever.
+[00:02:57.080 --> 00:03:01.340]   In this mode, we're going to separately encode queries and documents.
+[00:03:01.340 --> 00:03:04.940]   On the left here, I've got our query encoded with a BERT-like model,
+[00:03:04.940 --> 00:03:07.160]   and I've grayed out all of the states
+[00:03:07.160 --> 00:03:09.940]   except the final output state above the class token.
+[00:03:09.940 --> 00:03:12.100]   That's the only one that we'll really need.
+[00:03:12.100 --> 00:03:14.500]   I separately encode the document, and again,
+[00:03:14.500 --> 00:03:18.260]   we just need that final output state above the class token.
+[00:03:18.260 --> 00:03:22.780]   Then we're going to do scoring as a dot product of those two vectors.
+[00:03:22.780 --> 00:03:24.220]   In a bit more detail, again,
+[00:03:24.220 --> 00:03:27.620]   we have a dataset consisting of those triples for our query,
+[00:03:27.620 --> 00:03:31.500]   one positive document, and one or more negative documents.
+[00:03:31.500 --> 00:03:35.820]   Now, our core comparison function is what I've called sim here.
+[00:03:35.820 --> 00:03:38.700]   The basis for sim is that we encode our query using
+[00:03:38.700 --> 00:03:41.780]   our query encoder and get the final output state,
+[00:03:41.780 --> 00:03:43.900]   and we get the dot product of that with
+[00:03:43.900 --> 00:03:46.460]   the encoding for our document again focused
+[00:03:46.460 --> 00:03:49.220]   on the output state above the class token.
+[00:03:49.220 --> 00:03:50.980]   The loss is as before,
+[00:03:50.980 --> 00:03:54.100]   this is the negative log likelihood of the positive passage.
+[00:03:54.100 --> 00:03:55.960]   The positive score up here,
+[00:03:55.960 --> 00:03:58.420]   and then again, use down here sum together
+[00:03:58.420 --> 00:04:01.540]   with the sum for all of the negative passages.
+[00:04:01.540 --> 00:04:04.220]   This will be highly scalable,
+[00:04:04.220 --> 00:04:08.100]   but it's very limited in terms of its query document interactions.
+[00:04:08.100 --> 00:04:09.460]   Let's unpack that a bit.
+[00:04:09.460 --> 00:04:12.580]   The core of the scalability is that we can now
+[00:04:12.580 --> 00:04:15.460]   encode all of our documents offline ahead of time,
+[00:04:15.460 --> 00:04:18.460]   and indeed, we only need to store
+[00:04:18.460 --> 00:04:22.180]   one single vector associated with each one of those documents.
+[00:04:22.180 --> 00:04:23.460]   Then at query time,
+[00:04:23.460 --> 00:04:25.020]   we just encode the query,
+[00:04:25.020 --> 00:04:28.180]   get that one representation above the class token,
+[00:04:28.180 --> 00:04:31.100]   and do a fast dot product with all of our documents.
+[00:04:31.100 --> 00:04:33.460]   It's highly scalable in that sense too.
+[00:04:33.460 --> 00:04:34.860]   But at the same time,
+[00:04:34.860 --> 00:04:37.660]   we have lost all of those token level interactions
+[00:04:37.660 --> 00:04:39.980]   we had with the cross encoder.
+[00:04:39.980 --> 00:04:41.580]   Now, we have to hope that all of
+[00:04:41.580 --> 00:04:43.180]   the information about the query and
+[00:04:43.180 --> 00:04:45.340]   the document is summarized in
+[00:04:45.340 --> 00:04:48.460]   those single vector representations and we might
+[00:04:48.460 --> 00:04:53.100]   worry that that results in a loss of expressivity for the model.
+[00:04:53.100 --> 00:04:56.340]   Before moving on to some additional models in this space,
+[00:04:56.340 --> 00:04:58.540]   I thought I would just pause here and point
+[00:04:58.540 --> 00:05:01.300]   out that we have a little bit of modularity.
+[00:05:01.300 --> 00:05:04.540]   The loss function for both of the models that I presented
+[00:05:04.540 --> 00:05:07.780]   is the negative log likelihood of the positive passage.
+[00:05:07.780 --> 00:05:10.100]   Here's how I presented it for the cross encoder,
+[00:05:10.100 --> 00:05:12.500]   and the core of that is this rep function.
+[00:05:12.500 --> 00:05:15.020]   Here's how I presented it for DPR,
+[00:05:15.020 --> 00:05:17.300]   where the core of it is the sim function.
+[00:05:17.300 --> 00:05:20.260]   You can now see that there's a general form of this,
+[00:05:20.260 --> 00:05:22.460]   where we just have some comparison function
+[00:05:22.460 --> 00:05:24.620]   and everything else remains the same.
+[00:05:24.620 --> 00:05:27.420]   This is freeing because if you developed
+[00:05:27.420 --> 00:05:30.500]   variants of DPR or cross encoders,
+[00:05:30.500 --> 00:05:32.740]   the way that might play out is that you've simply
+[00:05:32.740 --> 00:05:35.260]   adjusted the comparison function here,
+[00:05:35.260 --> 00:05:37.340]   and everything else about how you're setting up
+[00:05:37.340 --> 00:05:38.900]   models and optimizing them could
+[00:05:38.900 --> 00:05:41.460]   potentially stay the same.
+[00:05:41.460 --> 00:05:44.420]   Let's move to Colbert.
+[00:05:44.420 --> 00:05:46.340]   This model is near and dear to me.
+[00:05:46.340 --> 00:05:48.300]   Colbert was developed by Omar Khattab,
+[00:05:48.300 --> 00:05:51.100]   who is my student, along with Matei Zaharia,
+[00:05:51.100 --> 00:05:55.340]   who's my longtime collaborator and co-advises Omar with me.
+[00:05:55.340 --> 00:05:58.700]   Omar would want me to point out for you that Colbert
+[00:05:58.700 --> 00:06:02.300]   stands for contextualized late interaction with BERT.
+[00:06:02.300 --> 00:06:05.100]   That's an homage to the late night talk show host,
+[00:06:05.100 --> 00:06:06.740]   Stephen Colbert, who has
+[00:06:06.860 --> 00:06:10.420]   late night contextual interactions with his guests.
+[00:06:10.420 --> 00:06:13.420]   But you are also free to pronounce this Colbert
+[00:06:13.420 --> 00:06:15.220]   because obviously the BERT in
+[00:06:15.220 --> 00:06:18.300]   that name is the famous BERT model.
+[00:06:18.300 --> 00:06:20.220]   Here's how Colbert works.
+[00:06:20.220 --> 00:06:22.540]   First, we encode queries using BERT.
+[00:06:22.540 --> 00:06:24.140]   I've drawn this on its side for
+[00:06:24.140 --> 00:06:25.540]   reasons that will become clear when I
+[00:06:25.540 --> 00:06:26.780]   show you my full diagram,
+[00:06:26.780 --> 00:06:29.140]   but it's just a BERT encoding of the query.
+[00:06:29.140 --> 00:06:31.980]   I've grayed out all the states except the final ones
+[00:06:31.980 --> 00:06:34.060]   because the only states we need
+[00:06:34.060 --> 00:06:37.020]   are the output states from this model.
+[00:06:37.020 --> 00:06:40.660]   Similarly, we encode the document again with BERT,
+[00:06:40.660 --> 00:06:44.860]   and here again, the only states we need are the output states.
+[00:06:44.860 --> 00:06:48.380]   Then the basis for Colbert scoring is a matrix of
+[00:06:48.380 --> 00:06:52.580]   similarity scores between query tokens and document tokens,
+[00:06:52.580 --> 00:06:55.540]   again, as represented by these final output layers.
+[00:06:55.540 --> 00:06:57.140]   We get scores, and in fact,
+[00:06:57.140 --> 00:06:59.740]   we get a full grid of these scores.
+[00:06:59.740 --> 00:07:01.940]   Then the basis for scoring is
+[00:07:01.940 --> 00:07:05.820]   a maxim comparison for every query token.
+[00:07:05.820 --> 00:07:10.260]   We get the value of the maximum similarity for document tokens,
+[00:07:10.260 --> 00:07:12.260]   and we sum those together to get
+[00:07:12.260 --> 00:07:15.500]   the maxim value that is the basis for the model.
+[00:07:15.500 --> 00:07:17.260]   In a bit more detail, again,
+[00:07:17.260 --> 00:07:20.220]   we have a dataset consisting of those triples.
+[00:07:20.220 --> 00:07:23.860]   The loss is the negative log likelihood of the positive passage,
+[00:07:23.860 --> 00:07:25.620]   but now maxim is the basis,
+[00:07:25.620 --> 00:07:29.460]   and here is the maxim scoring function in full detail.
+[00:07:29.460 --> 00:07:31.380]   But again, the essence of this is that for
+[00:07:31.380 --> 00:07:34.500]   each query token, we get the maxim for
+[00:07:34.500 --> 00:07:39.180]   some document token and sum all those maxim values together.
+[00:07:39.180 --> 00:07:41.780]   This will be highly scalable,
+[00:07:41.780 --> 00:07:44.380]   but it has late contextual interactions
+[00:07:44.380 --> 00:07:47.460]   between tokens in the query and tokens in the document.
+[00:07:47.460 --> 00:07:51.420]   Let me unpack that. It's highly scalable because as with DPR,
+[00:07:51.420 --> 00:07:54.660]   we can store all of our documents ahead of time.
+[00:07:54.660 --> 00:07:57.580]   We just need to score this vector
+[00:07:57.580 --> 00:08:00.660]   of output vectors here to represent documents.
+[00:08:00.660 --> 00:08:04.100]   At query time, we encode the query and get the output states,
+[00:08:04.100 --> 00:08:09.020]   and then perform a bunch of very fast maxim comparisons for scoring.
+[00:08:09.020 --> 00:08:11.180]   But it's also semantically rich.
+[00:08:11.180 --> 00:08:13.340]   We have retained some of the advantages of
+[00:08:13.340 --> 00:08:15.780]   the cross encoder because we do have
+[00:08:15.780 --> 00:08:18.780]   token level interactions between query and document.
+[00:08:18.780 --> 00:08:22.340]   It's now, it's just that they happen only on the output states,
+[00:08:22.340 --> 00:08:24.020]   whereas the cross encoder allowed them to
+[00:08:24.020 --> 00:08:26.820]   happen at every layer in the BERT model.
+[00:08:26.820 --> 00:08:30.700]   That was too expensive and this looks like a nice compromise.
+[00:08:30.700 --> 00:08:32.900]   Colbert has indeed proven to be
+[00:08:32.900 --> 00:08:37.700]   an extremely powerful and effective IR mechanism.
+[00:08:37.700 --> 00:08:41.420]   One thing I really like about Colbert is that it
+[00:08:41.420 --> 00:08:44.180]   brings in an older insight from IR,
+[00:08:44.180 --> 00:08:45.860]   which is that essentially we want to do
+[00:08:45.860 --> 00:08:49.300]   some level of term matching between queries and documents.
+[00:08:49.300 --> 00:08:51.620]   Except now, since this is a neural model,
+[00:08:51.620 --> 00:08:55.060]   we get to do that in a semantically very rich space.
+[00:08:55.060 --> 00:08:56.940]   Let me show you that by way of an example.
+[00:08:56.940 --> 00:08:58.100]   Here I have the query,
+[00:08:58.100 --> 00:09:01.260]   when did the Transformers cartoon series come out?
+[00:09:01.260 --> 00:09:02.500]   We have the document,
+[00:09:02.500 --> 00:09:06.740]   the animated Transformers was released in August 1986.
+[00:09:06.740 --> 00:09:09.660]   I'm going to show you some maxim values.
+[00:09:09.660 --> 00:09:12.380]   The largest score is between Transformers in
+[00:09:12.380 --> 00:09:14.940]   the query and Transformers in the document.
+[00:09:14.940 --> 00:09:16.660]   That makes good sense.
+[00:09:16.660 --> 00:09:19.860]   But we also have a very strong maxim match between
+[00:09:19.860 --> 00:09:23.300]   cartoon in the query and animated in the document.
+[00:09:23.300 --> 00:09:25.460]   That's a very semantic connection that
+[00:09:25.460 --> 00:09:28.900]   only neural models like Colbert can make without extra effort.
+[00:09:28.900 --> 00:09:32.860]   Similarly, for come out in the context of the query,
+[00:09:32.860 --> 00:09:36.020]   we have a strong match to released in the document.
+[00:09:36.020 --> 00:09:38.420]   Then for when in the query that matches to
+[00:09:38.420 --> 00:09:41.620]   the two parts of the date expression, August 1986.
+[00:09:41.620 --> 00:09:44.780]   Here I've shown the top two maxim values to show that we're
+[00:09:44.780 --> 00:09:46.420]   really getting a semantic connection
+[00:09:46.420 --> 00:09:48.820]   to that full unit in the document.
+[00:09:48.820 --> 00:09:51.620]   This thing makes the model highly
+[00:09:51.620 --> 00:09:54.300]   interpretable and also reveals to us why this is
+[00:09:54.300 --> 00:09:57.340]   such an effective retrieval mechanism
+[00:09:57.340 --> 00:10:01.100]   because it can make all of these deep associations.
+[00:10:01.100 --> 00:10:03.660]   Before moving on to SPLADE,
+[00:10:03.660 --> 00:10:05.580]   the final model that I wanted to talk about,
+[00:10:05.580 --> 00:10:08.420]   I thought I would pause here and just talk a little bit with
+[00:10:08.420 --> 00:10:11.420]   you about how you take Colbert or any of
+[00:10:11.420 --> 00:10:14.220]   these neural models and then turn them into something that
+[00:10:14.220 --> 00:10:18.540]   could be effective as a deployed search technology.
+[00:10:18.540 --> 00:10:21.060]   Because in the background here is that we have
+[00:10:21.060 --> 00:10:24.300]   semantic expressiveness but it comes at a price,
+[00:10:24.300 --> 00:10:27.300]   we need to do forward inference in BERT models,
+[00:10:27.300 --> 00:10:29.700]   and that can be very expensive,
+[00:10:29.700 --> 00:10:33.860]   prohibitively so if we have very tight latency restrictions.
+[00:10:33.860 --> 00:10:35.420]   The question for us is,
+[00:10:35.420 --> 00:10:37.780]   can we overcome those limitations
+[00:10:37.780 --> 00:10:40.580]   and make this a practical solution?
+[00:10:40.580 --> 00:10:44.180]   One easy thing to do to make this practical
+[00:10:44.180 --> 00:10:46.860]   is to employ these models as re-rankers.
+[00:10:46.860 --> 00:10:49.780]   Here this is how this would play out for Colbert.
+[00:10:49.780 --> 00:10:52.060]   For Colbert, remember we have an index that
+[00:10:52.060 --> 00:10:55.620]   essentially consists of token level representations.
+[00:10:55.620 --> 00:10:58.260]   Those are each associated with documents.
+[00:10:58.260 --> 00:11:00.380]   Given an index structure like this,
+[00:11:00.380 --> 00:11:01.940]   a simple thing to do would be to take
+[00:11:01.940 --> 00:11:04.780]   our query and code it as a bunch of tokens,
+[00:11:04.780 --> 00:11:08.020]   get the top K documents for that query using
+[00:11:08.020 --> 00:11:11.180]   a fast term-based model like BM25,
+[00:11:11.180 --> 00:11:13.900]   and then use Colbert only at stage 2
+[00:11:13.900 --> 00:11:17.060]   to re-rank the top K documents there.
+[00:11:17.060 --> 00:11:21.420]   We use BM25 for the expensive first phase where we need to do
+[00:11:21.420 --> 00:11:25.100]   brute force search over our entire index of documents,
+[00:11:25.100 --> 00:11:27.500]   and the model like Colbert comes in only at
+[00:11:27.500 --> 00:11:30.140]   phase 2 to do re-ranking.
+[00:11:30.140 --> 00:11:31.740]   It sounds like a small thing,
+[00:11:31.740 --> 00:11:33.700]   but in fact the re-ranking that happens in
+[00:11:33.700 --> 00:11:36.780]   that second phase can be incredibly powerful and add
+[00:11:36.780 --> 00:11:39.860]   a lot of value as a result of the fact that Colbert and
+[00:11:39.860 --> 00:11:44.700]   models like it are so good at doing retrieval in this context,
+[00:11:44.700 --> 00:11:46.140]   but they're expensive.
+[00:11:46.140 --> 00:11:48.940]   One nice thing about this though is that we can control
+[00:11:48.940 --> 00:11:51.700]   our costs because if we set K very low,
+[00:11:51.700 --> 00:11:54.180]   we'll do very little processing with Colbert.
+[00:11:54.180 --> 00:11:55.420]   If we set K high,
+[00:11:55.420 --> 00:11:58.220]   we'll use Colbert more often and we can calibrate
+[00:11:58.220 --> 00:12:02.100]   that against other constraints that we're operating under.
+[00:12:02.100 --> 00:12:04.940]   This is a perfectly reasonable solution.
+[00:12:04.940 --> 00:12:08.060]   The one concern you might have maybe as a purist,
+[00:12:08.060 --> 00:12:10.780]   is that you now have two retrieval mechanisms in play,
+[00:12:10.780 --> 00:12:13.220]   BM25 which does a lot of the work,
+[00:12:13.220 --> 00:12:16.220]   and Colbert which performs the re-ranking function.
+[00:12:16.220 --> 00:12:19.140]   We might hope for a more integrated solution.
+[00:12:19.140 --> 00:12:22.100]   Could we get beyond re-ranking for Colbert?
+[00:12:22.100 --> 00:12:23.820]   I think the answer is yes.
+[00:12:23.820 --> 00:12:25.740]   We're going to make a slight adjustment
+[00:12:25.740 --> 00:12:27.060]   to how we set up the index.
+[00:12:27.060 --> 00:12:29.220]   Now, the primary thing will be that we'll have
+[00:12:29.220 --> 00:12:32.180]   these token level vectors which of course,
+[00:12:32.180 --> 00:12:35.220]   as before, associate with documents.
+[00:12:35.220 --> 00:12:37.300]   Now, when a query comes in,
+[00:12:37.300 --> 00:12:40.420]   we encode that into a sequence of vectors,
+[00:12:40.420 --> 00:12:44.020]   and then for each vector in that query representation,
+[00:12:44.020 --> 00:12:47.420]   we retrieve the P most similar token vectors,
+[00:12:47.420 --> 00:12:50.860]   and then travel through them to their associated documents.
+[00:12:50.860 --> 00:12:53.940]   Then the only Colbert work that we do is
+[00:12:53.940 --> 00:12:55.780]   scoring this potentially small set
+[00:12:55.780 --> 00:12:57.860]   of documents that we end up in phase 2.
+[00:12:57.860 --> 00:12:59.340]   Because in phase 1,
+[00:12:59.340 --> 00:13:02.420]   all we're doing is a bunch of similarity calculations
+[00:13:02.420 --> 00:13:04.860]   between vector representations.
+[00:13:04.860 --> 00:13:08.100]   Again, we have a lot of control over how much we
+[00:13:08.100 --> 00:13:11.220]   actually use the full Colbert model at step 2 here,
+[00:13:11.220 --> 00:13:13.220]   and therefore we can calibrate against
+[00:13:13.220 --> 00:13:16.180]   other constraints that we're operating under.
+[00:13:16.180 --> 00:13:18.220]   This is certainly workable,
+[00:13:18.220 --> 00:13:20.860]   but we can probably do even better.
+[00:13:20.860 --> 00:13:24.780]   The way we can do even better is with centroid-based ranking.
+[00:13:24.780 --> 00:13:26.580]   This begins from the insight that
+[00:13:26.580 --> 00:13:28.340]   this index that we've constructed
+[00:13:28.340 --> 00:13:31.260]   here will have a lot of semantic structure,
+[00:13:31.260 --> 00:13:33.620]   and we can capture that by clustering
+[00:13:33.620 --> 00:13:35.660]   the token level vectors that represent
+[00:13:35.660 --> 00:13:38.460]   our documents into clusters,
+[00:13:38.460 --> 00:13:40.540]   and then taking their centroids to be
+[00:13:40.540 --> 00:13:43.460]   representative summaries of those clusters.
+[00:13:43.460 --> 00:13:47.060]   We can use those as the basis for search.
+[00:13:47.060 --> 00:13:51.220]   Now, given a query that we encode again as a sequence of vectors,
+[00:13:51.220 --> 00:13:52.780]   for each one of those vectors,
+[00:13:52.780 --> 00:13:55.460]   we retrieve the closest centroids,
+[00:13:55.460 --> 00:13:57.540]   and then travel from them to
+[00:13:57.540 --> 00:13:59.860]   similar document tokens and
+[00:13:59.860 --> 00:14:02.100]   then from them to similar documents.
+[00:14:02.100 --> 00:14:03.620]   Then again, we use Colbert,
+[00:14:03.620 --> 00:14:06.340]   the full model only at step 3 here.
+[00:14:06.340 --> 00:14:07.900]   All these other comparisons are
+[00:14:07.900 --> 00:14:10.940]   just fast similarity comparisons.
+[00:14:10.940 --> 00:14:12.980]   This gives us huge gains because
+[00:14:12.980 --> 00:14:15.580]   instead of having to search over this entire index,
+[00:14:15.580 --> 00:14:18.940]   we search over a potentially very small number of
+[00:14:18.940 --> 00:14:21.780]   centroid representations and use those as
+[00:14:21.780 --> 00:14:23.740]   the basis for getting down to
+[00:14:23.740 --> 00:14:25.340]   a small set of documents that we're
+[00:14:25.340 --> 00:14:28.420]   going to score completely with Colbert.
+[00:14:28.420 --> 00:14:32.260]   That's a bunch of the work that we've done.
+[00:14:32.260 --> 00:14:34.540]   I thought I would just mention a little bit of
+[00:14:34.540 --> 00:14:36.380]   the work that we've done specifically to
+[00:14:36.380 --> 00:14:38.660]   address latency concerns for Colbert.
+[00:14:38.660 --> 00:14:41.460]   This comes from the paper that we called Plaid.
+[00:14:41.460 --> 00:14:43.580]   It begins from the observation that
+[00:14:43.580 --> 00:14:46.260]   despite all the hard work that I just described for you,
+[00:14:46.260 --> 00:14:49.020]   the latency for the Colbert model was still
+[00:14:49.020 --> 00:14:52.780]   prohibitively high at 287 milliseconds.
+[00:14:52.780 --> 00:14:54.700]   Whereas you might hope you could get this down to
+[00:14:54.700 --> 00:14:56.300]   around 50 milliseconds for
+[00:14:56.300 --> 00:15:00.380]   a feasible deployable solution at a minimum.
+[00:15:00.380 --> 00:15:02.420]   This chart here is showing you
+[00:15:02.420 --> 00:15:04.100]   where the work actually happens.
+[00:15:04.100 --> 00:15:08.300]   One surprising thing for Colbert is that only a small part of
+[00:15:08.300 --> 00:15:10.860]   the overall time there is actually spent on
+[00:15:10.860 --> 00:15:12.380]   the core modeling steps of
+[00:15:12.380 --> 00:15:15.860]   representing examples and doing scoring.
+[00:15:15.860 --> 00:15:18.660]   In fact, only a small part is even
+[00:15:18.660 --> 00:15:21.180]   used with the centroids that I described before.
+[00:15:21.180 --> 00:15:24.180]   The bulk of the work is being done when we have to
+[00:15:24.180 --> 00:15:26.820]   look things up in this giant index,
+[00:15:26.820 --> 00:15:29.140]   and also when we do decompression.
+[00:15:29.140 --> 00:15:31.060]   That's a point that I haven't mentioned before,
+[00:15:31.060 --> 00:15:33.140]   but the essence of this is that
+[00:15:33.140 --> 00:15:36.220]   the Colbert index can get very large because we
+[00:15:36.220 --> 00:15:39.180]   need to store token level representations.
+[00:15:39.180 --> 00:15:43.140]   But we find that we can make them relatively low resolution
+[00:15:43.140 --> 00:15:46.060]   for or even two-bit representations because
+[00:15:46.060 --> 00:15:49.580]   all they need to do is represent individual tokens.
+[00:15:49.580 --> 00:15:51.460]   But that does mean that we would like to
+[00:15:51.460 --> 00:15:53.300]   decompress them at some point to
+[00:15:53.300 --> 00:15:55.700]   get back to their full semantic richness.
+[00:15:55.700 --> 00:15:58.900]   We found that that step of unpacking them,
+[00:15:58.900 --> 00:16:01.020]   was also expensive.
+[00:16:01.020 --> 00:16:04.380]   What the team did is do a lot of work to reduce
+[00:16:04.380 --> 00:16:06.580]   the amount of heavy-duty lookup and
+[00:16:06.580 --> 00:16:09.260]   decompression that the Colbert model was doing.
+[00:16:09.260 --> 00:16:11.740]   They trade that a little bit off against using
+[00:16:11.740 --> 00:16:13.260]   more centroids as part of
+[00:16:13.260 --> 00:16:16.100]   that initial search phase that I described.
+[00:16:16.100 --> 00:16:19.740]   But they did successfully remove almost all the overhead that was
+[00:16:19.740 --> 00:16:21.940]   coming from these large data structures and
+[00:16:21.940 --> 00:16:24.900]   the corresponding decompression that we had to do,
+[00:16:24.900 --> 00:16:28.860]   and they got the latency all the way down to 58 milliseconds.
+[00:16:28.860 --> 00:16:32.740]   I regard this as absolutely an amazing achievement.
+[00:16:32.740 --> 00:16:34.540]   I think it shows you how much
+[00:16:34.540 --> 00:16:36.300]   innovative work can happen in this space,
+[00:16:36.300 --> 00:16:39.420]   not focused on hill climbing on accuracy,
+[00:16:39.420 --> 00:16:42.380]   but rather thinking about issues like latency and how they
+[00:16:42.380 --> 00:16:46.180]   impact the deployability of systems like this.
+[00:16:46.180 --> 00:16:49.540]   There's lots more room for innovation in this space.
+[00:16:49.540 --> 00:16:51.740]   I would exhort you-all to think about how you could
+[00:16:51.740 --> 00:16:54.700]   contribute to making systems not only more accurate,
+[00:16:54.700 --> 00:16:59.020]   but also more efficient along this and other dimensions.
+[00:16:59.020 --> 00:17:02.740]   There's one more model that I wanted to mention because I think
+[00:17:02.740 --> 00:17:05.980]   this is incredibly powerful and competitive and also
+[00:17:05.980 --> 00:17:08.900]   offers yet again another perspective on
+[00:17:08.900 --> 00:17:11.700]   how to use neural representations in this space.
+[00:17:11.700 --> 00:17:14.100]   This model is SPLADE.
+[00:17:14.100 --> 00:17:15.820]   Here's how SPLADE works.
+[00:17:15.820 --> 00:17:17.180]   I've got at the bottom here
+[00:17:17.180 --> 00:17:19.940]   our encoding mechanism for sequences,
+[00:17:19.940 --> 00:17:22.220]   and I'm trying to be agnostic about whether this is
+[00:17:22.220 --> 00:17:24.540]   a query sequence or a document sequence
+[00:17:24.540 --> 00:17:29.500]   because we do both of those with the same kind of calculations.
+[00:17:29.500 --> 00:17:32.100]   Just imagine we're processing some text.
+[00:17:32.100 --> 00:17:35.820]   The core shift in perspective here is that now we're going to do
+[00:17:35.820 --> 00:17:38.860]   scoring with respect not to some other text,
+[00:17:38.860 --> 00:17:42.460]   but rather with respect to our entire vocabulary.
+[00:17:42.460 --> 00:17:45.780]   Here I have a small vocabulary of just seven items,
+[00:17:45.780 --> 00:17:48.660]   but of course you could have tens of thousands of items.
+[00:17:48.660 --> 00:17:51.060]   That's important for SPLADE because we're going to have
+[00:17:51.060 --> 00:17:53.820]   very sparse representations by comparison
+[00:17:53.820 --> 00:17:57.300]   with cross-encoders, DPR and Colbert.
+[00:17:57.300 --> 00:17:58.980]   Here's how this works.
+[00:17:58.980 --> 00:18:00.940]   We're going to form like with Colbert,
+[00:18:00.940 --> 00:18:02.220]   a matrix of scores,
+[00:18:02.220 --> 00:18:05.060]   but now the scoring is with respect to tokens in
+[00:18:05.060 --> 00:18:09.300]   the sequence that we're processing and all of our vocabulary items.
+[00:18:09.300 --> 00:18:11.860]   The scoring function for that is detailed.
+[00:18:11.860 --> 00:18:12.980]   I've depicted it here.
+[00:18:12.980 --> 00:18:16.060]   You should think of it as a bunch of neural layers
+[00:18:16.060 --> 00:18:19.420]   that help you represent all of these comparisons.
+[00:18:19.420 --> 00:18:21.020]   You do all of that work,
+[00:18:21.020 --> 00:18:23.260]   and then the SPLADE scoring function is
+[00:18:23.260 --> 00:18:27.060]   the sparsification of the scores that we get out of that.
+[00:18:27.060 --> 00:18:28.420]   That's depicted here.
+[00:18:28.420 --> 00:18:32.060]   The essential insight is that with this SPLADE function,
+[00:18:32.060 --> 00:18:35.100]   we're going to get a score for every vocabulary item
+[00:18:35.100 --> 00:18:37.940]   with respect to the sequence that we have processed.
+[00:18:37.940 --> 00:18:40.260]   That's what's depicted in orange here.
+[00:18:40.260 --> 00:18:43.980]   You should think of this orange thing as a vector with
+[00:18:43.980 --> 00:18:47.540]   the same dimensionality as our vocabulary giving what are
+[00:18:47.540 --> 00:18:50.220]   probably very sparse scores for
+[00:18:50.220 --> 00:18:54.020]   our sequence with respect to everything in that vocabulary.
+[00:18:54.020 --> 00:18:56.940]   Again, we do that for queries and for documents,
+[00:18:56.940 --> 00:18:59.660]   and then the similarity function that's at the heart of all of
+[00:18:59.660 --> 00:19:02.420]   these models is now SIMSPLADE,
+[00:19:02.420 --> 00:19:05.900]   which is a dot product between the SPLADE representation for
+[00:19:05.900 --> 00:19:09.820]   the query and the SPLADE representation for the document.
+[00:19:09.820 --> 00:19:12.340]   These are big long sparse vectors and we take
+[00:19:12.340 --> 00:19:14.900]   the dot product of them for scoring.
+[00:19:14.900 --> 00:19:19.780]   The loss is our usual negative log likelihood plus importantly,
+[00:19:19.780 --> 00:19:23.860]   a regularization term that leads to sparse balance scores,
+[00:19:23.860 --> 00:19:26.580]   which I think is an important modification given how
+[00:19:26.580 --> 00:19:28.820]   different the SPLADE representations are
+[00:19:28.820 --> 00:19:31.660]   compared to the others we've discussed.
+[00:19:31.660 --> 00:19:33.900]   But this is an incredibly powerful model,
+[00:19:33.900 --> 00:19:37.980]   and I love this perspective where we're now even further back
+[00:19:37.980 --> 00:19:40.540]   to original IR insights about how
+[00:19:40.540 --> 00:19:43.220]   the vocabulary and term matching is so important.
+[00:19:43.220 --> 00:19:47.140]   But again, it's happening in this very rich neural space,
+[00:19:47.140 --> 00:19:50.420]   it's defined by this grid of scores.
+[00:19:50.420 --> 00:19:53.740]   I'm not going to go through this slide in detail,
+[00:19:53.740 --> 00:19:55.260]   but I couldn't resist mentioning
+[00:19:55.260 --> 00:19:57.580]   a bunch of other recent developments.
+[00:19:57.580 --> 00:19:59.660]   They are biased toward Colbert
+[00:19:59.660 --> 00:20:01.580]   because I'm biased toward Colbert.
+[00:20:01.580 --> 00:20:06.100]   But I think the list does point to a general set of directions
+[00:20:06.100 --> 00:20:08.260]   around making systems more efficient
+[00:20:08.260 --> 00:20:10.580]   and also making them more multilingual.
+[00:20:10.580 --> 00:20:13.740]   That can happen with things like distillation and
+[00:20:13.740 --> 00:20:15.580]   also innovative ways of training
+[00:20:15.580 --> 00:20:18.460]   the models and setting up new objectives for them,
+[00:20:18.460 --> 00:20:20.820]   while balancing lots of considerations,
+[00:20:20.820 --> 00:20:25.100]   not just accuracy, but also efficiency for these systems.
+[00:20:25.100 --> 00:20:29.260]   Tremendously exciting and active area of research for the field.
+[00:20:29.260 --> 00:20:31.340]   To round out that point,
+[00:20:31.340 --> 00:20:33.460]   I thought I would return to
+[00:20:33.460 --> 00:20:37.420]   the thing that I emphasized so much when we talked about IR metrics,
+[00:20:37.420 --> 00:20:41.980]   which is that there is more at stake here than just accuracy.
+[00:20:41.980 --> 00:20:43.860]   This is from a series of
+[00:20:43.860 --> 00:20:46.540]   controlled experiments that we did in this paper,
+[00:20:46.540 --> 00:20:49.740]   trying to get a sense for the system requirements,
+[00:20:49.740 --> 00:20:54.500]   latency, costs, and accuracy for a variety of systems.
+[00:20:54.500 --> 00:20:56.780]   There's no simple way to navigate this table,
+[00:20:56.780 --> 00:20:58.860]   so let me just highlight a few things.
+[00:20:58.860 --> 00:21:02.660]   First, BM25 is the only model that we could
+[00:21:02.660 --> 00:21:06.140]   even get to run with this tiny little compute budget.
+[00:21:06.140 --> 00:21:10.380]   If you are absolutely compute constrained or cost constrained,
+[00:21:10.380 --> 00:21:13.140]   you might be forced to choose BM25.
+[00:21:13.140 --> 00:21:15.700]   It's a reasonably effective model.
+[00:21:15.700 --> 00:21:18.820]   But assuming you can have more heavy-duty hardware,
+[00:21:18.820 --> 00:21:21.180]   you might think about trade-offs within the space of
+[00:21:21.180 --> 00:21:25.140]   possible Colbert setups and this is illuminating because,
+[00:21:25.140 --> 00:21:28.740]   for example, these two models are pretty close in accuracy,
+[00:21:28.740 --> 00:21:32.340]   but very far apart in terms of cost and latency.
+[00:21:32.340 --> 00:21:38.420]   You might think I can sacrifice this amount of accuracy here
+[00:21:38.420 --> 00:21:42.140]   to do this much in terms of reduced latency and cost.
+[00:21:42.140 --> 00:21:43.980]   Here's another such comparisons.
+[00:21:43.980 --> 00:21:47.460]   Colbert small has latency of 206,
+[00:21:47.460 --> 00:21:50.580]   BT-Splayed large has latency of 46,
+[00:21:50.580 --> 00:21:54.020]   and costs a fraction of what the Colbert model costs.
+[00:21:54.020 --> 00:21:56.740]   Now, the Colbert model is much more accurate,
+[00:21:56.740 --> 00:21:59.500]   but maybe this is an affordable drop here
+[00:21:59.500 --> 00:22:02.660]   given the other considerations that are in play.
+[00:22:02.660 --> 00:22:06.580]   Here's another comparison between two BT-Splayed large models.
+[00:22:06.580 --> 00:22:11.820]   For a modest reduction in latency that comes from running on a GPU,
+[00:22:11.820 --> 00:22:16.860]   I have to pay a whole lot more money for the same accuracy.
+[00:22:16.860 --> 00:22:20.580]   For example, you start to see that it's very unlikely that you'd be able to
+[00:22:20.580 --> 00:22:27.100]   justify using a GPU with BT-Splayed large when it's only a modest latency reduction,
+[00:22:27.100 --> 00:22:30.980]   but a huge ballooning in the overall cost that you pay.
+[00:22:30.980 --> 00:22:34.700]   I think there are lots of other comparisons like this that we can make,
+[00:22:34.700 --> 00:22:37.860]   and we're going to talk later in the course about how we might
+[00:22:37.860 --> 00:22:41.140]   systemize some of these observations into
+[00:22:41.140 --> 00:22:44.940]   a leaderboard that takes account of all of these different pressures.
+[00:22:44.940 --> 00:22:50.060]   IR is a wonderful playground for thinking about such trade-offs.
+[00:22:50.060 --> 00:23:00.060]   [BLANK_AUDIO]
+
