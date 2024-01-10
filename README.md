@@ -108,8 +108,11 @@ Others
 - [x] lex fridman: reverse order of transcripts, transcribe rest of them in `video_ids.txt`
 - [x] modify `bash_transcribe_new_videos.sh` to get new videos for each channel, add url to the config
 - [x] schedule a crontab every 2 hours
-- [ ] create all transcript page ordered by date
-- [ ] create other transcript page
+- [x] add Stanford XCS224U: Natural Language Understanding course: https://www.youtube.com/playlist?list=PLoROMvodv4rOwvldxftJTmoR3kRcWkJBp
+- [x] add Stanford CS224N: Natural Language Processing with Deep Learning: https://www.youtube.com/playlist?list=PLoROMvodv4rMFqRtEuo6SGjY4XbRIVRd4
+- [x] create all transcript page
+- [x] create other transcript page
+- [ ] order by date
 - [ ] check transcript is good, sometimes whisper generates transcripts that have invalid utf-8
 
 ```python
