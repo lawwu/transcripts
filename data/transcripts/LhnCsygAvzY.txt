@@ -1,0 +1,561 @@
+
+[00:00:00.000 --> 00:00:06.040]   Today we're going to take a look at how we can build a chatbot using retrieval augmented
+[00:00:06.040 --> 00:00:09.160]   generation from start to finish.
+[00:00:09.160 --> 00:00:15.480]   So we're literally going to start with the assumption that you don't really know anything
+[00:00:15.480 --> 00:00:18.120]   about chatbots or how to build one.
+[00:00:18.120 --> 00:00:23.240]   But by the end of this video, what we're going to have is a chatbot, for those of you that
+[00:00:23.240 --> 00:00:29.980]   are interested using OpenAI's GPT 3.5 model and also the Langtrain library.
+[00:00:29.980 --> 00:00:37.520]   That is able to answer questions about more recent events or is able to answer questions
+[00:00:37.520 --> 00:00:43.600]   about our own internal documentation, for example, in an organization, which a model
+[00:00:43.600 --> 00:00:47.860]   like GPT 3.5 or GPT 4 cannot do.
+[00:00:47.860 --> 00:00:53.400]   And the way that we will enable that is through this retrieval augmented generation.
+[00:00:53.400 --> 00:00:58.120]   So to get started, let me just take you through what we're actually going to be building at
+[00:00:58.120 --> 00:00:59.280]   a very high level.
+[00:00:59.280 --> 00:01:05.320]   OK, so this, what you can see here is what we'd call a RAG pipeline or retrieval augmented
+[00:01:05.320 --> 00:01:07.200]   generation pipeline.
+[00:01:07.200 --> 00:01:15.040]   So in a typical scenario with an LLM, what we're going to do is we take a query like
+[00:01:15.040 --> 00:01:21.200]   this up here and we just feed it into our LLM and then we get some output, right?
+[00:01:21.200 --> 00:01:25.480]   That is OK in some cases, but in other cases, it's not.
+[00:01:25.480 --> 00:01:32.920]   For general knowledge, question answering or for knowledge that the LLM has seen before,
+[00:01:32.920 --> 00:01:35.320]   this does work relatively well.
+[00:01:35.320 --> 00:01:41.640]   But the problem is that a lot of LLMs have not seen a lot of information that we would
+[00:01:41.640 --> 00:01:44.040]   like it to have an understanding of.
+[00:01:44.040 --> 00:01:51.360]   So for example, in this question, I'm asking what makes LLAMA 2 special?
+[00:01:51.360 --> 00:01:59.120]   And most LLMs at the time of recording this would not be able to answer that because LLAMA
+[00:01:59.120 --> 00:02:03.040]   2 is a recent language model.
+[00:02:03.040 --> 00:02:08.000]   Most LLMs were trained on training data that did not contain any information about LLAMA
+[00:02:08.000 --> 00:02:09.000]   2.
+[00:02:09.000 --> 00:02:14.840]   So most LLMs just have no idea what LLAMA 2 is.
+[00:02:14.840 --> 00:02:20.640]   And they'll typically tell you something about actual llamas, the animal, or they'll just
+[00:02:20.640 --> 00:02:23.480]   make something else up when you ask them this question.
+[00:02:23.480 --> 00:02:26.400]   So we obviously don't want that to happen.
+[00:02:26.400 --> 00:02:31.040]   So what we do is we use this Retrieve Augmented Generation pipeline.
+[00:02:31.040 --> 00:02:35.720]   And it's this pipeline that I'm going to teach you how to build today.
+[00:02:35.720 --> 00:02:41.800]   So here's an example of when LLMs don't know what you're talking about, even though it's
+[00:02:41.800 --> 00:02:44.200]   general knowledge.
+[00:02:44.200 --> 00:02:48.400]   Or at least you would expect an LLM that is, for example, in this case, good at programming
+[00:02:48.400 --> 00:02:52.000]   to be able to tell you the correct answer.
+[00:02:52.000 --> 00:02:57.680]   LangChain is probably the most popular library for generative AI.
+[00:02:57.680 --> 00:03:03.440]   And usually using Python, there's also a JavaScript version available, and maybe some other languages
+[00:03:03.440 --> 00:03:04.440]   as well.
+[00:03:04.440 --> 00:03:08.640]   But if we ask-- this is GPT-4, this is when GPT-4 first was released.
+[00:03:08.640 --> 00:03:13.560]   I asked GPT-4 in the OpenAI Playground how I use the LLM chain in LangChain.
+[00:03:13.560 --> 00:03:17.480]   LLM chain is the basic building block of LangChain.
+[00:03:17.480 --> 00:03:22.600]   And it told me, OK, LangChain is a blockchain-based platform that combines artificial intelligence
+[00:03:22.600 --> 00:03:23.600]   and language processing.
+[00:03:23.600 --> 00:03:26.640]   LLM chain is a token system used in LangChain.
+[00:03:26.640 --> 00:03:30.340]   All of that is completely false, like none of this is true.
+[00:03:30.340 --> 00:03:33.360]   So it just completely made everything up.
+[00:03:33.360 --> 00:03:35.740]   This is-- it's a hallucination.
+[00:03:35.740 --> 00:03:42.400]   And the reason that we get this hallucination is, as I mentioned, an LLM, its knowledge
+[00:03:42.400 --> 00:03:45.720]   is just what it learned during training, like we can see here.
+[00:03:45.720 --> 00:03:49.540]   It has no access to the outside world.
+[00:03:49.540 --> 00:03:58.720]   Now let's just jump straight into it and actually build a chatbot that has this sort of limitation.
+[00:03:58.720 --> 00:04:01.960]   And we'll just see, how do we build that?
+[00:04:01.960 --> 00:04:03.760]   It's pretty easy.
+[00:04:03.760 --> 00:04:07.920]   And also, we'll sort of play around with it and see that limitation in action.
+[00:04:07.920 --> 00:04:11.520]   OK, so we're going to be running through this notebook here.
+[00:04:11.520 --> 00:04:16.800]   There'll be a link to this at the top of the video, probably now.
+[00:04:16.800 --> 00:04:18.600]   And we just start by doing a few pip installs.
+[00:04:18.600 --> 00:04:24.040]   OK, so we have LangChain, OpenAI, Hoganface data sets, Pinecone Client, and TickToken.
+[00:04:24.040 --> 00:04:30.120]   We need-- that's basically all we need to do the whole chatbot plus RAG thing.
+[00:04:30.120 --> 00:04:33.200]   If we're not doing RAG, we need even less.
+[00:04:33.200 --> 00:04:35.320]   But we're going to use RAG.
+[00:04:35.320 --> 00:04:40.080]   Now we're going to be relying very much on the LangChain library here.
+[00:04:40.080 --> 00:04:46.240]   And what we do is we import this chat OpenAI object.
+[00:04:46.240 --> 00:04:54.320]   And this is compatible with GPT-3.5 and GPT-4 models from OpenAI.
+[00:04:54.320 --> 00:05:02.800]   And essentially, it's just a chat interface or an abstraction in LangChain to use GPT-3.5
+[00:05:02.800 --> 00:05:03.800]   or GPT-4.
+[00:05:03.800 --> 00:05:09.160]   You can also use those models directly via the OpenAI API.
+[00:05:09.160 --> 00:05:16.520]   But when we start building more complex AI systems, LangChain can be very useful because
+[00:05:16.520 --> 00:05:21.120]   it has all these additional components that we can just kind of plug in.
+[00:05:21.120 --> 00:05:27.600]   So we can add all these other items, such as a RAG pipeline, very easily.
+[00:05:27.600 --> 00:05:29.920]   So that's why we do it.
+[00:05:29.920 --> 00:05:34.160]   Now, here, OK, we initialize our chat model.
+[00:05:34.160 --> 00:05:39.520]   And what it's going to do is we're going to put some objects in there.
+[00:05:39.520 --> 00:05:44.480]   And it's going to format them into what you can see here, this type of structure.
+[00:05:44.480 --> 00:05:47.560]   And this is typical of OpenAI chat models.
+[00:05:47.560 --> 00:05:52.600]   So you have a system prompt at the top, which is basically your instructions to the model.
+[00:05:52.600 --> 00:06:00.320]   And then you have your user query, the chatbot, the AI, the assistant, the user, and so on
+[00:06:00.320 --> 00:06:01.320]   and so on.
+[00:06:01.320 --> 00:06:02.320]   Right?
+[00:06:02.320 --> 00:06:03.320]   And it just keeps continuing.
+[00:06:03.320 --> 00:06:04.320]   OK?
+[00:06:04.320 --> 00:06:07.200]   That is what your chat log is going to look like.
+[00:06:07.200 --> 00:06:11.960]   Now, via the OpenAI API, that would look like this.
+[00:06:11.960 --> 00:06:17.520]   So you have a list of dictionaries, each dictionary containing a role, and the content, which
+[00:06:17.520 --> 00:06:19.680]   is the text, right?
+[00:06:19.680 --> 00:06:26.000]   All I've done here is taken that and translated it into what you would put into the OpenAI
+[00:06:26.000 --> 00:06:27.000]   chat completion endpoint.
+[00:06:27.000 --> 00:06:30.400]   And LangChain is a slightly different format, but based on the same thing.
+[00:06:30.400 --> 00:06:33.160]   It's only-- it's a very thin abstraction layer.
+[00:06:33.160 --> 00:06:36.440]   So you have system message, human message, AI message.
+[00:06:36.440 --> 00:06:37.440]   Right?
+[00:06:37.440 --> 00:06:42.200]   Obviously, system will tie back to the system role.
+[00:06:42.200 --> 00:06:44.920]   Role user is human.
+[00:06:44.920 --> 00:06:47.920]   And role assistant is AI.
+[00:06:47.920 --> 00:06:50.080]   And you have your content here, right?
+[00:06:50.080 --> 00:06:53.840]   So this is the LangChain version of what I've just shown you.
+[00:06:53.840 --> 00:06:55.900]   So let's initialize that.
+[00:06:55.900 --> 00:07:01.120]   And what we're going to do is we're going to pass all of those to our chat OpenAI object,
+[00:07:01.120 --> 00:07:02.120]   OK?
+[00:07:02.120 --> 00:07:03.120]   In here.
+[00:07:03.120 --> 00:07:04.120]   We run that.
+[00:07:04.120 --> 00:07:05.840]   It will take a moment.
+[00:07:05.840 --> 00:07:07.960]   But we'll see that we get this response.
+[00:07:07.960 --> 00:07:08.960]   All right?
+[00:07:08.960 --> 00:07:12.640]   So it's telling me about string theory, which is what I asked up here.
+[00:07:12.640 --> 00:07:15.480]   And I mean, I don't know if it's accurate.
+[00:07:15.480 --> 00:07:16.560]   Maybe it's hallucinating.
+[00:07:16.560 --> 00:07:17.560]   I don't know.
+[00:07:17.560 --> 00:07:20.560]   But I imagine that sort of thing, it probably doesn't know the answer to.
+[00:07:20.560 --> 00:07:21.560]   Right.
+[00:07:21.560 --> 00:07:24.520]   So we can just print out a little more nicely here.
+[00:07:24.520 --> 00:07:30.480]   So it actually gives us like this 1, 2, 3, 4, 5, gives us a nicer format that we can
+[00:07:30.480 --> 00:07:31.600]   read here.
+[00:07:31.600 --> 00:07:37.960]   Now, what we can do with this response, right, if we take a look at what it is, it's an AI
+[00:07:37.960 --> 00:07:38.960]   message.
+[00:07:38.960 --> 00:07:43.960]   So when we're building up our chat log, all we need to do is append this AI message to
+[00:07:43.960 --> 00:07:49.560]   our messages list in order to sort of continue that conversation.
+[00:07:49.560 --> 00:07:52.320]   So what I'm going to do here is, yeah, I'm just appending that here.
+[00:07:52.320 --> 00:07:54.480]   Now, I'm going to create a new prompt.
+[00:07:54.480 --> 00:07:56.920]   I'm just going to ask another question.
+[00:07:56.920 --> 00:08:02.600]   And notice here that I'm not saying, why do physicists believe string theory can produce
+[00:08:02.600 --> 00:08:05.840]   a unified theory, if that's what I'm asking there.
+[00:08:05.840 --> 00:08:12.520]   I'm asking, why do physicists believe it can produce a unified theory, right?
+[00:08:12.520 --> 00:08:20.320]   So here, our chat model must rely on the conversational history, those previous messages that we sent.
+[00:08:20.320 --> 00:08:24.280]   And that's why we need to add the response to our messages.
+[00:08:24.280 --> 00:08:27.200]   And then we add our new prompt to the messages.
+[00:08:27.200 --> 00:08:30.000]   And then we send all of those over to chat GPT.
+[00:08:30.000 --> 00:08:32.000]   No, it's GPT 3.5.
+[00:08:32.000 --> 00:08:35.360]   It's just the same model.
+[00:08:35.360 --> 00:08:39.640]   That would be the product.
+[00:08:39.640 --> 00:08:40.640]   OK.
+[00:08:40.640 --> 00:08:41.640]   OK.
+[00:08:41.640 --> 00:08:46.240]   And you can see straightaway that it mentions, OK, physicists believe that string theory
+[00:08:46.240 --> 00:08:51.000]   has the potential to produce a unified theory, so on, and so on, and so on.
+[00:08:51.000 --> 00:08:52.000]   OK.
+[00:08:52.000 --> 00:08:55.240]   So it definitely has that conversational history in there.
+[00:08:55.240 --> 00:08:56.680]   That's good.
+[00:08:56.680 --> 00:09:00.640]   Now we have a chat bot.
+[00:09:00.640 --> 00:09:03.440]   That was, I think, pretty easy to put together.
+[00:09:03.440 --> 00:09:06.700]   There's nothing complicated going on there.
+[00:09:06.700 --> 00:09:11.440]   Now let's talk a little bit more about hallucinations and why they happen.
+[00:09:11.440 --> 00:09:18.680]   Now returning to this, LLMs hallucinate, or one of the many reasons they hallucinate is
+[00:09:18.680 --> 00:09:23.960]   because they have to rely solely on knowledge that they learn during their training.
+[00:09:23.960 --> 00:09:31.080]   And what that means is that an LLM essentially lives in a world that is entirely made up
+[00:09:31.080 --> 00:09:35.000]   of whatever was in its training data.
+[00:09:35.000 --> 00:09:38.600]   It doesn't understand the world by going out into the world and seeing the world.
+[00:09:38.600 --> 00:09:42.540]   It understands the world by looking at its training data set, and that's it.
+[00:09:42.540 --> 00:09:48.640]   So if some knowledge is not in that training data set, that knowledge is 100% not in the
+[00:09:48.640 --> 00:09:49.640]   LLM.
+[00:09:49.640 --> 00:09:54.020]   And even if it is, it might not have made it into the LLM, or maybe it's not stored
+[00:09:54.020 --> 00:09:57.340]   very well, or it's been misrepresented.
+[00:09:57.340 --> 00:09:58.960]   You kind of don't know.
+[00:09:58.960 --> 00:10:03.160]   But the whole point of an LLM or what it tries to do is compress whatever was within that
+[00:10:03.160 --> 00:10:10.720]   training data into like an internal model of the world as it was within that training
+[00:10:10.720 --> 00:10:12.020]   data set.
+[00:10:12.020 --> 00:10:17.660]   So obviously that causes issues because it has no access to anything else.
+[00:10:17.660 --> 00:10:20.160]   And that's what we want to fix with RAG.
+[00:10:20.160 --> 00:10:26.280]   So this little box in the middle here, that can actually be many things, right?
+[00:10:26.280 --> 00:10:28.040]   It may be a RAG pipeline.
+[00:10:28.040 --> 00:10:31.560]   It may also be like a Google search, right?
+[00:10:31.560 --> 00:10:33.200]   It can be search.
+[00:10:33.200 --> 00:10:39.080]   It may be access to a SQL database or many other things, right?
+[00:10:39.080 --> 00:10:44.800]   This little box in the middle, what that represents is some sort of connection to the external
+[00:10:44.800 --> 00:10:45.800]   world.
+[00:10:45.800 --> 00:10:51.720]   It doesn't mean a connection to the entire world, just some subset of the external world.
+[00:10:51.720 --> 00:10:53.280]   So that's what we want to enable.
+[00:10:53.280 --> 00:11:00.600]   Now without that, this is our LLM, as mentioned, it just understands the world as it was in
+[00:11:00.600 --> 00:11:01.840]   our training data.
+[00:11:01.840 --> 00:11:06.720]   The way that we would refer to this knowledge is parametric knowledge, okay?
+[00:11:06.720 --> 00:11:07.720]   So this here.
+[00:11:07.720 --> 00:11:14.020]   So parametric knowledge, we call it that because it is a knowledge that is stored within the
+[00:11:14.020 --> 00:11:16.280]   model parameters, okay?
+[00:11:16.280 --> 00:11:21.720]   Those model parameters are only ever changed during training, not during or not at any
+[00:11:21.720 --> 00:11:24.120]   other point, right?
+[00:11:24.120 --> 00:11:28.240]   So those parameters are frozen after training.
+[00:11:28.240 --> 00:11:34.040]   So essentially what we have is that kind of brain on the left where we just have the parametric
+[00:11:34.040 --> 00:11:35.640]   knowledge.
+[00:11:35.640 --> 00:11:42.320]   But what we can do with RAG is we can add like a more long-term memory or just memory
+[00:11:42.320 --> 00:11:46.760]   component that we can actually modify, okay?
+[00:11:46.760 --> 00:11:54.320]   So in the case of RAG, that external knowledge base, that external memory is a vector database.
+[00:11:54.320 --> 00:12:02.600]   And the good part of having a database as a form of input into your LLM is that you
+[00:12:02.600 --> 00:12:10.160]   can actually add, delete, and just manage almost like the memory or the knowledge of
+[00:12:10.160 --> 00:12:14.520]   your LLM, which in my opinion is kind of cool.
+[00:12:14.520 --> 00:12:19.120]   It's almost like you can, it's almost like plugging into a person's brain and just being
+[00:12:19.120 --> 00:12:26.600]   able to manage the information that they have in there or update it or whatever else.
+[00:12:26.600 --> 00:12:31.560]   Which sounds a little dystopian, but it's a good parallel to what we're doing with LLMs.
+[00:12:31.560 --> 00:12:34.600]   So yes, we're doing that.
+[00:12:34.600 --> 00:12:38.640]   We call it source knowledge, not parametric knowledge because the knowledge is not stored
+[00:12:38.640 --> 00:12:40.920]   in the parameters of the model.
+[00:12:40.920 --> 00:12:48.720]   Instead, the source knowledge is referring to anything that we insert into the model,
+[00:12:48.720 --> 00:12:52.580]   into the LLM via the prompt, okay?
+[00:12:52.580 --> 00:12:56.880]   So any information that goes through the prompt is source knowledge.
+[00:12:56.880 --> 00:13:00.640]   Now when we're adding that source knowledge to our LLM, it's going to look kind of like
+[00:13:00.640 --> 00:13:01.640]   this.
+[00:13:01.640 --> 00:13:03.900]   We typically have some instructions at the top of our prompt.
+[00:13:03.900 --> 00:13:09.920]   We have our, the prompter input, so basically the user's query, which is a little question
+[00:13:09.920 --> 00:13:11.680]   at the bottom there.
+[00:13:11.680 --> 00:13:19.740]   And then that external information, that source knowledge that we're inserting is here, right?
+[00:13:19.740 --> 00:13:24.680]   It's what we call either a context, we can call them documents, we can call them a lot
+[00:13:24.680 --> 00:13:25.680]   of things actually.
+[00:13:25.680 --> 00:13:28.980]   But let's call it a context in this case.
+[00:13:28.980 --> 00:13:32.040]   That is what we're going to be adding into our prompts.
+[00:13:32.040 --> 00:13:37.760]   So first, before we actually build the whole, you know, the right pipeline to do this, let's
+[00:13:37.760 --> 00:13:44.680]   just try inserting it ourselves and seeing what sort of effect it has on our model performance.
+[00:13:44.680 --> 00:13:49.880]   So we're just going to add another message here, what is so special about LLAMA2?
+[00:13:49.880 --> 00:13:54.120]   Okay, and let's see what the model tells us.
+[00:13:54.120 --> 00:13:59.480]   Okay, I apologize, but I'm not familiar with a specific reference to LLAMA2.
+[00:13:59.480 --> 00:14:04.560]   It's possible that you might be referring to something specific within a certain context
+[00:14:04.560 --> 00:14:05.560]   or domain.
+[00:14:05.560 --> 00:14:08.240]   So please provide more information and clarify your question.
+[00:14:08.240 --> 00:14:11.760]   So the model cannot answer this question.
+[00:14:11.760 --> 00:14:19.420]   And actually, I think the OpenAI team have added this because in the past, if you asked
+[00:14:19.420 --> 00:14:24.720]   about LLAMA2, it would tell you about LLAMAs or give you, you know, it would hallucinate,
+[00:14:24.720 --> 00:14:29.200]   like full on hallucinate where it's giving you an answer, but it's completely wrong.
+[00:14:29.200 --> 00:14:35.400]   So I think they have seen, probably seen people asking about LLAMA2 or maybe they just saw
+[00:14:35.400 --> 00:14:41.000]   the LLAMA2 release and they added some sort of guardrail against people asking for that
+[00:14:41.000 --> 00:14:47.160]   to essentially tell the model, hey, when someone asks you about that, tell them you don't know.
+[00:14:47.160 --> 00:14:50.520]   I think anyway, unless they've just been training it on incoming data.
+[00:14:50.520 --> 00:14:53.600]   I don't know, but I don't think they have.
+[00:14:53.600 --> 00:14:55.440]   So let's try another one.
+[00:14:55.440 --> 00:14:58.560]   I'm going to say, okay, can you tell me about the LM chain, line chain?
+[00:14:58.560 --> 00:15:01.000]   I asked this earlier, right, you saw.
+[00:15:01.000 --> 00:15:05.960]   So we see there's another example of something they've kind of modified a little bit later
+[00:15:05.960 --> 00:15:06.960]   on.
+[00:15:06.960 --> 00:15:12.120]   Couldn't find any information specifically about LM chain in line chain, okay?
+[00:15:12.120 --> 00:15:17.700]   And it just, it asks the same, you know, there's that same structure to this, right?
+[00:15:17.700 --> 00:15:24.960]   So I'm relatively sure this is actually like a hard-coded guardrail that OpenAI put in
+[00:15:24.960 --> 00:15:25.960]   there.
+[00:15:25.960 --> 00:15:33.640]   So they've added it for line chain, for LLAMA2, they've clearly added it for a few things.
+[00:15:33.640 --> 00:15:34.640]   Okay.
+[00:15:34.640 --> 00:15:37.520]   So let's try the source knowledge approach.
+[00:15:37.520 --> 00:15:43.400]   So I actually got this information, I think I just Googled LLM chain in line chain and
+[00:15:43.400 --> 00:15:47.160]   I went on their website and just pulled in a few little bits of information.
+[00:15:47.160 --> 00:15:49.120]   They're actually quite long, right?
+[00:15:49.120 --> 00:15:52.720]   You can see it goes on a little bit here.
+[00:15:52.720 --> 00:15:56.960]   Basically I just have some information about line chain in there, some information about
+[00:15:56.960 --> 00:16:00.040]   chains and the LLM chain, right?
+[00:16:00.040 --> 00:16:05.240]   And what I'm going to do is just concatenate all those together to give us our source knowledge.
+[00:16:05.240 --> 00:16:08.840]   And then what I'm going to do is, it's what you saw before with that sort of structured
+[00:16:08.840 --> 00:16:09.840]   prompt.
+[00:16:09.840 --> 00:16:14.200]   I'm going to pull those together and just see what we get.
+[00:16:14.200 --> 00:16:17.200]   So can you tell me about the LLM chain, line chain?
+[00:16:17.200 --> 00:16:18.880]   Let's try.
+[00:16:18.880 --> 00:16:24.060]   So we create this prompt, maybe I can just show you quickly.
+[00:16:24.060 --> 00:16:29.060]   So we just print augmented prompt.
+[00:16:29.060 --> 00:16:35.920]   And you get, so you have the instructions, we have our context and then we have the query.
+[00:16:35.920 --> 00:16:41.080]   And I'm just going to feed that into our chat bot here.
+[00:16:41.080 --> 00:16:43.200]   So let's do that.
+[00:16:43.200 --> 00:16:44.560]   See what we get out.
+[00:16:45.240 --> 00:16:50.160]   So LLM chain in the context of line chain refers to a specific type of chain within
+[00:16:50.160 --> 00:16:52.280]   the line chain framework.
+[00:16:52.280 --> 00:16:56.240]   Line chain framework is designed to develop applications powered by language models with
+[00:16:56.240 --> 00:16:59.600]   a focus on enabling data aware and agentic applications.
+[00:16:59.600 --> 00:17:05.880]   It's almost a copy and paste from the website itself, but obviously formulated in a way
+[00:17:05.880 --> 00:17:10.200]   that makes it much easier to read and specific to the question that we asked.
+[00:17:10.200 --> 00:17:14.400]   In this context, say LLM chain is the most common type of chain used in line chain.
+[00:17:14.400 --> 00:17:16.000]   Okay, there we go.
+[00:17:16.000 --> 00:17:18.080]   We have loads of information here.
+[00:17:18.080 --> 00:17:20.280]   As far as I know, it's all accurate.
+[00:17:20.280 --> 00:17:25.600]   And yeah, I mean, we got a very good answer just by adding some text in there.
+[00:17:25.600 --> 00:17:29.960]   But obviously, are we always going to add text into our prompt like we did just there?
+[00:17:29.960 --> 00:17:32.000]   Probably I think probably not, right?
+[00:17:32.000 --> 00:17:35.280]   It kind of defeats the point of what we're trying to do here.
+[00:17:35.280 --> 00:17:41.760]   So instead, what we want to do is find a way to do what we just did, but automatically
+[00:17:41.760 --> 00:17:47.200]   and that scale over many, many documents, which is where RAG comes in.
+[00:17:47.200 --> 00:17:53.600]   So looking back at this notebook here, what we kind of just did there, put the context
+[00:17:53.600 --> 00:17:58.400]   straight into the prompt, it's kind of like we just ignored this bit here.
+[00:17:58.400 --> 00:17:59.760]   This whole bit.
+[00:17:59.760 --> 00:18:05.120]   We created a retrieval augmented query by pulling this in there and our own context,
+[00:18:05.120 --> 00:18:08.380]   feeding it into LLM and getting our answer.
+[00:18:08.380 --> 00:18:12.960]   So now what we need to do is figure out this bit here, right?
+[00:18:12.960 --> 00:18:16.280]   This retrieval component, right?
+[00:18:16.280 --> 00:18:17.280]   It's pretty easy.
+[00:18:17.280 --> 00:18:19.920]   It isn't really not that complicated.
+[00:18:19.920 --> 00:18:22.320]   And I think you'll see that very soon.
+[00:18:22.320 --> 00:18:28.000]   So the first part of setting up that pipeline is going to be actually getting our data,
+[00:18:28.000 --> 00:18:29.080]   right?
+[00:18:29.080 --> 00:18:32.000]   So we're going to download this data set here.
+[00:18:32.000 --> 00:18:33.240]   It's from Hugging Face.
+[00:18:33.240 --> 00:18:34.900]   So you can download it.
+[00:18:34.900 --> 00:18:37.440]   You can even see it on the website.
+[00:18:37.440 --> 00:18:41.680]   You just put like huggingface.co/this here.
+[00:18:41.680 --> 00:18:45.480]   Or maybe you just search this in the Hugging Face search bar.
+[00:18:45.480 --> 00:18:53.800]   And what it is, is a data set that I downloaded or scraped from LLAMA 2 archive papers and
+[00:18:53.800 --> 00:18:57.200]   archive papers related to LLAMA 2 a little while ago.
+[00:18:57.200 --> 00:18:58.200]   It's not very clean.
+[00:18:58.200 --> 00:19:00.240]   It's also not a huge data set.
+[00:19:00.240 --> 00:19:02.960]   But it's, I think, pretty useful for this example.
+[00:19:02.960 --> 00:19:07.040]   So you can kind of see those chunks of text I've pulled from there.
+[00:19:07.040 --> 00:19:12.560]   So we're going to use that data set to create our knowledge base.
+[00:19:12.560 --> 00:19:16.880]   Now for the knowledge base, we're going to be using the vector database, like I mentioned,
+[00:19:16.880 --> 00:19:18.680]   which is Pinecone.
+[00:19:18.680 --> 00:19:20.560]   For that, we do need to get an API key.
+[00:19:20.560 --> 00:19:23.040]   So we would head on over to app.pinecone.io.
+[00:19:23.040 --> 00:19:27.420]   If you don't have an account or you're not logged in, you will need to create an account
+[00:19:27.420 --> 00:19:28.420]   or log in.
+[00:19:28.420 --> 00:19:29.420]   It's free.
+[00:19:29.420 --> 00:19:32.100]   So I'm going to go do that.
+[00:19:32.100 --> 00:19:36.080]   And if you don't have any indexes already, you should see a screen like this.
+[00:19:36.080 --> 00:19:38.000]   You can even create an index here.
+[00:19:38.000 --> 00:19:40.800]   But we're going to do it in the notebook.
+[00:19:40.800 --> 00:19:43.240]   What we do want is to go to API keys.
+[00:19:43.240 --> 00:19:45.840]   I'm going to copy my API key.
+[00:19:45.840 --> 00:19:47.560]   And I'm also going to remember my environment here.
+[00:19:47.560 --> 00:19:48.560]   So us-west1-gcp.
+[00:19:48.560 --> 00:19:51.900]   I'm going to bring this over.
+[00:19:51.900 --> 00:19:54.700]   So in here, we have the environment.
+[00:19:54.700 --> 00:19:59.120]   So it would be us-west1-gcp.
+[00:19:59.120 --> 00:20:03.320]   And then I'll just paste my API key into here.
+[00:20:03.320 --> 00:20:05.120]   I've already run this a little bit.
+[00:20:05.120 --> 00:20:09.600]   So I'm going to move on to here.
+[00:20:09.600 --> 00:20:14.280]   And what we're doing here is initializing our index.
+[00:20:14.280 --> 00:20:17.140]   We're going to be using text embedding R002.
+[00:20:17.140 --> 00:20:20.000]   That is a embedding model from OpenAI.
+[00:20:20.000 --> 00:20:26.400]   When we are using that model, the embedding dimension-- so think of that as the size of
+[00:20:26.400 --> 00:20:27.400]   the vectors.
+[00:20:27.400 --> 00:20:33.040]   The vectors are like numerical representations of meaning, like human meaning, that we get
+[00:20:33.040 --> 00:20:34.040]   from some text.
+[00:20:34.040 --> 00:20:40.160]   It's the size of the vectors that R002 outputs.
+[00:20:40.160 --> 00:20:45.360]   And therefore, the size of the index that will be storing those vectors.
+[00:20:45.360 --> 00:20:49.920]   So we need to make sure we get the dimension aligned with whatever model we're using there.
+[00:20:49.920 --> 00:20:53.640]   And the metric is also important, but less so.
+[00:20:53.640 --> 00:20:57.760]   Typically, most embedding models you can use with cosine.
+[00:20:57.760 --> 00:21:04.720]   But there are occasionally some where you should use Euclidean instead of cosine or
+[00:21:04.720 --> 00:21:05.840]   dot products.
+[00:21:05.840 --> 00:21:07.160]   So we'd run that.
+[00:21:07.160 --> 00:21:13.560]   And then what we're going to need to do is just wait for our index to actually initialize.
+[00:21:13.560 --> 00:21:18.160]   It takes-- I think it's like 30 to 40 seconds, typically.
+[00:21:18.160 --> 00:21:24.680]   But that also depends on the tier of Pinecone or also the region that you're using, the
+[00:21:24.680 --> 00:21:26.320]   environment that you're using.
+[00:21:26.320 --> 00:21:28.560]   So it can vary a little bit.
+[00:21:28.560 --> 00:21:33.480]   But I wouldn't expect more than maybe one or two minutes at most.
+[00:21:33.480 --> 00:21:36.920]   So I'll just jump ahead to let that finish.
+[00:21:36.920 --> 00:21:37.920]   OK.
+[00:21:37.920 --> 00:21:42.200]   And once that is finished, we can go ahead and-- so this will connect to the index.
+[00:21:42.200 --> 00:21:46.320]   And then we just want to confirm that we have connected the index.
+[00:21:46.320 --> 00:21:51.000]   And we should see that the total vector count, at least for now, is 0, because we haven't
+[00:21:51.000 --> 00:21:52.080]   added anything in there.
+[00:21:52.080 --> 00:21:53.080]   So it should be empty.
+[00:21:53.080 --> 00:21:54.080]   OK.
+[00:21:54.080 --> 00:21:56.480]   So now let's initialize an embedding model.
+[00:21:56.480 --> 00:21:59.440]   Again, like I said, we're using Arda 0.02.
+[00:21:59.440 --> 00:22:02.760]   Again, we can use the OpenAI API for that.
+[00:22:02.760 --> 00:22:06.240]   Or we can initialize it from LangChain like this.
+[00:22:06.240 --> 00:22:10.000]   So we'll initialize it from LangChain here.
+[00:22:10.000 --> 00:22:17.020]   And what I'm going to do is just create some embeddings for some-- we're calling them documents.
+[00:22:17.020 --> 00:22:21.700]   So documents here is equivalent to context that I was referring to earlier.
+[00:22:21.700 --> 00:22:26.900]   So basically, a chunk of text that we're going to sort and refer to as part of our knowledge
+[00:22:26.900 --> 00:22:27.900]   base.
+[00:22:27.900 --> 00:22:31.760]   Here, we have two of those documents or contexts.
+[00:22:31.760 --> 00:22:38.000]   And if we embed those, what we're going to get is two embeddings.
+[00:22:38.000 --> 00:22:44.760]   Each one of those is the 1,536-dimensional embedding outputs by of 0.02.
+[00:22:44.760 --> 00:22:45.760]   OK.
+[00:22:45.760 --> 00:22:48.340]   So that's how we do the embedding.
+[00:22:48.340 --> 00:22:55.680]   Now we move on to just iterating over our entire data set, the LLAMA2 archive papers,
+[00:22:55.680 --> 00:22:57.640]   and just doing that embedding.
+[00:22:57.640 --> 00:22:58.640]   OK.
+[00:22:58.640 --> 00:23:05.460]   So we do the embedding here, extracting key information about each one of those records,
+[00:23:05.460 --> 00:23:12.180]   so the text, where it's coming from, and also the title of the paper that it is coming from.
+[00:23:12.180 --> 00:23:13.180]   OK.
+[00:23:13.180 --> 00:23:15.420]   And then we just add all of those into Pinecone.
+[00:23:15.420 --> 00:23:16.420]   OK.
+[00:23:16.420 --> 00:23:20.660]   Well, I suppose one other thing we are doing here is we're just creating some unique IDs
+[00:23:20.660 --> 00:23:21.820]   as well.
+[00:23:21.820 --> 00:23:26.700]   Now, when we're going through this loop and doing this-- actually, let me just run it.
+[00:23:26.700 --> 00:23:29.000]   We do it in batches, right?
+[00:23:29.000 --> 00:23:32.800]   We can't do the whole thing at once, because if you do the whole thing at once, we have
+[00:23:32.800 --> 00:23:37.860]   like 4,800-odd chunks there.
+[00:23:37.860 --> 00:23:43.740]   And if we try to get the embeddings for all of those, that's going to create 4,800-odd
+[00:23:43.740 --> 00:23:49.860]   1,536-dimensional embeddings, and we're going to be trying to receive them over a single
+[00:23:49.860 --> 00:23:58.060]   API call, which most of the time, or at least for most providers, most internet providers,
+[00:23:58.060 --> 00:24:00.780]   they won't allow that, as far as I'm aware.
+[00:24:00.780 --> 00:24:03.160]   So yeah, you can't do that.
+[00:24:03.160 --> 00:24:13.240]   And also, even OpenAI R002, if you add too many things to embed at any one time to that
+[00:24:13.240 --> 00:24:19.840]   model, it's probably going to error out, although I'm not sure maybe-- OpenAI probably added
+[00:24:19.840 --> 00:24:22.080]   some safeguards around that.
+[00:24:22.080 --> 00:24:26.160]   So at least on their side, you probably wouldn't actually run into any issues.
+[00:24:26.160 --> 00:24:31.820]   But in terms of getting the information to OpenAI, back from OpenAI, and then to Pinecone,
+[00:24:31.820 --> 00:24:37.300]   you probably are going to run into some problems if your batch size is too high.
+[00:24:37.300 --> 00:24:40.100]   So yeah, we minimize that.
+[00:24:40.100 --> 00:24:43.000]   Now that is almost ready.
+[00:24:43.000 --> 00:24:49.000]   Once it is, you can come down to here, and you can use describing those stats again.
+[00:24:49.000 --> 00:24:50.880]   And what you should see is this.
+[00:24:50.880 --> 00:24:54.980]   Actually, let me just rerun it to make sure that it's there.
+[00:24:54.980 --> 00:25:03.500]   So we can see that we now have 4,836 vectors or records in our index.
+[00:25:03.500 --> 00:25:09.900]   So with that, we have a fully-fledged vector database, or knowledge base, that we can refer
+[00:25:09.900 --> 00:25:14.860]   to for getting knowledge into our LLM.
+[00:25:14.860 --> 00:25:21.500]   So now, the final thing we need to do is just finish the RAG pipeline and connect that knowledge
+[00:25:21.500 --> 00:25:24.100]   base up to our LLM.
+[00:25:24.100 --> 00:25:26.140]   And then that would be it.
+[00:25:26.140 --> 00:25:27.140]   We're done.
+[00:25:27.140 --> 00:25:29.100]   So let's just jump into that.
+[00:25:29.100 --> 00:25:31.860]   OK, so we're going to come down to here.
+[00:25:31.860 --> 00:25:36.220]   I'm going to initialize this back in LineChain, because sometimes, it depends on what you're
+[00:25:36.220 --> 00:25:43.500]   doing, but often, you will want to use Pinecone via LineChain if you're using it with LLMs,
+[00:25:43.500 --> 00:25:46.340]   because there's a lot of ways you can connect the two.
+[00:25:46.340 --> 00:25:50.020]   I think in this example, we don't actually use those.
+[00:25:50.020 --> 00:25:53.260]   I'm just going to connect them directly.
+[00:25:53.260 --> 00:25:57.180]   You'll see, but basically, I'm just going to throw information straight into the context,
+[00:25:57.180 --> 00:25:58.180]   into the prompt.
+[00:25:58.180 --> 00:26:02.660]   But a lot of the time, you'll probably want to go and initialize the vector sort object
+[00:26:02.660 --> 00:26:06.020]   and use that with other components in LineChain.
+[00:26:06.020 --> 00:26:07.820]   So I initialized that there.
+[00:26:07.820 --> 00:26:12.260]   You just pass in your index and also the embedding model.
+[00:26:12.260 --> 00:26:17.860]   And this is the embed query method, which basically means it's going to embed a single
+[00:26:17.860 --> 00:26:24.300]   chunk of text rather than the embed, I think it's embedDocuments method, which encodes
+[00:26:24.300 --> 00:26:26.940]   like a batch of many chunks of text.
+[00:26:26.940 --> 00:26:29.800]   One important thing here is that we have the text field.
+[00:26:29.800 --> 00:26:36.220]   So text field is the metadata field that we set up earlier, you can see it here, that
+[00:26:36.220 --> 00:26:39.280]   contains the text that we would like to retrieve.
+[00:26:39.280 --> 00:26:43.060]   So we also specify that.
+[00:26:43.060 --> 00:26:47.100]   Now let's ask the question, what is so special about LLAMA2?
+[00:26:47.100 --> 00:26:50.860]   We saw earlier that it couldn't answer this.
+[00:26:50.860 --> 00:26:57.660]   But now, if we take that query and we pass it into our vector database, or our vector
+[00:26:57.660 --> 00:27:03.620]   sort in this case, and we return the top three most semantically similar records, we can
+[00:27:03.620 --> 00:27:06.820]   see that we're getting these chunks from the LLAMA2 paper.
+[00:27:06.820 --> 00:27:09.020]   You can see the title here.
+[00:27:09.020 --> 00:27:14.100]   Now these are pretty hard to read, to be honest.
+[00:27:14.100 --> 00:27:21.180]   And even like here, our human evaluations for the helpfulness and safety may be suitable
+[00:27:21.180 --> 00:27:24.860]   substitutes for closed source models.
+[00:27:24.860 --> 00:27:27.020]   I can just about make that out.
+[00:27:27.020 --> 00:27:33.580]   But what we'll actually see is that also LLAMAs can also parse that information relatively
+[00:27:33.580 --> 00:27:34.580]   well.
+[00:27:34.580 --> 00:27:36.780]   I'm not saying it's perfect, but they can.
+[00:27:36.780 --> 00:27:43.020]   So we have these three documents, these three chunks of information.
+[00:27:43.020 --> 00:27:44.020]   Hard to read.
+[00:27:44.020 --> 00:27:46.260]   So let's just let our LLAM deal with that.
+[00:27:46.260 --> 00:27:50.540]   So I'm going to set up this augment prompt function here.
+[00:27:50.540 --> 00:27:51.740]   So we're going to take that query.
+[00:27:51.740 --> 00:27:56.660]   We're going to do what I just did there, retrieve the top three most relevant items from the
+[00:27:56.660 --> 00:27:58.180]   vector store.
+[00:27:58.180 --> 00:28:01.580]   We're going to use those to create our source knowledge.
+[00:28:01.580 --> 00:28:04.580]   You might recognize this code from earlier where we did it manually.
+[00:28:04.580 --> 00:28:09.420]   And then we're going to feed all that into an augmented prompt and return it.
+[00:28:09.420 --> 00:28:12.740]   So we run that.
+[00:28:12.740 --> 00:28:16.940]   Let's augment our query.
+[00:28:16.940 --> 00:28:21.900]   So using the context below answer the query, you see that we have these contexts.
+[00:28:21.900 --> 00:28:25.900]   In this work, we develop and release LLAMA2 collection, pre-train, and fine tune large
+[00:28:25.900 --> 00:28:30.420]   language models and a ton of other stuff in there.
+[00:28:30.420 --> 00:28:31.420]   And then we have a query.
+[00:28:31.420 --> 00:28:33.220]   What is so special about LLAMA2?
+[00:28:33.220 --> 00:28:41.880]   So this is now our augmented query that we can pass into our chatbot.
+[00:28:41.880 --> 00:28:43.980]   So let's try it.
+[00:28:43.980 --> 00:28:47.620]   We're going to create a new human message from before.
+[00:28:47.620 --> 00:28:52.700]   We're going to append that to our chat history and feed that into there.
+[00:28:52.700 --> 00:28:59.300]   So remember, the question here is, what is so special about LLAMA2?
+[00:28:59.300 --> 00:29:03.340]   And it says, according to the provided context, LLAMA2 is a collection of pre-trained and
+[00:29:03.340 --> 00:29:07.640]   fine-tuned large language models-- I read that earlier, actually-- developed and released
+[00:29:07.640 --> 00:29:10.080]   by the authors of the work.
+[00:29:10.080 --> 00:29:15.020]   These LLAMAs range in scale from 7 billion to 70 billion parameters.
+[00:29:15.020 --> 00:29:19.940]   They are specifically optimized for dialogue use cases and outperform open-source chat
+[00:29:19.940 --> 00:29:23.380]   models on most benchmarks tested.
+[00:29:23.380 --> 00:29:24.780]   That's pretty cool, right?
+[00:29:24.780 --> 00:29:32.240]   So what makes LLAMA2 special is that the fine-tuned LLAMAs-- and then we have this kind of mess
+[00:29:32.240 --> 00:29:33.240]   up bit here.
+[00:29:33.240 --> 00:29:38.340]   I'm not sure what-- I think it's LLAMA something, but it's a bit of a mess.
+[00:29:38.340 --> 00:29:44.140]   They are designed to align with human preferences, enhancing their usability and safety.
+[00:29:44.140 --> 00:29:48.940]   This alignment with human preferences is often not easily reproducible or transparent in
+[00:29:48.940 --> 00:29:56.700]   closed-source models, limiting progress in AI alignment research.
+[00:29:56.700 --> 00:30:02.060]   So additionally, based on so-and-so on, LLAMA2 models appear to be on par with some of the
+[00:30:02.060 --> 00:30:06.780]   closed-source models in terms of helpfulness and safety.
+[00:30:06.780 --> 00:30:09.180]   So we can see-- yeah, I think it's giving us a good answer.
+[00:30:09.180 --> 00:30:10.540]   I don't want to read the whole thing.
+[00:30:10.540 --> 00:30:11.740]   I almost did.
+[00:30:11.740 --> 00:30:14.940]   But yeah, it's giving us a good answer there.
+[00:30:14.940 --> 00:30:17.460]   Let's continue more LLAMA2 questions.
+[00:30:17.460 --> 00:30:20.420]   So I'm going to try without RAG first.
+[00:30:20.420 --> 00:30:26.900]   So also just consider that we've just asked a question and got all this information here.
+[00:30:26.900 --> 00:30:29.680]   That has been stored in the conversation history.
+[00:30:29.680 --> 00:30:34.260]   So now the LLAM will at least know what LLAMA2 is.
+[00:30:34.260 --> 00:30:38.200]   And let's see if we can use that to answer our question here.
+[00:30:38.200 --> 00:30:43.620]   So what safety measures do we use in the development of LLAMA2?
+[00:30:43.620 --> 00:30:50.300]   So I'm not performing RAG on this specific query, but it does have some information already.
+[00:30:50.300 --> 00:30:54.660]   And it says, in the provided context, safety measures used in development of LLAMA2 are
+[00:30:54.660 --> 00:30:56.660]   mentioned briefly.
+[00:30:56.660 --> 00:30:59.420]   Detailed description of their approach to fine-tuning safety.
+[00:30:59.420 --> 00:31:06.580]   However, the specific details of these safety measures are not mentioned in the given text.
+[00:31:06.580 --> 00:31:09.560]   So it's saying, OK, I don't know.
+[00:31:09.560 --> 00:31:14.660]   Even though we've told it what LLAMA2 is and we've given it a fair amount of text about
+[00:31:14.660 --> 00:31:18.300]   LLAMA2, context about LLAMA2, it still can't answer the question.
+[00:31:18.300 --> 00:31:19.940]   So let's avoid that.
+[00:31:19.940 --> 00:31:23.220]   And what we're going to do is augment our prompt.
+[00:31:23.220 --> 00:31:25.060]   And we're going to feed that in instead.
+[00:31:25.060 --> 00:31:28.200]   And let's see what we get.
+[00:31:28.200 --> 00:31:33.260]   OK, based on provided context, the development of LLAMA2 involves safety measures to enhance
+[00:31:33.260 --> 00:31:35.420]   safety of the models.
+[00:31:35.420 --> 00:31:38.720]   Some of these safety measures mentioned in the text include.
+[00:31:38.720 --> 00:31:42.440]   And then it gives us a little list of items here.
+[00:31:42.440 --> 00:31:50.820]   So safety-specific data annotation and tuning, OK, specifically focused on training, OK,
+[00:31:50.820 --> 00:31:51.820]   cool.
+[00:31:51.820 --> 00:31:54.740]   And it also is kind of figuring something out from that.
+[00:31:54.740 --> 00:31:58.140]   Suggests that train data and model parameters were carefully selected and adjusting to
+[00:31:58.140 --> 00:32:01.180]   prioritize safety considerations.
+[00:32:01.180 --> 00:32:05.940]   Red teaming, so that's, well, it tells us here, red teaming refers to a process in which
+[00:32:05.940 --> 00:32:14.180]   external experts or evaluators simulate adversarial attacks on a system to identify vulnerabilities
+[00:32:14.180 --> 00:32:15.180]   and weaknesses.
+[00:32:15.180 --> 00:32:20.800]   OK, so, you know, almost like safety stress testing the model, I would say.
+[00:32:20.800 --> 00:32:23.220]   And then iterative evaluations.
+[00:32:23.220 --> 00:32:27.260]   Dimension of iterative evaluations suggests that the models underwent multiple rounds
+[00:32:27.260 --> 00:32:29.340]   of assessment and refinement.
+[00:32:29.340 --> 00:32:34.420]   This iterative process likely involved continuous feedback and improvements to enhance safety
+[00:32:34.420 --> 00:32:35.420]   aspects.
+[00:32:35.420 --> 00:32:41.400]   So the impression I'm getting from this answer is that it mentions this iterative process,
+[00:32:41.400 --> 00:32:42.680]   but doesn't really go into details.
+[00:32:42.680 --> 00:32:46.620]   So the model is kind of figuring out what that likely means.
+[00:32:46.620 --> 00:32:52.180]   All right, so we get a much better answer there, continues.
+[00:32:52.180 --> 00:32:56.580]   But like I said, you can take a look at this notebook yourself and run it.
+[00:32:56.580 --> 00:33:02.860]   I think it's very clear what sort of impact something like RAG has on the system and also
+[00:33:02.860 --> 00:33:05.220]   just how we implement that.
+[00:33:05.220 --> 00:33:12.420]   Now this is what I would call naive RAG, or almost like the standard RAG.
+[00:33:12.420 --> 00:33:14.780]   It's the simplest way of implementing RAG.
+[00:33:14.780 --> 00:33:19.380]   And it's assuming that there's a question with every single query, which is not always
+[00:33:19.380 --> 00:33:21.580]   going to be the case, right?
+[00:33:21.580 --> 00:33:23.900]   You might say, hi, how are you?
+[00:33:23.900 --> 00:33:28.060]   Actually, your chatbot doesn't need to go and refer to an external knowledge base to
+[00:33:28.060 --> 00:33:29.420]   answer that.
+[00:33:29.420 --> 00:33:33.300]   So that is one of the downsides of using this approach.
+[00:33:33.300 --> 00:33:34.540]   But there are many benefits.
+[00:33:34.540 --> 00:33:37.980]   Obviously, we get this much better retrieval performance, right?
+[00:33:37.980 --> 00:33:40.220]   We get a ton of information in there.
+[00:33:40.220 --> 00:33:43.740]   We can answer many more questions accurately.
+[00:33:43.740 --> 00:33:46.780]   And we can also cite where we're getting that information from.
+[00:33:46.780 --> 00:33:52.580]   This approach is much faster than other alternative RAG approaches, like using agents.
+[00:33:52.580 --> 00:33:57.260]   And we can also filter out the number of tokens.
+[00:33:57.260 --> 00:33:59.580]   We don't use too many tokens.
+[00:33:59.580 --> 00:34:03.060]   So we can also filter out the number of tokens we're feeding back into the LLM by setting
+[00:34:03.060 --> 00:34:08.100]   like a similarity threshold, so that we're not returning things that are completely very
+[00:34:08.100 --> 00:34:09.940]   obviously irrelevant.
+[00:34:09.940 --> 00:34:16.060]   And if we do that, that'll help us mitigate one of the other issues with this approach,
+[00:34:16.060 --> 00:34:19.100]   which is just token usage and costs.
+[00:34:19.100 --> 00:34:23.860]   Obviously, we're feeding way more information to our LLMs here, which is it's going to slow
+[00:34:23.860 --> 00:34:26.060]   them down a little bit.
+[00:34:26.060 --> 00:34:31.820]   It's also going to cost us more, especially if you're using OpenAI, you're paying per
+[00:34:31.820 --> 00:34:32.820]   token.
+[00:34:32.820 --> 00:34:37.940]   And if you feed too much information in there, your LLM can actually-- the performance can
+[00:34:37.940 --> 00:34:42.220]   degrade quite a bit, especially when it's trying to follow instructions.
+[00:34:42.220 --> 00:34:46.540]   So there are always those sort of things to consider as well.
+[00:34:46.540 --> 00:34:52.140]   But overall, if done well, by not feeding too much into the context window, this approach
+[00:34:52.140 --> 00:34:53.860]   is very good.
+[00:34:53.860 --> 00:34:59.580]   And when you need other approaches, and you still need that external knowledge base, you
+[00:34:59.580 --> 00:35:06.380]   can look at RAG with Agents, something I've spoken about in the past, or RAG with Guardrails,
+[00:35:06.380 --> 00:35:09.480]   which is something that I've spoken about very recently.
+[00:35:09.480 --> 00:35:14.220]   Both of those are alternative approaches that have their own pros and cons, but effectively,
+[00:35:14.220 --> 00:35:16.500]   you get the same outcome.
+[00:35:16.500 --> 00:35:19.340]   Now, that's it for this video.
+[00:35:19.340 --> 00:35:25.260]   I hope this has been useful in just introducing this idea of RAG and chatbots and also just
+[00:35:25.260 --> 00:35:28.660]   seeing how all of those components fit together.
+[00:35:28.660 --> 00:35:30.900]   But for now, what I'm going to do is just leave it there.
+[00:35:30.900 --> 00:35:36.060]   So thank you very much for watching, and I will see you again in the next one.
+[00:35:36.060 --> 00:35:36.560]   Bye.
+[00:35:36.920 --> 00:35:38.920]   [outro music]
+[00:35:38.920 --> 00:35:40.920]   [outro music]
+[00:35:40.920 --> 00:35:42.920]   [outro music]
+[00:35:42.920 --> 00:35:44.920]   [outro music]
+[00:35:44.920 --> 00:35:46.920]   [outro music]
+[00:35:46.920 --> 00:35:48.920]   [outro music]
+[00:35:48.920 --> 00:35:50.920]   [outro music]
+[00:35:50.920 --> 00:35:52.920]   [outro music]
+

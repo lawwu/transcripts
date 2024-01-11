@@ -1,0 +1,172 @@
+
+[00:00:00.000 --> 00:00:06.240]   Today we're going to be taking a look at table question answering, which is essentially if you
+[00:00:06.240 --> 00:00:17.200]   could ask a excel sheet a question like what is the GDP across both China and Indonesia and it
+[00:00:17.200 --> 00:00:23.680]   would be able to look at the table, identify the two parts of the table that are relevant to that
+[00:00:23.680 --> 00:00:31.280]   question, sum those both together and return you that answer. But imagine we take that and we apply
+[00:00:31.280 --> 00:00:41.360]   it not to just one table in excel but we apply it to millions or even billions of tables and the
+[00:00:41.360 --> 00:00:46.640]   system is actually capable of taking our question, retrieving the correct table to answer that
+[00:00:46.640 --> 00:00:52.240]   question and then repeating the process I just mentioned before where it extracts the specific
+[00:00:52.240 --> 00:00:58.560]   parts of the table that are relevant to our query and even performs operations like summing over
+[00:00:58.560 --> 00:01:04.400]   those values or averaging over those values. That is what we're going to learn about in this video.
+[00:01:04.400 --> 00:01:10.640]   So let me just describe the process that we're going to be taking in order to implement this.
+[00:01:10.640 --> 00:01:13.920]   We're going to start with a vector database
+[00:01:16.480 --> 00:01:23.680]   here naturally we'll be using Pinecone for that then what we do is we add something called a
+[00:01:23.680 --> 00:01:31.760]   retriever model. Now this retriever model will be an MPNET model so typically with natural language
+[00:01:31.760 --> 00:01:38.080]   semantic search MPNET is a really good option but this MPNET model has been trained for table
+[00:01:38.720 --> 00:01:46.720]   or reading tables so this is our retriever model. Now what's going to happen is we're
+[00:01:46.720 --> 00:01:52.480]   going to ask a question like the question I mentioned before so something like what is GDP
+[00:01:52.480 --> 00:02:01.440]   across certain conditions. So we're going to ask that sort of question we're going to take that
+[00:02:01.440 --> 00:02:07.760]   it's going to go into this retriever model which is our MPNET table retriever model and it's going
+[00:02:07.760 --> 00:02:17.600]   to encode that text into a vector and that vector represents the meaning behind that question. So
+[00:02:17.600 --> 00:02:25.360]   that MPNET encoded vector goes into our vector database our vector database then returns
+[00:02:25.360 --> 00:02:33.280]   relevant tables which have also been encoded by that MPNET table model and it returns them
+[00:02:34.480 --> 00:02:38.160]   to our next model which is going to be a table reader model.
+[00:02:38.160 --> 00:02:49.440]   It's going to be a table reader now this table reader model is also going to read our question
+[00:02:49.440 --> 00:02:55.040]   from up here so it's going to see both of those it's going to see what we've returned from Pinecone
+[00:02:55.040 --> 00:03:01.200]   over here and also our question and for the table reader we're going to be using a model called
+[00:03:01.200 --> 00:03:09.760]   TAPAS. Now what TAPAS can do is what I mentioned before where we take a table essentially
+[00:03:09.760 --> 00:03:19.520]   and it's going to identify the parts of that table that answer our particular question
+[00:03:19.520 --> 00:03:25.440]   and it's going to also say whether we need to sum over those parts whether we need to average or
+[00:03:25.440 --> 00:03:31.280]   whether we don't even need to do anything whether just the value itself is relevant and answers our
+[00:03:31.280 --> 00:03:37.440]   question. So that's the system we're going to be building let's move on to the code and we'll start
+[00:03:37.440 --> 00:03:42.320]   putting that all together. Okay so we're going to be running through this table question answering
+[00:03:42.320 --> 00:03:52.320]   document example from Pinecone so you can find that docs pinecone io slash docs table QA and
+[00:03:52.320 --> 00:03:55.600]   then what I'm going to be doing is just going through the Colab so you can just click on open
+[00:03:55.600 --> 00:04:01.200]   Colab and run through the exact same code that I'm going to be going through. So that will open this
+[00:04:01.200 --> 00:04:06.960]   Colab notebook here this is another really cool idea and example notebook from Archeroke so again
+[00:04:06.960 --> 00:04:14.080]   thank you for that. Now the first thing we want to do is come up to runtime go to change runtime type
+[00:04:14.080 --> 00:04:19.680]   and switch this or make sure this is on GPU if it is not that will just make things a lot faster
+[00:04:19.680 --> 00:04:24.480]   later on. There are a few prerequisites that we need to install torch scatter might take a little
+[00:04:24.480 --> 00:04:30.800]   bit of time so if it is taking some time to install everything that is the reason why. I'm not going to
+[00:04:30.800 --> 00:04:37.120]   rerun that because I have already done it and then what we want to do is we need to initialize this
+[00:04:37.120 --> 00:04:45.040]   notebook here. This is just from the HuggingFace datasets hub, Archeroke has uploaded it. It is a
+[00:04:45.040 --> 00:04:51.120]   subset of the open table and text question answering dataset which is just below text and
+[00:04:51.120 --> 00:04:58.000]   tables from Wikipedia. Now once that has downloaded we'll see that we have a few features of URL so
+[00:04:58.000 --> 00:05:04.400]   where is it from title headers which is literally the headers of the table and then data within
+[00:05:04.400 --> 00:05:11.520]   that table. So we can have a look at one of those now the bits that we are most interested in is
+[00:05:11.520 --> 00:05:23.360]   here so the headers so this is about American football no baseball I think one of those things
+[00:05:23.360 --> 00:05:32.000]   I'm not sure and you have your headers here level team league manager and then you have the data
+[00:05:32.000 --> 00:05:39.120]   so in level you'd have triple A, double A, AA and rookie and then so on with the other bits of data
+[00:05:39.120 --> 00:05:45.360]   in there as well. Now what we can do is we can format all those into pandas state frames which
+[00:05:45.360 --> 00:05:51.600]   just makes things a lot easier for us in both reading and later formatting so let's go ahead
+[00:05:51.600 --> 00:05:58.720]   and do that this again might take a moment to run okay 14 seconds and then we can run this and we
+[00:05:58.720 --> 00:06:05.200]   can have a look at what I just showed you set from in table format so now we'll see it's a lot
+[00:06:06.000 --> 00:06:13.520]   easier to read nice formatting so great now I want to do is move on to that retriever so
+[00:06:13.520 --> 00:06:21.360]   remember in that visual before we had the pinecone vector database which led into the
+[00:06:21.360 --> 00:06:29.600]   MPNET table retriever model we're going to go ahead and initialize all of that so the retriever
+[00:06:29.600 --> 00:06:37.120]   we're going to be using this deep set all MPNET based v2 table model so we execute that as I said
+[00:06:37.120 --> 00:06:46.400]   this model has been fine tuned specifically on retrieving and embedding table like data and
+[00:06:46.400 --> 00:06:53.040]   matching those up to natural language queries now once that had downloaded we'll see this kind of
+[00:06:53.680 --> 00:07:00.320]   explainer or summary of the model so we have the MPNET transforming model fine-tuned specifically
+[00:07:00.320 --> 00:07:06.960]   for this we have the pooling method it is using mean pooling you can see that there
+[00:07:06.960 --> 00:07:12.240]   and there's a normalization after so because it has that normalization that means we can use
+[00:07:12.240 --> 00:07:20.240]   both cosine similarity which we can use if there is normalization or not and we can also use dot
+[00:07:20.240 --> 00:07:27.360]   product similarity because we have that normalization component now this retriever does
+[00:07:27.360 --> 00:07:33.440]   expect tables to be in a particular format so we need to initialize this and let's have a look what
+[00:07:33.440 --> 00:07:41.840]   that format actually looks like so we are going to have something like this so looking again at
+[00:07:41.840 --> 00:07:48.320]   that same table at the top here we have the headers and then we have a new line character
+[00:07:48.320 --> 00:07:54.240]   okay and then we have the next row of the table all these separated by commas as you can see and
+[00:07:54.240 --> 00:08:01.120]   then we have a new line again so essentially we're just reformatting it into a comma separated
+[00:08:01.120 --> 00:08:10.720]   file format now the next thing we want to do is initialize our pinecone vector database for that
+[00:08:10.720 --> 00:08:16.320]   we need an api key which is free and we can get it from this link here if you're in the notebook
+[00:08:16.320 --> 00:08:26.240]   or if not we just head on over to app.pinecone.io this will either lead you to a sign up or sign
+[00:08:26.240 --> 00:08:31.680]   in page or it will lead to this if you're already signed up and what you need to do is head over to
+[00:08:31.680 --> 00:08:38.560]   your default project or any other project if you have other projects in there you go to api keys
+[00:08:39.600 --> 00:08:46.720]   go to default here and you want to copy this and then you need to just paste it into here now
+[00:08:46.720 --> 00:08:55.920]   i have pasted mine into a variable called apig so i can add that in there run this and that just
+[00:08:55.920 --> 00:09:02.800]   initializes our connection to pinecone from there what we need to do is create a new vector index
+[00:09:02.800 --> 00:09:09.920]   we're going to store all of these formatted table objects but after they've been encoded
+[00:09:09.920 --> 00:09:17.040]   by our retriever model so i'm going to call my index table qa i'm going to use cosine here
+[00:09:17.040 --> 00:09:22.640]   although like i said before we also use dot product similarity dimensionality this just
+[00:09:22.640 --> 00:09:30.000]   aligns with the model so we can actually see that if we do model dot get sentence
+[00:09:31.280 --> 00:09:35.760]   embedding some dimension or retriever
+[00:09:35.760 --> 00:09:44.480]   okay and then we get this seven six eight so we could also put that in here if we wanted
+[00:09:44.480 --> 00:09:50.640]   so rather than hard coding it you can just do this and yeah we run that for me
+[00:09:50.640 --> 00:09:56.640]   i've already created this index so that will happen very quickly if you haven't
+[00:09:56.640 --> 00:10:02.960]   created the index that will probably take like 10-15 seconds to run then what we want to do is
+[00:10:02.960 --> 00:10:09.840]   we're essentially going to go through our entire data set in batches of 64 we are going to
+[00:10:09.840 --> 00:10:19.360]   get our process tables we're going to then encode them using our retrieve model
+[00:10:19.360 --> 00:10:25.840]   and the output of that we need to convert into a list for pinecone we're going to create a set
+[00:10:25.840 --> 00:10:32.160]   of unique ids now this is just a count if you prefer you can use something else but this is
+[00:10:32.160 --> 00:10:41.360]   this works for this example so leave it with that we add all those into what we call an upsert list
+[00:10:41.360 --> 00:10:47.520]   so we're just going to pass the ids and embeddings we could also if you wanted to saw we're going to
+[00:10:47.520 --> 00:10:55.040]   store the tables locally we could also saw the plain text version of the tables in a metadata
+[00:10:55.040 --> 00:11:01.280]   dictionary and upload those but we're not going to do that we're just going to use the local ones
+[00:11:01.280 --> 00:11:07.680]   for the sake of simplicity and then what we want to do is just upsert all these into pinecone
+[00:11:07.680 --> 00:11:14.800]   we would run that that will take a little bit of time i don't think too long maybe six or seven
+[00:11:14.800 --> 00:11:22.320]   minutes on colab but i have already run it so okay i can see it's working again here so now i'm just
+[00:11:22.320 --> 00:11:29.760]   going to stop it because all of these have already been uploaded into my vector index now what we're
+[00:11:29.760 --> 00:11:36.400]   going to do is begin asking questions so this is not the full what we're doing right now we're just
+[00:11:36.400 --> 00:11:42.080]   we have the vector database and we have the retriever we don't have the later table reader
+[00:11:42.080 --> 00:11:45.840]   and we're going to implement that in a moment but for now i just want to see is it going to
+[00:11:45.840 --> 00:11:53.520]   return the correct table for us so we're going to say what was the gdp of china in 2020 we're going
+[00:11:53.520 --> 00:12:00.480]   to encode that using the retriever to create our query vector and then we're going to pass that
+[00:12:00.480 --> 00:12:06.080]   to pinecone and we're just going to return the top table we could return several tables if we
+[00:12:06.080 --> 00:12:12.560]   wanted to return 100 if you wanted but we're just going to be applying a reader to a single
+[00:12:12.560 --> 00:12:21.440]   table so i'm going to go with that for now okay and you see that we get this id here now this id
+[00:12:21.440 --> 00:12:27.360]   is like i said it was a count that we created earlier so we can actually use that value in
+[00:12:27.360 --> 00:12:34.800]   order to extract from our tables that we created earlier the tables variable we can just extract
+[00:12:34.800 --> 00:12:43.360]   that specific item and you can see that it does seem to give us a pretty relevant table so right
+[00:12:43.360 --> 00:12:50.720]   top here of china and we have their millions of usd in gdp and the year as well which is 2020 so
+[00:12:50.720 --> 00:12:58.000]   that looks pretty accurate okay so we've retrieved the correct table now what we need to do is
+[00:12:58.000 --> 00:13:05.520]   extract that specific piece of information using our table reader model now for the table reader
+[00:13:05.520 --> 00:13:10.560]   model we're going to be using a tapas model that has been fine-tuned for this specific task
+[00:13:10.560 --> 00:13:22.320]   and to do that we we need this so we are going to use the model name google tapas base fine-tuned
+[00:13:22.320 --> 00:13:30.400]   wtq and we're going to be using the hug and face transformers library and we need to initialize a
+[00:13:30.400 --> 00:13:38.160]   tapas tokenizer which is going to convert our natural language query and the tables themselves
+[00:13:38.160 --> 00:13:46.160]   into tokens or token ids they get passed into this tapas for question answering which is a tapas
+[00:13:46.160 --> 00:13:52.240]   transform model followed by a question answering head and it'll basically go through all those and
+[00:13:52.240 --> 00:13:58.400]   it will identify the specific part of the table that answers our question and it can also do
+[00:13:58.400 --> 00:14:03.440]   things like say whether we need to sum certain values within that table or whether we need to
+[00:14:03.440 --> 00:14:09.200]   average them or do all these different operations which is pretty impressive in my opinion at least
+[00:14:09.840 --> 00:14:15.760]   so we're going to package all that up into this pipeline here which is a table question
+[00:14:15.760 --> 00:14:21.200]   answering pipeline and it would just include our model and the tokenizer we run that and then what
+[00:14:21.200 --> 00:14:29.360]   we can do is we'll pass the table that we retrieved okay so the china gdp table we pass that
+[00:14:29.360 --> 00:14:39.280]   and we also pass our query which is what is the gdp of china in 2020 okay and run that okay cool so
+[00:14:40.000 --> 00:14:49.280]   you see that it wants us to take the average over one cell okay so it is correct that we should just
+[00:14:49.280 --> 00:14:56.240]   take the average over this one cell because that is our answer so the 27.8 million million i think
+[00:14:56.240 --> 00:15:02.080]   it is in usd so if we come up here we can see it right there okay so that is our answer
+[00:15:04.320 --> 00:15:09.920]   now what i want to do is i want to ask more questions okay i'm going to ask more questions
+[00:15:09.920 --> 00:15:15.280]   but i want to do it a lot more efficiently than writing all that code out again so i'm just going
+[00:15:15.280 --> 00:15:22.800]   to create a few functions here that will help us so query pine cone which is going to retrieve
+[00:15:22.800 --> 00:15:28.640]   the relevant information and then match that up to a particular table return that to us
+[00:15:30.800 --> 00:15:35.680]   and then we want this which is just get the answer of the table
+[00:15:35.680 --> 00:15:40.320]   and that is just going to feed everything into our pipe and return those answers
+[00:15:40.320 --> 00:15:50.400]   okay so for this first question i'm saying which car manufacturers produce cars with top speed of
+[00:15:50.400 --> 00:15:58.080]   above 108 kilometers per hour now you can see that this is again a super relevant table and
+[00:15:58.080 --> 00:16:03.840]   this is already at least for me impressive in itself that is managing to get this and we can
+[00:16:03.840 --> 00:16:16.720]   see max weight okay 220 190 185 186 so there's four manufacturers that do that that is fiat bugatti
+[00:16:16.720 --> 00:16:24.480]   bend and miller so we come down here and we're going to do get answer from table
+[00:16:25.280 --> 00:16:32.000]   and we get this so fiat bugatti bends and miller is our answer there's no aggregator this is text
+[00:16:32.000 --> 00:16:37.280]   so it's saying okay you don't need to average or do anything here these are just the answers
+[00:16:37.280 --> 00:16:45.600]   okay let's do another one which scientist is known for improving the seam engine okay and we can see
+[00:16:45.600 --> 00:16:50.640]   in this table if we have a look here for improving the seam engine so we should expect the answer to
+[00:16:50.640 --> 00:16:59.680]   be george henry callis let's get the answer from the table george henry callis pretty cool let's do
+[00:16:59.680 --> 00:17:04.320]   another one another kind of simple query and we'll move on to more advanced queries so what is the
+[00:17:04.320 --> 00:17:12.080]   maldivian island name for obluse select at sanghelli resort okay and we can see obluse
+[00:17:12.960 --> 00:17:22.560]   let at sanghelli and we have akiri fushi it's probably terrible pronunciation i'm very sorry
+[00:17:22.560 --> 00:17:31.920]   to any maldivians watching this and yeah we get the right answer of course so that in itself is
+[00:17:31.920 --> 00:17:37.600]   already really impressive but it actually doesn't stop there it gets even more insane than this we
+[00:17:37.600 --> 00:17:44.560]   can start asking really more complex questions that take sort of more than one step for this
+[00:17:44.560 --> 00:17:52.800]   model to figure out so i want to say what was the total gdp of china and indonesia in 2020 okay let's
+[00:17:52.800 --> 00:17:59.200]   query we should get the same table that we got before yes we do and then we want to get the
+[00:17:59.200 --> 00:18:08.240]   answer from this table and we get this so we get this aggregator sum so it sounds to sum these two
+[00:18:08.240 --> 00:18:17.760]   values here okay so the 27.8 million and 3.8 million and you can see here that these this is
+[00:18:17.760 --> 00:18:24.000]   correct right so we could just maybe add a little bit of a wrapper function that consumes different
+[00:18:24.000 --> 00:18:30.960]   types of aggregators like some or average and just handles that little bit of logic at the end there
+[00:18:30.960 --> 00:18:39.440]   and we have our answer which is insane so that is that's another thing really really impressive and
+[00:18:39.440 --> 00:18:45.200]   it's not just some we actually kind of saw this earlier although it wasn't in that used in the
+[00:18:45.200 --> 00:18:51.440]   right way but let's have a look at this what is the average carbon emission of power stations in
+[00:18:51.440 --> 00:19:03.920]   australia canada and germany okay let's take a look okay looks pretty accurate although this is
+[00:19:03.920 --> 00:19:09.760]   just like a random selection of different power stations in these different countries so it's not
+[00:19:09.760 --> 00:19:16.720]   perfect but nonetheless we can we can go with this and then we can see okay we have an aggregator
+[00:19:16.720 --> 00:19:24.240]   average and we need to average over these values here so number one is not being very good who is
+[00:19:24.240 --> 00:19:36.240]   that australia yeah very bad but that is really impressive at least to me i was pretty blown away
+[00:19:36.240 --> 00:19:44.320]   with this example so that's it for this video i hope this has been interesting and useful
+[00:19:45.360 --> 00:19:50.960]   it definitely is for me i'm really enjoying seeing how we can actually apply question answering
+[00:19:50.960 --> 00:19:56.640]   to tables and even more so with the little aggregations at the end very little feature
+[00:19:56.640 --> 00:20:02.480]   but i think makes a pretty big difference so thank you very much for watching the video
+[00:20:03.120 --> 00:20:16.880]   i hope it has been useful and i will see you again in the next one bye
+[00:20:16.880 --> 00:20:18.940]   you
+[00:20:18.940 --> 00:20:28.940]   [BLANK_AUDIO]
+

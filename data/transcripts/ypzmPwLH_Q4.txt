@@ -1,0 +1,196 @@
+
+[00:00:00.000 --> 00:00:03.360]   In today's video we're going to be looking at more LLAMA2.
+[00:00:03.360 --> 00:00:11.040]   This time we're going to be looking at a very simple version of Retrieval Augmented Generation
+[00:00:11.040 --> 00:00:16.640]   using the 13 billion parameter LLAMA2 model, which we're going to quantize and actually fit
+[00:00:16.640 --> 00:00:24.560]   that onto a single T4 GPU, which is included within the free tier of Colab, so anyone can
+[00:00:24.560 --> 00:00:29.680]   actually run this. It should be pretty fun. Let's jump straight into the code.
+[00:00:29.680 --> 00:00:33.920]   So to get started with this notebook, there'll be a link to this at the top of the video right now.
+[00:00:33.920 --> 00:00:40.960]   The first thing that you will have to do if you haven't already is actually request access to
+[00:00:40.960 --> 00:00:48.160]   LLAMA2, which you can do via a form. If you need some guidance on that, there'll be a link to
+[00:00:48.160 --> 00:00:55.120]   another video of mine, the previous LLAMA2 video, where I describe how to go through that and get
+[00:00:55.120 --> 00:01:02.480]   access. So first thing I'm going to want to do after getting your access is we want to go to
+[00:01:02.480 --> 00:01:08.720]   change runtime type and you want to make sure that you're using GPU for hardware accelerator
+[00:01:08.720 --> 00:01:15.280]   and T4 for your GPU type. If you have Colab Pro, you can use one of these and it will run a lot
+[00:01:15.280 --> 00:01:23.920]   faster, but T4 is good enough. Cool. So we just have to install everything we need. Okay. And
+[00:01:23.920 --> 00:01:29.920]   once that is ready, we come down to here. So Hunkface embedding pipeline. So before we dive
+[00:01:29.920 --> 00:01:35.040]   into the embedding pipeline, maybe what I should do is try to explain a little bit of what this
+[00:01:35.040 --> 00:01:40.400]   retrieve augmented generation thing is and why it's so important. So a problem that we have with
+[00:01:40.400 --> 00:01:46.800]   LLMs is that they don't have access to the outside world. The only knowledge contained within them
+[00:01:46.800 --> 00:01:52.400]   is knowledge that they learned during training, which can be super limiting. So in this example
+[00:01:52.400 --> 00:01:58.800]   here, this was a little while ago, I asked GPT-4 how to use the LLM chain and Lang chain. Okay. So
+[00:01:58.800 --> 00:02:07.040]   Lang chain being the sort of new LLM framework. And the answer it gave me specified this Lang
+[00:02:07.040 --> 00:02:12.720]   chain, which is a blockchain based decentralized AI language model, which is completely wrong.
+[00:02:12.720 --> 00:02:17.760]   Basically it hallucinated. And the reason for that is that GPT-4 just didn't know anything
+[00:02:17.760 --> 00:02:24.080]   about Lang chain. And that's because it didn't have access to the outside world. It just had
+[00:02:24.080 --> 00:02:29.120]   knowledge. It's called parametric knowledge. This knowledge stored within the model itself
+[00:02:29.120 --> 00:02:35.040]   that gained during training. So the idea behind retrieval augmented generation is that you give
+[00:02:35.040 --> 00:02:40.960]   your LLM access to the outside world. And the way that we do it, at least in this example,
+[00:02:40.960 --> 00:02:47.120]   is we're going to give it access to the outside world, like our subset of the outside world,
+[00:02:47.120 --> 00:02:52.400]   not the entire outside world. And we're going to do that by searching with natural language,
+[00:02:52.400 --> 00:03:00.400]   which is ideal when it comes to our LLM, because our LLM works with natural language. So we
+[00:03:00.400 --> 00:03:04.640]   interact with LLM using natural language, and then we search with natural language.
+[00:03:04.640 --> 00:03:11.920]   And what that will allow us to do is we'll ask a question, we'll get relevant information about
+[00:03:11.920 --> 00:03:19.280]   that question from somewhere else. And we get to feed that relevant information plus our original
+[00:03:19.280 --> 00:03:25.920]   question back into the LLM, giving it access. So this is what we would call source knowledge,
+[00:03:25.920 --> 00:03:29.760]   rather than parametric knowledge. Now, part of this is that embedding model.
+[00:03:29.760 --> 00:03:38.320]   So the embedding model is how we build this retrieval system. It's how we translate human
+[00:03:38.320 --> 00:03:45.280]   readable text into machine readable vectors. And we need machine readable vectors in order to
+[00:03:45.280 --> 00:03:51.040]   perform a search and to perform it based on semantic meaning, rather than my traditional
+[00:03:51.040 --> 00:03:56.880]   search, which would be more on keywords. So in the spirit of going with open source or open access
+[00:03:56.880 --> 00:04:02.400]   models, as is the case with LLAMA2, we're going to use a open source model. So we're going to
+[00:04:02.400 --> 00:04:08.000]   use the Sentence Transformers library. If you've been watching my videos for a while, this will be
+[00:04:08.000 --> 00:04:17.440]   kind of like a flashback to a little while ago. So we used Sentence Transformers a lot before the
+[00:04:17.440 --> 00:04:25.280]   whole open AI chatty petite thing I kicked off. Now, this model here is a very small model,
+[00:04:25.280 --> 00:04:30.560]   super easy to run. You can run it on CPU. Okay. Let's have a look at how much RAM I just used.
+[00:04:30.560 --> 00:04:37.680]   Okay. At the moment, it seems like we're not really even using any. So I think it may need
+[00:04:37.680 --> 00:04:42.800]   to wait until we actually start creating embeddings, which we do next. So you can see
+[00:04:42.800 --> 00:04:47.840]   that we're using the CUDA device. Here, we're going to create some embeddings. Okay. You see
+[00:04:47.840 --> 00:04:54.320]   that we're using some GPU RAM now, but very little, 0.9 gigabytes, which is nothing. That's pretty
+[00:04:54.320 --> 00:04:59.280]   cool. So what we've done here is we've created these two documents or chunks of text. We embed
+[00:04:59.280 --> 00:05:05.520]   them using our embedding model. So if I just come up to here, the way that we've initialized our
+[00:05:05.520 --> 00:05:10.400]   Sentence Transformer is a little different to how I used to do it. So we've essentially
+[00:05:10.400 --> 00:05:17.520]   initialized it through HuggingFace. And then we have actually loaded that into the LangChain
+[00:05:17.520 --> 00:05:23.600]   HuggingFace embeddings object. Okay. So we're using HuggingFace via LangChain to use Sentence
+[00:05:23.600 --> 00:05:28.240]   Transformers. So there's a few abstractions there, but this will make things a lot easier for us
+[00:05:28.240 --> 00:05:38.640]   later on. Okay. Cool. And let's onto this. So we have loaded our embedding model. We have two
+[00:05:38.640 --> 00:05:42.560]   document embeddings. That's because we have two documents here. And each of those has a
+[00:05:42.560 --> 00:05:48.640]   dimensionality of 384. Now with OpenAI, for comparison, we're going to be embedding to a
+[00:05:48.640 --> 00:05:58.320]   dimensionality of 1,536, I think it is. So with this, you can, particularly with Pinecone, the
+[00:05:58.320 --> 00:06:04.640]   vector database I'm talking about later, you can fit in five of these for every one OpenAI embedding.
+[00:06:04.640 --> 00:06:11.600]   The performance is less with these, to be honest, but it kind of depends on your use case. A lot of
+[00:06:11.600 --> 00:06:16.480]   the time, you don't need the performance that OpenAI embeddings gives you. Like in this example,
+[00:06:17.360 --> 00:06:24.480]   it actually works really well with this very small model. So that's pretty useful. Now, yeah,
+[00:06:24.480 --> 00:06:30.400]   let's move on to the Pinecone bit. So when we're going to create our vector database and build our
+[00:06:30.400 --> 00:06:37.120]   vector index. So to do that, we're going to need a free Pinecone API key. So I'm going to click on
+[00:06:37.120 --> 00:06:45.600]   this link here. That's going to take us to here, app.pinecone.io. I'm going to come over to my
+[00:06:45.600 --> 00:06:52.880]   default project, zoom in a little bit here, and go to API keys, right? And we need the environment
+[00:06:52.880 --> 00:07:00.080]   here. So us-west1-gcp, remember that, or for you, this environment will be different. So whatever
+[00:07:00.080 --> 00:07:05.200]   environment you have next to your API key, remember that, and then just copy your API key. Come back
+[00:07:05.200 --> 00:07:09.360]   over to here. You're going to put in your API key here, and you're also going to put in that
+[00:07:09.360 --> 00:07:18.000]   environment or the cloud region. So it was us-west1-gcp for me. Okay. And I initialize that
+[00:07:18.000 --> 00:07:23.600]   with my API key. And now we move on to the next cell. So in this next cell, we're going to
+[00:07:23.600 --> 00:07:28.960]   initialize the index, basically just create where we're going to store all of our vectors that we
+[00:07:28.960 --> 00:07:33.920]   create with that embedding model. There are a few items here. So dimension, this needs to match
+[00:07:33.920 --> 00:07:39.440]   the dimensionality of your embedding model. We already found ours before. So it's this 3, 8, 4.
+[00:07:39.440 --> 00:07:44.800]   So we feed that into there. And then the metric, metrics can change depending on your embedding
+[00:07:44.800 --> 00:07:51.600]   model. With OpenAI's R002, you're going to be using, you can use either cosine or dot product.
+[00:07:51.600 --> 00:07:57.680]   With open source models, it varies a bit more. Sometimes you have to use cosine. Sometimes you
+[00:07:57.680 --> 00:08:02.160]   have to use dot product. Sometimes you have to use Euclidean, although that one is a little less
+[00:08:02.160 --> 00:08:08.080]   common. So it's worth just checking. You can usually find in the model cards on Huggingface
+[00:08:08.080 --> 00:08:15.840]   which metric you need to use, but most common, the kind of go-to is cosine. All right, cool. So
+[00:08:15.840 --> 00:08:22.640]   we initialize that. Okay, cool. So that initialize, it does take a minute. For me, it was like a
+[00:08:22.640 --> 00:08:30.400]   minute right now. And then we want to connect to the index. So we do, I go index, index name,
+[00:08:30.400 --> 00:08:34.400]   and then we can describe that index as well, just to see what is in there at the moment,
+[00:08:34.400 --> 00:08:44.480]   which should for now be nothing. Okay, cool. Now with the index ready and the embedding ready,
+[00:08:44.480 --> 00:08:51.040]   we're ready to begin populating our database. Okay. So just like a typical traditional database
+[00:08:51.040 --> 00:08:57.040]   with a vector database, you need to put things in there in order to retrieve things from that
+[00:08:57.040 --> 00:09:02.160]   database later on. So that's what we're going to do now. So we're going to come down to here.
+[00:09:02.160 --> 00:09:09.920]   I quickly just pulled this together. It's essentially a small dataset. I think it's
+[00:09:09.920 --> 00:09:17.840]   just around 5,000 items in there. And it just contains chunks of text from the LLAMA2 paper
+[00:09:17.840 --> 00:09:26.320]   and a few other related papers. So I just built that by kind of going through the LLAMA2 paper
+[00:09:26.320 --> 00:09:31.600]   and extracting the references and extracting those papers as well. And just kind of like
+[00:09:31.600 --> 00:09:38.160]   repeating that loop a few times. All right. So once we download that, we come down to here,
+[00:09:38.160 --> 00:09:44.480]   we're going to convert that HuggingFace dataset. So this is using HuggingFace datasets. We're going
+[00:09:44.480 --> 00:09:51.360]   to convert that into a pandas data frame. And we're specifying here that we would like to upload
+[00:09:51.360 --> 00:09:59.120]   everything in batches of 32. Honestly, we could definitely increase that to like 100 or so,
+[00:09:59.120 --> 00:10:04.800]   but it doesn't really matter because it's not a big dataset. It's not going to take long to
+[00:10:04.800 --> 00:10:09.680]   push everything to Pinecone. So let's just have a look at this loop. We're going through in these
+[00:10:09.680 --> 00:10:19.920]   batches of 32. We are getting our batch from the data frame. We're getting IDs first. Then we get
+[00:10:19.920 --> 00:10:25.120]   the chunks of texts from the data frame, and then we get our metadata from the data frame.
+[00:10:25.120 --> 00:10:30.400]   So maybe what would actually be helpful here is if I just show you what's in that data frame.
+[00:10:30.400 --> 00:10:39.760]   So data.head. Okay. So you can see here, we just have a chunk ID. So I'm going to use,
+[00:10:39.760 --> 00:10:46.160]   I think I use DOI and chunk ID to create the ID for each entry. Yeah. And then we have the chunk,
+[00:10:46.160 --> 00:10:52.240]   which is just like a chunk of text. Okay. You can kind of see that here. We have the paper IDs,
+[00:10:52.240 --> 00:10:58.000]   the title of the paper, some summaries, the source, several other things in there. Okay.
+[00:10:58.000 --> 00:11:02.960]   But we don't need all of that. So for the metadata, we actually just keep the text,
+[00:11:02.960 --> 00:11:10.080]   the source, and the title. And yeah, we can run that. It should be pretty quick. Okay. So that
+[00:11:10.080 --> 00:11:17.120]   took 30 seconds for me. You can also, I kind of forgot to do this, but you can do from TQDM,
+[00:11:17.120 --> 00:11:24.960]   auto import TQDM, and you can add like a progress bar so that you can actually see the progress
+[00:11:24.960 --> 00:11:34.800]   like that. Okay. So that's just a little bit nicer if you would rather not just be staring at a
+[00:11:34.800 --> 00:11:41.680]   cell doing something. Okay. Cool. So now if we describe index sets, we should see about 5,000
+[00:11:41.680 --> 00:11:48.000]   vectors in there. Okay. So it's pretty cool. Now what we're going to do, so we have our index like
+[00:11:48.000 --> 00:11:55.920]   database ready. What we want to do now is we want to add in the LLM. So we want to add in LLM2.
+[00:11:55.920 --> 00:12:00.160]   To do that, we're going to be using the text generation pipeline from HuggingFace. And then
+[00:12:00.160 --> 00:12:05.520]   we're going to be loading that into the line chain. We're going to be using the LLM2 13-bit
+[00:12:05.520 --> 00:12:14.880]   chat model, which you can see here and everything that comes with that. I've explained this stuff
+[00:12:14.880 --> 00:12:19.840]   here. So like how to load the model, the quantization, everything else several times.
+[00:12:19.840 --> 00:12:25.040]   So I'm not going to go through that again. If you do want to go through that, it's in the video that
+[00:12:25.040 --> 00:12:30.400]   I linked earlier, the previous LLM2 video. But what I will do is show you how to get this HuggingFace
+[00:12:30.400 --> 00:12:38.160]   authentication token. So for that, we go to HuggingFace.co. We want to go to your profile
+[00:12:38.160 --> 00:12:44.480]   icon at the top here, settings, and then you go to access tokens. You would have to create a new
+[00:12:44.480 --> 00:12:49.440]   token here. I've already created mine. Just make it a read token. You can use a write if you want,
+[00:12:49.440 --> 00:12:53.840]   but it just gives more permissions that you don't need for this. But I've created mine here. I'm
+[00:12:53.840 --> 00:13:02.160]   just going to copy it and I will put it into this string here and we run that. That's just going to
+[00:13:02.160 --> 00:13:08.640]   load everything. So we need that authentication token because LLM2, all those models, you need
+[00:13:08.640 --> 00:13:15.600]   permission to use them. You get that by signing up through Meta's forms and everything, as I
+[00:13:15.600 --> 00:13:21.840]   mentioned earlier. So you need to, in this case, which you don't for every model on HuggingFace,
+[00:13:21.840 --> 00:13:28.240]   but for this model, you do need to authenticate yourself. Okay. So that will take a moment to
+[00:13:28.240 --> 00:13:36.240]   load. Just note here, I'm using a GPU and then I am switching the model to like evaluation mode.
+[00:13:36.240 --> 00:13:43.840]   And actually, sorry, we don't need to use that GPU code here because the device actually figures
+[00:13:43.840 --> 00:13:50.160]   it out by itself. But it's good to make sure that we actually are using CUDA. So that would just
+[00:13:50.160 --> 00:13:56.160]   print out down here. It should print out something like model loaded on CUDA zero. So this will take
+[00:13:56.160 --> 00:14:03.600]   a moment to load. So I'll just skip ahead to when it's ready. Okay. So that has finished loading.
+[00:14:03.600 --> 00:14:11.040]   It took eight minutes and we can see that the GPU memory has gone up to 8.2 gigabytes. So it's using
+[00:14:11.040 --> 00:14:17.680]   more now, considering also that that 1.2 gigabytes of that was used by the mini LLM model. We're
+[00:14:17.680 --> 00:14:23.040]   using like seven gigabytes for this quantized version of the model, which is pretty cool.
+[00:14:23.040 --> 00:14:27.920]   Now I'm slowing the tokenizer, the pipeline. Again, I went through all this stuff before,
+[00:14:27.920 --> 00:14:33.840]   so I'm not going to go through it again. And then what we do is just initialize that in
+[00:14:33.840 --> 00:14:40.240]   line chain. So now we can start using all the different line chain utilities. So come down to
+[00:14:40.240 --> 00:14:45.760]   here, what we need to do is initialize the retrieval QA chain. So this is like the simplest
+[00:14:45.760 --> 00:14:54.000]   form of reg that you can get in for your LLMs. So for that, for retrieval QA chain, we need a
+[00:14:54.000 --> 00:15:02.240]   vector store, which is like another line chain object and our LLM, which we already have. So
+[00:15:02.240 --> 00:15:08.560]   let's initialize our vector store and we just confirmed that it works. So we have this query.
+[00:15:08.560 --> 00:15:13.920]   I'm going to do a similar search. So this is not using the LLM or here, this is just retrieving
+[00:15:13.920 --> 00:15:19.600]   what it believes are relevant documents. Now it's kind of hard to read these, to be honest,
+[00:15:19.600 --> 00:15:25.600]   I at least struggle, but we'll see in a moment that the LLM does actually manage to get good
+[00:15:25.600 --> 00:15:32.960]   information from these. So we create our reg pipeline like so, so we just pass in our LLM,
+[00:15:32.960 --> 00:15:37.040]   our retriever and the chain type. Chain type basically just means it's going to stuff all
+[00:15:37.040 --> 00:15:45.040]   of the context into the context window of the LLM query. And then we can begin asking questions. So
+[00:15:45.040 --> 00:15:55.120]   let's begin by asking what is so special about LLAMA2? We run that. This will take, again,
+[00:15:55.120 --> 00:16:00.160]   we're using the smallest GPU possible here. So it's going to take a little bit of time.
+[00:16:00.160 --> 00:16:06.720]   Also the quantization set that we use to make this model so small adds time to the processing.
+[00:16:06.960 --> 00:16:13.200]   Or inference speeds. So we do have to wait a moment. Okay. And we get our response. It took
+[00:16:13.200 --> 00:16:18.640]   like a minute. Again, if you actually want to run this in production, you're probably going to want
+[00:16:18.640 --> 00:16:25.920]   more GPU power and also not to quantize the model. So yeah, we get this. It's talking about actual
+[00:16:25.920 --> 00:16:31.520]   LLAMAs. It just tells us a load of random things like their coats can be a variety of colors.
+[00:16:31.520 --> 00:16:37.600]   They are silky, I think it says somewhere. I know it did in the previous output. They're calm,
+[00:16:37.600 --> 00:16:43.600]   so on and so on. We don't need that. So what we actually want to ask about is LLAMA2, the
+[00:16:43.600 --> 00:16:50.480]   large language model. So now what we're going to do is run it through our REG pipeline and see what
+[00:16:50.480 --> 00:16:57.120]   we get. Okay. So that was 30 seconds to run. I think maybe the first time that you run the model
+[00:16:57.120 --> 00:17:02.240]   it's a little bit slower. But yeah, that was quicker. So we get LLAMA2 is a collection of
+[00:17:02.240 --> 00:17:07.360]   pre-trained fine-tuned large language models. Additionally, they're considered a suitable
+[00:17:07.360 --> 00:17:13.120]   substitute for closed-source models like ChatGT, BARD, and Cloud. They are optimized for dialogue
+[00:17:13.120 --> 00:17:18.480]   and outperform open-source chat models on most benchmarks tested, which I think is the special
+[00:17:18.480 --> 00:17:26.880]   thing about LLAMA2. Cool. Now, let's try some more questions. I'll save that REG example.
+[00:17:26.880 --> 00:17:32.640]   It works a lot better. So what safety measures we use in the development of LLAMA2? Just using
+[00:17:32.640 --> 00:17:39.600]   the LLM without retrieval augmentation, we get this. So it just, I don't even know what it's
+[00:17:39.600 --> 00:17:44.080]   talking about. It kind of just, it's almost like it's rambling about something. I'm not sure what
+[00:17:44.080 --> 00:17:49.600]   that something is, but yeah, not a good answer. Now, if we look at what we get with retrieval
+[00:17:49.600 --> 00:17:54.480]   augmentation, we get the development of LLAMA2 included safety measures, such as pre-training,
+[00:17:54.480 --> 00:18:00.320]   fine-tuning, and model safety approaches. The release of the 34 billion parameter model was
+[00:18:00.320 --> 00:18:07.680]   delayed because they didn't have time to red team. That's a pretty good answer, but let's ask a
+[00:18:07.680 --> 00:18:13.760]   little more about the red teaming procedures. I'm not going to bother asking the LLM because it
+[00:18:13.760 --> 00:18:19.200]   clearly isn't capable of giving us good answers here. So let's just go straight for the retrieval
+[00:18:19.200 --> 00:18:28.000]   augmented pipeline. So we asked what are the red teaming procedures for LLAMA2 and it describes,
+[00:18:28.000 --> 00:18:33.280]   okay, red teaming procedures used for LLAMA2 included creating prompts that might elicit
+[00:18:33.280 --> 00:18:40.400]   unsafe or undesirable responses from the model, such as sensitive topics or prompts that could
+[00:18:40.400 --> 00:18:46.560]   cause harm if the model was spun inappropriately. These exercises were performed by a set of experts
+[00:18:47.360 --> 00:18:52.400]   and it also notes that the paper mentions that multiple additional rounds of red team
+[00:18:52.400 --> 00:18:59.920]   were performed over several months to ensure the robustness of the model. Cool. Now, let's ask one
+[00:18:59.920 --> 00:19:05.600]   more final question. How does the performance of LLAMA2 compare to other local LLMs? The performance
+[00:19:05.600 --> 00:19:10.160]   of LLAMA2 is compared to other local LLMs such as Chinchilla and Bard in the paper, although I
+[00:19:10.160 --> 00:19:18.480]   wouldn't call Bard a local LLM. Fine. Specifically, the authors report that LLAMA2 outperforms the
+[00:19:18.480 --> 00:19:23.760]   other models on the series of helpfulness and safety benchmarks that they tested. LLAMA2 appears
+[00:19:23.760 --> 00:19:28.080]   to be on par with some of the closed source models, at least on the human evaluations they
+[00:19:28.080 --> 00:19:36.080]   performed. So that would be models like GPT 3.5, which is, seems a little bit better than LLAMA2,
+[00:19:36.080 --> 00:19:41.680]   but not by that much. Except for my coding stuff. Coding stuff, LLAMA2 is pretty terrible.
+[00:19:41.680 --> 00:19:50.880]   Everything else, it seems pretty good. Now, yeah, that's the example. We can see very clearly that
+[00:19:50.880 --> 00:19:57.440]   retrieval augmentation works a lot better than without retrieval augmentation. That's why this
+[00:19:57.440 --> 00:20:04.720]   sort of technique is super powerful. It means your LLM can answer questions about more up-to-date
+[00:20:04.720 --> 00:20:10.880]   topics, which it can't otherwise. It means it can answer questions about, like if you have,
+[00:20:10.880 --> 00:20:15.360]   maybe you work in an organization, you have internal documents, it means it can answer
+[00:20:15.360 --> 00:20:23.760]   questions about that. So overall, retrieval augmentation in most cases is really useful.
+[00:20:23.760 --> 00:20:29.520]   Now that's it for this video. I hope this has been useful and interesting.
+[00:20:29.520 --> 00:20:34.320]   So thank you very much for watching and I will see you again in the next one. Bye.
+[00:20:34.320 --> 00:20:47.520]   [Music]
+

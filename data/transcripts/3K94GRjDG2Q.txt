@@ -1,0 +1,143 @@
+
+[00:00:00.000 --> 00:00:08.080]   Today we're going to go through an example of using named entity recognition alongside a vector
+[00:00:08.080 --> 00:00:16.240]   search and this is a really interesting way of just making sure our search is very much focused
+[00:00:16.240 --> 00:00:22.240]   on exactly whatever it is we're looking for. So for example if we are going to search through
+[00:00:22.240 --> 00:00:32.080]   articles and we are searching for something to do with Tesla we can use this to restrict the search
+[00:00:32.080 --> 00:00:38.640]   whatever it is we're looking for maybe we're looking for some news about Tesla for self-driving
+[00:00:38.640 --> 00:00:46.800]   and using this we're going to restrict search scope for full self-driving to specifically articles or
+[00:00:46.800 --> 00:00:53.840]   parts of articles that contain the named entity Tesla. Now I think this is a really interesting
+[00:00:53.840 --> 00:01:01.680]   use case and can definitely help making search more specific. So let's jump in to the example.
+[00:01:01.680 --> 00:01:09.280]   So we're working from this example page on Pinecone so pinecone.io/examples/nersearch
+[00:01:09.280 --> 00:01:15.120]   and Ashok thought of this and put all this together. Yeah I think it's a really cool
+[00:01:15.120 --> 00:01:20.880]   example. So we'll work through the code. So to get started I'm going to come over to Colab here
+[00:01:20.880 --> 00:01:26.160]   and I'm just going to install a few dependencies. So sentence transformers, pinecone client and
+[00:01:26.160 --> 00:01:34.000]   datasets. Okay so that will just install everything. Okay great and then we can
+[00:01:34.000 --> 00:01:38.960]   download the dataset that we're going to be using. So we're going to go from datasets,
+[00:01:40.320 --> 00:01:44.640]   import load dataset. We are going to be using
+[00:01:44.640 --> 00:01:55.920]   this dataset here. So it's a medium articles dataset. I'll go search right here. Okay and
+[00:01:55.920 --> 00:02:04.000]   it's just it contains a ton of articles straight from medium. So to use that we use
+[00:02:04.000 --> 00:02:09.760]   the name of the dataset from here and we're going to load it into a
+[00:02:10.400 --> 00:02:19.360]   hooking face data frame. So data files, medium articles, csv
+[00:02:19.360 --> 00:02:28.800]   and we want to train split. Okay if we have a look at that or we have a look at the head
+[00:02:28.800 --> 00:02:37.120]   after converting it to a pandas data frame. So to pandas. I'll just take a moment to download.
+[00:02:37.120 --> 00:02:44.880]   Okay and then zoom out a little bit so you can see what we have here. So title, text, url and
+[00:02:44.880 --> 00:02:50.720]   a few other things in here. Okay so obviously the text is going to be the main part for us
+[00:02:50.720 --> 00:02:59.040]   and what we will also do is just drop a few of these. So drop any where we have just empty rows.
+[00:02:59.040 --> 00:03:06.400]   So that's this the drop na here and then we're going to sample at random 50,000 of these articles
+[00:03:06.400 --> 00:03:12.880]   and we'll do that with a random state of 32. Essentially this is so you can get the same
+[00:03:12.880 --> 00:03:21.040]   50,000 articles that I will get here as well. Okay cool now for each article I mean there's a
+[00:03:21.040 --> 00:03:26.800]   few things we could do in putting the embeddings together. So we're going to have to create
+[00:03:26.800 --> 00:03:33.200]   embeddings for every single article here. What we could do is split the article into parts
+[00:03:33.200 --> 00:03:38.000]   because our embedding models can only handle so many words at one time. So we could split
+[00:03:38.000 --> 00:03:43.280]   the article into parts and embed all those different parts but in this case we can usually
+[00:03:43.280 --> 00:03:48.560]   get an idea of what the article will talk about based on the title and usually the introduction.
+[00:03:48.560 --> 00:03:56.080]   So what we'll do is actually take the first 1,000 characters. So what you can see here there
+[00:03:56.080 --> 00:04:02.240]   and then we're just going to join the article title and the text and we'll keep all that within
+[00:04:02.240 --> 00:04:09.680]   the title text feature. So we'll go df head again maybe we can just have a look at title text so
+[00:04:09.680 --> 00:04:22.480]   let's do that. Okay so we have this now the next thing to do or that we want to do is initialize
+[00:04:22.480 --> 00:04:32.080]   our NER model. So initialize NER model. Now how do we do that? So we're going to be using
+[00:04:32.080 --> 00:04:35.680]   a hugging face for this. So I'll just copy the code in.
+[00:04:35.680 --> 00:04:44.800]   We have all of this so this is a NER pipeline with an NER model. So we have this DSLIM
+[00:04:44.800 --> 00:04:52.000]   database for NER named entity recognition. We have our tokenizer the model itself and then we
+[00:04:52.000 --> 00:04:58.160]   just load all that into our pipeline. We need to select our device so if we have a GPU running
+[00:04:58.160 --> 00:05:05.840]   we will want to use a GPU it will be much faster. So I'm going to import torch and what we're going
+[00:05:05.840 --> 00:05:19.040]   to do is say device equals CUDA if a CUDA device is available. So torch dot CUDA is available
+[00:05:19.040 --> 00:05:28.160]   otherwise we're just going to use CPU. Now if you are on colab what you can do to make
+[00:05:28.160 --> 00:05:36.720]   sure you are going to be using GPU is go to runtime change runtime type and here change this
+[00:05:36.720 --> 00:05:44.560]   to GPU. Okay so mine wasn't set to GPU so now I need to change it save and actually rerun everything.
+[00:05:44.560 --> 00:05:51.440]   So I'll go ahead and do that. Okay so that all just reran and what I'm going to do is just print
+[00:05:51.440 --> 00:05:58.880]   the device here so that we can see that we are in fact using CUDA hopefully. Okay cool
+[00:05:58.880 --> 00:06:06.400]   and then here we will run all this and that will just download and initialize the model as well
+[00:06:06.400 --> 00:06:14.320]   so it may take a moment. Okay so after that let's try it on a quick example. So we have London,
+[00:06:14.320 --> 00:06:20.960]   Qatar, England and the United Kingdom. So we would expect a few named entities to be within this so
+[00:06:20.960 --> 00:06:30.320]   let's run that and see what we return. Okay with this maybe I need to here maybe we write torch
+[00:06:30.320 --> 00:06:44.880]   device this. Okay cool so here we have a few things so we have a location this is the entity type
+[00:06:44.880 --> 00:06:52.320]   London. Okay cool that is definitely true location again England and location again United Kingdom.
+[00:06:52.880 --> 00:07:00.080]   Okay all great so that's definitely working so let's move on to creating our embeddings.
+[00:07:00.080 --> 00:07:06.640]   So to create those embeddings we will need a retrieve model. So to initialize that we're
+[00:07:06.640 --> 00:07:12.160]   going to be using the sentence transformers library that will look something like this.
+[00:07:12.160 --> 00:07:18.400]   So from sentence transformers import sentence transformer and then we initialize this model
+[00:07:18.400 --> 00:07:23.200]   here. So this is just a it's a pretty good sentence transformer model that's been trained on
+[00:07:23.200 --> 00:07:31.680]   a lot of examples so the performance is generally really good. Okay now we can see the model format
+[00:07:31.680 --> 00:07:40.560]   here so we have match sequence 128 tokens word embedding dimension here 768 so that's how
+[00:07:40.560 --> 00:07:48.080]   big the sentence embeddings will be sentence vectors and we can use this model to create
+[00:07:48.080 --> 00:07:51.760]   our embeddings but we need something to store our embeddings and for that we're going to be using
+[00:07:51.760 --> 00:08:00.160]   Pinecone so we will initialize that so for that we will need to do this. So import Pinecone
+[00:08:00.160 --> 00:08:05.280]   initialize our connection to Pinecone and for that we need an API key which is
+[00:08:05.280 --> 00:08:10.960]   free and we can get it from here so app.pinecone.io
+[00:08:13.920 --> 00:08:19.600]   we need to log in here now you probably just have one project in here which would probably be
+[00:08:19.600 --> 00:08:26.960]   your name default project so go into that you go to API keys and you just press copy
+[00:08:26.960 --> 00:08:34.400]   on your API key here and then you just paste it into here now I put my API key into a variable
+[00:08:34.400 --> 00:08:46.160]   called API key and with that we can initialize that connection now we'll create a new index
+[00:08:46.160 --> 00:08:51.360]   called NER search and we do that with Pinecone
+[00:08:51.360 --> 00:08:59.680]   create index and this index there's a few things that we need here so
+[00:09:01.680 --> 00:09:02.400]   create index
+[00:09:02.400 --> 00:09:13.200]   we need the index name the dimensionality so dimension now this is going to be equal to the
+[00:09:13.200 --> 00:09:20.240]   retriever model that we just created that includes a embedding dimension and we actually have that
+[00:09:20.240 --> 00:09:27.280]   up here it's 768 but we're going to we're not going to hard code it we're just going to get
+[00:09:27.280 --> 00:09:34.000]   from here so get sentence embedding dimension let me see yeah this here
+[00:09:34.000 --> 00:09:44.240]   okay so if we just have a look at what that will give us should be 768 yeah and then we also want
+[00:09:44.240 --> 00:09:51.280]   to use the cosine similarity metric and then that will go ahead and create our index after it's been
+[00:09:51.280 --> 00:09:57.440]   created we'll connect to it so we do Pinecone index and we just use the index name again
+[00:09:57.440 --> 00:10:04.960]   and then we can describe the index just to see what is in there which should be nothing
+[00:10:04.960 --> 00:10:17.120]   okay cool so we have dimensionality you can see that the index is empty as we haven't added
+[00:10:17.120 --> 00:10:24.480]   anything into it yet so the next thing is actually preparing all of our data to be added to Pinecone
+[00:10:24.480 --> 00:10:29.920]   and allowing us to do this search so what we're going to do first is initialize this
+[00:10:29.920 --> 00:10:36.560]   extract named entities function which is going to extract for a batch of text it's going to
+[00:10:36.560 --> 00:10:44.640]   extract named entities for each one those text records so let's initialize that and then what
+[00:10:44.640 --> 00:10:50.320]   we're going to do is just have a look at how it will work so extract named entities
+[00:10:50.320 --> 00:11:00.480]   and in there we're just going to pass the data that we have is called df title text
+[00:11:00.480 --> 00:11:12.080]   what we'll do is maybe turn this into a list yeah let's do that so df title text i want to go
+[00:11:12.080 --> 00:11:18.800]   for the first let's say the first three items okay and we'll turn into a list isn't already a list
+[00:11:18.800 --> 00:11:25.440]   there okay cool so the first one we get data christmas anonymous america light switch so on
+[00:11:25.440 --> 00:11:30.240]   and so on and yeah you can you can see we're getting those entities that are being extracted
+[00:11:30.240 --> 00:11:37.200]   from there so that is working and what we can do now is actually loop through the full data set or
+[00:11:37.200 --> 00:11:45.120]   the full 50 000 that we have extracted and we're just going to we're going to do this so let me
+[00:11:45.120 --> 00:11:50.480]   walk walk you through all this so we're going to be doing everything in batches of 64 that's to
+[00:11:50.480 --> 00:11:56.880]   avoid overwhelming our gpu which is going to be encoding everything in batches of 64 and also when
+[00:11:56.880 --> 00:12:02.880]   we're sending these requests to pinecone we can't send too many or too large requests at any one
+[00:12:02.880 --> 00:12:09.760]   time so with 64 we're pretty safe here we're going to find the end of the batch so we're going
+[00:12:09.760 --> 00:12:15.760]   in batches 64 from i to i end obviously when you get to the ended data set the batch size will
+[00:12:15.760 --> 00:12:22.400]   probably be smaller because we probably don't have the data set fitting into perfect 64 batch sizes
+[00:12:22.400 --> 00:12:29.520]   okay and then we extract the batch generate those embeddings extract the name entities using our
+[00:12:29.520 --> 00:12:35.680]   function if there are any duplicates so we might have the same name entity a few times and in a
+[00:12:35.680 --> 00:12:41.920]   single sentence of course or single paragraph in that case we don't need to do that because we're
+[00:12:41.920 --> 00:12:48.960]   just going to be filtering so we actually only need one instance of the named entity so to do
+[00:12:48.960 --> 00:12:56.400]   that we just deduplicate our entities here and convert it back into a list and then what we're
+[00:12:56.400 --> 00:13:03.440]   doing here is we're dropping the title text from our batch because we actually don't need that
+[00:13:03.440 --> 00:13:08.080]   right here because we've just extracted our named entities and that's all we care about at the
+[00:13:08.080 --> 00:13:14.720]   moment and then from there we create our metadata so this is going to be some metadata that we saw
+[00:13:14.720 --> 00:13:22.320]   in the dictionary like format in pinecone create our unique ids which is count and we upset
+[00:13:22.320 --> 00:13:29.120]   everything or add everything to upset list and upset so we can run that it will possibly take
+[00:13:29.120 --> 00:13:36.240]   a little while to run may have to just deal with this quickly so entities
+[00:13:36.240 --> 00:13:46.000]   can contain a list so probably the best way to deal with that is within the function here so
+[00:13:46.000 --> 00:13:52.720]   let's come up here and what we'll do is just convert into a or remove the duplicates here so
+[00:13:52.720 --> 00:14:01.680]   any equals list set any okay and then we don't have to do it here so I can remove that
+[00:14:01.680 --> 00:14:07.200]   and we'll just call this suppose batch named entities
+[00:14:12.640 --> 00:14:18.560]   okay cool so let's try and run that again great so that looks like it will work it will take a
+[00:14:18.560 --> 00:14:26.080]   little bit of time so I will leave that to run and when it's complete we'll go through the actual
+[00:14:26.080 --> 00:14:34.400]   making queries and see how that works okay so that is done I've just run it on a another fast
+[00:14:35.360 --> 00:14:39.920]   computer so we should be able to describe the index stats here and we should see
+[00:14:39.920 --> 00:14:50.080]   50,000 items the one thing here is I need to just refresh the connection so let me do that quickly
+[00:14:50.080 --> 00:14:56.320]   so we'll come here I am going to run this again and I'm also going to run this without the create
+[00:14:56.320 --> 00:15:06.960]   index come down here run this here we go so we have 50,000 vectors in there now and what we want
+[00:15:06.960 --> 00:15:15.200]   to do is use this here so this is going to search through pine cone so we're going to have our query
+[00:15:15.200 --> 00:15:22.320]   here we're going to extract the named entities from our query embed our query and what we do is
+[00:15:22.320 --> 00:15:29.120]   query with our embedded query with our query vector which is this xq we're going to return
+[00:15:29.120 --> 00:15:36.720]   the top 10 most similar matches we're going to include metadata for those matches and importantly
+[00:15:36.720 --> 00:15:44.560]   for the named entity part of this or named entity filtering what we do is we filter for named
+[00:15:44.560 --> 00:15:56.560]   entities that are within the list that we have here so let's run that this will just return all
+[00:15:56.560 --> 00:16:03.360]   the metadata that we have there so the the titles that we that we might want from that and what we
+[00:16:03.360 --> 00:16:09.680]   do is simply make a few queries so what are the best places to visit in greece will be our first
+[00:16:09.680 --> 00:16:18.720]   growth and we get these titles here so budget-friendly holidays was the best summer destination
+[00:16:18.720 --> 00:16:25.600]   greece exploring greece santorini island yeah all i think pretty seem like pretty relevant articles
+[00:16:25.600 --> 00:16:35.760]   to me ask a few more questions what the best places to visit in london run this and then we
+[00:16:36.320 --> 00:16:43.360]   get a few more so oh i think pretty relevant again and then let's try
+[00:16:43.360 --> 00:16:47.840]   one slightly different query why spacex wants to build a city on mars
+[00:16:47.840 --> 00:17:01.840]   and here we go so for sure i think all these are definitely very relevant articles to be returned
+[00:17:01.840 --> 00:17:08.800]   okay so that's it for this example covering vector search with this sort of named entity
+[00:17:08.800 --> 00:17:15.840]   filtering component just to try and improve our results and make sure we are searching within a
+[00:17:15.840 --> 00:17:24.240]   space that contains whatever it is we are looking for or just making our search scope more specific
+[00:17:24.240 --> 00:17:30.880]   so i hope this has been interesting and useful thank you very much for watching and i will see
+[00:17:30.880 --> 00:17:43.440]   you again in the next one bye
+

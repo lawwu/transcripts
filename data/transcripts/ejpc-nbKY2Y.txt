@@ -1,0 +1,190 @@
+
+[00:00:00.000 --> 00:00:05.520]   Today we are going to take a look at how to build a semantic search tool using
+[00:00:05.520 --> 00:00:11.420]   Cohere's Embed API endpoint and Pinecone's Vector Database. We'll be
+[00:00:11.420 --> 00:00:17.640]   using Cohere's large language model to embed sentences or paragraphs into a
+[00:00:17.640 --> 00:00:20.920]   vector space and then we'll be using Pinecone's Vector Database to actually
+[00:00:20.920 --> 00:00:25.680]   search through that vector space and retrieve relevant answers to our
+[00:00:25.680 --> 00:00:30.480]   particular queries based on the semantics of those queries rather than
+[00:00:30.480 --> 00:00:35.480]   just keyword matching. Now both of these services together are a pretty good
+[00:00:35.480 --> 00:00:39.440]   combination and they make building this sort of tool incredibly easy as we'll
+[00:00:39.440 --> 00:00:43.680]   see. But before we start building it let's take a look at what the overall
+[00:00:43.680 --> 00:00:46.720]   architecture will look like. So we're gonna be starting with our data it's
+[00:00:46.720 --> 00:00:52.840]   just going to be a load of text it can be split into sentences or roughly
+[00:00:52.840 --> 00:00:58.480]   paragraph sized chunks of text depending on what we're trying to do and what
+[00:00:58.480 --> 00:01:02.880]   we're going to do is feed those into Cohere's embedding endpoint which is
+[00:01:02.880 --> 00:01:08.960]   just going to go to a large language model and what that will do is encode
+[00:01:08.960 --> 00:01:16.740]   each of the chunks of text that we feed into it into a single vector. Now we're
+[00:01:16.740 --> 00:01:22.040]   going to have a thousand of these chunks of text we're gonna have like quite
+[00:01:22.040 --> 00:01:27.840]   small questions from the Tregg data set so we'll end up with a thousand of these
+[00:01:27.840 --> 00:01:34.960]   vectors. Okay and once we have them we then take them we put them into Pinecone
+[00:01:34.960 --> 00:01:41.360]   and whilst they are stored in Pinecone or even just the vectors by themselves
+[00:01:41.360 --> 00:01:45.560]   we can think of them as being you know how this works is that they are
+[00:01:45.560 --> 00:01:51.560]   represented in a vector space. So two of these chunks of text are semantically
+[00:01:51.560 --> 00:01:55.600]   similar i.e. they have a similar meaning they would be very close together in
+[00:01:55.600 --> 00:02:01.360]   that vector space whereas two sentences that have a very dissimilar meaning
+[00:02:01.360 --> 00:02:05.960]   would be very far apart within that vector space. Pinecone is the storage the
+[00:02:05.960 --> 00:02:09.560]   database that stores all these vectors and also allows us to search through these
+[00:02:09.560 --> 00:02:13.600]   vectors very efficiently so we can literally store millions, tens of
+[00:02:13.600 --> 00:02:19.360]   millions, billions of vectors in here and search through them incredibly fast. Now
+[00:02:19.360 --> 00:02:26.000]   all of this together is what we would call indexing and on the other side of
+[00:02:26.000 --> 00:02:31.120]   this we have the querying phase so when we're making queries let's say we have a
+[00:02:31.120 --> 00:02:36.980]   little search box here obviously this input can be anything we like but we
+[00:02:36.980 --> 00:02:41.200]   have a search box here and our users are going to enter a query it's like Google
+[00:02:41.200 --> 00:02:46.560]   search that query will go over to go here first using the same large language
+[00:02:46.560 --> 00:02:54.560]   model and what we will get is a single what we call a query vector so here is
+[00:02:54.560 --> 00:02:59.320]   our query vector in code we usually refer to it as XQ and we're going to
+[00:02:59.320 --> 00:03:04.680]   pass that over to Pinecone here and we're going to say to Pinecone okay with
+[00:03:04.680 --> 00:03:12.680]   this query vector what are the top K so like the number here top K maybe we say
+[00:03:12.680 --> 00:03:17.880]   equal to 3 what are the top K most similar already index vectors so with
+[00:03:17.880 --> 00:03:22.840]   top K equal to 3 if this was our query vector we would return the top 3 most
+[00:03:22.840 --> 00:03:28.040]   similar items here so I think maybe number 1 would be this vector here maybe
+[00:03:28.040 --> 00:03:31.760]   number 2 would be this one and number 3 would be this one and the Pinecone
+[00:03:31.760 --> 00:03:39.040]   would return those to us so we'd have 3 vectors here but obviously we can't read
+[00:03:39.040 --> 00:03:44.440]   or understand what these vectors mean all right they're just numbers so what
+[00:03:44.440 --> 00:03:49.240]   we need to do is find the metadata that was attached to those so the metadata is
+[00:03:49.240 --> 00:03:53.280]   going to contain the original text from there so we would actually get that
+[00:03:53.280 --> 00:03:58.200]   original text and we would return all that to our user so that's what we're
+[00:03:58.200 --> 00:04:01.920]   going to be building it probably looks much more complicated from this chart
+[00:04:01.920 --> 00:04:06.240]   than it actually is it's incredibly easy as we'll see it won't take as long to go
+[00:04:06.240 --> 00:04:10.000]   through so let's get started we are going to using this guide on Pinecone
+[00:04:10.000 --> 00:04:15.520]   so docs.pinecone.io/docs/cohere we're not going to have you go
+[00:04:15.520 --> 00:04:19.000]   through this page here we're actually just going to go over to here opening
+[00:04:19.000 --> 00:04:23.400]   Colab okay and we get this little chart is that pretty much exactly the same as
+[00:04:23.400 --> 00:04:27.600]   what I just explained just a little simpler and we're going to go down here
+[00:04:27.600 --> 00:04:33.600]   and we just need to install a few prerequisites so we have take a look up
+[00:04:33.600 --> 00:04:37.720]   here we have Cohere and Pinecone you know you know why we're using those I
+[00:04:37.720 --> 00:04:41.140]   just mentioned it and then we also have Hugging Face datasets this is where
+[00:04:41.140 --> 00:04:45.160]   we're going to be sourcing our data set from that we're going to be indexing and
+[00:04:45.160 --> 00:04:51.520]   then querying against later on okay it looks good so come down to here and we
+[00:04:51.520 --> 00:04:55.680]   need to sign up for API keys Cohere and Pinecone and both of these we can
+[00:04:55.680 --> 00:05:01.400]   actually do this completely free so Cohere has a trial amount that we can
+[00:05:01.400 --> 00:05:06.920]   query with so we're going to be using that click on Cohere here that will take
+[00:05:06.920 --> 00:05:12.920]   us to os.cohere.ai and it will also just redirect you to the dashboard if
+[00:05:12.920 --> 00:05:15.920]   you're already logged in if this is your first time using Cohere of course you
+[00:05:15.920 --> 00:05:20.840]   will not be so you have to go to the top right over here and create an account or
+[00:05:20.840 --> 00:05:25.400]   log in once you have done that you can go to settings on the left go to API
+[00:05:25.400 --> 00:05:30.480]   keys and you should have a trial key here so I've got the default key I'm
+[00:05:30.480 --> 00:05:34.720]   going to copy that and I'm going to go ahead and put it in here okay so I've
+[00:05:34.720 --> 00:05:39.840]   just put mine in and then for the Pinecone key click here and that will
+[00:05:39.840 --> 00:05:44.040]   take us to app.pinecone.io if you already logged in you will see
+[00:05:44.040 --> 00:05:47.040]   something like this otherwise you're going to see a little login screen or
+[00:05:47.040 --> 00:05:51.560]   create an account page so you go ahead do that and then you should be
+[00:05:51.560 --> 00:05:56.440]   redirected to here now if this first time using Pinecone this will be empty
+[00:05:56.440 --> 00:06:00.800]   you see I have a few indexes in here already but of course if you haven't created any
+[00:06:00.800 --> 00:06:05.280]   already this will be empty so all we need to do is head on over to API keys
+[00:06:05.280 --> 00:06:10.880]   on the left we should have a default API key you can copy that and we will place
+[00:06:10.880 --> 00:06:16.080]   in here okay so I've just added mine so I've got my Cohere and Pinecone keys in
+[00:06:16.080 --> 00:06:19.960]   there first thing we want to do is create our embeddings for that we are going to
+[00:06:19.960 --> 00:06:25.880]   need to use the Cohere embed endpoint and we also need some data so let's get
+[00:06:25.880 --> 00:06:31.440]   both of those so here we just initialize our connection to Cohere using that API
+[00:06:31.440 --> 00:06:35.440]   key from before and then here we're going to use HuggingFace datasets and
+[00:06:35.440 --> 00:06:43.200]   we're going to download the first 1,000 questions from the Trek dataset of first
+[00:06:43.200 --> 00:06:46.640]   1,000 rows actually and then the questions themselves are stored within
+[00:06:46.640 --> 00:06:53.760]   this text feature which we can see down here okay cool after this we are going
+[00:06:53.760 --> 00:06:58.680]   to be using the Cohere embed endpoint we're going to passing all of those
+[00:06:58.680 --> 00:07:02.720]   items so yes you have 1,000 items in there just pass them all to Cohere at
+[00:07:02.720 --> 00:07:06.880]   once and this client will just automatically batch those and iterate
+[00:07:06.880 --> 00:07:11.520]   through everything so we don't overload the API requests we're going to be using
+[00:07:11.520 --> 00:07:15.760]   the small model and we're going to be truncating so we're going to keep
+[00:07:15.760 --> 00:07:20.560]   everything on the left here and then after that we want to extract the
+[00:07:20.560 --> 00:07:24.600]   embeddings from what we return there so we run this it should be pretty quick
+[00:07:24.600 --> 00:07:29.680]   a second super fast and then let's just have a look at the dimensionality of what
+[00:07:29.680 --> 00:07:36.680]   we return there so we have 1,000 vectors each one of those vectors is 1,024
+[00:07:36.680 --> 00:07:42.360]   dimensions which is just the output dimensionality of Cohere's small large
+[00:07:42.360 --> 00:07:48.160]   language model okay and with those embeddings all created we can move on to
+[00:07:48.160 --> 00:07:51.840]   actually initializing our vector index which is where we're going to start
+[00:07:51.840 --> 00:07:56.520]   everything so for that we initialize our connection Pinecone using the API key we
+[00:07:56.520 --> 00:08:00.880]   used before we are going to be using this index name you can change this to
+[00:08:00.880 --> 00:08:04.480]   whatever you want I would just recommend that you keep it descriptive so that
+[00:08:04.480 --> 00:08:08.920]   you're not getting confused if you have multiple indexes later on and then here
+[00:08:08.920 --> 00:08:13.160]   if this is your first time using Pinecone or going through this notebook this will
+[00:08:13.160 --> 00:08:16.840]   just run here so it will create the index if you've already run this
+[00:08:16.840 --> 00:08:21.680]   notebook and the index already exists within your Pinecone account then this
+[00:08:21.680 --> 00:08:27.080]   is going to say if that index name does exist do not create the index again
+[00:08:27.080 --> 00:08:30.120]   because it already exists but it needs to create it again within that create
+[00:08:30.120 --> 00:08:35.200]   index we have the index name the dimensionality so that's the 1,024 that
+[00:08:35.200 --> 00:08:40.320]   we saw before the Cohere small model and also using cosine similarity as the
+[00:08:40.320 --> 00:08:45.360]   similarity metric there as well after that we just go ahead and connect to the
+[00:08:45.360 --> 00:08:50.040]   index so let's run that now once that is all done we're going to move on to
+[00:08:50.040 --> 00:08:54.720]   actually upsetting everything so adding all of those vectors the relevant
+[00:08:54.720 --> 00:09:00.440]   metadata and some unique IDs to our index and that will be in this format so
+[00:09:00.440 --> 00:09:06.000]   we're gonna big list where each record content is within a tuple containing an
+[00:09:06.000 --> 00:09:11.040]   ID a unique ID a vector that we've created from Coheres embed endpoint and
+[00:09:11.040 --> 00:09:15.420]   the metadata which is just going to contain the plain text version of the
+[00:09:15.420 --> 00:09:20.880]   information so come down here and we will go ahead and create that structure
+[00:09:20.880 --> 00:09:26.000]   so that's what we're doing here so creating a zip list of unique IDs which
+[00:09:26.000 --> 00:09:30.640]   are just a count of the embeddings which we've created before Cohere and the
+[00:09:30.640 --> 00:09:34.280]   metadata which you can see we're creating here it's just a dictionary
+[00:09:34.280 --> 00:09:39.760]   metadata is always within the dictionary format and we just have a key
+[00:09:39.760 --> 00:09:45.800]   which is text and the value which is the original plain text of our data now
+[00:09:45.800 --> 00:09:51.840]   appeal using batch size 128 that is so that we're not overloading the API calls
+[00:09:51.840 --> 00:09:57.480]   that we're making to Pinecone and we are actually upsetting in batches of 128
+[00:09:57.480 --> 00:10:02.920]   okay so we can run that at the end here we're going to describe the index
+[00:10:02.920 --> 00:10:08.040]   statistics which is just so we can see the vector count so have we upsert
+[00:10:08.040 --> 00:10:11.400]   everything into our vector index there and we can see here that we have and
+[00:10:11.400 --> 00:10:15.320]   from here we can also change the dimensionality of our index which again
+[00:10:15.320 --> 00:10:23.000]   this should align to the model output dimensionality again the 1024 that we
+[00:10:23.000 --> 00:10:28.800]   saw from before and okay so with that we've actually done all the indexing
+[00:10:28.800 --> 00:10:35.560]   stage of our workflow so we can actually cross off this bit here so the indexing
+[00:10:35.560 --> 00:10:40.760]   part this is all done now all we need to do is the querying part so we can see we
+[00:10:40.760 --> 00:10:44.840]   have our plain text query we're going to take that to Cohere we're going to from
+[00:10:44.840 --> 00:10:49.920]   Cohere we're going to create that query embedding we query that with Pinecone
+[00:10:49.920 --> 00:10:55.360]   and we return some vectors and the metadata with those vectors to the user
+[00:10:55.360 --> 00:11:00.920]   so to do that it's pretty much the same process again we have our query we have
+[00:11:00.920 --> 00:11:05.960]   what caused the 1929 Great Depression we are going to do the exact same thing
+[00:11:05.960 --> 00:11:11.920]   that we did before with the Trek data we are going to use Cohere embed use the
+[00:11:11.920 --> 00:11:16.200]   small model which I'm going to create to the left and we get those embeddings we
+[00:11:16.200 --> 00:11:21.560]   can also print the shape here so let me run this okay so the shape is just one
+[00:11:21.560 --> 00:11:26.480]   vector this time which is our query vector and it's still 1024 dimensionality
+[00:11:26.480 --> 00:11:32.480]   because we're using that small Cohere large language model now from there we
+[00:11:32.480 --> 00:11:36.800]   query Pinecone with this we're saying we want to return the top 10 most similar
+[00:11:36.800 --> 00:11:41.440]   results and we want to include the metadata that includes the plain text so
+[00:11:41.440 --> 00:11:45.800]   that we can actually read the results and we get this sort of response which
+[00:11:45.800 --> 00:11:50.080]   is we can read it relatively easily but let's clean it up a little bit more so
+[00:11:50.080 --> 00:11:53.200]   we come down here run this so we're going to go through each of those
+[00:11:53.200 --> 00:11:57.080]   matches that we returned here and we're just going to print out the score
+[00:11:57.080 --> 00:12:02.560]   rounded so it's be easier to read and we're going to return the metadata text
+[00:12:02.560 --> 00:12:06.720]   and we print all of those out we get something like this now the top two
+[00:12:06.720 --> 00:12:11.320]   results are they have much higher similarity scores than the rest of our
+[00:12:11.320 --> 00:12:16.760]   results and they are indeed far more relevant to our question these would
+[00:12:16.760 --> 00:12:22.200]   clearly be counted as duplicates to our question or at least very similar and
+[00:12:22.200 --> 00:12:26.760]   then the rest of these we can see that these are not directly relevant but I
+[00:12:26.760 --> 00:12:31.240]   think most of these kind of occur within the same sort of time error so it's
+[00:12:31.240 --> 00:12:35.760]   interesting that they it manages to kind of identify some sort of relationship
+[00:12:35.760 --> 00:12:41.600]   there and return those but of course these are the only two within that 1000
+[00:12:41.600 --> 00:12:47.080]   query data set that we have from Trek these are the only two items that refer
+[00:12:47.080 --> 00:12:53.600]   to the Great Depression the rest of them as you can see not relevant at least not
+[00:12:53.600 --> 00:12:58.800]   directly relevant so they're very good results now let's adjust this a little
+[00:12:58.800 --> 00:13:03.400]   bit so I mentioned before that we're searching based on the meaning of these
+[00:13:03.400 --> 00:13:08.360]   queries not the keywords so what we're going to do is replace the keyword
+[00:13:08.360 --> 00:13:13.200]   depression with the incorrect term recession now although it's incorrect
+[00:13:13.200 --> 00:13:17.680]   it's so you know we as humans would understand that it means the same thing
+[00:13:17.680 --> 00:13:22.440]   someone is trying to ask about that specific event and indeed we can see
+[00:13:22.440 --> 00:13:26.000]   that the results are pretty much exactly the same now the similarity scores
+[00:13:26.000 --> 00:13:31.320]   dropped a bit because we're using that incorrect term but nonetheless it is
+[00:13:31.320 --> 00:13:35.880]   identifying that the top two are exactly the same I think most of these are also
+[00:13:35.880 --> 00:13:39.680]   the same there's just a little bit of different order in there and a couple
+[00:13:39.680 --> 00:13:44.200]   that may be dropped from the top there now in this case we still have a lot of
+[00:13:44.200 --> 00:13:49.720]   similar keywords there so maybe recession is very clearly identified as
+[00:13:49.720 --> 00:13:56.840]   depression major with great and so on so maybe we can modify this even more and
+[00:13:56.840 --> 00:14:00.880]   just kind of drop all those similar words and we can be kind of more
+[00:14:00.880 --> 00:14:05.520]   descriptive here as well so why was there a long-term economic downturn in
+[00:14:05.520 --> 00:14:10.640]   the early 20th century so this is very different to the results that we would
+[00:14:10.640 --> 00:14:15.240]   expect to find and yet again we see those two right at the top and the rest
+[00:14:15.240 --> 00:14:19.920]   of these results are also very similar now interestingly I think because we are
+[00:14:19.920 --> 00:14:24.440]   using more descriptive language here it's managing to identify these two as
+[00:14:24.440 --> 00:14:29.840]   being more similar than we did with the previous where we use the incorrect
+[00:14:29.840 --> 00:14:35.320]   result you can see that the similarity score here is lower than it is here so
+[00:14:35.320 --> 00:14:41.720]   you can see already how easy is to build a pretty high-performing semantic search
+[00:14:41.720 --> 00:14:49.040]   engine using very little code and literally no prior knowledge about this
+[00:14:49.040 --> 00:14:53.080]   technology all we do is make a few API calls to go here and make a few API
+[00:14:53.080 --> 00:14:59.320]   calls to Pinecone and we have this semantic search tool now that's it for
+[00:14:59.320 --> 00:15:05.800]   this video I hope it has been useful and interesting but for now thank you very
+[00:15:05.800 --> 00:15:10.640]   much for watching and I'll see you again next one, bye.
+[00:15:10.640 --> 00:15:12.700]   you
+[00:15:12.700 --> 00:15:14.760]   you
+[00:15:14.760 --> 00:15:16.820]   you
+[00:15:16.820 --> 00:15:18.880]   you
+[00:15:18.880 --> 00:15:20.940]   you
+[00:15:20.940 --> 00:15:23.000]   you
+

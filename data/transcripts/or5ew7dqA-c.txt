@@ -1,0 +1,663 @@
+
+[00:00:00.000 --> 00:00:01.760]   Hi, welcome to the video.
+[00:00:01.760 --> 00:00:03.560]   We're going to be having a look today
+[00:00:03.560 --> 00:00:07.000]   at something called a multiple negatives ranking
+[00:00:07.000 --> 00:00:11.880]   loss, or MNL loss, for training sentence transformers.
+[00:00:11.880 --> 00:00:15.080]   Now, if you're new to sentence transformers,
+[00:00:15.080 --> 00:00:18.440]   they're essentially NLP models using
+[00:00:18.440 --> 00:00:20.480]   transformers that have been trained specifically
+[00:00:20.480 --> 00:00:26.040]   for building dense vector representations of text.
+[00:00:26.040 --> 00:00:30.040]   And the highest performing sentence transformers
+[00:00:30.040 --> 00:00:32.600]   at the moment are all trained using this method.
+[00:00:32.600 --> 00:00:36.600]   So they're trained on a natural language inference data set,
+[00:00:36.600 --> 00:00:40.640]   and they are trained with MNL loss.
+[00:00:40.640 --> 00:00:44.560]   So in this video, we are going to learn about MNL loss,
+[00:00:44.560 --> 00:00:46.120]   how it works.
+[00:00:46.120 --> 00:00:48.720]   We're going to work through a PyTorch example very quickly,
+[00:00:48.720 --> 00:00:51.080]   and then we're going to look at how we can implement it
+[00:00:51.080 --> 00:00:54.400]   ourselves using the sentence transformers library.
+[00:00:54.400 --> 00:00:56.240]   So let's jump straight into it.
+[00:00:56.240 --> 00:01:07.440]   So if you saw our previous article and video,
+[00:01:07.440 --> 00:01:12.080]   you'll remember that we had a NLI data set, which
+[00:01:12.080 --> 00:01:17.360]   is built from the Stanford NLI data set and the multi-genre NLI
+[00:01:17.360 --> 00:01:17.880]   data set.
+[00:01:17.880 --> 00:01:20.280]   We're using the same data set here.
+[00:01:20.280 --> 00:01:25.000]   So in essence, all it is is a load of sentence pairs,
+[00:01:25.000 --> 00:01:28.680]   and there is a label 0, 1, or 2, which
+[00:01:28.680 --> 00:01:34.240]   indicates whether those sentence pairs either infer each other,
+[00:01:34.240 --> 00:01:38.160]   are not really related, like they could both be true,
+[00:01:38.160 --> 00:01:41.160]   but not necessarily because of each other,
+[00:01:41.160 --> 00:01:43.800]   or if they contradict each other.
+[00:01:43.800 --> 00:01:45.640]   So there are the three labels.
+[00:01:45.640 --> 00:01:49.440]   And what we covered in the previous video and article
+[00:01:49.440 --> 00:01:51.080]   was something called softmax loss.
+[00:01:51.080 --> 00:01:57.400]   With softmax loss, we use those labels, the 0, 1, or 2,
+[00:01:57.400 --> 00:02:00.760]   to produce a classification.
+[00:02:00.760 --> 00:02:04.760]   We optimize on that label.
+[00:02:04.760 --> 00:02:09.280]   Now, with MNR loss, we don't actually use those labels.
+[00:02:09.280 --> 00:02:10.880]   We just use the sentence pairs.
+[00:02:10.880 --> 00:02:14.160]   And what I'm going to show you is
+[00:02:14.160 --> 00:02:17.680]   where we use something called a Siamese network, which
+[00:02:17.680 --> 00:02:22.400]   means we only have an anchor and a positive sentence.
+[00:02:22.400 --> 00:02:27.320]   Now, what that means is an anchor is a--
+[00:02:27.320 --> 00:02:29.720]   you can think of it as like a base sentence.
+[00:02:29.720 --> 00:02:34.200]   And a positive to that anchor sentence
+[00:02:34.200 --> 00:02:37.520]   is just a sentence that indicates
+[00:02:37.520 --> 00:02:40.440]   that the anchor is true.
+[00:02:40.440 --> 00:02:42.320]   Now, we could also have negatives.
+[00:02:42.320 --> 00:02:46.840]   And a negative would indicate that that anchor is not true.
+[00:02:46.840 --> 00:02:49.960]   And we can extract that from the NMI data set.
+[00:02:49.960 --> 00:02:54.080]   So let's start pre-processing our data
+[00:02:54.080 --> 00:02:57.480]   and have a look at what we need to do.
+[00:02:57.480 --> 00:03:01.160]   So this code here, we already wrote it
+[00:03:01.160 --> 00:03:03.000]   in the previous video and article.
+[00:03:03.000 --> 00:03:04.400]   But we're going to go through it.
+[00:03:04.400 --> 00:03:06.960]   So if you've never seen any of this before, it's fine.
+[00:03:06.960 --> 00:03:08.120]   We're going to go through it.
+[00:03:08.120 --> 00:03:09.460]   I'm going to explain everything.
+[00:03:09.460 --> 00:03:10.760]   It's not a problem.
+[00:03:10.760 --> 00:03:13.680]   So basically, up here, all I'm saying
+[00:03:13.680 --> 00:03:15.520]   is what I just told you.
+[00:03:15.520 --> 00:03:18.280]   So these are our labels in our data.
+[00:03:18.280 --> 00:03:23.760]   We have this 0, entailment, 1, neutral, and 2, contradiction.
+[00:03:23.760 --> 00:03:25.520]   And then I'm just saying, if M and R,
+[00:03:25.520 --> 00:03:27.760]   we don't actually need those labels.
+[00:03:27.760 --> 00:03:30.040]   All we need are anchor-positive pairs,
+[00:03:30.040 --> 00:03:34.800]   e.g. a pair where the premise suggests the hypothesis,
+[00:03:34.800 --> 00:03:42.160]   so where the positive indicates the anchor or the other way
+[00:03:42.160 --> 00:03:45.000]   around.
+[00:03:45.000 --> 00:03:47.960]   So essentially, what we need are just rows
+[00:03:47.960 --> 00:03:50.400]   where we have the label 0.
+[00:03:50.400 --> 00:03:51.600]   So we're going to do that.
+[00:03:51.600 --> 00:03:53.440]   But first, we need to actually get our data.
+[00:03:53.440 --> 00:03:57.000]   So we're using the HugInface dataset library here,
+[00:03:57.000 --> 00:03:59.000]   which is very good.
+[00:03:59.000 --> 00:04:02.640]   And we're getting the Stanford Natural Language Inference
+[00:04:02.640 --> 00:04:04.200]   dataset here.
+[00:04:04.200 --> 00:04:08.640]   Now, down here, this format you can see
+[00:04:08.640 --> 00:04:10.840]   is the format of the dataset.
+[00:04:10.840 --> 00:04:13.960]   So we have these three features, premise, hypothesis,
+[00:04:13.960 --> 00:04:15.160]   and label.
+[00:04:15.160 --> 00:04:17.440]   And if we come down here, we can see what one of those
+[00:04:17.440 --> 00:04:17.940]   looks like.
+[00:04:17.940 --> 00:04:20.640]   So we have premise, a person on a horse
+[00:04:20.640 --> 00:04:22.680]   jumped over a broken-down airplane,
+[00:04:22.680 --> 00:04:24.840]   and this hypothesis, a person is training
+[00:04:24.840 --> 00:04:26.480]   his horse for a competition.
+[00:04:26.480 --> 00:04:28.440]   And the label for that is 1.
+[00:04:28.440 --> 00:04:29.880]   Come up here, 1 means neutral.
+[00:04:29.880 --> 00:04:33.760]   So basically, this here, a person
+[00:04:33.760 --> 00:04:35.440]   is training his horse for a competition,
+[00:04:35.440 --> 00:04:38.200]   does not necessarily mean the person on a horse
+[00:04:38.200 --> 00:04:41.480]   is jumping over a broken-down airplane.
+[00:04:41.480 --> 00:04:43.120]   And then we come down here, and I
+[00:04:43.120 --> 00:04:45.160]   think this one's entailment.
+[00:04:45.160 --> 00:04:47.240]   So this one is a pair that we want.
+[00:04:47.240 --> 00:04:50.280]   This is an anchor positive pair.
+[00:04:50.280 --> 00:04:53.200]   And we have a person's outdoors on a horse,
+[00:04:53.200 --> 00:04:55.880]   and a person on a horse jumps over a broken-down airplane.
+[00:04:55.880 --> 00:04:57.640]   If they're jumping over a broken-down airplane,
+[00:04:57.640 --> 00:04:58.680]   they're probably outside.
+[00:04:58.680 --> 00:05:02.440]   In fact, they-- well, almost definitely outside.
+[00:05:02.440 --> 00:05:06.560]   So this indicates it.
+[00:05:06.560 --> 00:05:11.280]   So this is an entailment, means it's an anchor positive pair.
+[00:05:11.280 --> 00:05:16.320]   So I said before, we have two data sets, not just one.
+[00:05:16.320 --> 00:05:20.360]   So we have the Stanford Natural Language Inference Dataset,
+[00:05:20.360 --> 00:05:23.400]   and we also have the Multi-Genre Natural Language
+[00:05:23.400 --> 00:05:24.160]   Inference Dataset.
+[00:05:24.160 --> 00:05:26.800]   And that's what we're getting here, MLI.
+[00:05:26.800 --> 00:05:30.800]   So I'm just loading that with the Load Dataset here.
+[00:05:30.800 --> 00:05:33.480]   We're loading it from the Glue Dataset.
+[00:05:33.480 --> 00:05:37.440]   Within Glue, there is this MLI, which is the data that we want.
+[00:05:37.440 --> 00:05:39.820]   And we're just getting the training data from that.
+[00:05:39.820 --> 00:05:42.040]   We don't-- because I think there's also--
+[00:05:42.040 --> 00:05:45.080]   maybe there's validation data, and there's also test data.
+[00:05:45.080 --> 00:05:46.080]   We don't want that.
+[00:05:46.080 --> 00:05:48.520]   We just want the training data.
+[00:05:48.520 --> 00:05:53.120]   So we can see the format for this data set,
+[00:05:53.120 --> 00:05:54.760]   almost exactly the same.
+[00:05:54.760 --> 00:05:59.000]   We just have this extra ID.
+[00:05:59.000 --> 00:06:02.080]   So what we can do is we just remove those columns.
+[00:06:02.080 --> 00:06:05.800]   So we MLI.RemoveColumns, and we specify
+[00:06:05.800 --> 00:06:07.640]   that we don't want the ID column,
+[00:06:07.640 --> 00:06:09.680]   because we're going to merge these two data sets.
+[00:06:09.680 --> 00:06:11.700]   But to merge them, they both need
+[00:06:11.700 --> 00:06:13.020]   to have the exact same format.
+[00:06:13.020 --> 00:06:20.660]   So after that, what we do is we perform this Cast function.
+[00:06:20.660 --> 00:06:23.940]   Now, if we didn't perform this Cast function--
+[00:06:23.940 --> 00:06:24.620]   let me show you.
+[00:06:24.620 --> 00:06:29.420]   So I need to run these anyway, so start running them now.
+[00:06:29.420 --> 00:06:31.380]   Come down here.
+[00:06:31.380 --> 00:06:34.700]   I'm going to Load Dataset, Remove Columns.
+[00:06:34.700 --> 00:06:38.180]   And OK, let's say I'm not going to do this Cast.
+[00:06:38.180 --> 00:06:40.060]   I'm just going to concatenate the data sets.
+[00:06:40.060 --> 00:06:43.500]   I'm going to merge those two data sets together.
+[00:06:43.500 --> 00:06:47.440]   I do that, and we get this arrow, InvalidError.
+[00:06:47.440 --> 00:06:50.220]   And the reason for that is because although those two
+[00:06:50.220 --> 00:06:53.180]   data sets look very similar, they're not actually
+[00:06:53.180 --> 00:06:54.780]   exactly the same.
+[00:06:54.780 --> 00:06:57.740]   The data sets used in one of them
+[00:06:57.740 --> 00:07:01.700]   includes this NotNull specification,
+[00:07:01.700 --> 00:07:04.500]   whereas the other one does not include that NotNull
+[00:07:04.500 --> 00:07:05.180]   specification.
+[00:07:05.180 --> 00:07:09.020]   So I assume that means that this other data set
+[00:07:09.020 --> 00:07:12.020]   can include null values, whereas this one cannot.
+[00:07:12.020 --> 00:07:15.460]   So we can't merge them both because they're not
+[00:07:15.460 --> 00:07:17.180]   the same data type.
+[00:07:17.180 --> 00:07:20.340]   So what we do, we come up here, and we have to do this Cast.
+[00:07:20.340 --> 00:07:25.260]   So we're Casting the features of the SNLY dataset
+[00:07:25.260 --> 00:07:28.220]   to be the same as the MNLY dataset features.
+[00:07:28.220 --> 00:07:29.900]   So we do that, run it.
+[00:07:29.900 --> 00:07:35.740]   We come down here, we can run it again, and it will work.
+[00:07:35.740 --> 00:07:40.940]   And now in Dataset, we have the full data sets.
+[00:07:40.940 --> 00:07:44.660]   That's both MNLY and SNLY.
+[00:07:44.660 --> 00:07:49.940]   And you can see that because we have 943,000 rows.
+[00:07:49.940 --> 00:07:54.260]   If you come up here, we only have 392 in the MNLY dataset.
+[00:07:54.260 --> 00:07:59.220]   And up here, we have 550 in the SNLY dataset.
+[00:07:59.220 --> 00:08:03.780]   So we have all the data.
+[00:08:03.780 --> 00:08:09.900]   And now in the previous video, an article I mentioned,
+[00:08:09.900 --> 00:08:14.940]   we have these negative 1 labels.
+[00:08:14.940 --> 00:08:18.620]   Now, this is an error in the data.
+[00:08:18.620 --> 00:08:23.180]   Or it's not an error, but it's where whoever labeled the data,
+[00:08:23.180 --> 00:08:26.980]   they couldn't decide whether this was--
+[00:08:26.980 --> 00:08:30.060]   they couldn't decide on the nature of the relationship
+[00:08:30.060 --> 00:08:32.100]   between the pair of sentences.
+[00:08:32.100 --> 00:08:33.380]   So they just put minus 1.
+[00:08:33.380 --> 00:08:34.500]   There's not very few.
+[00:08:34.500 --> 00:08:39.740]   I think it's 700 or so sentences in there or pairs in there
+[00:08:39.740 --> 00:08:41.620]   that are labeled with this minus 1.
+[00:08:41.620 --> 00:08:43.980]   But that's not a label.
+[00:08:43.980 --> 00:08:48.060]   We can't do anything with that in our data.
+[00:08:48.060 --> 00:08:53.500]   Now, what we do is we use this filter method to remove.
+[00:08:53.500 --> 00:08:55.700]   So we say false for the row.
+[00:08:55.700 --> 00:08:58.500]   So the row is false if the label is
+[00:08:58.500 --> 00:09:02.020]   equal to minus 1, which is saying that row is false,
+[00:09:02.020 --> 00:09:07.620]   e.g. we do not keep it if its label value is equal to minus 1.
+[00:09:07.620 --> 00:09:09.940]   Otherwise, we do keep it.
+[00:09:09.940 --> 00:09:12.100]   Now, things are a bit different now
+[00:09:12.100 --> 00:09:17.220]   because we actually only want anchor positive pairs, which
+[00:09:17.220 --> 00:09:19.660]   means we want to remove--
+[00:09:19.660 --> 00:09:24.820]   or we only want to keep the rows which have a 0 label.
+[00:09:24.820 --> 00:09:27.220]   We want to remove everything else.
+[00:09:27.220 --> 00:09:35.060]   So we need to modify this to just keep the 0 values.
+[00:09:35.060 --> 00:09:44.660]   So we'll say, OK, false if x label is not equal to 0.
+[00:09:44.660 --> 00:09:45.660]   Else it's true.
+[00:09:45.660 --> 00:09:48.420]   So this is going to keep only 0 values
+[00:09:48.420 --> 00:09:50.220]   and remove everything else.
+[00:09:50.220 --> 00:09:52.980]   So that removes those error-less rows
+[00:09:52.980 --> 00:09:57.780]   and also removes the neutral and contradiction rows as well.
+[00:09:57.780 --> 00:10:05.020]   Now, we remove that and let that run.
+[00:10:05.020 --> 00:10:07.020]   Now, while that's running, let me
+[00:10:07.020 --> 00:10:11.900]   show you some visuals of how this will work.
+[00:10:11.900 --> 00:10:18.580]   So what we have here is we have that anchor positive pair
+[00:10:18.580 --> 00:10:19.420]   from before.
+[00:10:19.420 --> 00:10:25.580]   So here, our anchor would be, I think, from i's.
+[00:10:25.580 --> 00:10:29.540]   And the positive would be our hypothesis.
+[00:10:29.540 --> 00:10:31.300]   But it would obviously only be rows
+[00:10:31.300 --> 00:10:38.380]   where the label is equal to 0, which
+[00:10:38.380 --> 00:10:41.700]   is the entailment label.
+[00:10:41.700 --> 00:10:44.980]   Now, we have our anchor and positive.
+[00:10:44.980 --> 00:10:48.740]   And as we usually would with a transform model,
+[00:10:48.740 --> 00:10:50.300]   we tokenize them.
+[00:10:50.300 --> 00:10:52.740]   So we tokenize them.
+[00:10:52.740 --> 00:10:55.700]   We're going to do that with just a tokenizer method,
+[00:10:55.700 --> 00:11:01.100]   a pre-trained tokenizer from the base transformers library.
+[00:11:01.100 --> 00:11:04.780]   Or we do that if we're using PyTorch.
+[00:11:04.780 --> 00:11:07.700]   If we're using the sentence transformers library,
+[00:11:07.700 --> 00:11:10.060]   it's a lot easier, and we don't actually need to do that.
+[00:11:10.060 --> 00:11:13.060]   It will deal with that for us, which is quite nice.
+[00:11:13.060 --> 00:11:19.700]   And what that produces is just a tokenized version
+[00:11:19.700 --> 00:11:22.140]   of the anchor and the positive.
+[00:11:22.140 --> 00:11:23.700]   So here, we have our--
+[00:11:23.700 --> 00:11:27.340]   so I'm just going to put A for anchor, and over here,
+[00:11:27.340 --> 00:11:29.140]   P for positive.
+[00:11:29.140 --> 00:11:36.140]   And then what happens next is we have a single BERT model.
+[00:11:36.140 --> 00:11:39.100]   We actually visualize it as two BERT models,
+[00:11:39.100 --> 00:11:42.020]   because we're processing the anchor.
+[00:11:42.020 --> 00:11:45.420]   And then after we've processed the anchor data,
+[00:11:45.420 --> 00:11:49.060]   we move on to processing the positive data.
+[00:11:49.060 --> 00:11:51.940]   So it's like we're using-- for every single training step,
+[00:11:51.940 --> 00:11:55.380]   we're using the same BERT model twice.
+[00:11:55.380 --> 00:11:59.380]   So we process both of those through our BERT model,
+[00:11:59.380 --> 00:12:01.460]   and that produces token embeddings.
+[00:12:01.460 --> 00:12:06.900]   So token embeddings are 512 dense vectors,
+[00:12:06.900 --> 00:12:10.060]   which contains 168 dimensions.
+[00:12:10.060 --> 00:12:12.940]   And then we use something called a mean pooling function.
+[00:12:12.940 --> 00:12:19.420]   So mean pooling function is, say we have some vectors here--
+[00:12:19.420 --> 00:12:23.300]   1, 2, and 3.
+[00:12:23.300 --> 00:12:30.220]   What we're going to do is take the mean value
+[00:12:30.220 --> 00:12:32.180]   across each dimension.
+[00:12:32.180 --> 00:12:36.260]   So let's say we have three dimensions here in our--
+[00:12:36.260 --> 00:12:38.980]   no, that's a bad idea, because we have three vectors.
+[00:12:38.980 --> 00:12:43.780]   Let's say we have five dimensions here.
+[00:12:43.780 --> 00:12:46.660]   And we take the average across each of those dimensions.
+[00:12:46.660 --> 00:12:51.500]   And what we produce from that mean pooling operation
+[00:12:51.500 --> 00:12:54.220]   is a single five-dimensional vector.
+[00:12:54.220 --> 00:13:00.940]   So we have the mean of each of those--
+[00:13:00.940 --> 00:13:03.060]   across each of those dimensions.
+[00:13:03.060 --> 00:13:05.380]   That's the mean pooling operation.
+[00:13:05.380 --> 00:13:07.300]   And obviously, from that, we produce
+[00:13:07.300 --> 00:13:08.980]   what is our sentence embedding, which
+[00:13:08.980 --> 00:13:13.700]   is a single one-dimensional dense vector.
+[00:13:13.700 --> 00:13:17.940]   And we produce that sentence embedding both for A, our anchor,
+[00:13:17.940 --> 00:13:20.260]   and for P, our positive.
+[00:13:20.260 --> 00:13:27.140]   And what we have here--
+[00:13:27.140 --> 00:13:30.860]   so I don't know if I mentioned it, but we--
+[00:13:30.860 --> 00:13:35.860]   so this is a Siamese network, this double network.
+[00:13:35.860 --> 00:13:39.900]   And this triple network is a triplet network.
+[00:13:39.900 --> 00:13:41.860]   And it works in the exact same way,
+[00:13:41.860 --> 00:13:44.660]   but we also have a negative.
+[00:13:44.660 --> 00:13:50.740]   So where before we had the contradiction label,
+[00:13:50.740 --> 00:13:52.500]   I think the label is 2.
+[00:13:52.500 --> 00:13:53.900]   But I could be wrong.
+[00:13:53.900 --> 00:13:57.340]   I think it-- no, I think it is 2.
+[00:13:57.340 --> 00:14:01.260]   That would be a negative sentence
+[00:14:01.260 --> 00:14:05.060]   because it contradicts the anchor.
+[00:14:05.060 --> 00:14:08.060]   And what we do is we process that as well.
+[00:14:08.060 --> 00:14:11.900]   And then we would also get a negative vector--
+[00:14:11.900 --> 00:14:14.460]   negative sentence embedding at the end there.
+[00:14:14.460 --> 00:14:17.300]   And what we do with that during training--
+[00:14:17.300 --> 00:14:21.860]   so the whole MNR loss thing, multiple negative ranking
+[00:14:21.860 --> 00:14:23.500]   thing--
+[00:14:23.500 --> 00:14:27.540]   is we take all of those vectors that we produce,
+[00:14:27.540 --> 00:14:32.260]   the A, which is the anchors, the P, and the N
+[00:14:32.260 --> 00:14:36.260]   for the positive and negatives, if we're using negatives.
+[00:14:36.260 --> 00:14:40.980]   If not, we just basically blank out the dark blue part
+[00:14:40.980 --> 00:14:43.340]   of this visual.
+[00:14:43.340 --> 00:14:48.100]   All we do is we calculate the cosine similarity
+[00:14:48.100 --> 00:14:51.260]   between our anchor and our positive,
+[00:14:51.260 --> 00:14:53.820]   and maybe our neutral negative as well.
+[00:14:53.820 --> 00:14:55.540]   But I'm just going to say I'm going
+[00:14:55.540 --> 00:15:00.220]   to go through the anchor and positive version of it for now.
+[00:15:00.220 --> 00:15:02.340]   So we calculate the cosine similarity
+[00:15:02.340 --> 00:15:04.540]   between the anchor and positive.
+[00:15:04.540 --> 00:15:07.980]   And we do that for every anchor.
+[00:15:07.980 --> 00:15:11.620]   So anchor 0 for the first one, we
+[00:15:11.620 --> 00:15:13.180]   would calculate the cosine similarity
+[00:15:13.180 --> 00:15:20.180]   between anchor 0 and positive 0, 1, 2, 3, and 4, and so on,
+[00:15:20.180 --> 00:15:22.260]   up until the batch size.
+[00:15:22.260 --> 00:15:24.460]   So what we have there is the actual--
+[00:15:24.460 --> 00:15:29.020]   so the number of sentence embeddings that we have there
+[00:15:29.020 --> 00:15:32.380]   is equal to the batch size that we are using.
+[00:15:32.380 --> 00:15:34.700]   And obviously, what we would expect
+[00:15:34.700 --> 00:15:36.660]   with our anchor and positive pair
+[00:15:36.660 --> 00:15:40.780]   is that we would expect the cosine similarity between A0
+[00:15:40.780 --> 00:15:45.100]   and P0 to be greater than the cosine similarity between,
+[00:15:45.100 --> 00:15:50.740]   let's say, A0 and P1, or P2, or P3, or P4.
+[00:15:50.740 --> 00:15:54.500]   And likewise, if we had A3, we would
+[00:15:54.500 --> 00:15:58.420]   expect the cosine similarity between A3 and P3
+[00:15:58.420 --> 00:16:08.060]   to be greater than that between A3 and P0, or P1, or P2, or P4.
+[00:16:08.060 --> 00:16:09.620]   So that's how we optimize.
+[00:16:09.620 --> 00:16:14.900]   We say, OK, the target label for A0
+[00:16:14.900 --> 00:16:19.740]   is just going to have the greatest argmax value
+[00:16:19.740 --> 00:16:24.340]   with the value of P0, or with the pair P0.
+[00:16:24.340 --> 00:16:28.540]   And for A3, it's going to be with P3.
+[00:16:28.540 --> 00:16:33.100]   So the labels for this are actually just 0, 1, 2, 3, 4,
+[00:16:33.100 --> 00:16:35.980]   up until the batch size, which we will see.
+[00:16:35.980 --> 00:16:38.620]   I'm going to show you that.
+[00:16:38.620 --> 00:16:46.220]   OK, so here we have what is our involved MNR loss training
+[00:16:46.220 --> 00:16:47.180]   notebook.
+[00:16:47.180 --> 00:16:48.980]   So I'm just going to take you through this.
+[00:16:48.980 --> 00:16:51.740]   We're just using PyTorch rather than the Sentence Transformers
+[00:16:51.740 --> 00:16:53.020]   library here.
+[00:16:53.020 --> 00:16:55.740]   Now, I'm going to go through, and we're
+[00:16:55.740 --> 00:17:01.940]   going to come to where we actually start training.
+[00:17:01.940 --> 00:17:05.660]   So we have a mean pooling operation here.
+[00:17:05.660 --> 00:17:08.140]   So I mentioned before we had that mean pooling function
+[00:17:08.140 --> 00:17:10.380]   where we're getting the average across dimensions.
+[00:17:10.380 --> 00:17:11.940]   That's what this is dealing with.
+[00:17:11.940 --> 00:17:13.380]   The reason it looks more complicated
+[00:17:13.380 --> 00:17:15.100]   than just taking the average is because we
+[00:17:15.100 --> 00:17:19.140]   need to consider where we have padding values, where
+[00:17:19.140 --> 00:17:24.340]   the mask value is 0, because we don't
+[00:17:24.340 --> 00:17:26.700]   want to consider those in our average function,
+[00:17:26.700 --> 00:17:28.780]   because then it's going to obviously bring down
+[00:17:28.780 --> 00:17:32.620]   our average a lot just for having more padding tokens,
+[00:17:32.620 --> 00:17:34.820]   which doesn't make sense, obviously.
+[00:17:34.820 --> 00:17:37.860]   So that's why it looks more complicated than you
+[00:17:37.860 --> 00:17:42.140]   probably expect for an averaging function.
+[00:17:42.140 --> 00:17:44.300]   And then so we're using PyTorch here.
+[00:17:44.300 --> 00:17:46.620]   So we're moving some set model.
+[00:17:46.620 --> 00:17:49.020]   It's just a BERT model that we're using here,
+[00:17:49.020 --> 00:17:53.580]   plain, straight BERT model, nothing special about it.
+[00:17:53.580 --> 00:17:56.700]   I think it's BERT based on case.
+[00:17:56.700 --> 00:18:01.020]   And just moving it to a CUDA GPU if we have one.
+[00:18:01.020 --> 00:18:04.940]   So it is available, checking if it's available.
+[00:18:04.940 --> 00:18:07.740]   And then here we're defining some layers
+[00:18:07.740 --> 00:18:10.740]   that we're going to be using in MNR loss.
+[00:18:10.740 --> 00:18:12.420]   So we have the cosine similarity.
+[00:18:12.420 --> 00:18:14.020]   I said before we're doing that.
+[00:18:14.020 --> 00:18:17.420]   We're checking and calculating similarity between pairs.
+[00:18:17.420 --> 00:18:21.020]   That's what we're doing here, just initializing that function.
+[00:18:21.020 --> 00:18:23.220]   And we also have a loss function, of course.
+[00:18:23.220 --> 00:18:27.540]   So here we're using a categorical cross-entropy loss.
+[00:18:27.540 --> 00:18:29.820]   And we'll see how that works.
+[00:18:29.820 --> 00:18:32.460]   We can also use a scale function.
+[00:18:32.460 --> 00:18:37.460]   So I think I thought I did use it a bit later on, I think.
+[00:18:37.460 --> 00:18:40.020]   But it's fine.
+[00:18:40.020 --> 00:18:42.860]   It's not really too important.
+[00:18:42.860 --> 00:18:44.180]   But we just use that.
+[00:18:44.180 --> 00:18:51.040]   We multiply our similarity score value by the scale value
+[00:18:51.040 --> 00:18:52.980]   later on.
+[00:18:52.980 --> 00:18:56.060]   Down here, so we're using Transforms Optimization.
+[00:18:56.060 --> 00:18:59.340]   So what we're doing here is we're
+[00:18:59.340 --> 00:19:03.940]   saying, for the first 10% of the training data,
+[00:19:03.940 --> 00:19:08.780]   I want to warm up to this learning rate of 2e to minus 5.
+[00:19:08.780 --> 00:19:12.060]   So we're not going to start at that learning rate initially.
+[00:19:12.060 --> 00:19:13.900]   We're going to slowly build up to it.
+[00:19:13.900 --> 00:19:19.480]   And yeah, that's all we're doing there.
+[00:19:19.480 --> 00:19:24.540]   And we can see our batch here.
+[00:19:24.540 --> 00:19:28.100]   So we have attention mask.
+[00:19:28.100 --> 00:19:29.540]   So sorry, we have the anchor.
+[00:19:29.540 --> 00:19:31.420]   And in the anchor, we have our attention mask
+[00:19:31.420 --> 00:19:33.780]   and we have our input IDs.
+[00:19:33.780 --> 00:19:36.220]   And then in positive, we also have the same.
+[00:19:36.220 --> 00:19:38.740]   We have attention mask and input IDs.
+[00:19:38.740 --> 00:19:40.340]   So input IDs and attention mask, if you
+[00:19:40.340 --> 00:19:42.140]   use the Transformers library before,
+[00:19:42.140 --> 00:19:43.780]   you probably recognize these.
+[00:19:43.780 --> 00:19:46.140]   It's just the input tensors that we
+[00:19:46.140 --> 00:19:49.820]   use when we're feeding text into a model.
+[00:19:49.820 --> 00:19:53.980]   So that's how our Transformer understands our text.
+[00:19:57.540 --> 00:20:01.300]   Yeah, I'll just mention here what is in there.
+[00:20:01.300 --> 00:20:02.740]   And let's come down.
+[00:20:02.740 --> 00:20:04.020]   Is there anything important?
+[00:20:04.020 --> 00:20:05.820]   I don't think so.
+[00:20:05.820 --> 00:20:07.860]   OK, let's come down to the training loop.
+[00:20:07.860 --> 00:20:12.980]   So yeah, using a scale value of 20 there.
+[00:20:12.980 --> 00:20:14.580]   And we come to here.
+[00:20:14.580 --> 00:20:19.540]   So here, we have our anchor embeddings.
+[00:20:19.540 --> 00:20:21.420]   So these are sentence embeddings.
+[00:20:21.420 --> 00:20:23.500]   So we have the anchor sentence embeddings
+[00:20:23.500 --> 00:20:25.900]   and we have positive sentence embeddings, which
+[00:20:25.900 --> 00:20:28.380]   we've output from our BERT model.
+[00:20:28.380 --> 00:20:31.340]   And what we do, we do the mean pooling.
+[00:20:31.340 --> 00:20:33.700]   So when I said sentence embeddings here,
+[00:20:33.700 --> 00:20:35.340]   they are the token embeddings, sorry.
+[00:20:35.340 --> 00:20:37.860]   So we have 512 token embeddings.
+[00:20:37.860 --> 00:20:42.500]   And then we do the mean pooling to get the sentence embeddings.
+[00:20:42.500 --> 00:20:44.940]   And then what we do is we calculate
+[00:20:44.940 --> 00:20:49.660]   the cosine similarity between each of our anchors
+[00:20:49.660 --> 00:20:52.860]   and all of the positive values.
+[00:20:52.860 --> 00:21:00.260]   So we create that array of values of cosine similarities.
+[00:21:00.260 --> 00:21:01.900]   And on each row, obviously, we would
+[00:21:01.900 --> 00:21:05.940]   expect the true pair to have the highest cosine similarity.
+[00:21:05.940 --> 00:21:10.940]   So that is what we will do a little further down here.
+[00:21:10.940 --> 00:21:14.940]   So labels, what this value does here
+[00:21:14.940 --> 00:21:20.220]   is just outputs a tensor, which is 0, 1, 2, 3, 4,
+[00:21:20.220 --> 00:21:25.340]   up until the batch size of the data.
+[00:21:25.340 --> 00:21:31.100]   So that's where you'd expect the argmax value to be.
+[00:21:31.100 --> 00:21:36.500]   So for A3, you'd expect the maximum cosine similarity
+[00:21:36.500 --> 00:21:39.980]   to be in the third index, where P3, where
+[00:21:39.980 --> 00:21:41.100]   it's been compared to P3.
+[00:21:41.100 --> 00:21:48.620]   And then here, we are calculating the loss.
+[00:21:48.620 --> 00:21:52.820]   So we're calculating between the scores, which
+[00:21:52.820 --> 00:21:55.340]   we have up here, and the labels.
+[00:21:55.340 --> 00:21:58.540]   So this is taking the--
+[00:21:58.540 --> 00:22:00.700]   we're basically looking for this value
+[00:22:00.700 --> 00:22:07.920]   here to be the maximum value in a specific row at the index
+[00:22:07.920 --> 00:22:10.360]   equal to the current label.
+[00:22:10.360 --> 00:22:14.940]   So that's the A3, P3 pair that I'm talking about.
+[00:22:14.940 --> 00:22:16.460]   Now we're just optimizing on that.
+[00:22:16.460 --> 00:22:17.620]   And that's it.
+[00:22:17.620 --> 00:22:24.140]   That's the order is to mnr loss in PyTorch.
+[00:22:24.140 --> 00:22:26.780]   But when I say that's order, it's actually quite a lot.
+[00:22:26.780 --> 00:22:28.860]   I mean, there's a lot of code going into this.
+[00:22:28.860 --> 00:22:32.140]   And it's very confusing.
+[00:22:32.140 --> 00:22:33.620]   Oh, here is the--
+[00:22:33.620 --> 00:22:36.220]   that's the labels tensor that I just mentioned, by the way.
+[00:22:36.220 --> 00:22:37.780]   So you can see it's just counting up
+[00:22:37.780 --> 00:22:40.460]   to our batch size, which is 32.
+[00:22:40.460 --> 00:22:47.260]   So that's the PyTorch implementation.
+[00:22:47.260 --> 00:22:49.780]   But it's complicated.
+[00:22:49.780 --> 00:22:53.760]   And to be honest, if you do the same with sentence
+[00:22:53.760 --> 00:22:56.420]   transformers, you're probably going to get better results.
+[00:22:56.420 --> 00:23:00.620]   So I'm going to show you how to do that with sentence
+[00:23:00.620 --> 00:23:01.740]   transformers.
+[00:23:01.740 --> 00:23:05.060]   It's a lot easier and a lot more effective.
+[00:23:05.060 --> 00:23:05.540]   OK.
+[00:23:05.540 --> 00:23:08.620]   So in sentence transformers, so we're back
+[00:23:08.620 --> 00:23:11.380]   in the first notebook now.
+[00:23:11.380 --> 00:23:14.940]   So we have our data set, 314 rows.
+[00:23:14.940 --> 00:23:18.740]   And it is just anchor positive pairs.
+[00:23:18.740 --> 00:23:22.140]   So with sentence transformers, we
+[00:23:22.140 --> 00:23:24.660]   use something called an input example.
+[00:23:24.660 --> 00:23:27.220]   So we have a big list of input examples,
+[00:23:27.220 --> 00:23:33.460]   which is the data format that our sentence transformers
+[00:23:33.460 --> 00:23:37.300]   library training methods would expect.
+[00:23:37.300 --> 00:23:48.060]   So we want to do from sentence transformers import input
+[00:23:48.060 --> 00:23:49.020]   example.
+[00:23:49.020 --> 00:23:52.180]   And what we'll do is we'll just initialize the list here,
+[00:23:52.180 --> 00:23:53.260]   so samples.
+[00:23:53.260 --> 00:23:55.580]   And this is very simple.
+[00:23:55.580 --> 00:24:00.660]   We're just going to go for sample in--
+[00:24:00.660 --> 00:24:06.380]   or for row, let's say, for row in data set.
+[00:24:06.380 --> 00:24:11.580]   We want to say samples.append.
+[00:24:11.580 --> 00:24:14.860]   And in here, we have our input example.
+[00:24:14.860 --> 00:24:18.820]   So the thing we just import, the object,
+[00:24:18.820 --> 00:24:21.500]   the special sentence transformers object.
+[00:24:21.500 --> 00:24:24.100]   And in the previous video and article,
+[00:24:24.100 --> 00:24:27.620]   this accepts two different parameters.
+[00:24:27.620 --> 00:24:30.180]   It accepts the text and label.
+[00:24:30.180 --> 00:24:32.460]   Now, like I said, we don't have labels.
+[00:24:32.460 --> 00:24:36.580]   We just generate them as we're performing the training.
+[00:24:36.580 --> 00:24:41.340]   So we don't need the label here, so we just write text.
+[00:24:41.340 --> 00:24:44.780]   And in here, we-- so list.
+[00:24:44.780 --> 00:24:47.620]   And in there, we want our row.
+[00:24:47.620 --> 00:24:52.780]   We want the premise, which is our anchor.
+[00:24:52.780 --> 00:25:00.180]   And we also want the hypothesis, which is our positive.
+[00:25:00.180 --> 00:25:04.700]   OK, and that's all we need, OK?
+[00:25:04.700 --> 00:25:10.900]   So that will take a while.
+[00:25:10.900 --> 00:25:18.260]   So what you can do is if I just go from tqdm.auto,
+[00:25:18.260 --> 00:25:20.580]   import tqdm.
+[00:25:20.580 --> 00:25:23.060]   So we can add this to our loop here
+[00:25:23.060 --> 00:25:25.140]   so that we have a nice progress bar,
+[00:25:25.140 --> 00:25:27.700]   so we can see how far along we are,
+[00:25:27.700 --> 00:25:30.860]   how long it's going to take.
+[00:25:30.860 --> 00:25:33.060]   And I mean, it's very quick anyway,
+[00:25:33.060 --> 00:25:35.460]   but I think it's nice to be able to see that, especially
+[00:25:35.460 --> 00:25:37.580]   for the longer data sets.
+[00:25:37.580 --> 00:25:42.620]   Now, here we need to initialize what is a data loader.
+[00:25:42.620 --> 00:25:44.820]   Usually, we use the PyTorch data loader.
+[00:25:44.820 --> 00:25:46.060]   This time, we're not going to.
+[00:25:46.060 --> 00:25:48.180]   This time, we're going to use a special data
+[00:25:48.180 --> 00:25:51.620]   loader from the sentence transformers library.
+[00:25:51.620 --> 00:25:54.340]   And I'll explain why in just a moment.
+[00:25:54.340 --> 00:26:02.300]   So from sentence transformers, I want to import data sets.
+[00:26:02.300 --> 00:26:04.700]   We set the batch size, as we usually do.
+[00:26:04.700 --> 00:26:08.540]   We're going to set that equal to 32.
+[00:26:08.540 --> 00:26:12.180]   And we're creating a data loader,
+[00:26:12.180 --> 00:26:19.300]   so we're just going to call that loader again, as we usually do.
+[00:26:19.300 --> 00:26:22.060]   And in here, we want to write data sets,
+[00:26:22.060 --> 00:26:26.300]   and we want the no duplicates data loader.
+[00:26:26.300 --> 00:26:28.020]   So you can see that there.
+[00:26:28.020 --> 00:26:31.420]   And what this is going to do is, unlike a normal data
+[00:26:31.420 --> 00:26:35.460]   loader in PyTorch, which would just feed you--
+[00:26:35.460 --> 00:26:41.980]   it would just feed you 32, in this case, samples at once,
+[00:26:41.980 --> 00:26:43.620]   it wouldn't check the data in there.
+[00:26:43.620 --> 00:26:47.340]   Or no duplicates data loader checks
+[00:26:47.340 --> 00:26:50.260]   that you don't have any duplicates
+[00:26:50.260 --> 00:26:52.060]   within the same batch.
+[00:26:52.060 --> 00:26:53.700]   Now, realistically, with this data set,
+[00:26:53.700 --> 00:26:56.060]   probably not going to get that anyway.
+[00:26:56.060 --> 00:27:00.500]   But if you do have data sets which might have duplicates,
+[00:27:00.500 --> 00:27:03.020]   you can use this to avoid that issue.
+[00:27:03.020 --> 00:27:06.020]   Because if you think, OK, if you have a duplicate,
+[00:27:06.020 --> 00:27:11.660]   and our labels are saying that pair A1 and P1
+[00:27:11.660 --> 00:27:15.060]   should be the same, but in reality, over here,
+[00:27:15.060 --> 00:27:19.140]   we have A7 and P7, which are exactly the same,
+[00:27:19.140 --> 00:27:20.420]   it's going to confuse the model.
+[00:27:20.420 --> 00:27:25.860]   And it's going to say that A1 and P7 should be matching.
+[00:27:25.860 --> 00:27:29.820]   But in reality, it should just be A1 and P1.
+[00:27:29.820 --> 00:27:32.860]   So that's why we use this no duplicates data loader
+[00:27:32.860 --> 00:27:36.900]   to remove any possibility of that happening.
+[00:27:36.900 --> 00:27:40.420]   Now, as well, if that happens occasionally,
+[00:27:40.420 --> 00:27:42.380]   it's not really an issue anyway.
+[00:27:42.380 --> 00:27:46.780]   But it's nice to just be careful with it.
+[00:27:46.780 --> 00:27:48.540]   So we have our samples, and we want
+[00:27:48.540 --> 00:27:54.180]   the batch size, which is equal to our batch size.
+[00:27:54.180 --> 00:27:56.980]   So that's our data loader.
+[00:27:56.980 --> 00:28:00.180]   Now, what we need to do is initialize a model.
+[00:28:00.180 --> 00:28:03.620]   So in Sentence Transformers, we can do the same thing
+[00:28:03.620 --> 00:28:05.540]   as we do with Hug and Face Transformers, where
+[00:28:05.540 --> 00:28:08.300]   we load a pre-trained model.
+[00:28:08.300 --> 00:28:11.580]   But we can also initialize a new model
+[00:28:11.580 --> 00:28:13.820]   using what are called modules.
+[00:28:13.820 --> 00:28:15.980]   So in this case, we're going to use
+[00:28:15.980 --> 00:28:20.060]   two modules, which is going to be the Transformer module,
+[00:28:20.060 --> 00:28:21.780]   so the actual bear itself.
+[00:28:21.780 --> 00:28:24.380]   And that's going to be followed by a pooling module
+[00:28:24.380 --> 00:28:28.340]   for the mean pooling that we do.
+[00:28:28.340 --> 00:28:33.380]   So we're going to write, from Sentence Transformers,
+[00:28:33.380 --> 00:28:40.820]   import models, and also Sentence Transformer.
+[00:28:40.820 --> 00:28:45.140]   And we say, OK, BERT is equal to models,
+[00:28:45.140 --> 00:28:48.180]   and it's a Transformer model.
+[00:28:48.180 --> 00:28:54.220]   So we initialize that, and we're using a BERT base on case
+[00:28:54.220 --> 00:28:55.660]   model.
+[00:28:55.660 --> 00:29:01.420]   And we also have our pooling module,
+[00:29:01.420 --> 00:29:07.100]   and that is models pooling.
+[00:29:07.100 --> 00:29:09.060]   And in here, the pooling approach
+[00:29:09.060 --> 00:29:12.900]   needs to know the dimensionality of the vectors
+[00:29:12.900 --> 00:29:14.540]   that it's going to be dealing with.
+[00:29:14.540 --> 00:29:15.860]   And we can get that from BERT.
+[00:29:15.860 --> 00:29:24.220]   We can say, get word embedding dimension, which is the 768.
+[00:29:24.220 --> 00:29:26.420]   And as well as that, we also need
+[00:29:26.420 --> 00:29:30.660]   to know which type of pooling we want to use.
+[00:29:30.660 --> 00:29:33.940]   And for that, we can write pooling.
+[00:29:33.940 --> 00:29:37.620]   And we can see we have all these different methods in here.
+[00:29:37.620 --> 00:29:38.940]   So we have the pooling mode.
+[00:29:38.940 --> 00:29:41.740]   We can use the CLS token.
+[00:29:41.740 --> 00:29:43.140]   We can take the maximum value.
+[00:29:43.140 --> 00:29:48.980]   We can take the mean and consider the square root
+[00:29:48.980 --> 00:29:50.780]   of the length of the tokens.
+[00:29:50.780 --> 00:29:54.500]   I don't know this one, so I could be completely wrong.
+[00:29:54.500 --> 00:29:55.900]   And we also have the mean.
+[00:29:55.900 --> 00:29:59.140]   So this is a mean pooling method that I mentioned before.
+[00:29:59.140 --> 00:30:02.780]   We're going to be using that one, so we say true.
+[00:30:02.780 --> 00:30:06.740]   And then to actually initialize the model using
+[00:30:06.740 --> 00:30:11.140]   those two parts or two modules, we
+[00:30:11.140 --> 00:30:15.460]   are going to write model equals sentence transformer.
+[00:30:15.460 --> 00:30:18.380]   And like I said before, this is how you would usually
+[00:30:18.380 --> 00:30:19.660]   load a pre-trained model.
+[00:30:19.660 --> 00:30:21.580]   So if you wanted to load a pre-trained model,
+[00:30:21.580 --> 00:30:24.620]   you'd be like BERT base on case, like in here.
+[00:30:24.620 --> 00:30:25.620]   We're not doing that.
+[00:30:25.620 --> 00:30:29.620]   We are initializing a new model using these two modules.
+[00:30:29.620 --> 00:30:33.260]   So we write modules equals.
+[00:30:33.260 --> 00:30:41.900]   And we have BERT followed by the pooling function or module.
+[00:30:41.900 --> 00:30:44.020]   And then we can have a look at what we have there.
+[00:30:44.020 --> 00:30:45.540]   So we have the model.
+[00:30:45.540 --> 00:30:49.660]   So hopefully, it doesn't take too long.
+[00:30:49.660 --> 00:30:50.380]   We get our list.
+[00:30:50.380 --> 00:30:51.060]   This is fine.
+[00:30:51.060 --> 00:30:53.820]   It's just coming from, I think, Honey Face.
+[00:30:53.820 --> 00:30:57.220]   And then here, we have the structure of our model.
+[00:30:57.220 --> 00:31:01.940]   So we can see with transformer, we're using the BERT model.
+[00:31:01.940 --> 00:31:04.980]   And in here, the pooling--
+[00:31:04.980 --> 00:31:07.820]   we have the embedding dimension, 7, 6, 8.
+[00:31:07.820 --> 00:31:11.300]   And we see that the only one of these values that is true
+[00:31:11.300 --> 00:31:13.860]   is the pooling mode mean tokens.
+[00:31:13.860 --> 00:31:15.860]   And the rest of them are false because we're not
+[00:31:15.860 --> 00:31:19.340]   using those methods.
+[00:31:19.340 --> 00:31:24.100]   Now, all we need to do is do the--
+[00:31:24.100 --> 00:31:26.300]   we need to initialize the loss function.
+[00:31:26.300 --> 00:31:32.940]   So from Sentence Transformers, import losses.
+[00:31:32.940 --> 00:31:36.660]   And our loss function is going to be equal to losses.
+[00:31:36.660 --> 00:31:40.580]   And we have the multiple negatives ranking loss,
+[00:31:40.580 --> 00:31:42.860]   which we can see there.
+[00:31:42.860 --> 00:31:45.740]   And all we need to pass to that is a model.
+[00:31:45.740 --> 00:31:50.020]   So it knows what model it is--
+[00:31:50.020 --> 00:31:53.220]   it knows the model parameters that it's dealing with.
+[00:31:53.220 --> 00:31:54.580]   So let's run that.
+[00:31:54.580 --> 00:31:58.700]   And with that, we're ready to actually start training
+[00:31:58.700 --> 00:32:01.220]   or fine-tuning the model.
+[00:32:01.220 --> 00:32:06.900]   So we'll say, OK, we want to use one epoch.
+[00:32:06.900 --> 00:32:09.220]   And the number of warm-up steps--
+[00:32:09.220 --> 00:32:13.100]   so like I said before, we have that 10% of warm-up steps
+[00:32:13.100 --> 00:32:16.220]   that we want to use.
+[00:32:16.220 --> 00:32:19.900]   But it isn't as complicated to set that this time.
+[00:32:19.900 --> 00:32:23.220]   We just want to say, OK, 10% 0.1 multiplied
+[00:32:23.220 --> 00:32:25.500]   by the total number of steps.
+[00:32:25.500 --> 00:32:27.620]   What total number of steps?
+[00:32:27.620 --> 00:32:35.300]   Well, it would be the length of the loader, OK?
+[00:32:35.300 --> 00:32:39.180]   And we write int there, OK?
+[00:32:39.180 --> 00:32:43.900]   And that was our warm-up steps.
+[00:32:43.900 --> 00:32:48.640]   And then we can call model.fit, so like tennis flow.
+[00:32:48.640 --> 00:32:50.820]   And then in here, we just pass a few--
+[00:32:50.820 --> 00:32:55.420]   now, we pass our model configuration and setup
+[00:32:55.420 --> 00:32:57.780]   and so on.
+[00:32:57.780 --> 00:33:03.820]   So the first thing we want to do is set our train objectives,
+[00:33:03.820 --> 00:33:08.660]   which is just a list containing train objective pairs,
+[00:33:08.660 --> 00:33:09.860]   you could say.
+[00:33:09.860 --> 00:33:11.340]   For us, we just have one of those.
+[00:33:11.340 --> 00:33:17.420]   And that is loader followed by loss, so our objectives.
+[00:33:17.420 --> 00:33:19.900]   And then we have the epochs.
+[00:33:19.900 --> 00:33:22.340]   So epochs, just put one there.
+[00:33:22.340 --> 00:33:24.500]   It's probably easier.
+[00:33:24.500 --> 00:33:26.940]   We have number of warm-up steps.
+[00:33:26.940 --> 00:33:31.220]   So we write warm-up steps is equal to warm-up.
+[00:33:31.220 --> 00:33:32.500]   And then we have the output path,
+[00:33:32.500 --> 00:33:36.780]   so where we're going to save our model.
+[00:33:36.780 --> 00:33:42.500]   So I think I use that MNR2 or something for the final one
+[00:33:42.500 --> 00:33:45.940]   that I put together.
+[00:33:45.940 --> 00:33:50.660]   And then after that, final thing, if you want.
+[00:33:50.660 --> 00:33:53.780]   So this will come up with a progress bar
+[00:33:53.780 --> 00:33:54.620]   like we saw before.
+[00:33:54.620 --> 00:33:56.940]   But the progress bar, for me, it will just
+[00:33:56.940 --> 00:33:59.440]   print every single step update.
+[00:33:59.440 --> 00:34:00.940]   So it's quite annoying.
+[00:34:00.940 --> 00:34:06.260]   So you can set show progress bar equal to false, if you want.
+[00:34:06.260 --> 00:34:08.180]   And then you just run this, OK?
+[00:34:08.180 --> 00:34:11.380]   We run this, and this will fine-tune our model.
+[00:34:11.380 --> 00:34:14.220]   Now, I've already run it, so I'm not going to run it again.
+[00:34:14.220 --> 00:34:17.140]   It takes a while.
+[00:34:17.140 --> 00:34:20.300]   So what I'm going to show you are just the results from that.
+[00:34:20.300 --> 00:34:25.900]   OK, so this is my other notebook where I already
+[00:34:25.900 --> 00:34:28.980]   ran all of what you just saw.
+[00:34:28.980 --> 00:34:30.700]   We have our sentences here.
+[00:34:30.700 --> 00:34:32.980]   So it's a load of random sentences, but a couple of them
+[00:34:32.980 --> 00:34:34.860]   do match up, right?
+[00:34:34.860 --> 00:34:38.260]   So we have this sushi one here, and there's
+[00:34:38.260 --> 00:34:39.380]   another sushi one here.
+[00:34:39.380 --> 00:34:42.060]   But what I've done is not use the same words
+[00:34:42.060 --> 00:34:44.740]   in both sentences.
+[00:34:44.740 --> 00:34:48.180]   We've got knit noodles and weaving spaghetti.
+[00:34:48.180 --> 00:34:50.340]   And we also have dental specialists
+[00:34:50.340 --> 00:34:54.700]   with construction materials and dentists with trim bricks.
+[00:34:54.700 --> 00:34:56.980]   So similar in concept, but they don't
+[00:34:56.980 --> 00:34:58.180]   share any of the same words.
+[00:34:58.180 --> 00:35:01.740]   And it's quite abstract as well.
+[00:35:01.740 --> 00:35:05.220]   So down here, so we have our model.
+[00:35:05.220 --> 00:35:08.020]   We're just encoding those sentences.
+[00:35:08.020 --> 00:35:10.580]   And then what I'm doing is I'm just
+[00:35:10.580 --> 00:35:14.220]   creating a similarity matrix between all
+[00:35:14.220 --> 00:35:18.700]   of these different sentences, or the encodings produced
+[00:35:18.700 --> 00:35:21.220]   by our model, the sentence embeddings produced
+[00:35:21.220 --> 00:35:26.180]   by our model, and all of the equivalent embeddings
+[00:35:26.180 --> 00:35:29.100]   from this list of sentences.
+[00:35:29.100 --> 00:35:35.060]   And we just use matplotlib and seaborn to actually plot that.
+[00:35:35.060 --> 00:35:38.820]   And we see that we get this nice visualization.
+[00:35:38.820 --> 00:35:42.460]   And we see that we have 4 and 3 that align,
+[00:35:42.460 --> 00:35:45.460]   and also 9 and 1, and 7 and 5.
+[00:35:45.460 --> 00:35:50.140]   And those are the three pairs I mentioned before
+[00:35:50.140 --> 00:35:52.060]   that are very similar.
+[00:35:52.060 --> 00:35:56.060]   And the rest of these values are all very low,
+[00:35:56.060 --> 00:36:01.300]   which is obviously very good because those pairs are not
+[00:36:01.300 --> 00:36:02.100]   similar.
+[00:36:02.100 --> 00:36:04.460]   Maybe they have some sort of similarity,
+[00:36:04.460 --> 00:36:05.700]   but they're not similar.
+[00:36:05.700 --> 00:36:09.020]   So we can obviously see straight away
+[00:36:09.020 --> 00:36:15.020]   where the true pairs are, or the true semantic pairs are there.
+[00:36:15.020 --> 00:36:19.980]   OK, so I think that's pretty much it for this video.
+[00:36:19.980 --> 00:36:24.500]   We've kind of gone through multiple negatives, ranking
+[00:36:24.500 --> 00:36:27.460]   loss, and how to implement it.
+[00:36:27.460 --> 00:36:29.460]   And like I said before, this is really
+[00:36:29.460 --> 00:36:32.340]   if you're going to train a sentence transformer,
+[00:36:32.340 --> 00:36:34.940]   or fine-tune a sentence transformer,
+[00:36:34.940 --> 00:36:38.060]   this is the approach I would probably
+[00:36:38.060 --> 00:36:41.580]   go with, depending on the data that you have.
+[00:36:41.580 --> 00:36:44.020]   Now, I mean, that's everything for the video.
+[00:36:44.020 --> 00:36:47.940]   So thank you very much for watching.
+[00:36:47.940 --> 00:36:49.220]   I hope you've enjoyed it.
+[00:36:49.220 --> 00:36:51.420]   And I will see you in the next one.
+
