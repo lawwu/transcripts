@@ -1,0 +1,636 @@
+
+[00:00:00.000 --> 00:00:03.320]   large language models have a little bit of an issue
+[00:00:03.320 --> 00:00:05.320]   with data freshness.
+[00:00:05.320 --> 00:00:10.320]   That is the ability to use data that is actually up-to-date.
+[00:00:10.320 --> 00:00:13.840]   Now, that is because the world,
+[00:00:13.840 --> 00:00:17.040]   according to a large language model,
+[00:00:17.040 --> 00:00:19.480]   is essentially frozen in time.
+[00:00:19.480 --> 00:00:22.220]   The large language model understands the world
+[00:00:22.220 --> 00:00:25.120]   as it was in its training data set.
+[00:00:25.120 --> 00:00:27.400]   And the training data set, it's huge,
+[00:00:27.400 --> 00:00:29.280]   it contains a ton of information,
+[00:00:29.280 --> 00:00:33.680]   but you're not going to retrain a large language model
+[00:00:33.680 --> 00:00:36.160]   on new training data sets very often
+[00:00:36.160 --> 00:00:39.320]   because it's expensive, it takes a ton of time,
+[00:00:39.320 --> 00:00:42.120]   and it's just not very easy to do.
+[00:00:42.120 --> 00:00:46.040]   So how do we handle that problem?
+[00:00:46.040 --> 00:00:50.000]   Well, for that, for keeping data up-to-date
+[00:00:50.000 --> 00:00:51.640]   in a large language model,
+[00:00:51.640 --> 00:00:53.840]   we can use retrieval augmentation.
+[00:00:53.840 --> 00:00:55.760]   The idea behind this technique
+[00:00:55.760 --> 00:00:58.280]   is that we retrieve relevant information
+[00:00:58.280 --> 00:01:00.480]   from what we call a knowledge base,
+[00:01:00.480 --> 00:01:03.040]   and we will actually pass that
+[00:01:03.040 --> 00:01:04.920]   into our large language model,
+[00:01:04.920 --> 00:01:06.800]   but not through training,
+[00:01:06.800 --> 00:01:10.620]   but through the prompt that we're feeding into the model.
+[00:01:10.620 --> 00:01:13.840]   That makes this external knowledge base
+[00:01:13.840 --> 00:01:16.640]   our window into the world
+[00:01:16.640 --> 00:01:19.560]   or into the specific subset of the world
+[00:01:19.560 --> 00:01:21.600]   that we would like our large language model
+[00:01:21.600 --> 00:01:23.080]   to have access to.
+[00:01:23.080 --> 00:01:25.240]   In this video, that's what we're going to talk about.
+[00:01:25.240 --> 00:01:27.920]   We're going to have a look at how we can implement
+[00:01:27.920 --> 00:01:32.640]   a retrieval augmentation pipeline using Lionchain.
+[00:01:32.640 --> 00:01:35.080]   So before we jump into it,
+[00:01:35.080 --> 00:01:37.200]   it's probably best we understand
+[00:01:37.200 --> 00:01:39.560]   that there are different types of knowledge
+[00:01:39.560 --> 00:01:41.560]   that we can feed into a large language model.
+[00:01:41.560 --> 00:01:44.240]   We're going to be talking about parametric knowledge
+[00:01:44.240 --> 00:01:45.960]   and source knowledge.
+[00:01:45.960 --> 00:01:48.460]   Now, the parametric knowledge
+[00:01:48.460 --> 00:01:52.160]   is actually gained by the LLM
+[00:01:52.160 --> 00:01:54.600]   during its training, okay?
+[00:01:54.600 --> 00:01:57.360]   So we have a big training process
+[00:01:57.360 --> 00:02:00.240]   and within that training process,
+[00:02:00.240 --> 00:02:04.160]   the LLM creates like an internal representation
+[00:02:04.160 --> 00:02:06.920]   of the world according to that training data set.
+[00:02:06.920 --> 00:02:10.720]   And they all get stored within the parameters
+[00:02:10.720 --> 00:02:13.200]   of the large language model.
+[00:02:13.200 --> 00:02:15.400]   Okay, and it can store a ton of information
+[00:02:15.400 --> 00:02:17.680]   because they're super big.
+[00:02:17.680 --> 00:02:20.720]   But of course, this is pretty static.
+[00:02:20.720 --> 00:02:23.840]   After training, the parametric knowledge is set
+[00:02:23.840 --> 00:02:25.760]   and it doesn't change.
+[00:02:25.760 --> 00:02:27.480]   And that's where source knowledge comes in.
+[00:02:27.480 --> 00:02:32.480]   So when we are feeding a query or a prompt into our LLM,
+[00:02:32.480 --> 00:02:37.840]   okay, so we have some prompt and it was a question,
+[00:02:37.840 --> 00:02:40.320]   we feed that into the LLM
+[00:02:40.320 --> 00:02:41.800]   and then it's going to return us
+[00:02:41.800 --> 00:02:43.480]   like an answer based on that prompt.
+[00:02:43.480 --> 00:02:44.920]   But this input here,
+[00:02:44.920 --> 00:02:48.720]   this is what we would call the source knowledge, okay?
+[00:02:48.720 --> 00:02:49.800]   So source knowledge,
+[00:02:49.800 --> 00:02:52.360]   and then up here, we have the parametric knowledge.
+[00:02:55.480 --> 00:02:58.400]   Now, when we're talking about retrieval augmentation,
+[00:02:58.400 --> 00:03:00.480]   naturally, what we're going to be doing
+[00:03:00.480 --> 00:03:05.480]   is adding more knowledge via the source knowledge to the LLM.
+[00:03:05.480 --> 00:03:08.400]   We're not touching the parametric knowledge.
+[00:03:08.400 --> 00:03:11.040]   Okay, so we're going to start with this notebook.
+[00:03:11.040 --> 00:03:12.760]   There'll be a link to this
+[00:03:12.760 --> 00:03:15.040]   somewhere in the top of the video right now.
+[00:03:15.040 --> 00:03:17.120]   And the first thing we're going to do
+[00:03:17.120 --> 00:03:19.040]   is actually build our knowledge base.
+[00:03:19.040 --> 00:03:21.120]   So this is going to be the location
+[00:03:21.120 --> 00:03:23.640]   where we saw all of that source knowledge
+[00:03:23.640 --> 00:03:25.360]   that we will be feeding
+[00:03:25.360 --> 00:03:28.560]   or potentially feeding into our large language model
+[00:03:28.560 --> 00:03:30.160]   at inference time.
+[00:03:30.160 --> 00:03:33.760]   So when we're making the predictions or generating text.
+[00:03:33.760 --> 00:03:38.720]   So we're going to be using the Wikipedia dataset from here.
+[00:03:38.720 --> 00:03:41.640]   So this is from Hugging Face datasets.
+[00:03:41.640 --> 00:03:47.240]   And we'll just have a quick look at one of those examples.
+[00:03:47.240 --> 00:03:50.520]   Okay, so if we go across, we have all this text here.
+[00:03:50.520 --> 00:03:51.640]   This is what we're going to be putting
+[00:03:51.640 --> 00:03:53.040]   into our knowledge base.
+[00:03:53.040 --> 00:03:57.320]   And you can see that it's pretty long, right?
+[00:03:57.320 --> 00:03:59.760]   Yeah, it goes on for quite a while.
+[00:03:59.760 --> 00:04:02.600]   So there's a bit of an issue here.
+[00:04:02.600 --> 00:04:07.040]   A large language model and also the encoding model
+[00:04:07.040 --> 00:04:08.680]   that we're going to be using as well,
+[00:04:08.680 --> 00:04:10.680]   they have a limited amount of texts
+[00:04:10.680 --> 00:04:13.560]   that they can efficiently process.
+[00:04:13.560 --> 00:04:15.640]   And they also have like a ceiling
+[00:04:15.640 --> 00:04:18.880]   where they can't process anymore and will return an error.
+[00:04:18.880 --> 00:04:20.280]   But more importantly,
+[00:04:20.280 --> 00:04:23.880]   we have that sort of efficiency threshold.
+[00:04:23.880 --> 00:04:26.480]   We don't want to be feeding too much text
+[00:04:26.480 --> 00:04:28.360]   into an embedding model
+[00:04:28.360 --> 00:04:31.160]   because usually the embeddings are of lesser quality
+[00:04:31.160 --> 00:04:32.360]   when we do that.
+[00:04:32.360 --> 00:04:34.640]   And we also don't want to be feeding too much text
+[00:04:34.640 --> 00:04:36.120]   into our completion model.
+[00:04:36.120 --> 00:04:39.080]   So this is a model that's generating an answer
+[00:04:39.080 --> 00:04:42.080]   because the performance of that.
+[00:04:42.080 --> 00:04:44.600]   So if you, for example, give it some instructions
+[00:04:44.600 --> 00:04:47.440]   and you feed in a small amount of extra texts
+[00:04:47.440 --> 00:04:48.920]   after those instructions,
+[00:04:48.920 --> 00:04:51.160]   there's a good chance it's gonna follow those instructions.
+[00:04:51.160 --> 00:04:55.200]   If we put in the instructions and then loads of texts,
+[00:04:55.200 --> 00:04:57.800]   there's actually an increased chance
+[00:04:57.800 --> 00:05:01.280]   that the model will forget to follow those instructions.
+[00:05:01.280 --> 00:05:06.280]   So both the embedding and the completion quality degrades
+[00:05:06.280 --> 00:05:11.280]   with the more texts that we feed into those models.
+[00:05:11.280 --> 00:05:14.320]   So what we need to do here
+[00:05:14.320 --> 00:05:17.360]   is actually cut down this long chunk of text
+[00:05:17.360 --> 00:05:18.880]   into smaller chunks.
+[00:05:18.880 --> 00:05:20.280]   So to create these chunks,
+[00:05:20.280 --> 00:05:22.880]   we first need a way of actually measuring
+[00:05:22.880 --> 00:05:25.040]   the length of our text.
+[00:05:25.040 --> 00:05:27.320]   Now, we can't just count the number of words
+[00:05:27.320 --> 00:05:28.960]   or count the number of characters
+[00:05:28.960 --> 00:05:32.240]   because a language model,
+[00:05:32.240 --> 00:05:35.520]   that's not how they count the length of texts.
+[00:05:35.520 --> 00:05:36.680]   They count the length of texts
+[00:05:36.680 --> 00:05:38.840]   using something called a token.
+[00:05:38.840 --> 00:05:43.840]   Now, token is typically like a word or sub-word length,
+[00:05:45.280 --> 00:05:48.000]   like a chunk or string.
+[00:05:48.000 --> 00:05:51.040]   And it actually varies by language model
+[00:05:51.040 --> 00:05:55.240]   or just language model and the tokenizer that they use.
+[00:05:55.240 --> 00:05:59.560]   Now, for us, we're going to be using the GPT 3.5 Turbo model
+[00:05:59.560 --> 00:06:04.560]   and the encoding model for that is actually this one here.
+[00:06:04.560 --> 00:06:07.160]   Okay, so I mean, we can,
+[00:06:07.160 --> 00:06:09.640]   maybe I can show you how we can check for that.
+[00:06:09.640 --> 00:06:11.360]   So we import TIC token.
+[00:06:11.360 --> 00:06:15.160]   So TIC token is just the tokenizer
+[00:06:15.160 --> 00:06:18.800]   or the family of tokenizers that OpenAI uses
+[00:06:18.800 --> 00:06:21.640]   for a lot of their large language models,
+[00:06:21.640 --> 00:06:23.640]   all of the GPT models.
+[00:06:23.640 --> 00:06:28.160]   So what we are going to do is we're going to say
+[00:06:28.160 --> 00:06:32.800]   TIC token dot encoding for model.
+[00:06:32.800 --> 00:06:35.040]   And then we just pass in the name of the model
+[00:06:35.040 --> 00:06:35.880]   that we're going to be using.
+[00:06:35.880 --> 00:06:38.280]   So GPT 3.5 Turbo.
+[00:06:38.280 --> 00:06:42.160]   Okay, and actually the embedding model
+[00:06:42.160 --> 00:06:44.760]   that we should be using is this one.
+[00:06:45.760 --> 00:06:47.480]   Okay, cool.
+[00:06:47.480 --> 00:06:50.600]   So, lucky we checked.
+[00:06:50.600 --> 00:06:51.800]   Let's run that.
+[00:06:51.800 --> 00:06:54.000]   In reality, there is very little difference
+[00:06:54.000 --> 00:06:57.640]   between this tokenizer and the P50 tokenizer
+[00:06:57.640 --> 00:06:58.480]   that we saw before.
+[00:06:58.480 --> 00:07:03.040]   So in reality, the difference is pretty minor.
+[00:07:03.040 --> 00:07:06.920]   But anyway, so we can take a look here
+[00:07:06.920 --> 00:07:11.920]   and we see that the tokenizer split this into 26 tokens.
+[00:07:13.480 --> 00:07:17.880]   And if we, let me take this
+[00:07:17.880 --> 00:07:22.880]   and what we'll do is we'll just split it by spaces.
+[00:07:22.880 --> 00:07:27.560]   And I just want to actually get the length
+[00:07:27.560 --> 00:07:28.840]   of that list as well.
+[00:07:28.840 --> 00:07:33.320]   Right, so this is the number of words.
+[00:07:33.320 --> 00:07:34.320]   Right, and I just want to show you
+[00:07:34.320 --> 00:07:36.120]   that there's not a direct mapping
+[00:07:36.120 --> 00:07:38.880]   between the number of tokens and the number of words
+[00:07:38.880 --> 00:07:42.400]   and obviously not for the number of characters either.
+[00:07:42.400 --> 00:07:45.160]   Okay, so the number of tokens
+[00:07:45.160 --> 00:07:47.720]   is not exactly the number of words.
+[00:07:47.720 --> 00:07:50.600]   Cool, so we'll move on.
+[00:07:50.600 --> 00:07:54.080]   And now that we have this function here,
+[00:07:54.080 --> 00:07:56.520]   which is just counting the number of tokens
+[00:07:56.520 --> 00:07:58.720]   within some text that we pass to it,
+[00:07:58.720 --> 00:08:02.240]   we can actually initialize what we call a text splitter.
+[00:08:02.240 --> 00:08:06.280]   Now, text splitter just allows us to take,
+[00:08:06.280 --> 00:08:08.600]   you know, a long chunk of text like this
+[00:08:08.600 --> 00:08:10.600]   and split it into chunks
+[00:08:10.600 --> 00:08:12.760]   and we can specify that chunk size.
+[00:08:12.760 --> 00:08:15.400]   So we're going to say we don't want anything longer
+[00:08:15.400 --> 00:08:18.000]   than 400 tokens.
+[00:08:18.000 --> 00:08:20.920]   We're going to also add an overlap between chunks.
+[00:08:20.920 --> 00:08:23.720]   So you imagine, right,
+[00:08:23.720 --> 00:08:25.760]   we're going to split into 400,
+[00:08:25.760 --> 00:08:30.200]   roughly 400 token length chunks.
+[00:08:30.200 --> 00:08:31.720]   At the end of one of those chunks
+[00:08:31.720 --> 00:08:33.280]   and the beginning of the next chunk,
+[00:08:33.280 --> 00:08:35.040]   we might actually be splitting it
+[00:08:35.040 --> 00:08:36.920]   in the middle of a sentence
+[00:08:36.920 --> 00:08:41.560]   or in between sentences that are related to each other.
+[00:08:41.560 --> 00:08:44.920]   So that means that we might cut out
+[00:08:44.920 --> 00:08:47.560]   some important information,
+[00:08:47.560 --> 00:08:50.120]   like connecting information between two chunks.
+[00:08:50.120 --> 00:08:53.120]   So what we do to somewhat avoid this
+[00:08:53.120 --> 00:08:55.280]   is we add a chunk overlap,
+[00:08:55.280 --> 00:09:00.120]   which says, okay, for chunk zero and chunk one,
+[00:09:00.120 --> 00:09:02.080]   between them, there's actually an overlap
+[00:09:02.080 --> 00:09:06.160]   of about 20 tokens that exist within both of those.
+[00:09:06.160 --> 00:09:09.600]   This just reduces the chance of us cutting out something
+[00:09:09.600 --> 00:09:11.880]   or a connection between two chunks
+[00:09:11.880 --> 00:09:15.480]   that is actually, like, important information.
+[00:09:15.480 --> 00:09:17.400]   Okay, add length function.
+[00:09:17.400 --> 00:09:20.360]   So this is what we created before up here.
+[00:09:20.360 --> 00:09:21.880]   And then we also have separators.
+[00:09:21.880 --> 00:09:24.680]   So separators is, it's going to,
+[00:09:24.680 --> 00:09:26.360]   so this, what we're using here
+[00:09:26.360 --> 00:09:27.920]   is a recursive character text splitter.
+[00:09:27.920 --> 00:09:29.040]   It's going to say,
+[00:09:29.040 --> 00:09:31.440]   try and split on double newline characters first.
+[00:09:31.440 --> 00:09:34.320]   If you can't, split on newline character.
+[00:09:34.320 --> 00:09:35.720]   If not, split on the space.
+[00:09:35.720 --> 00:09:37.600]   If not, split on anything.
+[00:09:37.600 --> 00:09:39.720]   Okay, that's all that is.
+[00:09:39.720 --> 00:09:42.200]   And yeah, so we can run that
+[00:09:42.200 --> 00:09:44.840]   and we'll get these smaller chunks.
+[00:09:44.840 --> 00:09:46.160]   They're still pretty long,
+[00:09:46.160 --> 00:09:48.200]   but as we can see here,
+[00:09:48.200 --> 00:09:52.680]   they are now all under 400 tokens.
+[00:09:52.680 --> 00:09:54.240]   So that's pretty useful.
+[00:09:54.240 --> 00:09:56.360]   Now, what we want to do is actually move on
+[00:09:56.360 --> 00:10:00.440]   to creating the embeddings for this whole thing.
+[00:10:00.440 --> 00:10:03.560]   So the embeddings or vector embeddings
+[00:10:03.560 --> 00:10:06.760]   are a very key component of this whole retrieval thing
+[00:10:06.760 --> 00:10:08.200]   that we're about to do.
+[00:10:08.200 --> 00:10:11.120]   And essentially they will allow us
+[00:10:11.120 --> 00:10:15.000]   to just retrieve relevant information
+[00:10:15.000 --> 00:10:17.120]   that we can then pass to our large language model
+[00:10:17.120 --> 00:10:20.240]   based on like a user's query.
+[00:10:20.240 --> 00:10:21.320]   So what we're going to do
+[00:10:21.320 --> 00:10:23.280]   is take each of the chunks
+[00:10:23.280 --> 00:10:24.440]   that we're going to be creating
+[00:10:24.440 --> 00:10:28.120]   and embedding them into essentially
+[00:10:28.120 --> 00:10:31.120]   what are just vectors, okay?
+[00:10:31.120 --> 00:10:34.520]   But these vectors are not just normal vectors,
+[00:10:34.520 --> 00:10:37.560]   they're actually, you can think of them
+[00:10:37.560 --> 00:10:40.840]   as being numerical representations
+[00:10:40.840 --> 00:10:45.840]   of the meaning behind whatever text is within that chunk.
+[00:10:45.840 --> 00:10:47.320]   And the reason that we can do that
+[00:10:47.320 --> 00:10:51.560]   is because we're using a specially trained embedding model
+[00:10:51.560 --> 00:10:56.560]   that essentially translates human readable text
+[00:10:56.560 --> 00:11:00.800]   into machine readable embedding letters.
+[00:11:00.800 --> 00:11:02.520]   So once we have those embeddings,
+[00:11:02.520 --> 00:11:04.880]   we then go and store those in our vector database,
+[00:11:04.880 --> 00:11:06.680]   which we'll be talking about pretty soon.
+[00:11:06.680 --> 00:11:09.720]   And then when we have a user's query,
+[00:11:09.720 --> 00:11:12.040]   we encode that using the same embedding model
+[00:11:12.040 --> 00:11:14.600]   and then just compare those vectors
+[00:11:14.600 --> 00:11:15.640]   within that vector space
+[00:11:15.640 --> 00:11:19.320]   and find the items that are the most similar
+[00:11:19.320 --> 00:11:21.480]   in terms of like their,
+[00:11:21.480 --> 00:11:25.640]   basically their angular similarity, if that makes sense.
+[00:11:25.640 --> 00:11:28.280]   Or you can, another alternative way
+[00:11:28.280 --> 00:11:29.360]   that you could think of it
+[00:11:29.360 --> 00:11:32.000]   is their distance within the vector space.
+[00:11:32.000 --> 00:11:34.440]   Although that's not exactly right
+[00:11:34.440 --> 00:11:37.560]   because it's actually the angular similarity between them,
+[00:11:37.560 --> 00:11:39.400]   but it's pretty similar.
+[00:11:39.400 --> 00:11:40.720]   So we're gonna come down to here
+[00:11:40.720 --> 00:11:45.720]   and I'm just going to first add my OpenAI API key.
+[00:11:45.720 --> 00:11:49.840]   And one thing I should know is obviously you're gonna,
+[00:11:49.840 --> 00:11:51.520]   you would be paying for this.
+[00:11:51.520 --> 00:11:55.320]   And also actually, if you don't have your API key,
+[00:11:55.320 --> 00:11:57.880]   so it's, sorry, it's platform.
+[00:11:58.880 --> 00:12:03.400]   It's openai.com, okay?
+[00:12:03.400 --> 00:12:05.000]   And then what we're going to need to do
+[00:12:05.000 --> 00:12:09.120]   is initialize this text embedding R002 model.
+[00:12:09.120 --> 00:12:12.240]   So this is basically OpenAI's best embedding model
+[00:12:12.240 --> 00:12:14.320]   at the time of recording this.
+[00:12:14.320 --> 00:12:18.960]   So we'd go ahead and we would initialize that via lang chain
+[00:12:18.960 --> 00:12:22.200]   using the OpenAI embeddings objects, okay?
+[00:12:22.200 --> 00:12:25.400]   Then with that, we can just encode text like this.
+[00:12:25.400 --> 00:12:29.440]   So we have this list of chunks of text
+[00:12:29.440 --> 00:12:32.800]   and then we just do embed, so the embedding model,
+[00:12:32.800 --> 00:12:34.880]   embed documents, and then pass in a list
+[00:12:34.880 --> 00:12:38.320]   of our text chunks there, okay?
+[00:12:38.320 --> 00:12:41.680]   Then we can see, so the response we get from this, okay?
+[00:12:41.680 --> 00:12:45.960]   So what we're returning is we get two vector embeddings
+[00:12:45.960 --> 00:12:48.960]   and that's because we have two chunks of text here.
+[00:12:48.960 --> 00:12:52.800]   And each one of those has this dimensionality of 1,536.
+[00:12:54.760 --> 00:12:57.280]   This is just the embedding dimensionality
+[00:12:57.280 --> 00:13:01.040]   of the text embedding R002 model.
+[00:13:01.040 --> 00:13:03.720]   Each embedding model is going to vary.
+[00:13:03.720 --> 00:13:06.440]   This exact number is not typical,
+[00:13:06.440 --> 00:13:08.040]   but it's within the range
+[00:13:08.040 --> 00:13:11.880]   of what would be a typical dimensionality
+[00:13:11.880 --> 00:13:13.480]   for these embedding models.
+[00:13:13.480 --> 00:13:14.320]   Okay, cool.
+[00:13:14.320 --> 00:13:17.120]   So with that, we can actually move on
+[00:13:17.120 --> 00:13:20.280]   to the vector database part of things.
+[00:13:20.280 --> 00:13:25.280]   So a vector database is a specific type of knowledge base
+[00:13:25.280 --> 00:13:31.440]   that allows us to search using these embedding vectors
+[00:13:31.440 --> 00:13:33.760]   that we've created and actually scale
+[00:13:33.760 --> 00:13:35.760]   that to billions of records.
+[00:13:35.760 --> 00:13:39.600]   So we could literally have, well, billions
+[00:13:39.600 --> 00:13:44.240]   of these text chunks in there that we encode into vectors.
+[00:13:44.240 --> 00:13:45.680]   And we can search through those
+[00:13:45.680 --> 00:13:49.280]   and actually return them very, very quickly.
+[00:13:49.280 --> 00:13:52.880]   We're talking like, I think at a billion scale,
+[00:13:52.880 --> 00:13:55.720]   maybe you're looking at a hundred milliseconds,
+[00:13:55.720 --> 00:13:58.080]   maybe even less if you're optimizing it.
+[00:13:58.080 --> 00:14:00.600]   Now, because it's a database that we're gonna be using,
+[00:14:00.600 --> 00:14:02.560]   we can also manage our records.
+[00:14:02.560 --> 00:14:06.400]   So we can add, update, delete records,
+[00:14:06.400 --> 00:14:10.000]   which is super important for that data freshness thing
+[00:14:10.000 --> 00:14:11.240]   that I mentioned earlier.
+[00:14:11.240 --> 00:14:13.480]   And we can even do some things
+[00:14:13.480 --> 00:14:16.240]   like what we'd call metadata filtering.
+[00:14:16.240 --> 00:14:20.720]   So if I use the example of internal company documents,
+[00:14:20.720 --> 00:14:22.600]   let's say you have a company documents
+[00:14:22.600 --> 00:14:24.400]   that belong to engineering,
+[00:14:24.400 --> 00:14:26.920]   company documents that belong to HR,
+[00:14:26.920 --> 00:14:28.720]   you could use this metadata filtering
+[00:14:28.720 --> 00:14:33.720]   to filter purely for HR documents or engineering documents.
+[00:14:33.720 --> 00:14:36.920]   So that's where you would start using that.
+[00:14:36.920 --> 00:14:39.360]   You can also filter based on dates
+[00:14:39.360 --> 00:14:41.360]   and all these other things as well.
+[00:14:41.360 --> 00:14:44.480]   So let's take a look at how we would initialize that.
+[00:14:44.480 --> 00:14:47.960]   So to create the vector database,
+[00:14:47.960 --> 00:14:49.640]   we're gonna be using Pinecone for this.
+[00:14:49.640 --> 00:14:52.880]   You do need a free API key from Pinecone.
+[00:14:52.880 --> 00:14:57.520]   There may be a wait list at the moment for that,
+[00:14:57.520 --> 00:15:01.480]   but at least at the time of recording,
+[00:15:01.480 --> 00:15:04.160]   I think that wait list has been processed pretty quickly.
+[00:15:04.160 --> 00:15:07.640]   So hopefully we'll not be waiting too long.
+[00:15:07.640 --> 00:15:09.600]   So I'm going to just,
+[00:15:09.600 --> 00:15:13.440]   oh, first I'll get my API key and I'll get my environment.
+[00:15:13.440 --> 00:15:16.000]   So I've gone to app.pinecone.io.
+[00:15:16.000 --> 00:15:19.880]   You'll end up in your default project by default,
+[00:15:19.880 --> 00:15:21.480]   and then you go to API keys.
+[00:15:21.480 --> 00:15:24.320]   You click copy, right?
+[00:15:24.320 --> 00:15:26.880]   And also just note your environment here.
+[00:15:26.880 --> 00:15:29.600]   Okay, so I have US West 1 GCP.
+[00:15:29.600 --> 00:15:32.120]   So I'm gonna remember that and I'll type that in.
+[00:15:32.120 --> 00:15:35.640]   Okay, so let me run this, enter my API key,
+[00:15:35.640 --> 00:15:36.880]   and now I'm gonna enter my environment,
+[00:15:36.880 --> 00:15:41.320]   which is US West 1 GCP.
+[00:15:41.320 --> 00:15:46.320]   Okay, so I'm just getting an error
+[00:15:46.320 --> 00:15:49.760]   because I've already created the index here.
+[00:15:49.760 --> 00:15:54.760]   So let me, what I can do is just add another line here.
+[00:15:54.760 --> 00:15:59.840]   So if index name, kind of want to do that, not quite.
+[00:15:59.840 --> 00:16:01.240]   So I don't want to delete it.
+[00:16:01.240 --> 00:16:06.240]   If index name is not in the index list,
+[00:16:06.240 --> 00:16:09.000]   we're going to create it.
+[00:16:09.000 --> 00:16:10.880]   Otherwise I don't need to create it
+[00:16:10.880 --> 00:16:12.280]   'cause it's already there.
+[00:16:12.280 --> 00:16:16.440]   So I'm not going to create it 'cause I don't need to.
+[00:16:16.440 --> 00:16:18.000]   But of course, when you run this,
+[00:16:18.000 --> 00:16:20.040]   if this is your first time running this notebook,
+[00:16:20.040 --> 00:16:22.720]   it will create that index.
+[00:16:22.720 --> 00:16:25.960]   Then after that, we need to connect to the index.
+[00:16:25.960 --> 00:16:27.720]   We're using this gRPC index,
+[00:16:27.720 --> 00:16:31.520]   which is just an alternative to using index.
+[00:16:31.520 --> 00:16:36.080]   gRPC is just a little more reliable, can be faster.
+[00:16:36.080 --> 00:16:39.240]   So I like to use that one instead,
+[00:16:39.240 --> 00:16:40.600]   but you can use either.
+[00:16:40.600 --> 00:16:43.960]   Honestly, it doesn't make a huge difference.
+[00:16:43.960 --> 00:16:47.280]   Okay, and again, if you're running this for the first time,
+[00:16:47.280 --> 00:16:49.840]   this is going to say zero, okay?
+[00:16:49.840 --> 00:16:51.320]   Because it will be an empty index.
+[00:16:51.320 --> 00:16:54.120]   So me, obviously there's already vectors in there.
+[00:16:54.120 --> 00:16:57.440]   So yeah, they're already there.
+[00:16:57.440 --> 00:16:59.520]   And then what we would do
+[00:16:59.520 --> 00:17:02.920]   is we'd start populating the index.
+[00:17:02.920 --> 00:17:04.200]   I'm not going to run this again
+[00:17:04.200 --> 00:17:06.440]   because I've already run it,
+[00:17:06.440 --> 00:17:09.840]   but let me take you through what is actually happening.
+[00:17:09.840 --> 00:17:12.320]   So we first set this batch limit.
+[00:17:12.320 --> 00:17:14.000]   So this is saying, okay,
+[00:17:14.000 --> 00:17:17.600]   I don't want to upsert or add
+[00:17:17.600 --> 00:17:21.920]   any more than 100 records at any one time.
+[00:17:21.920 --> 00:17:24.360]   Now that's important for two reasons,
+[00:17:24.360 --> 00:17:25.920]   really more than anything else.
+[00:17:25.920 --> 00:17:28.960]   First, the API request to OpenAI,
+[00:17:28.960 --> 00:17:31.880]   and you can only send and receive so much data.
+[00:17:31.880 --> 00:17:35.160]   And then the API request to Pinecone
+[00:17:35.160 --> 00:17:36.400]   for the exact same reason,
+[00:17:36.400 --> 00:17:38.440]   you can only send so much data.
+[00:17:38.440 --> 00:17:41.760]   So we limit that so we don't go beyond
+[00:17:41.760 --> 00:17:45.800]   where we would likely hit a data limit.
+[00:17:45.800 --> 00:17:49.040]   And then we initialize this text list
+[00:17:49.040 --> 00:17:51.400]   and also this metadata's list.
+[00:17:51.400 --> 00:17:52.400]   And then we're going to go through,
+[00:17:52.400 --> 00:17:54.920]   we're going to create our metadata.
+[00:17:54.920 --> 00:17:57.400]   We're going to get our text
+[00:17:57.400 --> 00:18:00.840]   and we're using the split text method there.
+[00:18:00.840 --> 00:18:04.480]   And then we just create our metadata.
+[00:18:04.480 --> 00:18:09.360]   So the metadata is just the metadata we created up here,
+[00:18:09.360 --> 00:18:12.200]   plus the chunk that we,
+[00:18:12.200 --> 00:18:14.520]   so this is like the chunk number.
+[00:18:14.520 --> 00:18:16.240]   So imagine for each record,
+[00:18:16.240 --> 00:18:18.120]   like the Alan Turing example earlier on,
+[00:18:18.120 --> 00:18:21.280]   we had three chunks from that single record.
+[00:18:21.280 --> 00:18:23.960]   So in that case, we would have chunk zero,
+[00:18:23.960 --> 00:18:25.560]   chunk one, chunk two,
+[00:18:25.560 --> 00:18:27.600]   and then we would have the corresponding text
+[00:18:27.600 --> 00:18:29.800]   for each one of those chunks.
+[00:18:29.800 --> 00:18:33.680]   And then the metadata is actually on the article level.
+[00:18:33.680 --> 00:18:37.760]   So that wouldn't vary for each chunk, okay?
+[00:18:37.760 --> 00:18:42.000]   So it's just the chunk number and the text
+[00:18:42.000 --> 00:18:43.720]   that will actually vary there.
+[00:18:43.720 --> 00:18:49.240]   Okay, we append those to our current batches,
+[00:18:49.240 --> 00:18:50.720]   which is up here.
+[00:18:50.720 --> 00:18:54.240]   And then we say, once we reach our batch limit,
+[00:18:54.240 --> 00:18:57.520]   then we would add everything, okay?
+[00:18:57.520 --> 00:18:59.760]   So that's what we're doing there.
+[00:18:59.760 --> 00:19:02.600]   And then actually, so here,
+[00:19:02.600 --> 00:19:04.200]   so we might actually get to the end here
+[00:19:04.200 --> 00:19:06.520]   and we'll probably have a few left over.
+[00:19:06.520 --> 00:19:10.720]   So we should also catch those as well.
+[00:19:10.720 --> 00:19:15.720]   So we would say, if the length of text is greater than,
+[00:19:15.720 --> 00:19:18.640]   yeah, we would do this.
+[00:19:18.640 --> 00:19:22.120]   Okay, so that's just to catch those final.
+[00:19:22.120 --> 00:19:25.320]   Let's say we have like three items at the end there
+[00:19:25.320 --> 00:19:29.360]   with the initial code, they would have been missed.
+[00:19:29.360 --> 00:19:31.440]   Okay, and we don't want to miss anything.
+[00:19:31.440 --> 00:19:34.760]   So yeah, we create our IDs.
+[00:19:34.760 --> 00:19:39.040]   We're using UUID4 for that.
+[00:19:39.040 --> 00:19:41.440]   And then we create our embeddings
+[00:19:41.440 --> 00:19:42.760]   with embed-embed-documents.
+[00:19:42.760 --> 00:19:44.400]   This is just what we did before.
+[00:19:44.400 --> 00:19:48.240]   We then add everything to our Pinecone index.
+[00:19:48.240 --> 00:19:51.440]   So that includes, basically the way that we do that
+[00:19:51.440 --> 00:19:53.680]   is we'll create a list or an iterable object
+[00:19:53.680 --> 00:19:58.680]   that contains tuples of IDs, embeddings, and metadatas.
+[00:20:00.080 --> 00:20:02.360]   And yeah, that's it.
+[00:20:02.360 --> 00:20:06.160]   Okay, so after that, we will have indexed everything.
+[00:20:06.160 --> 00:20:08.960]   Of course, I already had everything in there.
+[00:20:08.960 --> 00:20:10.400]   So this isn't varied.
+[00:20:10.400 --> 00:20:11.880]   This doesn't change, but for you,
+[00:20:11.880 --> 00:20:13.040]   it should say something.
+[00:20:13.040 --> 00:20:16.720]   It should say like 27.4-ish thousand.
+[00:20:16.720 --> 00:20:22.120]   And yeah, so that is our indexing process.
+[00:20:22.120 --> 00:20:24.840]   So we just added everything to our knowledge base
+[00:20:24.840 --> 00:20:27.720]   or added all the source knowledge to our knowledge base.
+[00:20:27.720 --> 00:20:31.560]   And then what we want to do is actually back in LineChain,
+[00:20:31.560 --> 00:20:35.000]   we're going to initialize a new Pinecone instance.
+[00:20:35.000 --> 00:20:37.760]   So the Pinecone instance that we just created
+[00:20:37.760 --> 00:20:40.040]   was not within LineChain.
+[00:20:40.040 --> 00:20:44.840]   The reason that I did that is because creating the index
+[00:20:44.840 --> 00:20:49.360]   and populating it in LineChain is a fair bit slower
+[00:20:49.360 --> 00:20:52.040]   than just doing it directly with the Pinecone client.
+[00:20:52.040 --> 00:20:54.880]   So I tend to avoid doing that.
+[00:20:54.880 --> 00:20:56.520]   Maybe at some point in the future,
+[00:20:56.520 --> 00:21:00.120]   that'll be optimized a little better than it is now,
+[00:21:00.120 --> 00:21:02.560]   but for now, yeah, it isn't.
+[00:21:02.560 --> 00:21:06.680]   So I avoid doing that part within LineChain.
+[00:21:06.680 --> 00:21:09.040]   But we are going to be using LineChain
+[00:21:09.040 --> 00:21:12.520]   and actually for the next, so for the querying
+[00:21:12.520 --> 00:21:15.160]   and for the retrieval augmentation
+[00:21:15.160 --> 00:21:17.200]   with a large language model,
+[00:21:17.200 --> 00:21:21.720]   LineChain makes this much easier, okay?
+[00:21:21.720 --> 00:21:27.320]   So I'm going to reinitialize Pinecone, but in LineChain.
+[00:21:27.320 --> 00:21:31.040]   Now, as far as I, this might change,
+[00:21:31.040 --> 00:21:35.200]   but the GRPC index wasn't recognized by LineChain
+[00:21:35.200 --> 00:21:37.680]   last time I tried.
+[00:21:37.680 --> 00:21:40.240]   So we just use a normal index here.
+[00:21:40.240 --> 00:21:44.800]   And yeah, we just initialize our VectorSort, okay?
+[00:21:44.800 --> 00:21:47.440]   So this is a VectorDatabaseConnection.
+[00:21:47.440 --> 00:21:51.280]   Essentially the same as what we had up here, the index, okay?
+[00:21:51.280 --> 00:21:54.520]   And the only thing, the only extra thing we need to do here
+[00:21:54.520 --> 00:21:57.840]   is we need to tell LineChain where the text
+[00:21:57.840 --> 00:21:59.480]   within our metadata is stored.
+[00:21:59.480 --> 00:22:03.360]   So we're saying the text field is text,
+[00:22:03.360 --> 00:22:08.640]   and we can see that because we create it here, okay?
+[00:22:08.640 --> 00:22:11.000]   Cool. So we run that.
+[00:22:11.000 --> 00:22:15.000]   And then what we can do is we do a similarity search
+[00:22:15.000 --> 00:22:17.120]   across that VectorSort, okay?
+[00:22:17.120 --> 00:22:18.440]   So we pass in our query.
+[00:22:18.440 --> 00:22:22.320]   We're going to say who was Benito Mussolini, okay?
+[00:22:22.320 --> 00:22:25.280]   And we're going to return the top three most relevant docs
+[00:22:25.280 --> 00:22:26.960]   to that query.
+[00:22:26.960 --> 00:22:31.760]   And we see, okay, page content, Benito, Mussolini,
+[00:22:31.760 --> 00:22:35.120]   so on and so on, Italian politician and journalist,
+[00:22:35.120 --> 00:22:38.000]   prime minister of Italy, so on and so on,
+[00:22:38.000 --> 00:22:40.760]   leader of the National Fascist Party.
+[00:22:40.760 --> 00:22:43.160]   Okay, obviously relevant.
+[00:22:43.160 --> 00:22:47.200]   And then this one, again, you know, it's clearly,
+[00:22:47.200 --> 00:22:50.600]   I think clearly relevant and obviously relevant again.
+[00:22:50.600 --> 00:22:55.080]   So we're getting three relevant documents there, okay?
+[00:22:55.080 --> 00:22:56.600]   Now, what can we do with that?
+[00:22:56.600 --> 00:22:57.960]   It's a lot of information, right?
+[00:22:57.960 --> 00:23:01.120]   If we scroll across, that's a ton of text,
+[00:23:01.120 --> 00:23:03.600]   and we don't really, or at least I don't want to feed
+[00:23:03.600 --> 00:23:06.360]   all that information to our users.
+[00:23:06.360 --> 00:23:10.960]   So what we want to do is actually come down to here,
+[00:23:10.960 --> 00:23:15.120]   and we're going to layer a large language model
+[00:23:15.120 --> 00:23:16.600]   on top of what we just did.
+[00:23:16.600 --> 00:23:18.480]   So that retrieval thing we just did,
+[00:23:18.480 --> 00:23:21.560]   we're actually going to add a large language model
+[00:23:21.560 --> 00:23:22.920]   onto the end of that.
+[00:23:22.920 --> 00:23:24.920]   And it's essentially going to take the query,
+[00:23:24.920 --> 00:23:28.080]   it's going to take these contexts,
+[00:23:28.080 --> 00:23:30.600]   these documents that we returned,
+[00:23:30.600 --> 00:23:33.960]   and it is going to,
+[00:23:33.960 --> 00:23:37.040]   we're going to put them back together into the prompt,
+[00:23:37.040 --> 00:23:39.400]   and then ask the large language model to answer the query
+[00:23:39.400 --> 00:23:43.680]   based on those returned documents or contexts.
+[00:23:44.840 --> 00:23:49.160]   Okay, and we would call this generative question answering,
+[00:23:49.160 --> 00:23:52.880]   and I mean, let's just see how it works, right?
+[00:23:52.880 --> 00:23:55.560]   So we're going to initialize our LLM,
+[00:23:55.560 --> 00:23:59.480]   we're using the GPT 3.5 turbo model.
+[00:23:59.480 --> 00:24:00.920]   Temperature we set to zero,
+[00:24:00.920 --> 00:24:03.800]   so we basically decrease the randomness
+[00:24:03.800 --> 00:24:06.720]   in the model generation as much as possible.
+[00:24:06.720 --> 00:24:08.880]   That's important when we're trying to do
+[00:24:08.880 --> 00:24:10.560]   like factual question answering,
+[00:24:10.560 --> 00:24:13.760]   because we don't really want the model to make anything up.
+[00:24:13.760 --> 00:24:17.400]   It doesn't protect us 100% from it making things up,
+[00:24:17.400 --> 00:24:19.640]   but it will limit it a bit more
+[00:24:19.640 --> 00:24:21.600]   than if we set a high temperature.
+[00:24:21.600 --> 00:24:26.560]   And then we actually use this retrieval QA chain.
+[00:24:26.560 --> 00:24:30.440]   So the retrieval QA chain is just going to wrap everything up
+[00:24:30.440 --> 00:24:32.560]   into a single function, okay?
+[00:24:32.560 --> 00:24:35.120]   So it's going to give an inquiry,
+[00:24:35.120 --> 00:24:36.960]   it's going to send it to our VEX database,
+[00:24:36.960 --> 00:24:41.080]   retrieve everything, and then pass the query
+[00:24:41.080 --> 00:24:44.480]   and the retrieved documents into the large language model
+[00:24:44.480 --> 00:24:47.480]   and get it to answer the question for us.
+[00:24:47.480 --> 00:24:51.400]   Okay, I should run this.
+[00:24:51.400 --> 00:24:53.560]   And then I run this.
+[00:24:53.560 --> 00:24:55.200]   And this can take a little bit of time.
+[00:24:55.200 --> 00:25:00.040]   This is one, my bad internet connection,
+[00:25:00.040 --> 00:25:02.960]   and also just the slowness of interacting
+[00:25:02.960 --> 00:25:05.680]   with open AI at the moment.
+[00:25:05.680 --> 00:25:08.760]   So we get Benito Mussolini who was an Italian politician
+[00:25:08.760 --> 00:25:11.720]   journalist who served as prime minister of Italy.
+[00:25:11.720 --> 00:25:13.560]   He was leader of National Fascist Party
+[00:25:13.560 --> 00:25:16.440]   and invented the ideology of fascism.
+[00:25:16.440 --> 00:25:20.120]   He was a dictator of Italy by the end of 1927
+[00:25:20.120 --> 00:25:22.680]   in his form of fascism, Italian fascism,
+[00:25:22.680 --> 00:25:24.400]   so on and so on, right?
+[00:25:24.400 --> 00:25:27.640]   There's a ton of texts in there, okay?
+[00:25:27.640 --> 00:25:31.200]   And I mean, it looks pretty accurate, right?
+[00:25:31.200 --> 00:25:34.960]   But you know, large language models,
+[00:25:34.960 --> 00:25:39.960]   they're very good at saying things are completely wrong
+[00:25:39.960 --> 00:25:44.040]   in a very convincing way.
+[00:25:44.040 --> 00:25:48.280]   And that's actually one of the biggest problems with these.
+[00:25:48.280 --> 00:25:50.520]   Like you don't necessarily know
+[00:25:50.520 --> 00:25:52.520]   that what it's telling you is true.
+[00:25:52.520 --> 00:25:57.520]   And of course, like for people that use these things a lot,
+[00:25:57.520 --> 00:25:59.840]   they are pretty aware of this.
+[00:25:59.840 --> 00:26:02.280]   And they're probably going to cross-check things.
+[00:26:02.280 --> 00:26:04.880]   But you know, even for me, I use these all the time.
+[00:26:04.880 --> 00:26:07.920]   Sometimes a large language model will say something
+[00:26:07.920 --> 00:26:10.960]   and I'm kind of unsure, like, oh, is that true?
+[00:26:10.960 --> 00:26:11.800]   Is it not?
+[00:26:11.800 --> 00:26:12.640]   I don't know.
+[00:26:12.640 --> 00:26:13.960]   And then I have to check.
+[00:26:13.960 --> 00:26:17.400]   And it turns out that it's just completely false.
+[00:26:17.400 --> 00:26:20.680]   So that is problematic,
+[00:26:20.680 --> 00:26:23.600]   especially when you start deploying this to users
+[00:26:23.600 --> 00:26:25.040]   that are not necessarily using
+[00:26:25.040 --> 00:26:27.320]   these sort of models all the time.
+[00:26:27.320 --> 00:26:32.320]   So there's not a 100% full solution for that problem,
+[00:26:33.520 --> 00:26:36.840]   for the issue of hallucinations.
+[00:26:36.840 --> 00:26:41.000]   But we can do things to limit it.
+[00:26:41.000 --> 00:26:44.160]   On one end, we can use prompt engineering
+[00:26:44.160 --> 00:26:48.920]   to reduce the likelihood of the model making things up.
+[00:26:48.920 --> 00:26:51.400]   We can set the temperature to zero
+[00:26:51.400 --> 00:26:54.680]   to reduce the likelihood of the model making things up.
+[00:26:54.680 --> 00:26:55.800]   Another thing we can do,
+[00:26:55.800 --> 00:27:00.360]   which is not really, you know, modifying the model at all,
+[00:27:00.360 --> 00:27:05.360]   but it's actually just giving the user citations
+[00:27:05.360 --> 00:27:07.240]   so they can actually check
+[00:27:07.240 --> 00:27:09.640]   where this information is coming from.
+[00:27:09.640 --> 00:27:12.920]   So to do that in LineChain, it's actually really easy.
+[00:27:12.920 --> 00:27:15.080]   We just use a slightly different version
+[00:27:15.080 --> 00:27:16.960]   of the Retrieval QA chain
+[00:27:16.960 --> 00:27:21.440]   called the Retrieval QA with Sources chain, okay?
+[00:27:21.440 --> 00:27:23.520]   And then we use it in pretty much the same way.
+[00:27:23.520 --> 00:27:26.040]   So we're just gonna pass the same query
+[00:27:26.040 --> 00:27:29.400]   about Benito Mussolini, you can see here, actually.
+[00:27:29.400 --> 00:27:32.480]   And we're just gonna run that.
+[00:27:32.480 --> 00:27:35.320]   Okay, so let's wait a moment.
+[00:27:35.320 --> 00:27:38.680]   Okay, and yeah, I mean, we're getting the,
+[00:27:38.680 --> 00:27:42.200]   pretty much the same, in fact, I think it's the same answer.
+[00:27:42.200 --> 00:27:45.480]   And what we can see is we actually get the sources
+[00:27:45.480 --> 00:27:46.760]   of this information as well.
+[00:27:46.760 --> 00:27:49.440]   So we can actually, I think we can click on this.
+[00:27:49.440 --> 00:27:51.880]   And yeah, it's gonna take us through and we can see,
+[00:27:51.880 --> 00:27:56.880]   ah, okay, so this looks like a pretty good source.
+[00:27:57.760 --> 00:27:59.400]   Maybe this is a bit more trustworthy
+[00:27:59.400 --> 00:28:03.960]   and we can also just use this as essentially a check.
+[00:28:03.960 --> 00:28:05.920]   We can go through what we're reading
+[00:28:05.920 --> 00:28:08.440]   and if something seems so weird, we can check on here
+[00:28:08.440 --> 00:28:11.640]   to actually see that it's either true,
+[00:28:11.640 --> 00:28:13.560]   like it's actually there or it's not.
+[00:28:13.560 --> 00:28:16.520]   So yeah, that can be really useful.
+[00:28:16.520 --> 00:28:19.600]   Simply just adding the source of our information,
+[00:28:19.600 --> 00:28:21.480]   it can make a big difference.
+[00:28:21.480 --> 00:28:25.960]   And really, I think help users trust the system
+[00:28:25.960 --> 00:28:29.200]   that we're building, and even just as developers
+[00:28:29.200 --> 00:28:32.280]   and also people like managers wanting to integrate
+[00:28:32.280 --> 00:28:35.480]   these systems into their operations,
+[00:28:35.480 --> 00:28:38.320]   having those sources can, I think,
+[00:28:38.320 --> 00:28:42.480]   make a big difference in trustworthiness.
+[00:28:42.480 --> 00:28:47.480]   So we've learned how to ground our large language models
+[00:28:47.480 --> 00:28:50.160]   using source knowledge.
+[00:28:50.160 --> 00:28:52.400]   So source knowledge, again, is the knowledge
+[00:28:52.400 --> 00:28:55.000]   that we're feeding into the large language model
+[00:28:55.000 --> 00:28:58.120]   via the input prompt.
+[00:28:58.120 --> 00:29:00.800]   And naturally by doing this, we're kind of,
+[00:29:00.800 --> 00:29:03.120]   you know, we're encouraging accuracy
+[00:29:03.120 --> 00:29:07.640]   in our large language model outputs
+[00:29:07.640 --> 00:29:12.000]   and just reducing the likelihood of hallucinations
+[00:29:12.000 --> 00:29:14.360]   or inaccurate information in there.
+[00:29:14.360 --> 00:29:17.720]   Now, as well, we can obviously keep information
+[00:29:17.720 --> 00:29:20.960]   super up to date with this approach.
+[00:29:20.960 --> 00:29:23.400]   And we start at the end there with sources,
+[00:29:23.400 --> 00:29:25.600]   we can actually cite everything,
+[00:29:25.600 --> 00:29:28.600]   which can be super helpful in trusting
+[00:29:28.600 --> 00:29:30.400]   the output of these models.
+[00:29:30.400 --> 00:29:33.080]   Now, we're already seeing large language models
+[00:29:33.080 --> 00:29:37.440]   being used with external knowledge bases
+[00:29:37.440 --> 00:29:42.440]   in a lot of really big products like Bing, AI,
+[00:29:42.440 --> 00:29:47.440]   Google's BARD, we see chat GPT plugins are, you know,
+[00:29:47.440 --> 00:29:50.440]   starting to use this sort of thing as well.
+[00:29:50.440 --> 00:29:55.080]   So I think the future of large language models,
+[00:29:55.080 --> 00:29:59.520]   these knowledge bases are going to be incredibly important.
+[00:29:59.520 --> 00:30:03.640]   They are essentially an efficient form of memory
+[00:30:03.640 --> 00:30:07.240]   for these models that we can update and manage,
+[00:30:07.240 --> 00:30:10.280]   which we just can't do with,
+[00:30:10.280 --> 00:30:12.520]   if we just rely on parametric knowledge.
+[00:30:12.520 --> 00:30:16.800]   So yeah, I really think that this like long-term memory
+[00:30:16.800 --> 00:30:20.220]   for large language models is super important.
+[00:30:20.220 --> 00:30:25.220]   It's here to say, and it's definitely worth looking
+[00:30:25.220 --> 00:30:27.280]   at whatever you're building at the moment and thinking,
+[00:30:27.280 --> 00:30:31.000]   okay, does it make sense to integrate something like this?
+[00:30:31.000 --> 00:30:33.280]   Will it help, right?
+[00:30:33.280 --> 00:30:35.960]   But for now, that's it for this video.
+[00:30:35.960 --> 00:30:40.040]   So I hope this has been useful and interesting.
+[00:30:40.040 --> 00:30:41.840]   Thank you very much for watching
+[00:30:41.840 --> 00:30:44.120]   and I will see you again in the next one.
+[00:30:44.120 --> 00:30:44.960]   Bye.
+[00:30:44.960 --> 00:30:47.540]   (upbeat music)
+[00:30:48.380 --> 00:30:50.960]   (upbeat music)
+[00:30:50.960 --> 00:30:53.540]   (upbeat music)
+[00:30:53.580 --> 00:30:56.160]   (upbeat music)
+[00:30:56.160 --> 00:30:58.580]   (soft music)
+[00:30:58.580 --> 00:31:00.640]   you
+

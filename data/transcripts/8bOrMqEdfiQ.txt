@@ -1,0 +1,298 @@
+
+[00:00:00.000 --> 00:00:07.360]   Okay, so we're on to lsh or locality sensitive hashing with random projection in the
+[00:00:07.360 --> 00:00:12.800]   Previous video in a series if you're if you're following it, we covered lsh
+[00:00:12.800 --> 00:00:15.280]   but we covered the more traditional version of it with
+[00:00:15.280 --> 00:00:17.840]   shingling min hashing
+[00:00:17.840 --> 00:00:19.840]   and lsh
+[00:00:19.840 --> 00:00:25.360]   What we're covering here is I suppose more of like a uh a modern implementation of it
+[00:00:25.360 --> 00:00:27.200]   and
+[00:00:27.200 --> 00:00:34.240]   This is what you'll see in libraries like vice which we'll work through later on how to actually implement this in vice
+[00:00:34.240 --> 00:00:41.120]   So what we're going to cover in this video is specifically lsh random projection
+[00:00:41.120 --> 00:00:47.520]   We're going to work through a few visualizations to try and get a grasp of what it is actually doing
+[00:00:47.520 --> 00:00:56.320]   And whilst we're doing that we'll also work through how we implement that in very simple python code for the vice
+[00:00:56.620 --> 00:01:01.340]   Implementation of this which is obviously much more efficient than what we'll be covering in this video
+[00:01:01.340 --> 00:01:04.220]   we will
+[00:01:04.220 --> 00:01:08.860]   Cover that in another separate video to this because otherwise it's just huge
+[00:01:08.860 --> 00:01:11.660]   a very long video
+[00:01:11.660 --> 00:01:17.280]   So if you would like to see that i'll make sure there's a link to that in the description
+[00:01:17.280 --> 00:01:19.900]   So let's just recap very quickly on
+[00:01:19.900 --> 00:01:22.700]   You know, what is lsh?
+[00:01:22.780 --> 00:01:28.540]   So at the top here we have this first kind of row if you like
+[00:01:28.540 --> 00:01:35.340]   Here we're minimizing collisions. So this is a hash function this blue bit in the middle
+[00:01:35.340 --> 00:01:38.380]   And these are vectors on the left
+[00:01:38.380 --> 00:01:44.940]   And we're passing through a hash function and it's making sure that we put both of those into separate buckets
+[00:01:44.940 --> 00:01:47.980]   That's minimizing collisions
+[00:01:47.980 --> 00:01:49.260]   lsh
+[00:01:49.260 --> 00:01:56.860]   Tries to the opposite and what it does is maximizes collisions, but it only tries to maximize collisions for similar vectors
+[00:01:56.860 --> 00:01:59.340]   Not just everything
+[00:01:59.340 --> 00:02:01.500]   so
+[00:02:01.500 --> 00:02:03.500]   lsh
+[00:02:03.500 --> 00:02:08.940]   In short is a hashing function that tries to book it similar vectors together
+[00:02:08.940 --> 00:02:13.040]   Now when we're performing search with lsh
+[00:02:13.040 --> 00:02:14.940]   we
+[00:02:14.940 --> 00:02:16.620]   Have all of our
+[00:02:16.620 --> 00:02:22.460]   I would say database vectors indexed already. So they've all been booked it imagine they've all been booketed
+[00:02:22.460 --> 00:02:25.500]   And we introduce a new vector
+[00:02:25.500 --> 00:02:33.180]   Which would be our query vector and we process that through the same booketing mechanism and we see where it lands and then
+[00:02:33.180 --> 00:02:35.900]   Essentially what we can say is okay
+[00:02:35.900 --> 00:02:39.900]   This has landed in this bucket and that means that the most similar
+[00:02:40.780 --> 00:02:46.860]   Other vectors to it are the ones that are either in the same bucket or in the neighboring buckets
+[00:02:46.860 --> 00:02:49.900]   so what it does is allows us to
+[00:02:49.900 --> 00:02:51.660]   compress
+[00:02:51.660 --> 00:02:55.580]   our vectors into low resolution vectors, which makes
+[00:02:55.580 --> 00:02:58.380]   Our search a lot faster
+[00:02:58.380 --> 00:03:05.900]   And that is what you can see here so we have our dense vectors at the top typically we're using dense vectors for this
+[00:03:07.580 --> 00:03:15.580]   And they can contain hundreds or thousands of values and they're all typically floating point numbers
+[00:03:15.580 --> 00:03:16.860]   so
+[00:03:16.860 --> 00:03:18.860]   Memory wise it's pretty heavy
+[00:03:18.860 --> 00:03:23.340]   And what we do is convert them into a very small
+[00:03:23.340 --> 00:03:30.300]   Binary vector which is what you can you can see the bottom. So it's a lot more memory efficient and
+[00:03:30.300 --> 00:03:37.180]   Usually it should be faster to search although sometimes it can actually go the other way and it can
+[00:03:37.580 --> 00:03:40.700]   And it can become slower to search than just comparing
+[00:03:40.700 --> 00:03:45.740]   Um than just using a flat index now at the same time because we are
+[00:03:45.740 --> 00:03:48.460]   approximating these vectors
+[00:03:48.460 --> 00:03:50.060]   the search
+[00:03:50.060 --> 00:03:55.100]   Accuracy is obviously going to decrease but what we want to do really is to maintain decent
+[00:03:55.100 --> 00:03:57.660]   accuracy
+[00:03:57.660 --> 00:04:03.580]   Whilst speeding up the search and our aim is using xq which is our query vector
+[00:04:04.300 --> 00:04:07.980]   It is to return the k nearest neighbors
+[00:04:07.980 --> 00:04:15.100]   As accurately as possible, obviously, we're approximating so it won't be perfect, but that's fine as long as you get a decent speed up
+[00:04:15.100 --> 00:04:20.060]   now lsh with random projection works
+[00:04:20.060 --> 00:04:22.700]   by splitting
+[00:04:22.700 --> 00:04:24.540]   our vector space
+[00:04:24.540 --> 00:04:26.860]   Which is obviously highly dimensional vector space
+[00:04:26.860 --> 00:04:29.340]   using
+[00:04:29.340 --> 00:04:33.340]   Hyperplanes, so I mean it's what you can you can see right here
+[00:04:34.220 --> 00:04:36.300]   And the way that it works is that given
+[00:04:36.300 --> 00:04:42.780]   A single hyperplane on the positive side of that hyperplane if your if your vector
+[00:04:42.780 --> 00:04:44.860]   Appeared on that side
+[00:04:44.860 --> 00:04:47.020]   It would be assigned a positive
+[00:04:47.020 --> 00:04:49.100]   dot product value
+[00:04:49.100 --> 00:04:50.940]   okay, and
+[00:04:50.940 --> 00:04:55.660]   Then we would we process that and in our binary vector. This would be assigned a one
+[00:04:55.660 --> 00:04:59.660]   on the other side that you have the negative side of the
+[00:05:00.440 --> 00:05:08.120]   Hyperplane and if your vector is on that side of it, it will be assigned a negative value with the dot product
+[00:05:08.120 --> 00:05:10.840]   and with that
+[00:05:10.840 --> 00:05:14.600]   in our binary vector would be assigned a zero and
+[00:05:14.600 --> 00:05:20.360]   The reason that that works is we're using the dot product value. So imagine this green line
+[00:05:20.360 --> 00:05:27.720]   Down here imagine this is the hyperplane that I just showed you we have that normal vector
+[00:05:28.920 --> 00:05:31.240]   The n that comes out here
+[00:05:31.240 --> 00:05:36.920]   And using the dot product if the dot product finds that both of these are in the same direction
+[00:05:36.920 --> 00:05:39.220]   eg
+[00:05:39.220 --> 00:05:41.220]   anything
+[00:05:41.220 --> 00:05:45.080]   In this sort of angle
+[00:05:45.080 --> 00:05:52.920]   Then it will take that as a positive if it's on the other side, so
+[00:05:54.120 --> 00:05:59.640]   Anywhere here it would take that as a negative dot product, which is what you can see
+[00:05:59.640 --> 00:06:01.560]   over
+[00:06:01.560 --> 00:06:03.480]   here
+[00:06:03.480 --> 00:06:04.760]   now a
+[00:06:04.760 --> 00:06:08.040]   single binary value isn't going to tell us much about the
+[00:06:08.040 --> 00:06:12.680]   direction of our vector or the position of our vector
+[00:06:12.680 --> 00:06:17.480]   so what we do is just add more hyperplanes in there, so we
+[00:06:18.440 --> 00:06:23.080]   Add more hyperplanes and that gives us more binary values within our vector
+[00:06:23.080 --> 00:06:25.560]   So what you can see here is we have those we have two
+[00:06:25.560 --> 00:06:27.880]   hyperplanes now
+[00:06:27.880 --> 00:06:29.320]   the magenta
+[00:06:29.320 --> 00:06:31.320]   obviously correlates to the
+[00:06:31.320 --> 00:06:33.160]   zero
+[00:06:33.160 --> 00:06:35.400]   index in these vectors and then the
+[00:06:35.400 --> 00:06:37.240]   teal
+[00:06:37.240 --> 00:06:39.240]   hyperplane correlates to these ones
+[00:06:39.240 --> 00:06:42.040]   the the number one indexes
+[00:06:42.040 --> 00:06:45.560]   So
+[00:06:45.800 --> 00:06:50.060]   What we would do is essentially just use loads of hyperplanes
+[00:06:50.060 --> 00:06:52.600]   Which is kind of what you see here
+[00:06:52.600 --> 00:06:59.400]   So these are the big arrows and the points that you see there the normal vectors so where we're actually calculating dot product
+[00:06:59.400 --> 00:07:01.880]   and then
+[00:07:01.880 --> 00:07:07.160]   These are our hyperplanes. Okay, so here for blue we would get
+[00:07:07.160 --> 00:07:10.520]   a value of zero
+[00:07:10.520 --> 00:07:15.640]   And then here for example for blue we would get a value of one
+[00:07:15.880 --> 00:07:17.400]   now let's
+[00:07:17.400 --> 00:07:19.960]   Start building this out in in code so we can actually
+[00:07:19.960 --> 00:07:21.800]   see
+[00:07:21.800 --> 00:07:23.800]   How this works?
+[00:07:23.800 --> 00:07:30.600]   So what i'm going to do is set the number of hyperplanes that we would like and we set that using a
+[00:07:30.600 --> 00:07:33.080]   parameter here called n bits
+[00:07:33.080 --> 00:07:38.280]   I'm going to say we have four hyperplanes just for this example in reality would use more
+[00:07:38.280 --> 00:07:43.960]   But for now, we're going to go with four. So we have four binary values here
+[00:07:44.680 --> 00:07:51.400]   And all i'm going to do is um create our vector dimensionality as well. So we're just going to use 2d vectors
+[00:07:51.400 --> 00:07:55.400]   To make it easier and so we can sort of visualize stuff as well
+[00:07:55.400 --> 00:08:03.480]   So all we need to do is we're going to create the plane norms and they are going to be numpy random
+[00:08:03.480 --> 00:08:05.320]   rand
+[00:08:05.320 --> 00:08:09.080]   And the dimensionality there will be n bits and d
+[00:08:09.080 --> 00:08:13.480]   So the number of hyperplanes that we want so n bits
+[00:08:14.200 --> 00:08:16.760]   And the dimensionality that we're actually using
+[00:08:16.760 --> 00:08:22.200]   And we're just going to minus 0.5 because we want them to center
+[00:08:22.200 --> 00:08:26.760]   Around the zero the origin zero axis. You don't need to do this. By the way
+[00:08:26.760 --> 00:08:31.080]   It's it's just so we can kind of see the effect of it a little bit better
+[00:08:31.080 --> 00:08:34.200]   Okay, and we get get these values
+[00:08:34.200 --> 00:08:36.920]   Now those vectors don't align
+[00:08:36.920 --> 00:08:43.480]   To this visualization, but it's essentially the same thing. What what we have done is we've created four 2d
+[00:08:44.260 --> 00:08:46.360]   Hyperplanes or we've actually created four
+[00:08:46.360 --> 00:08:48.840]   2d
+[00:08:48.840 --> 00:08:50.280]   normal vectors
+[00:08:50.280 --> 00:08:51.800]   That we're going to use
+[00:08:51.800 --> 00:08:53.800]   To build our binary vectors
+[00:08:53.800 --> 00:08:56.280]   So we're going to create these
+[00:08:56.280 --> 00:09:02.040]   Three vectors a b and c and what we're going to do is calculate the dot product for each one of those
+[00:09:02.040 --> 00:09:04.200]   So then we know whether
+[00:09:04.200 --> 00:09:06.360]   they are
+[00:09:06.360 --> 00:09:09.720]   You know positive or negative behind each of our plane norms
+[00:09:09.960 --> 00:09:15.880]   So to do that, we're just going to do np dot and then we just add our vector and we add plane norms
+[00:09:15.880 --> 00:09:18.440]   And we just transpose those
+[00:09:18.440 --> 00:09:21.480]   Okay, so let me
+[00:09:21.480 --> 00:09:23.480]   Let's see what we get there
+[00:09:23.480 --> 00:09:28.440]   Okay, so we see that we get negative negative positive positive. Okay, so
+[00:09:28.440 --> 00:09:32.840]   When we convert this into our binary vector, that will be zero zero one one
+[00:09:32.840 --> 00:09:36.600]   Now we want to do this not just for
+[00:09:37.320 --> 00:09:39.720]   a but also for for b and c so
+[00:09:39.720 --> 00:09:42.280]   Okay
+[00:09:42.280 --> 00:09:44.280]   Now what we want to do
+[00:09:44.280 --> 00:09:46.040]   is say
+[00:09:46.040 --> 00:09:51.800]   Okay, if it's negative it's zero if it's positive. It's a one so to do that
+[00:09:51.800 --> 00:09:54.280]   All we want to do is write a dot
+[00:09:54.280 --> 00:09:56.840]   and we say
+[00:09:56.840 --> 00:09:58.840]   Well greater than zero
+[00:09:58.840 --> 00:10:00.920]   It's a it's a one so it's positive
+[00:10:00.920 --> 00:10:06.120]   And we do that again for each one of our
+[00:10:07.000 --> 00:10:08.760]   vectors
+[00:10:08.760 --> 00:10:10.760]   Let's see what we get
+[00:10:10.760 --> 00:10:16.680]   Okay, so now we get false false true true so the final thing to do there
+[00:10:16.680 --> 00:10:24.600]   Although I don't you don't necessarily need to is just convert them. In fact, we do need to uh purely to create our
+[00:10:24.600 --> 00:10:29.000]   the the binary vector string
+[00:10:29.000 --> 00:10:31.320]   so
+[00:10:31.320 --> 00:10:33.320]   We'll see why in a moment. It's fine
+[00:10:34.360 --> 00:10:37.660]   As type in so it's essentially easier for us to visualize
+[00:10:37.660 --> 00:10:41.240]   That's it
+[00:10:41.240 --> 00:10:48.600]   Okay, and we should get something that more looks like this here, um, so
+[00:10:48.600 --> 00:10:53.400]   You see here obviously the values the the positions are slightly different
+[00:10:53.400 --> 00:10:59.800]   But we have a is on the positive side of the teal hyperplane. So one is of course
+[00:10:59.800 --> 00:11:03.880]   One and then on c and b are both on the other side
+[00:11:04.200 --> 00:11:06.200]   So they are of course negative
+[00:11:06.200 --> 00:11:07.960]   now
+[00:11:07.960 --> 00:11:09.560]   if we consider
+[00:11:09.560 --> 00:11:11.160]   a b and c
+[00:11:11.160 --> 00:11:13.240]   b and c kind of in the more in the
+[00:11:13.240 --> 00:11:18.200]   In a similar position. So we would hope that they kind of align in there
+[00:11:18.200 --> 00:11:21.400]   In the values that they have a bit better than them
+[00:11:21.400 --> 00:11:25.800]   Um a but let's have a look see what we get
+[00:11:25.800 --> 00:11:32.600]   Okay, so they're the same so that's good because they are
+[00:11:33.480 --> 00:11:37.560]   Very much in a very similar place which you can see from here
+[00:11:37.560 --> 00:11:43.160]   So a b and c in this case match up to what we're writing in the code. It's just the hyperplanes are different
+[00:11:43.160 --> 00:11:50.360]   Now it's these binary vectors that we use to create our lsh lsh buckets
+[00:11:50.360 --> 00:11:56.060]   So what we're going to do is actually implement that just using a python dictionary
+[00:11:56.060 --> 00:11:58.760]   to make it easy so
+[00:11:58.760 --> 00:12:01.500]   What we'll do is i'm going to put each of our vectors
+[00:12:01.980 --> 00:12:03.980]   A
+[00:12:03.980 --> 00:12:06.140]   Dot b dot
+[00:12:06.140 --> 00:12:09.420]   And c dot into this
+[00:12:09.420 --> 00:12:13.020]   Vector list. It's just so we can iterate through them a little bit easier
+[00:12:13.020 --> 00:12:17.680]   I'm going to initialize our buckets which is going to be like I said a python dictionary
+[00:12:17.680 --> 00:12:21.420]   And here i'm just going to set i equal to zero. So this
+[00:12:21.420 --> 00:12:25.360]   Is just so we can loop through each of those each of those vectors
+[00:12:25.360 --> 00:12:29.580]   So we're going to do for i in range
+[00:12:30.220 --> 00:12:31.980]   length of
+[00:12:31.980 --> 00:12:34.380]   Vectors, so yeah, we don't need either
+[00:12:34.380 --> 00:12:40.540]   So the first thing we want to do is is create a hash string using the
+[00:12:40.540 --> 00:12:45.340]   Vectors that we have up here. So i'm going to do hash string equals i'm going to do
+[00:12:45.340 --> 00:12:48.380]   Just join like that
+[00:12:48.380 --> 00:12:57.100]   And what we want to do is join all of those numbers together, but we need to to join them as strings so
+[00:12:57.100 --> 00:12:59.500]   run vectors
+[00:12:59.500 --> 00:13:01.020]   i
+[00:13:01.020 --> 00:13:02.220]   as
+[00:13:02.220 --> 00:13:03.260]   type
+[00:13:03.260 --> 00:13:04.860]   string
+[00:13:04.860 --> 00:13:06.220]   Okay
+[00:13:06.220 --> 00:13:08.060]   so
+[00:13:08.060 --> 00:13:09.260]   if I
+[00:13:09.260 --> 00:13:12.300]   Let me show you what that does hash string
+[00:13:12.300 --> 00:13:15.340]   Okay, so we just get something like that now
+[00:13:15.340 --> 00:13:21.900]   Then what we want to do is say if the hash string is not already within our buckets is not in
+[00:13:21.900 --> 00:13:28.300]   Buckets our keys we want to initialize a new list so buckets
+[00:13:29.260 --> 00:13:31.260]   hash string
+[00:13:31.260 --> 00:13:33.660]   Equals a new list
+[00:13:33.660 --> 00:13:35.820]   So we're initializing a list
+[00:13:35.820 --> 00:13:39.740]   Essentially initializing a book. It's put our vectors in
+[00:13:39.740 --> 00:13:43.420]   So
+[00:13:43.420 --> 00:13:49.420]   Initialize it and then after that we we just add we append it to that bucket
+[00:13:49.420 --> 00:13:53.260]   So this is
+[00:13:53.260 --> 00:13:56.860]   Essentially what we need let me
+[00:13:57.260 --> 00:14:01.260]   Okay, yeah should it should be fine so let's print the buckets and see we'll get
+[00:14:01.260 --> 00:14:04.860]   If hash string is
+[00:14:04.860 --> 00:14:07.900]   What did I write there?
+[00:14:07.900 --> 00:14:10.780]   Not in there we go
+[00:14:10.780 --> 00:14:13.980]   So now we see we have these two hash buckets
+[00:14:13.980 --> 00:14:20.140]   And one and two have both been been put into the same one. All right, and that's essentially how
+[00:14:21.020 --> 00:14:24.860]   Lsh what lsh works, but just on a
+[00:14:24.860 --> 00:14:27.580]   much bigger scale
+[00:14:27.580 --> 00:14:29.420]   so
+[00:14:29.420 --> 00:14:32.060]   Now, let's say, you know, we we have our buckets
+[00:14:32.060 --> 00:14:34.780]   and what we want to do is
+[00:14:34.780 --> 00:14:37.180]   Give a new
+[00:14:37.180 --> 00:14:39.180]   vector we want to
+[00:14:39.180 --> 00:14:44.220]   Search using that I want to hash it and search. This is our query vector xq
+[00:14:44.220 --> 00:14:47.820]   So what we we see here
+[00:14:49.020 --> 00:14:53.820]   So we've got like two examples one on the left is an example
+[00:14:53.820 --> 00:14:57.180]   So this is we're comparing our query vector against two
+[00:14:57.180 --> 00:14:59.960]   samples in our
+[00:14:59.960 --> 00:15:02.920]   lsh buckets
+[00:15:02.920 --> 00:15:11.100]   So xq is this zero it's been hashed zero one one one
+[00:15:11.100 --> 00:15:14.540]   And what we do is first we compare it to
+[00:15:15.100 --> 00:15:21.580]   This vector and we see and we're using hamming distance here, which is essentially, you know, do these two equivalent
+[00:15:21.580 --> 00:15:24.140]   values match or not
+[00:15:24.140 --> 00:15:28.780]   If they do it's what zero there's there's no distance between them
+[00:15:28.780 --> 00:15:33.660]   If they do not match then the distance is one and then we add up
+[00:15:33.660 --> 00:15:36.380]   all of the distance values
+[00:15:36.380 --> 00:15:38.540]   at the end there so
+[00:15:38.540 --> 00:15:44.300]   With this one none of them match. So we get like one plus one plus one plus one, which is obviously four
+[00:15:45.180 --> 00:15:48.060]   so the hamming distance between those two is four which is is
+[00:15:48.060 --> 00:15:53.180]   And the biggest you're going to get with this dimensionality of binary vectors
+[00:15:53.180 --> 00:16:00.700]   And then we have the second one and these ones match a bit better. So zero is equal to zero one to one one to one
+[00:16:00.700 --> 00:16:03.340]   so all those zeros
+[00:16:03.340 --> 00:16:10.220]   and then so like zero zero zero and then this final one is one so then
+[00:16:10.220 --> 00:16:12.300]   that equals
+[00:16:12.300 --> 00:16:13.980]   one
+[00:16:13.980 --> 00:16:15.820]   Okay
+[00:16:15.820 --> 00:16:17.820]   So that's hamming distance
+[00:16:17.820 --> 00:16:21.980]   And when we consider that with our code
+[00:16:21.980 --> 00:16:26.060]   Over here
+[00:16:26.060 --> 00:16:29.180]   We we also have to consider that there's a degree of
+[00:16:29.180 --> 00:16:33.740]   A degree of information being lost because
+[00:16:33.740 --> 00:16:39.100]   This is how we're storing the vectors. We don't store the original vectors anymore. This is
+[00:16:39.100 --> 00:16:41.900]   You know that essentially like final form
+[00:16:43.020 --> 00:16:45.980]   in the lsh index, so
+[00:16:45.980 --> 00:16:52.380]   Say we have our query vector and it comes through a zero zero one zero like great. We get a perfect match, but
+[00:16:52.380 --> 00:16:58.300]   In reality, does it is it close to one or is it closer to we don't we don't actually know
+[00:16:58.300 --> 00:17:02.060]   So we have to be careful when we're building our buckets
+[00:17:02.060 --> 00:17:05.020]   To make sure
+[00:17:05.020 --> 00:17:08.620]   That there's not too many items within each bucket
+[00:17:08.620 --> 00:17:14.460]   We need them to be reasonably spread out but not spread too thin because if we spread them too thin across
+[00:17:14.460 --> 00:17:19.100]   Too many buckets the the index becomes absolutely huge. So it's
+[00:17:19.100 --> 00:17:21.240]   is definitely like
+[00:17:21.240 --> 00:17:22.860]   balancing acts between
+[00:17:22.860 --> 00:17:24.860]   having enough buckets
+[00:17:24.860 --> 00:17:27.900]   enough granularity in there to differentiate between
+[00:17:27.900 --> 00:17:30.540]   a reasonable number of vectors
+[00:17:30.540 --> 00:17:35.180]   But not too granular that we just make the index bigger
+[00:17:36.860 --> 00:17:39.500]   Because then it's slower than just doing a flat search
+[00:17:39.500 --> 00:17:41.740]   now
+[00:17:41.740 --> 00:17:45.740]   What you what we see here is what we just discussed, right? So
+[00:17:45.740 --> 00:17:48.380]   given
+[00:17:48.380 --> 00:17:53.900]   These two vectors a and b they're reasonably far from each other if we use a value of n bits value of two
+[00:17:53.900 --> 00:18:00.220]   Our vectors are not big enough. They get booked it into the same place. We can't differentiate them
+[00:18:01.900 --> 00:18:06.700]   But what we can do obviously increase the number of hyperplanes or increase n bits
+[00:18:06.700 --> 00:18:12.220]   And then we can differentiate them. So so for you know, these two here
+[00:18:12.220 --> 00:18:14.220]   Exactly the same
+[00:18:14.220 --> 00:18:17.820]   Uh buckets these are not we have differences here
+[00:18:17.820 --> 00:18:20.620]   here
+[00:18:20.620 --> 00:18:25.500]   And here so we can differentiate between them, which obviously is what we need
+[00:18:26.620 --> 00:18:32.780]   But at the same time we are increasing the size of our index so it means
+[00:18:32.780 --> 00:18:35.580]   we are becoming
+[00:18:35.580 --> 00:18:37.900]   More accurate, but we're also getting slower. So
+[00:18:37.900 --> 00:18:42.540]   It's yeah finding the the middle ground between them both
+[00:18:42.540 --> 00:18:49.260]   Now that's it for the implementation details behind vice
+[00:18:49.260 --> 00:18:51.820]   What we'll do
+[00:18:51.820 --> 00:18:55.500]   Is we're going to leave this video here and we'll cover
+[00:18:56.140 --> 00:19:02.540]   Device implementation in the next video, which I will leave a link to in the description so you can find that easily
+[00:19:02.540 --> 00:19:07.600]   But for now, thank you very much for watching and i'll see you in the next one
+

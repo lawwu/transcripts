@@ -1,0 +1,582 @@
+
+[00:00:00.000 --> 00:00:04.440]   Today, we're going to be taking a look at how we do retrieval-augmented generation
+[00:00:04.440 --> 00:00:09.400]   with open-source models using AWS's SageMaker.
+[00:00:09.400 --> 00:00:13.040]   To do this, we're going to need to set up a few different components.
+[00:00:13.040 --> 00:00:16.360]   Obviously, with our LLM, we're using an open-source model,
+[00:00:16.360 --> 00:00:19.640]   but it's still a big language model.
+[00:00:19.640 --> 00:00:24.360]   So we need a specialized instance in order to do this,
+[00:00:24.360 --> 00:00:27.160]   and we can actually do that through SageMaker as well.
+[00:00:27.760 --> 00:00:31.160]   So we're going to have our instance here,
+[00:00:31.160 --> 00:00:34.740]   which is where we're going to store our LLM,
+[00:00:34.740 --> 00:00:36.900]   and that's within SageMaker.
+[00:00:36.900 --> 00:00:38.860]   We're also going to have another instance
+[00:00:38.860 --> 00:00:40.960]   that will store our embedding model,
+[00:00:40.960 --> 00:00:43.660]   and if you don't know why we would want that,
+[00:00:43.660 --> 00:00:45.900]   I'll explain in a moment.
+[00:00:45.900 --> 00:00:47.940]   So we'll just call this embed.
+[00:00:47.940 --> 00:00:51.340]   So we're going to have those two instances.
+[00:00:51.340 --> 00:00:52.660]   We're going to see how to set those up.
+[00:00:52.660 --> 00:00:55.560]   Then we're going to need to get a dataset.
+[00:00:55.700 --> 00:00:59.500]   Now, for this, we're not going to use anything crazy big,
+[00:00:59.500 --> 00:01:03.240]   but we will need it, so we'll have our dataset down here.
+[00:01:03.240 --> 00:01:08.100]   What we're going to do is we're going to take our dataset,
+[00:01:08.100 --> 00:01:13.760]   which is essentially chunks of information about AWS,
+[00:01:13.760 --> 00:01:19.640]   and we are going to use them to inform our large language model.
+[00:01:19.640 --> 00:01:23.760]   So these will become the long-term memory
+[00:01:23.900 --> 00:01:27.840]   or the external knowledge base for our LLM,
+[00:01:27.840 --> 00:01:31.640]   because our LLM has been trained on internet data,
+[00:01:31.640 --> 00:01:36.000]   so I'm sure it does know about AWS and the services they provide,
+[00:01:36.000 --> 00:01:40.440]   but it's probably not up to date, so that will be very important.
+[00:01:40.440 --> 00:01:44.240]   Now, what this will actually look like
+[00:01:44.240 --> 00:01:47.040]   is we'll take this relevant information here.
+[00:01:47.040 --> 00:01:49.400]   We're going to take it to the embedding model,
+[00:01:49.400 --> 00:01:52.960]   and then from this, we're going to get what we call vector embeddings.
+[00:01:53.100 --> 00:01:55.960]   We're going to store those within our vector database,
+[00:01:55.960 --> 00:01:57.560]   which is Pinecone.
+[00:01:57.560 --> 00:01:59.340]   It will look like this,
+[00:01:59.340 --> 00:02:05.060]   and what we will do is when we ask our LLM something,
+[00:02:05.060 --> 00:02:09.340]   so we have our query, we want to know something about AWS,
+[00:02:09.340 --> 00:02:13.860]   that is actually not going to go to our LLM
+[00:02:13.860 --> 00:02:17.060]   and give us a response like it usually would.
+[00:02:17.060 --> 00:02:18.800]   This is a usual approach.
+[00:02:19.500 --> 00:02:26.040]   Instead, it is actually going to go to our embedding model.
+[00:02:26.040 --> 00:02:29.000]   I haven't drawn this very well or organized this very well.
+[00:02:29.000 --> 00:02:31.360]   It's going to go to our embedding model,
+[00:02:31.360 --> 00:02:34.100]   and from that, we get what we would call a query vector.
+[00:02:34.100 --> 00:02:38.960]   I'm going to call it xq, and we take that into Pinecone,
+[00:02:38.960 --> 00:02:43.440]   and we say to Pinecone, "Okay, given my query vector,
+[00:02:43.440 --> 00:02:49.140]   what are the relevant other records that you have stored?"
+[00:02:49.260 --> 00:02:53.040]   So those AWS documents that we embedded and stored before,
+[00:02:53.040 --> 00:02:56.360]   and it will just give us a set of responses.
+[00:02:56.360 --> 00:02:59.600]   Okay, so we're going to get a load of relevant information, essentially.
+[00:02:59.600 --> 00:03:02.400]   Now what we do is we take our query vector,
+[00:03:02.400 --> 00:03:05.960]   so we can just bring it here,
+[00:03:05.960 --> 00:03:10.000]   and we take our context, and we put those together.
+[00:03:10.000 --> 00:03:12.800]   So now we have queries and context,
+[00:03:12.800 --> 00:03:18.460]   and that gives us a context or retrieval augmented prompt.
+[00:03:19.140 --> 00:03:21.700]   We feed that into our LLM,
+[00:03:21.700 --> 00:03:25.300]   and now it can actually give us some relevant information.
+[00:03:25.300 --> 00:03:30.100]   So up-to-date information, which it usually wouldn't be able to do.
+[00:03:30.100 --> 00:03:35.860]   So let's actually dive into how we would implement all this.
+[00:03:35.860 --> 00:03:40.060]   Okay, so I'm going to begin in the homepage of my console.
+[00:03:40.060 --> 00:03:42.140]   I'm going to go to Amazon SageMaker.
+[00:03:42.140 --> 00:03:46.700]   You can also just do SageMaker at the top here and click on that.
+[00:03:47.300 --> 00:03:49.360]   I'm going to go to my domain here,
+[00:03:49.360 --> 00:03:53.060]   and I'm just going to launch my studio.
+[00:03:53.060 --> 00:03:56.460]   Okay, so here we are within the studio,
+[00:03:56.460 --> 00:03:58.260]   and we're going to go through this notebook.
+[00:03:58.260 --> 00:04:01.820]   There will also be a link to this notebook on GitHub,
+[00:04:01.820 --> 00:04:05.800]   which you can copy across over into your own SageMaker.
+[00:04:05.800 --> 00:04:09.560]   So we're going to start by just installing everything we need.
+[00:04:09.560 --> 00:04:13.260]   So it's just going to be SageMaker, PyCon Client, and the widgets.
+[00:04:14.100 --> 00:04:17.900]   Okay, now I said we're going to be using open source models,
+[00:04:17.900 --> 00:04:22.160]   and we are going to be getting those from Hugging Face.
+[00:04:22.160 --> 00:04:25.500]   So to do that, we will need at least,
+[00:04:25.500 --> 00:04:27.920]   I think, this version of SageMaker.
+[00:04:27.920 --> 00:04:31.020]   And what we have is within SageMaker,
+[00:04:31.020 --> 00:04:34.060]   they actually have support for Hugging Face.
+[00:04:34.060 --> 00:04:37.360]   So we can just import everything we need here.
+[00:04:37.360 --> 00:04:39.560]   So we're going to import the Hugging Face model.
+[00:04:39.700 --> 00:04:45.260]   And this is essentially the configuration for the image
+[00:04:45.260 --> 00:04:47.560]   that we'll be initializing.
+[00:04:47.560 --> 00:04:51.960]   Okay, so we can decide which model we'd like to use.
+[00:04:51.960 --> 00:04:55.260]   So I'm going to use a Google's Flan T5 XL.
+[00:04:55.260 --> 00:04:58.460]   Now, where would I get this model ID from?
+[00:04:58.460 --> 00:05:00.920]   You can go to HuggingFace.co.
+[00:05:00.920 --> 00:05:03.660]   You can head over to models at the top here,
+[00:05:03.660 --> 00:05:06.720]   and you can search for models, right?
+[00:05:06.860 --> 00:05:10.200]   So if we wanted to come down to,
+[00:05:10.200 --> 00:05:13.360]   I think there should be a text generation here.
+[00:05:13.360 --> 00:05:16.760]   This will give us a list of all the text generation models.
+[00:05:16.760 --> 00:05:18.600]   You can see we've got Lama 2 in there.
+[00:05:18.600 --> 00:05:22.960]   So we are going to go for the Google Flan T5 model,
+[00:05:22.960 --> 00:05:25.520]   which actually isn't even tagged under text generation.
+[00:05:25.520 --> 00:05:29.360]   So let's remove that filter and go again.
+[00:05:29.360 --> 00:05:32.260]   So this is actually text to text generation.
+[00:05:32.260 --> 00:05:34.960]   So you can also, maybe we could just apply both.
+[00:05:35.100 --> 00:05:37.800]   Oh, one at a time. Okay, great.
+[00:05:37.800 --> 00:05:40.600]   So text to text generation, and we can see T5 is there.
+[00:05:40.600 --> 00:05:42.660]   And there's also this bigger model.
+[00:05:42.660 --> 00:05:44.400]   You could also try that as well.
+[00:05:44.400 --> 00:05:46.360]   Obviously, your results will be better,
+[00:05:46.360 --> 00:05:50.440]   but you'll need a bigger compute instance to run it on.
+[00:05:50.440 --> 00:05:53.040]   So I'm just going to go the T5 XL model,
+[00:05:53.040 --> 00:05:54.700]   which gives us good enough results,
+[00:05:54.700 --> 00:05:58.040]   particularly when we're retrieving all this relevant information.
+[00:05:58.040 --> 00:06:00.600]   And this is just a model ID right here.
+[00:06:00.600 --> 00:06:03.500]   So that's what we're copying in to SageMaker.
+[00:06:04.500 --> 00:06:06.500]   Okay.
+[00:06:06.500 --> 00:06:09.540]   We are going to use text generation.
+[00:06:09.540 --> 00:06:15.500]   And what we then need to do is retrieve the LLM image URI.
+[00:06:15.500 --> 00:06:20.440]   So there are different images that you can use for Hugging Face models.
+[00:06:20.440 --> 00:06:22.840]   If you're using a large language model,
+[00:06:22.840 --> 00:06:25.260]   this is the one that you're going to want to use.
+[00:06:25.260 --> 00:06:30.760]   Okay. And then we can initialize the,
+[00:06:30.760 --> 00:06:33.000]   I believe this is actually the image.
+[00:06:33.640 --> 00:06:35.700]   So we initialize the image. Okay.
+[00:06:35.700 --> 00:06:39.400]   And then this here will deploy that image,
+[00:06:39.400 --> 00:06:41.360]   and we're going to deploy it to this instance.
+[00:06:41.360 --> 00:06:44.400]   We can see a list of instances here.
+[00:06:44.400 --> 00:06:52.360]   So this is aws.amazon.com/sagemaker/pricing.
+[00:06:52.360 --> 00:06:59.100]   And actually, let me take this and just command F in here.
+[00:07:02.540 --> 00:07:04.540]   Okay. So here we can see it, right?
+[00:07:04.540 --> 00:07:07.360]   So we can see it is, we're using this.
+[00:07:07.360 --> 00:07:11.700]   It's a NVIDIA A10G, what do we have?
+[00:07:11.700 --> 00:07:16.600]   Instance memory is 64 gigabytes, GPU memory,
+[00:07:16.600 --> 00:07:19.800]   which is probably more important, is 24 gigabytes.
+[00:07:19.800 --> 00:07:24.000]   Okay. So definitely big enough for our T5XL model.
+[00:07:24.000 --> 00:07:30.160]   Cool. So we can, let's first, I just show you in here,
+[00:07:30.300 --> 00:07:33.760]   this is the Amazon SageMaker console we saw before.
+[00:07:33.760 --> 00:07:39.900]   And if we go down to inference, open this,
+[00:07:39.900 --> 00:07:41.960]   and we take a look at models, okay,
+[00:07:41.960 --> 00:07:43.700]   there's nothing in there at the moment.
+[00:07:43.700 --> 00:07:47.200]   And we have nothing in endpoints or endpoint configurations.
+[00:07:47.200 --> 00:07:51.900]   Now that will change as soon as I run this next step.
+[00:07:51.900 --> 00:07:54.860]   So this is going to deploy our model.
+[00:07:54.860 --> 00:07:59.220]   It will take a moment, it does take a little bit of time to deploy,
+[00:07:59.360 --> 00:08:03.620]   but you will see like a little loading bar at the bottom in a moment.
+[00:08:03.620 --> 00:08:07.520]   So I'm just going to go and skip ahead for when that is done.
+[00:08:07.520 --> 00:08:10.260]   Now, actually, while we're waiting for that to load,
+[00:08:10.260 --> 00:08:14.000]   I will show you where we are in that sort of rough diagram
+[00:08:14.000 --> 00:08:15.760]   I created before.
+[00:08:15.760 --> 00:08:18.100]   Okay. So right now, what have we done?
+[00:08:18.100 --> 00:08:20.900]   We have just initialized this endpoint.
+[00:08:20.900 --> 00:08:25.160]   Okay. So our LLM here, that is now being initialized
+[00:08:25.160 --> 00:08:27.700]   and deployed within SageMaker.
+[00:08:27.820 --> 00:08:32.700]   So for that, we're using, like I said, the Flan T5 XL model.
+[00:08:32.700 --> 00:08:38.260]   Okay. So that has just finished and we can move on to the next steps.
+[00:08:38.260 --> 00:08:41.600]   So what I want to do here is just show you
+[00:08:41.600 --> 00:08:46.660]   what the difference is between asking an LLM question directly
+[00:08:46.660 --> 00:08:50.700]   and asking it a question when you provide some context,
+[00:08:50.700 --> 00:08:55.000]   which is obviously what we want to do with RAG in this instance.
+[00:08:55.560 --> 00:08:58.400]   So I'm going to ask which instances can I use
+[00:08:58.400 --> 00:09:01.000]   with managed spot training in SageMaker,
+[00:09:01.000 --> 00:09:04.640]   and we're going to send this directly to the LLM.
+[00:09:04.640 --> 00:09:10.160]   Okay. And we get the generated text of SageMaker and SageMaker XL,
+[00:09:10.160 --> 00:09:14.660]   which sounds like a great product, but as far as I'm aware, doesn't exist.
+[00:09:14.660 --> 00:09:19.900]   So what we need to do is pass in some relevant context in the model.
+[00:09:19.900 --> 00:09:23.760]   So that relevant context would look something like this, right?
+[00:09:23.900 --> 00:09:26.840]   Here we're just, this is an example. This is not how we're going to do it.
+[00:09:26.840 --> 00:09:29.140]   I just want to show you what actually happens.
+[00:09:29.140 --> 00:09:31.240]   So we're going to tell it managed spot training can be used
+[00:09:31.240 --> 00:09:34.680]   with all instances supported in Amazon SageMaker.
+[00:09:34.680 --> 00:09:37.000]   Okay. Let's run that.
+[00:09:37.000 --> 00:09:39.640]   And then what we do is create a prompt template.
+[00:09:39.640 --> 00:09:42.140]   So we're just going to feed in our context here
+[00:09:42.140 --> 00:09:44.680]   and then feed in our user question here.
+[00:09:44.680 --> 00:09:48.440]   And that creates our full prompt.
+[00:09:48.440 --> 00:09:50.900]   And then we call LLM predict again.
+[00:09:51.040 --> 00:09:53.080]   But this time we have that retrieval,
+[00:09:53.080 --> 00:09:56.840]   well, kind of retrieval augmented prompt here.
+[00:09:56.840 --> 00:10:01.080]   It's retrieval as in we put that information in there.
+[00:10:01.080 --> 00:10:04.340]   Later, of course, we'll automate that.
+[00:10:04.340 --> 00:10:07.140]   Okay. And then the answer we get this time
+[00:10:07.140 --> 00:10:10.840]   is all instances supported in Amazon SageMaker.
+[00:10:10.840 --> 00:10:15.640]   Okay. So that is actually the correct answer this time.
+[00:10:15.640 --> 00:10:18.240]   Okay. And I just want to also see,
+[00:10:18.240 --> 00:10:20.780]   is our LLM capable of following our instructions?
+[00:10:21.280 --> 00:10:24.280]   All right, because here I said, if you do not know the answer
+[00:10:24.280 --> 00:10:25.980]   and the context doesn't contain the answer,
+[00:10:25.980 --> 00:10:28.120]   truthfully say, I don't know.
+[00:10:28.120 --> 00:10:30.980]   Okay. So what color is my desk? It's white.
+[00:10:30.980 --> 00:10:34.540]   Obviously, the LLM doesn't know this.
+[00:10:34.540 --> 00:10:38.480]   They're not that good yet. So it says, I don't know.
+[00:10:38.480 --> 00:10:42.680]   That's great, but obviously I just fed in the context.
+[00:10:42.680 --> 00:10:47.420]   We're not going to do that in a real use case.
+[00:10:47.540 --> 00:10:51.080]   In reality, we're probably going to have tons of documents
+[00:10:51.080 --> 00:10:53.000]   and we're going to want to extract
+[00:10:53.000 --> 00:10:55.280]   little bits of information from those documents.
+[00:10:55.280 --> 00:10:57.400]   One thing that I have seen people doing a lot
+[00:10:57.400 --> 00:11:00.080]   is feeding in all those documents into an LLM.
+[00:11:00.080 --> 00:11:05.000]   Basically, don't do that because it doesn't work very well.
+[00:11:05.000 --> 00:11:08.180]   There's actually a paper on this and I'll make sure there's a link
+[00:11:08.180 --> 00:11:10.880]   probably at the top of the video right now if you want to read that.
+[00:11:10.880 --> 00:11:14.280]   Basically showing that if you fill your context window
+[00:11:14.280 --> 00:11:16.100]   for your LLM with loads of text,
+[00:11:16.240 --> 00:11:19.540]   it's going to get everything that isn't either at the start
+[00:11:19.540 --> 00:11:21.640]   of what you've fed into that context window
+[00:11:21.640 --> 00:11:23.500]   or the end of that context window.
+[00:11:23.500 --> 00:11:26.840]   So it's not a good idea. It's also expensive.
+[00:11:26.840 --> 00:11:29.140]   More tokens you use, the more you're going to pay.
+[00:11:29.140 --> 00:11:31.580]   So we don't want to do that.
+[00:11:31.580 --> 00:11:35.040]   What we do want to do is be more efficient.
+[00:11:35.040 --> 00:11:37.200]   And to do that, we can use RAG,
+[00:11:37.200 --> 00:11:39.600]   which is Retrieval Augmented Generation.
+[00:11:39.600 --> 00:11:42.800]   Essentially, we're going to be looking at our question
+[00:11:42.940 --> 00:11:45.780]   and we're going to be finding chunks of text
+[00:11:45.780 --> 00:11:48.500]   that seem like they'll probably answer our question
+[00:11:48.500 --> 00:11:50.280]   from a larger database.
+[00:11:50.280 --> 00:11:53.900]   Now, to make this work,
+[00:11:53.900 --> 00:11:56.400]   this is where our embedding model comes into play.
+[00:11:56.400 --> 00:12:01.540]   So right now, what we need to do is we need to deploy this here.
+[00:12:01.540 --> 00:12:03.900]   Our embedding model.
+[00:12:03.900 --> 00:12:06.740]   So let's go ahead and see how we will do that.
+[00:12:06.740 --> 00:12:09.380]   Again, we're going to be using Hugging Face Transformers.
+[00:12:09.500 --> 00:12:14.140]   We can actually copy this and we can just go to Models again,
+[00:12:14.140 --> 00:12:16.640]   and we can do this.
+[00:12:16.640 --> 00:12:18.500]   So we're using this model here.
+[00:12:18.500 --> 00:12:22.140]   It's a very small and efficient model,
+[00:12:22.140 --> 00:12:24.100]   but the performance is actually fairly good.
+[00:12:24.100 --> 00:12:29.100]   So that means, one, when we're doing this Hugging Face model here,
+[00:12:29.100 --> 00:12:33.640]   we don't need to use that LLM image
+[00:12:33.640 --> 00:12:35.580]   because this isn't a large language model.
+[00:12:35.580 --> 00:12:38.180]   It's just a small transform model.
+[00:12:38.300 --> 00:12:40.980]   And we also change the tasks that we're doing here
+[00:12:40.980 --> 00:12:42.640]   to feature extraction,
+[00:12:42.640 --> 00:12:44.980]   because we're extracting embeddings,
+[00:12:44.980 --> 00:12:47.640]   which are like features, from the model.
+[00:12:47.640 --> 00:12:51.380]   Okay, so we will run that.
+[00:12:51.380 --> 00:12:56.040]   And then we come down to here and we're going to deploy it.
+[00:12:56.040 --> 00:12:59.340]   We are going to deploy to this instance.
+[00:12:59.340 --> 00:13:01.640]   Come over here and let's see where that is.
+[00:13:01.640 --> 00:13:03.400]   It's actually not even on this page.
+[00:13:03.400 --> 00:13:05.400]   I don't remember where I found it,
+[00:13:05.540 --> 00:13:08.280]   but essentially, it's a small model.
+[00:13:08.280 --> 00:13:09.980]   Maybe if I do T2.
+[00:13:09.980 --> 00:13:13.220]   Okay, so you can see some kind of similar instances here.
+[00:13:13.220 --> 00:13:16.580]   We are using the MLT2-Large.
+[00:13:16.580 --> 00:13:21.680]   The T3-Large has, it's just actually a CPU model, right?
+[00:13:21.680 --> 00:13:23.280]   It's not even GPU.
+[00:13:23.280 --> 00:13:26.680]   But again, this embedding model is very small.
+[00:13:26.680 --> 00:13:28.540]   You could use GPU if you want it to be quicker.
+[00:13:28.540 --> 00:13:31.120]   And the memory is just eight gigabytes,
+[00:13:31.120 --> 00:13:32.680]   which is actually plenty for this model.
+[00:13:32.820 --> 00:13:35.760]   I think in reality, you can load this model
+[00:13:35.760 --> 00:13:38.360]   onto like two gigabytes of GPU RAM.
+[00:13:38.360 --> 00:13:40.420]   So that should be okay.
+[00:13:40.420 --> 00:13:42.520]   Now let's deploy that.
+[00:13:42.520 --> 00:13:45.000]   Okay, so that has now deployed.
+[00:13:45.000 --> 00:13:48.920]   Now we have both our LLM and embedding model deployed.
+[00:13:48.920 --> 00:13:53.360]   And we can go and have a look over in SageMaker here.
+[00:13:53.360 --> 00:13:57.400]   So now we can see we have both of these models,
+[00:13:57.400 --> 00:13:59.800]   which one is which.
+[00:13:59.920 --> 00:14:03.820]   So this one deployed earlier is our LLM.
+[00:14:03.820 --> 00:14:08.260]   And this one here is our embedding model.
+[00:14:08.260 --> 00:14:11.560]   And we can go over to endpoint configurations.
+[00:14:11.560 --> 00:14:14.600]   We can see these are our images.
+[00:14:14.600 --> 00:14:20.800]   So we have the mini LLM demo image and flan T5 demo image.
+[00:14:20.800 --> 00:14:22.900]   And then our actual endpoints
+[00:14:22.900 --> 00:14:26.120]   that we are going to be calling later when we're...
+[00:14:26.120 --> 00:14:29.520]   Well, actually, we already called the flan T5 endpoint.
+[00:14:29.660 --> 00:14:31.860]   And we're about to call the mini LLM endpoint.
+[00:14:31.860 --> 00:14:34.120]   So what am I showing you next?
+[00:14:34.120 --> 00:14:36.100]   Next, I'm just going to show you
+[00:14:36.100 --> 00:14:39.500]   basically how we create XQ here, okay?
+[00:14:39.500 --> 00:14:41.920]   I'm not going to do it with the dataset yet.
+[00:14:41.920 --> 00:14:45.260]   All I'm going to do is I'm going to create some little examples,
+[00:14:45.260 --> 00:14:48.100]   and I'm going to pull those into our embedding model.
+[00:14:48.100 --> 00:14:50.400]   And then we're going to go on over here,
+[00:14:50.400 --> 00:14:55.420]   and that will create our query vectors, the XQ vectors, okay?
+[00:14:55.420 --> 00:14:58.000]   So to do that, we have our encoder.
+[00:14:58.120 --> 00:15:01.500]   We actually just do encoder, predict, that's it.
+[00:15:01.500 --> 00:15:04.100]   Here, we're creating two...
+[00:15:04.100 --> 00:15:08.100]   We're taking two contexts or chunks of text or documents,
+[00:15:08.100 --> 00:15:09.820]   whatever you want to call them.
+[00:15:09.820 --> 00:15:14.260]   So that means we're going to get two embeddings back,
+[00:15:14.260 --> 00:15:16.400]   which we can see here.
+[00:15:16.400 --> 00:15:20.120]   And each of those, if we take a look,
+[00:15:20.120 --> 00:15:23.560]   is not what we'd expect, right?
+[00:15:23.560 --> 00:15:27.000]   So when we're creating these embeddings
+[00:15:27.120 --> 00:15:30.220]   from these sentence transformer models
+[00:15:30.220 --> 00:15:34.420]   or any other embedding model, we expect to output a vector.
+[00:15:34.420 --> 00:15:38.100]   But the vector dimensionality that I'm expecting
+[00:15:38.100 --> 00:15:42.300]   from the MiniLM model is 384 dimensions.
+[00:15:42.300 --> 00:15:46.900]   What we see here is two eight-dimensional somethings,
+[00:15:46.900 --> 00:15:50.960]   which is not what we would expect.
+[00:15:50.960 --> 00:15:56.460]   Let's take a look at what is within these somethings, okay?
+[00:15:56.600 --> 00:16:01.260]   So it looks like we have two records.
+[00:16:01.260 --> 00:16:03.100]   That's fine. That makes sense.
+[00:16:03.100 --> 00:16:08.320]   But each record or each embedding output
+[00:16:08.320 --> 00:16:14.460]   is actually eight 384-dimensional vectors.
+[00:16:14.460 --> 00:16:16.500]   Now, the reason that we have this
+[00:16:16.500 --> 00:16:20.120]   is because we have input some text, right?
+[00:16:20.120 --> 00:16:22.560]   We create like two inputs.
+[00:16:22.560 --> 00:16:24.860]   And I can't remember what were they.
+[00:16:25.000 --> 00:16:27.260]   They're like something random, I think, okay?
+[00:16:27.260 --> 00:16:31.900]   And basically, each one of those sentences
+[00:16:31.900 --> 00:16:33.520]   or the text within those sentences
+[00:16:33.520 --> 00:16:37.420]   is going to be broken apart into what we call tokens, right?
+[00:16:37.420 --> 00:16:41.360]   And those tokens might look something like this, okay?
+[00:16:41.360 --> 00:16:43.960]   So I think it was called something random.
+[00:16:43.960 --> 00:16:45.960]   I don't remember exactly what I wrote.
+[00:16:45.960 --> 00:16:47.900]   Let's say it's something random, right?
+[00:16:47.900 --> 00:16:49.660]   And then we had another one here.
+[00:16:49.800 --> 00:16:54.920]   And let's say that this one was containing eight tokens, right?
+[00:16:54.920 --> 00:16:56.700]   So there's eight tokens in this one.
+[00:16:56.700 --> 00:16:57.900]   So it's a bit longer.
+[00:16:57.900 --> 00:17:01.960]   Basically, what would happen here is this shorter sentence
+[00:17:01.960 --> 00:17:04.700]   will be padded with what we call padding tokens.
+[00:17:04.700 --> 00:17:10.920]   So actually, this gets extended with some extra padding tokens,
+[00:17:10.920 --> 00:17:15.900]   as mentioned, to align with the same size
+[00:17:16.020 --> 00:17:19.120]   or the same length as our longest sequence
+[00:17:19.120 --> 00:17:23.220]   within the batch that we're passing it to the model, okay?
+[00:17:23.220 --> 00:17:24.720]   So it's going to look like this.
+[00:17:24.720 --> 00:17:30.060]   Now, what we have here is two lists of eight tokens each.
+[00:17:30.060 --> 00:17:32.520]   These are then passing to our embedding model, right?
+[00:17:32.520 --> 00:17:35.220]   So embedding model, it gets these.
+[00:17:35.220 --> 00:17:37.620]   So this is our embedding model.
+[00:17:37.620 --> 00:17:41.180]   And what it's going to do is it's going to output
+[00:17:41.320 --> 00:17:47.180]   a vector embedding at the token level, right?
+[00:17:47.180 --> 00:17:52.880]   So that means that we get one, two, three, four,
+[00:17:52.880 --> 00:17:58.380]   five, six, seven, eight token level embeddings here.
+[00:17:58.380 --> 00:18:03.260]   But we want to represent the whole sentence or each document.
+[00:18:03.260 --> 00:18:06.680]   So what we actually do here is something called mean pooling,
+[00:18:06.820 --> 00:18:09.920]   where we essentially just take the average
+[00:18:09.920 --> 00:18:14.120]   across each dimension here.
+[00:18:14.120 --> 00:18:17.460]   We take the average and using that,
+[00:18:17.460 --> 00:18:20.920]   we create a single sentence embedding, right?
+[00:18:20.920 --> 00:18:26.460]   So we just need to add that on to the end of our process here.
+[00:18:26.460 --> 00:18:31.920]   And with that, we would get xq, our query vector.
+[00:18:31.920 --> 00:18:36.620]   Actually, sorry, not necessarily our query vector in this case.
+[00:18:36.760 --> 00:18:41.920]   It would also be our, we can call them xc or xd,
+[00:18:41.920 --> 00:18:47.460]   which would be like our context vectors or document vectors.
+[00:18:47.460 --> 00:18:52.560]   So that's actually my bad because right here,
+[00:18:52.560 --> 00:18:55.320]   this red bit, we're not actually doing that yet.
+[00:18:55.320 --> 00:18:59.620]   We're actually going along this line here, right?
+[00:18:59.620 --> 00:19:03.120]   So from here into here and creating those,
+[00:19:03.120 --> 00:19:06.220]   we'll call them xc vectors.
+[00:19:06.360 --> 00:19:08.360]   So ignore the xq bit for now.
+[00:19:08.360 --> 00:19:10.620]   All right, so to get those,
+[00:19:10.620 --> 00:19:14.260]   we're going to take the mean across a single axis.
+[00:19:14.260 --> 00:19:15.380]   Let's do that.
+[00:19:15.380 --> 00:19:22.120]   And you can see that now we have two 384 dimensional vector embeddings.
+[00:19:22.120 --> 00:19:26.760]   Now, what I want to do is just kind of package that into a single function.
+[00:19:26.760 --> 00:19:29.360]   All right, so this is going to take a list of strings,
+[00:19:29.360 --> 00:19:31.960]   which are our documents or context,
+[00:19:31.960 --> 00:19:34.720]   and we're going to create the token level embeddings.
+[00:19:34.860 --> 00:19:36.980]   And then we're going to take the mean,
+[00:19:36.980 --> 00:19:41.120]   or we're going to do mean pooling to create a sentence level embedding.
+[00:19:41.120 --> 00:19:49.260]   Okay, now that is how we create our context/document embeddings.
+[00:19:49.260 --> 00:19:53.460]   Now what we want to do is actually take what we've just learned
+[00:19:53.460 --> 00:19:55.920]   and apply that to an actual dataset.
+[00:19:55.920 --> 00:19:59.180]   So we're going to be using the Amazon SageMaker FAQs,
+[00:19:59.180 --> 00:20:01.420]   which we can download from here.
+[00:20:03.720 --> 00:20:06.820]   And we're just going to open that dataset with pandas.
+[00:20:06.820 --> 00:20:10.880]   Okay, so we have the question and answer columns here.
+[00:20:10.880 --> 00:20:12.420]   We're going to drop the question column
+[00:20:12.420 --> 00:20:15.620]   because we just want to look at answers here.
+[00:20:15.620 --> 00:20:18.320]   Okay, this is all we're going to be indexing.
+[00:20:18.320 --> 00:20:23.120]   Now, that gives us our database down here.
+[00:20:23.120 --> 00:20:28.920]   What we should do now is, well, we need to embed them,
+[00:20:28.920 --> 00:20:31.260]   but we also need somewhere to store them.
+[00:20:31.380 --> 00:20:35.220]   All right, so we need to take our context vectors
+[00:20:35.220 --> 00:20:37.760]   and store them within Pinecone here.
+[00:20:37.760 --> 00:20:39.620]   Okay, to store them within Pinecone,
+[00:20:39.620 --> 00:20:43.980]   we need to initialize a vector index to actually store them within.
+[00:20:43.980 --> 00:20:45.760]   So let's do that.
+[00:20:45.760 --> 00:20:49.220]   Okay, so to initialize our connection to Pinecone,
+[00:20:49.220 --> 00:20:51.160]   we're going to need a free API key.
+[00:20:51.160 --> 00:20:53.880]   We can get that from app.pinecone.io.
+[00:20:53.880 --> 00:20:58.420]   Okay, once we are in Pinecone, we go over to our API keys.
+[00:20:58.560 --> 00:21:02.140]   You want to copy that and also remember the environment here.
+[00:21:02.140 --> 00:21:03.260]   We need that as well.
+[00:21:03.260 --> 00:21:05.100]   So the environment you can put in here.
+[00:21:05.100 --> 00:21:08.500]   So mine was us-west1-gcp.
+[00:21:08.500 --> 00:21:12.240]   And for the API key, you need to paste it into here.
+[00:21:12.240 --> 00:21:13.460]   Okay, and then with those,
+[00:21:13.460 --> 00:21:16.360]   we just initialize our connection to Pinecone
+[00:21:16.360 --> 00:21:20.240]   and we can make sure it's connected by taking a look at this.
+[00:21:20.240 --> 00:21:22.740]   Now, mine is not empty
+[00:21:22.740 --> 00:21:26.400]   because I'm doing a lot of things to Pinecone right now.
+[00:21:26.540 --> 00:21:28.880]   So, yeah, not empty,
+[00:21:28.880 --> 00:21:32.840]   but we would expect that in reality, it should be.
+[00:21:32.840 --> 00:21:35.220]   Now, one thing I do need to do
+[00:21:35.220 --> 00:21:38.540]   is make sure I delete this index, which is already running.
+[00:21:38.540 --> 00:21:41.920]   So I come down to here, we have that index name,
+[00:21:41.920 --> 00:21:44.240]   and I'm going to check if that index is already running.
+[00:21:44.240 --> 00:21:46.680]   And if so, I'm going to delete the index
+[00:21:46.680 --> 00:21:48.840]   because I want to start fresh.
+[00:21:48.840 --> 00:21:52.640]   And then what I'm going to do is create a new index with the same name.
+[00:21:53.740 --> 00:21:56.580]   The dimensionality is telling us
+[00:21:56.580 --> 00:21:58.480]   what is the dimensionality of the vectors
+[00:21:58.480 --> 00:22:00.040]   that we'll be putting into our index.
+[00:22:00.040 --> 00:22:04.920]   We know that, that's the 384 that we saw before for our MiniLM model.
+[00:22:04.920 --> 00:22:06.320]   And we also have this metric.
+[00:22:06.320 --> 00:22:10.240]   So basically, most embedding models,
+[00:22:10.240 --> 00:22:12.180]   you can use the cosine metric,
+[00:22:12.180 --> 00:22:15.980]   but some of them may need you to use dot product
+[00:22:15.980 --> 00:22:19.420]   or also Euclidean distance.
+[00:22:19.420 --> 00:22:23.040]   So basically, just check which embedding model you're using.
+[00:22:23.180 --> 00:22:24.380]   If you can't see any information
+[00:22:24.380 --> 00:22:26.640]   on which one of those metrics you should use,
+[00:22:26.640 --> 00:22:28.480]   just assume it's probably cosine.
+[00:22:28.480 --> 00:22:31.420]   And then here, we're just waiting for the index
+[00:22:31.420 --> 00:22:36.640]   to finish initializing before we move on to the next step,
+[00:22:36.640 --> 00:22:38.620]   which would be list indexes again,
+[00:22:38.620 --> 00:22:39.940]   which will look exactly the same
+[00:22:39.940 --> 00:22:45.120]   because I've already had the Retrieval Augmentation AWS index in there.
+[00:22:45.120 --> 00:22:48.220]   So it takes like a minute for that to run.
+[00:22:48.220 --> 00:22:49.520]   Now it has.
+[00:22:49.640 --> 00:22:54.700]   And then I've put here that we do this in batches of 128.
+[00:22:54.700 --> 00:22:56.840]   Ignore that, we're doing it in batches of two,
+[00:22:56.840 --> 00:22:59.280]   which given the dataset size, it's fine.
+[00:22:59.280 --> 00:23:01.140]   It's a really small dataset.
+[00:23:01.140 --> 00:23:04.900]   Obviously, if you're wanting to do this for a big dataset,
+[00:23:04.900 --> 00:23:08.380]   you should use a larger batch size.
+[00:23:08.380 --> 00:23:10.540]   Otherwise, it can take a really long time.
+[00:23:10.540 --> 00:23:12.880]   And if you do want to use a larger batch size,
+[00:23:12.880 --> 00:23:16.200]   you need to use a larger instance than the,
+[00:23:16.340 --> 00:23:19.580]   what was it, like the MLT2 model that we're using.
+[00:23:19.580 --> 00:23:25.780]   We're just going to upload or upsert 1000 of those vectors.
+[00:23:25.780 --> 00:23:27.980]   Okay, so that's what we're doing here.
+[00:23:27.980 --> 00:23:31.980]   We then initialize our connection to the specific index
+[00:23:31.980 --> 00:23:33.600]   that we created up here.
+[00:23:33.600 --> 00:23:36.340]   And then we just loop through and upsert everything.
+[00:23:36.340 --> 00:23:38.340]   So I'm going to run that.
+[00:23:38.340 --> 00:23:39.900]   And let me just explain what is happening.
+[00:23:39.900 --> 00:23:42.500]   So we're going through in batches of two.
+[00:23:43.340 --> 00:23:46.980]   We are getting our IDs for those batches.
+[00:23:46.980 --> 00:23:52.280]   So the IDs here are just like 0, 1, 2, 3, nothing special.
+[00:23:52.280 --> 00:23:54.280]   You should probably use actual IDs
+[00:23:54.280 --> 00:23:56.940]   if you're wanting to do something real with this.
+[00:23:56.940 --> 00:24:01.680]   We create a metadata for each batch.
+[00:24:01.680 --> 00:24:05.000]   So basically, I just want to store the text for each answer
+[00:24:05.000 --> 00:24:07.180]   within Pinecone because it makes things a little bit easier
+[00:24:07.180 --> 00:24:09.900]   later on while we're retrieving everything.
+[00:24:10.680 --> 00:24:13.580]   And then we want to create our embeddings.
+[00:24:13.580 --> 00:24:17.680]   So we take the answers like the documents within this batch,
+[00:24:17.680 --> 00:24:20.980]   and we do embedDocs, which is a function that we defined earlier.
+[00:24:20.980 --> 00:24:25.540]   And then we upsert everything. Okay, and that's it.
+[00:24:25.540 --> 00:24:28.980]   Now, if we take a look at our number of records within the index,
+[00:24:28.980 --> 00:24:35.380]   we should see that there are 154, which is a tiny, tiny index.
+[00:24:35.380 --> 00:24:37.540]   Honestly, in reality,
+[00:24:38.320 --> 00:24:40.940]   you probably wouldn't use Pinecone for something this small.
+[00:24:40.940 --> 00:24:48.080]   You really want to be using 10,000, 50,000, 100,000 million vectors.
+[00:24:48.080 --> 00:24:50.780]   But for this example, it's fine.
+[00:24:50.780 --> 00:24:56.380]   Okay, so let's just take a look at the question we initialized earlier.
+[00:24:56.380 --> 00:25:00.580]   Which instances can I use with managed spot training in SageMaker?
+[00:25:00.580 --> 00:25:02.180]   All right, so that was the question.
+[00:25:02.180 --> 00:25:04.740]   What I'm going to do is I'm going to embed that
+[00:25:04.880 --> 00:25:08.440]   to create our query vector, which I was calling XQ earlier.
+[00:25:08.440 --> 00:25:11.940]   And then we're going to query Pinecone,
+[00:25:11.940 --> 00:25:13.300]   and we're going to include the metadata.
+[00:25:13.300 --> 00:25:17.880]   So that will allow us to see the text of the answers as well.
+[00:25:17.880 --> 00:25:24.540]   All right, so we can run that, and we get these contexts here.
+[00:25:24.540 --> 00:25:29.340]   So, so far, that means we have basically done,
+[00:25:29.340 --> 00:25:31.780]   okay, we've created our database.
+[00:25:31.900 --> 00:25:35.500]   And now what we're doing is we're asking a question, a query,
+[00:25:35.500 --> 00:25:37.900]   taking it through to our embedding model.
+[00:25:37.900 --> 00:25:41.900]   And this time, we are actually going along this path here
+[00:25:41.900 --> 00:25:46.720]   and creating our query vector, taking that into Pinecone
+[00:25:46.720 --> 00:25:50.660]   and getting the relevant context from there.
+[00:25:50.660 --> 00:25:52.560]   So we've just, that's what we've just seen.
+[00:25:52.560 --> 00:25:57.100]   Those matches that we just saw, they're our relevant contexts here.
+[00:25:57.100 --> 00:26:00.820]   So what is left, okay, we need to take our query,
+[00:26:00.960 --> 00:26:03.620]   we need to take this context, feed them in to the LLM.
+[00:26:03.620 --> 00:26:05.360]   Okay, so let's do that.
+[00:26:05.360 --> 00:26:08.220]   I'm going to get those contexts.
+[00:26:08.220 --> 00:26:11.500]   Okay, so it's just a list of these.
+[00:26:11.500 --> 00:26:16.600]   I can even show you here, it's literally just a list of those.
+[00:26:16.600 --> 00:26:19.400]   And what we're going to do is we're going to construct this
+[00:26:19.400 --> 00:26:21.600]   into a single string.
+[00:26:21.600 --> 00:26:25.020]   And what we need to do here is be careful
+[00:26:25.020 --> 00:26:28.620]   as to how much data we feed in at any one time.
+[00:26:29.320 --> 00:26:33.120]   Because we're not using like a massive large language model here.
+[00:26:33.120 --> 00:26:36.080]   We're using Flan, T5XL, which is okay,
+[00:26:36.080 --> 00:26:42.220]   but it cannot store a ton of text within its context window.
+[00:26:42.220 --> 00:26:44.520]   So we need to be extra careful here.
+[00:26:44.520 --> 00:26:46.660]   And what we're going to do is we're going to say
+[00:26:46.660 --> 00:26:49.560]   for the text within the context here,
+[00:26:49.560 --> 00:26:53.020]   we're going to add each one until we get to a point
+[00:26:53.020 --> 00:26:56.820]   where we can't add any more because we reach the context window limit.
+[00:26:57.480 --> 00:26:59.720]   And what is our limit going to be?
+[00:26:59.720 --> 00:27:02.940]   We've just said to 1000 characters.
+[00:27:02.940 --> 00:27:04.280]   Okay, cool.
+[00:27:04.280 --> 00:27:05.840]   So we run that.
+[00:27:05.840 --> 00:27:08.280]   And then we can actually run that with the context.
+[00:27:08.280 --> 00:27:13.520]   And let's just see what that actually returns us, context string.
+[00:27:13.520 --> 00:27:20.420]   Okay, so we get, I'm not sure how many that is.
+[00:27:20.420 --> 00:27:25.420]   Just print it, it's a bit easier.
+[00:27:25.540 --> 00:27:30.280]   So I think we're actually, okay, here, it's telling us, sorry.
+[00:27:30.280 --> 00:27:31.620]   I forgot that I added that in there.
+[00:27:31.620 --> 00:27:34.040]   So with maximum sequence length 1000,
+[00:27:34.040 --> 00:27:36.740]   selected the top four document sections.
+[00:27:36.740 --> 00:27:40.920]   So we retrieve five, we're just going to pass through the top four.
+[00:27:40.920 --> 00:27:43.940]   It's that last one we couldn't fit into the limit we set.
+[00:27:43.940 --> 00:27:46.020]   Okay, that's great.
+[00:27:46.020 --> 00:27:49.020]   So now what we want to do is same as what we did a lot earlier,
+[00:27:49.020 --> 00:27:50.720]   where we had that prompt where it was like,
+[00:27:50.720 --> 00:27:53.840]   answer the question below, given the context,
+[00:27:53.980 --> 00:27:56.620]   we're going to do that.
+[00:27:56.620 --> 00:28:00.680]   Okay, let me do that on in another cell,
+[00:28:00.680 --> 00:28:03.220]   so I can at least show it to you.
+[00:28:03.220 --> 00:28:05.560]   So I'm going to do print text input.
+[00:28:05.560 --> 00:28:10.480]   Okay, answer the following question based on the context, right?
+[00:28:10.480 --> 00:28:12.780]   So we have our context here, which we're feeding in.
+[00:28:12.780 --> 00:28:15.560]   And we have our question.
+[00:28:15.560 --> 00:28:19.180]   Okay, so let's now predict with that and see what we get.
+[00:28:19.180 --> 00:28:22.880]   Which instances can I use my spot training and SageMaker?
+[00:28:23.020 --> 00:28:24.680]   All instances are supported.
+[00:28:24.680 --> 00:28:28.780]   Okay, cool. Okay, so with that, we've now taken our context
+[00:28:28.780 --> 00:28:32.720]   and we've fed them into what will be our new prompt.
+[00:28:32.720 --> 00:28:35.260]   Also taking our question, okay.
+[00:28:35.260 --> 00:28:38.380]   And we've fed that into new prompt
+[00:28:38.380 --> 00:28:41.760]   and use all that to create our retrieval augmented prompt,
+[00:28:41.760 --> 00:28:48.580]   which ILM then uses to go through and create our answer.
+[00:28:48.580 --> 00:28:51.460]   Okay, cool.
+[00:28:51.580 --> 00:28:54.220]   So yeah, that is the process.
+[00:28:54.220 --> 00:28:57.680]   We now have our retrieval augmented generation pipeline
+[00:28:57.680 --> 00:28:59.960]   and the answer that that is producing.
+[00:28:59.960 --> 00:29:04.920]   So now we can pull that together in our single reg query.
+[00:29:04.920 --> 00:29:08.020]   Okay, so run that.
+[00:29:08.020 --> 00:29:11.460]   And I'm going to ask the same question initially,
+[00:29:11.460 --> 00:29:15.720]   because I don't know too much about AWS here.
+[00:29:15.720 --> 00:29:19.760]   So I just want to ask something that I know the answer to,
+[00:29:20.580 --> 00:29:23.560]   which is the question, the spot instances one.
+[00:29:23.560 --> 00:29:26.620]   Okay, and we get this, right?
+[00:29:26.620 --> 00:29:30.920]   Now I checked the data set and there isn't actually any mention
+[00:29:30.920 --> 00:29:34.580]   of the hugging face instances in SageMaker, right?
+[00:29:34.580 --> 00:29:37.920]   So although this is a relevant question,
+[00:29:37.920 --> 00:29:40.260]   the model should say, I don't know,
+[00:29:40.260 --> 00:29:44.780]   because it doesn't actually know about this piece of information.
+[00:29:44.780 --> 00:29:46.520]   So we can test that.
+[00:29:47.820 --> 00:29:51.360]   Okay, and first chunk that we're getting here
+[00:29:51.360 --> 00:29:54.920]   is actually the contexts that are being returned.
+[00:29:54.920 --> 00:29:59.100]   Now these contexts, we can see they don't contain anything
+[00:29:59.100 --> 00:30:01.720]   about hugging face, right?
+[00:30:01.720 --> 00:30:03.120]   That is talking about something else.
+[00:30:03.120 --> 00:30:06.400]   And the reason that we're retrieving this irrelevant information
+[00:30:06.400 --> 00:30:11.600]   is because when we do our embedding and we query Pinecone,
+[00:30:11.600 --> 00:30:15.760]   we're saying retrieve the top five most relevant contexts
+[00:30:15.760 --> 00:30:17.320]   within the database.
+[00:30:17.460 --> 00:30:22.100]   Now, there is nothing that contains anything
+[00:30:22.100 --> 00:30:24.420]   about hugging face within our database,
+[00:30:24.420 --> 00:30:27.360]   but it's still going to return the top five most relevant items.
+[00:30:27.360 --> 00:30:29.060]   So it does that.
+[00:30:29.060 --> 00:30:32.300]   But fortunately, we've told our LM
+[00:30:32.300 --> 00:30:35.800]   that if the context doesn't contain relevant information,
+[00:30:35.800 --> 00:30:37.520]   you need to respond with, I don't know.
+[00:30:37.520 --> 00:30:41.420]   So that is exactly what it does here, responds with, I don't know.
+[00:30:41.420 --> 00:30:46.660]   Okay, so with that, we've seen how we can use SageMaker
+[00:30:46.800 --> 00:30:49.960]   for retrieval augmented generation with Pinecone
+[00:30:49.960 --> 00:30:53.460]   using open source models, which is, I think, pretty cool,
+[00:30:53.460 --> 00:30:55.860]   relatively easy to set up.
+[00:30:55.860 --> 00:30:57.460]   I think one thing that we actually,
+[00:30:57.460 --> 00:31:01.100]   I should show you very quickly before finishing is right now,
+[00:31:01.100 --> 00:31:04.100]   we have some running instances in SageMaker.
+[00:31:04.100 --> 00:31:05.960]   You should probably shut those down.
+[00:31:05.960 --> 00:31:09.600]   So we can do that by going to our endpoints here
+[00:31:09.600 --> 00:31:15.700]   and selecting those, clicking delete, and that will be deleted.
+[00:31:15.820 --> 00:31:19.620]   Okay, and we'll just want to do that for our other items.
+[00:31:19.620 --> 00:31:22.220]   We have the images, you can delete those as well.
+[00:31:22.220 --> 00:31:27.260]   And also the models as well.
+[00:31:27.260 --> 00:31:28.960]   Okay, cool.
+[00:31:28.960 --> 00:31:32.720]   So, yeah, once you've gone through and deleted those,
+[00:31:32.720 --> 00:31:35.720]   you won't be paying any more for following this.
+[00:31:35.720 --> 00:31:39.220]   So, yeah, that's it for this video.
+[00:31:39.220 --> 00:31:44.560]   We've obviously seen how to do RAG with open source with Pinecone.
+[00:31:45.320 --> 00:31:47.160]   And it seems to work pretty well.
+[00:31:47.160 --> 00:31:51.100]   Obviously, when you're wanting more performant generations,
+[00:31:51.100 --> 00:31:54.360]   you'll probably want to switch up to a larger model.
+[00:31:54.360 --> 00:31:59.720]   The Flan T5 XL that we demoed here is pretty limited in its abilities,
+[00:31:59.720 --> 00:32:05.000]   but it's not bad and it's definitely not bad for like a demo.
+[00:32:05.000 --> 00:32:09.360]   So, yeah, I hope this has all been useful and interesting.
+[00:32:09.360 --> 00:32:11.120]   Thank you very much for watching.
+[00:32:11.120 --> 00:32:13.200]   And I will see you again in the next one.
+[00:32:13.200 --> 00:32:14.320]   Bye.
+[00:32:14.460 --> 00:32:17.460]   (MUSIC)
+[00:32:17.460 --> 00:32:20.460]   (MUSIC)
+[00:32:21.460 --> 00:32:24.460]   (MUSIC)
+[00:32:24.460 --> 00:32:27.460]   (MUSIC)
+[00:32:27.460 --> 00:32:30.040]   (gentle music)
+
