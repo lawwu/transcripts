@@ -1,0 +1,180 @@
+
+[00:00:00.000 --> 00:00:04.960]   Hello everyone, it's Kosta here.
+[00:00:04.960 --> 00:00:08.720]   Today we're going to take a look at PPO implementation details to deal with continuous
+[00:00:08.720 --> 00:00:10.720]   action spaces.
+[00:00:10.720 --> 00:00:16.180]   A quick recap is our first video had covered 11 general implementation details, and our
+[00:00:16.180 --> 00:00:21.780]   second video has covered 9 Atari-specific implementation details.
+[00:00:21.780 --> 00:00:26.120]   In today's video, we'll take a look at 8 implementation details to help deal with
+[00:00:26.120 --> 00:00:30.680]   games with continuous action spaces such as Pi Bullet and Mujuko.
+[00:00:30.680 --> 00:00:35.400]   By the end of this video, you'll learn how to train an agent to play the Hachita environment
+[00:00:35.400 --> 00:00:37.360]   in Pi Bullet.
+[00:00:37.360 --> 00:00:40.720]   Without further ado, let's get started!
+[00:00:40.720 --> 00:00:46.600]   Our first step is to go to our repository and create a copy of ppo.pi and rename it
+[00:00:46.600 --> 00:00:50.800]   to ppo_continuous_action.pi.
+[00:00:50.800 --> 00:00:56.720]   Then we're going to use our IDE spider to open the newly created file, and at the top
+[00:00:56.720 --> 00:01:00.040]   of the file, import pi_bullet_ems.
+[00:01:00.040 --> 00:01:05.140]   And we're going to modify the gem_id to hachita_bullet_emv0.
+[00:01:05.140 --> 00:01:09.520]   Like last time, I'm going to set a race and run the script so that we can play around
+[00:01:09.520 --> 00:01:11.520]   with the ems.
+[00:01:11.520 --> 00:01:17.280]   Here we check out an single action space where we see 6 negative ones and 6 positive ones,
+[00:01:17.280 --> 00:01:23.200]   which are lower and upper bounds for the 6 action components in a continuous action space.
+[00:01:23.200 --> 00:01:28.600]   We can also check out the single observation space where we can see 26 unbounded low-level
+[00:01:28.600 --> 00:01:30.480]   features.
+[00:01:30.480 --> 00:01:36.740]   Then our first implementation detail is to generate continuous actions via normal distributions.
+[00:01:36.740 --> 00:01:41.180]   If you recall, our previous PPO scripts are able to deal with discrete actions, which
+[00:01:41.180 --> 00:01:44.640]   are integers that look like 1, 2, 3, 4, 5.
+[00:01:44.640 --> 00:01:49.640]   However, in continuous action space, we're dealing with real numbers, which looks like
+[00:01:49.640 --> 00:01:50.920]   this.
+[00:01:50.920 --> 00:01:55.220]   The standard way of generating continuous actions with policy gradient methods is to
+[00:01:55.220 --> 00:01:59.080]   use normal distributions to describe the policy.
+[00:01:59.080 --> 00:02:00.440]   Here is how it works.
+[00:02:00.440 --> 00:02:05.920]   For each of our action components, we generate a mean and a standard deviation.
+[00:02:05.920 --> 00:02:10.280]   These means and standard deviations are then used to construct normal distributions from
+[00:02:10.280 --> 00:02:13.040]   which the action components are sampled.
+[00:02:13.040 --> 00:02:19.440]   Then we can get the action at the current time step by concatenating these action components.
+[00:02:19.440 --> 00:02:24.760]   To translate this in code, let us import the normal distribution from PyTorch.
+[00:02:24.760 --> 00:02:29.000]   Scrolling down, and we're going to modify the actors network.
+[00:02:29.000 --> 00:02:33.680]   Instead of generating lodges for the categorical distribution, we're going to generate means
+[00:02:33.680 --> 00:02:36.160]   for the normal distribution.
+[00:02:36.160 --> 00:02:40.720]   Since we're dealing with the continuous action space, we also need to modify the output features
+[00:02:40.720 --> 00:02:45.720]   of the last linear layer to the product of the single action space shape.
+[00:02:45.720 --> 00:02:50.600]   Then our second implementation detail is to generate the standard deviation a little bit
+[00:02:50.600 --> 00:02:53.320]   unintuitively.
+[00:02:53.320 --> 00:02:54.320]   Here's the code.
+[00:02:54.320 --> 00:02:59.220]   First, we don't generate the standard deviation directly, but rather we generate the log standard
+[00:02:59.220 --> 00:03:00.720]   deviation.
+[00:03:00.720 --> 00:03:05.320]   And secondly, the log standard deviations are just learnable neural network parameters that
+[00:03:05.320 --> 00:03:06.920]   don't take any inputs.
+[00:03:06.920 --> 00:03:11.100]   This means the log standard deviations are state independent.
+[00:03:11.100 --> 00:03:15.160]   During the forward pass, we first get the means, then get the log standard deviation
+[00:03:15.160 --> 00:03:18.520]   to match the output size of the means.
+[00:03:18.520 --> 00:03:20.960]   Here we would show an example.
+[00:03:20.960 --> 00:03:26.100]   As we can see, the log standard deviations are initially set to be zeros, and it'll match
+[00:03:26.100 --> 00:03:30.820]   the first dimension of the actors mean, which is the same as the num_ends, which is four
+[00:03:30.820 --> 00:03:32.560]   in this case.
+[00:03:32.560 --> 00:03:37.800]   Then we could get the standard deviation by doing the exponent of the log standard deviation.
+[00:03:37.800 --> 00:03:41.720]   Combining it with the mean, we get the normal distribution.
+[00:03:41.720 --> 00:03:46.280]   Then we could remove the code to handle the categorical distribution, knowing the sample
+[00:03:46.280 --> 00:03:50.040]   log probability and entropy functions will still work.
+[00:03:50.040 --> 00:03:56.400]   Our third implementation detail is to assume the action AT is composed of multiple independent
+[00:03:56.400 --> 00:03:58.920]   action components.
+[00:03:58.920 --> 00:04:05.440]   In code, this translates to summing up the log probabilities of the action components.
+[00:04:05.440 --> 00:04:09.880]   Because of the logarithm addition rule, we're essentially saying the summation of the log
+[00:04:09.880 --> 00:04:15.180]   probability of taking the action components is the same as log product of the probability
+[00:04:15.180 --> 00:04:19.840]   of taking the action components, which is the same as the log probability of taking
+[00:04:19.840 --> 00:04:23.000]   the action at the current time step.
+[00:04:23.000 --> 00:04:28.360]   More intuitively, we're really saying the action AT is composed of statistically independent
+[00:04:28.360 --> 00:04:30.560]   action components.
+[00:04:30.560 --> 00:04:37.360]   Similarly, we'll also sum up the entropies for the action components.
+[00:04:37.360 --> 00:04:42.560]   On a related note, this idea could also apply to Jim's multidiscrete action space, which
+[00:04:42.560 --> 00:04:47.400]   uses multiple discrete numbers to describe an action in a time step.
+[00:04:47.400 --> 00:04:51.800]   And the code would roughly look like this, where you would also sum up the log probabilities
+[00:04:51.800 --> 00:04:55.880]   and entropies for the discrete action components.
+[00:04:55.880 --> 00:05:00.000]   Sometimes a multidiscrete action space can be pretty bloated and has a lot of invalid
+[00:05:00.000 --> 00:05:06.080]   actions, and it turns out it's really important to mask out the invalid actions during training.
+[00:05:06.080 --> 00:05:09.320]   Feel free to check out our paper to read more.
+[00:05:09.320 --> 00:05:12.700]   Well, that was kind of a digression.
+[00:05:12.700 --> 00:05:18.400]   Going back, one very important thing to do is to scroll down and remove the code that
+[00:05:18.400 --> 00:05:22.800]   converts the mini-batch actions to integers since we're no longer in a discrete action
+[00:05:22.800 --> 00:05:24.080]   space.
+[00:05:24.080 --> 00:05:30.480]   At this point, if we move up, remove the arrays, and modify the assert statement correspondingly,
+[00:05:30.480 --> 00:05:35.680]   our code would run.
+[00:05:35.680 --> 00:05:39.900]   To get a more serious run, let us use the hyperparameters for the Mojuko environments
+[00:05:39.900 --> 00:05:42.540]   in the original implementation.
+[00:05:42.540 --> 00:05:49.600]   We will first modify the learning rate to 3e-4, change the total time steps to 2 million,
+[00:05:49.600 --> 00:05:57.840]   modify the num_ems to 1, num_steps to 2048, change the num_minibatches to 32, update epochs
+[00:05:57.840 --> 00:06:02.080]   10, and entropy coefficient 0.
+[00:06:02.080 --> 00:06:06.200]   I think this is an interesting point to just give the script a run because our code is
+[00:06:06.200 --> 00:06:08.960]   runnable.
+[00:06:08.960 --> 00:06:14.600]   While we wait for this experiment to finish, we'll go back to other implementation details.
+[00:06:14.600 --> 00:06:19.000]   It's very important to understand that the original implementation does a lot of preprocessing
+[00:06:19.000 --> 00:06:20.880]   to the environment.
+[00:06:20.880 --> 00:06:25.760]   Specifically, we would create the make_end function as follows.
+[00:06:25.760 --> 00:06:30.080]   The first part of the function records the episode statistics and videos, and the second
+[00:06:30.080 --> 00:06:33.540]   part preprocesses the environment.
+[00:06:33.540 --> 00:06:38.400]   And we have come to our fourth implementation detail, which is to clip the action to its
+[00:06:38.400 --> 00:06:41.800]   valid range before sending it to the environment.
+[00:06:41.800 --> 00:06:46.420]   Here we check out the source code of the clip_action wrapper, and we see it basically clips the
+[00:06:46.420 --> 00:06:50.560]   action to the lower and upper bounds of the action space.
+[00:06:50.560 --> 00:06:55.600]   Note that if the agent generates an out-of-bound action, we still save that action in the storage
+[00:06:55.600 --> 00:06:59.040]   for the forward pass consistency during training.
+[00:06:59.040 --> 00:07:03.400]   However, the environment would execute the clipped action.
+[00:07:03.400 --> 00:07:09.720]   Our fifth implementation detail is the observation normalization.
+[00:07:09.720 --> 00:07:12.360]   Let us check out the source code.
+[00:07:12.360 --> 00:07:16.040]   And the way it works is we would create a utility class to keep track of the running
+[00:07:16.040 --> 00:07:19.760]   means and center deviations of things.
+[00:07:19.760 --> 00:07:24.440]   In here, we create an rms variable to keep track of the running means and center deviations
+[00:07:24.440 --> 00:07:26.680]   of the observations.
+[00:07:26.680 --> 00:07:32.240]   Every time the environment returns an observation, we call the normalize function, which updates
+[00:07:32.240 --> 00:07:37.120]   the running means and center deviations of the rms, and then normalizes the observation
+[00:07:37.120 --> 00:07:43.560]   by subtracting the rms's means and divided by the rms's center deviation.
+[00:07:43.560 --> 00:07:49.280]   Using terms from mathematical statistics, this process is also known as standardization.
+[00:07:49.280 --> 00:07:54.480]   And the standardized observation will generally have zero mean and unit variance.
+[00:07:54.480 --> 00:07:58.720]   Our sixth implementation detail is observation clipping.
+[00:07:58.720 --> 00:08:03.420]   Going back to the make_end function, we will use the transform_observation wrapper and a
+[00:08:03.420 --> 00:08:10.240]   lambda function to clip the normalized observation within the range of -10, 10.
+[00:08:10.240 --> 00:08:15.200]   Our seventh implementation detail is reward normalization.
+[00:08:15.200 --> 00:08:17.600]   Here we check out the source code again.
+[00:08:17.600 --> 00:08:18.880]   And it's kind of weird.
+[00:08:18.880 --> 00:08:24.920]   Instead of creating an rms for the rewards, we create an rms for the returns.
+[00:08:24.920 --> 00:08:29.280]   And these returns are discounted returns, which is why we have the gamma in the classes
+[00:08:29.280 --> 00:08:31.080]   argument.
+[00:08:31.080 --> 00:08:36.560]   Every time the environment returns a reward, we calculate the discounted return and then
+[00:08:36.560 --> 00:08:40.000]   call the normalize function on the reward.
+[00:08:40.000 --> 00:08:45.360]   In this function, we first update the rms for the returns, then we normalize the rewards
+[00:08:45.360 --> 00:08:49.320]   by divided by the returns' center deviation.
+[00:08:49.320 --> 00:08:53.800]   Unlike the observation normalization, we're not subtracting the mean, and when we divide
+[00:08:53.800 --> 00:08:58.480]   by the center deviation, it's the returns' center deviation, not the rewards' center
+[00:08:58.480 --> 00:09:00.220]   deviation.
+[00:09:00.220 --> 00:09:04.480]   Our eighth implementation detail is reward clipping.
+[00:09:04.480 --> 00:09:08.960]   Going back to the make_end function, we're going to use the transform_reward wrapper
+[00:09:08.960 --> 00:09:15.580]   along with the lambda function to clip the normalized reward to the range of -10, 10.
+[00:09:15.580 --> 00:09:19.280]   This is all the implementation details to deal with the continuous action space, and
+[00:09:19.280 --> 00:09:26.960]   let's open up the terminal and give it a run.
+[00:09:26.960 --> 00:09:29.300]   And here are the results.
+[00:09:29.300 --> 00:09:33.960]   Over here, the pink experiment is the one that we have added all of the normalization
+[00:09:33.960 --> 00:09:35.560]   wrappers.
+[00:09:35.560 --> 00:09:39.720]   As we can see in the episodic return curve, having normalization really helps the agent's
+[00:09:39.720 --> 00:09:44.840]   performance in the beginning, however, they converge to the same episodic return later.
+[00:09:44.840 --> 00:09:49.600]   Another thing to note is having the normalization wrapper significantly reduces the scale of
+[00:09:49.600 --> 00:09:54.200]   the value loss, and that is because of the rewards normalization.
+[00:09:54.200 --> 00:09:58.800]   That said, I was surprised to see the episodic return to be the same in the end, and I was
+[00:09:58.800 --> 00:10:03.880]   thinking maybe it was because I was using my macOS to run the experiments.
+[00:10:03.880 --> 00:10:08.940]   So I ended up using my Linux machine to do the same experiments again.
+[00:10:08.940 --> 00:10:13.380]   We can go to the experiments page and check out the overview section and see the operating
+[00:10:13.380 --> 00:10:16.800]   system that was used to run the experiments.
+[00:10:16.800 --> 00:10:21.560]   And over here, I have the yellow line, which is the script that has all of the normalization
+[00:10:21.560 --> 00:10:23.480]   wrappers.
+[00:10:23.480 --> 00:10:28.520]   And if we go to the episodic returns chart, we see having normalization makes a much
+[00:10:28.520 --> 00:10:33.200]   huger difference in the beginning of the training, however, they do sort of converge to the same
+[00:10:33.200 --> 00:10:35.240]   results in the end.
+[00:10:35.240 --> 00:10:39.760]   One last note is that to help us understand the agent's performance, we can always check
+[00:10:39.760 --> 00:10:44.840]   out the videos of the agents playing the game, which always offer insights on how the agent
+[00:10:44.840 --> 00:10:48.100]   exactly achieved the episodic return.
+[00:10:48.100 --> 00:10:52.260]   If you want to read more about the effect of the normalization wrappers to continuous
+[00:10:52.260 --> 00:10:57.800]   action spaces, consider checking out the paper from Ingstrom and Elias et al., where they
+[00:10:57.800 --> 00:11:01.520]   have done some very interesting ablation studies.
+[00:11:01.520 --> 00:11:05.800]   I'd also recommend the paper from Andrew Coas et al., where they have done ablation studies
+[00:11:05.800 --> 00:11:10.560]   on 68 design decisions with a continuous action space.
+[00:11:10.560 --> 00:11:12.660]   Here is a quick summary of changes.
+[00:11:12.660 --> 00:11:17.960]   We first import the pi bulletins, the normal distribution, then we change the gem ID, learning
+[00:11:17.960 --> 00:11:25.600]   rate, total time steps, num_ems, num_steps, num_minibatches, update_epochs, entropy coefficient,
+[00:11:25.600 --> 00:11:30.560]   then we add the normalization wrappers, then we modify the neural network to output the
+[00:11:30.560 --> 00:11:36.480]   actor's mean, change the last linear layer to output 6 action components, generate the
+[00:11:36.480 --> 00:11:42.360]   state-independent log standard deviation, create a normal distribution to sample actions,
+[00:11:42.360 --> 00:11:48.380]   and then sum up the log probabilities and entropies, then we modify the assertion statement
+[00:11:48.380 --> 00:11:52.920]   to work with the continuous action space, and lastly remove the code that converts the
+[00:11:52.920 --> 00:11:55.720]   minibatch actions to discrete actions.
+[00:11:55.720 --> 00:11:58.680]   And everything else is the same.
+[00:11:58.680 --> 00:12:02.940]   Before we wrap up, I have a homework for interested viewers.
+[00:12:02.940 --> 00:12:07.600]   So far, we have covered implementation details to handle the pixel observation space and
+[00:12:07.600 --> 00:12:10.120]   continuous action space.
+[00:12:10.120 --> 00:12:16.440]   Given this, can you modify our PPO implementation to make it work with car racing v0 environment,
+[00:12:16.440 --> 00:12:20.560]   which has pixel observations and continuous action space?
+[00:12:20.560 --> 00:12:25.100]   Feel free to give this a try, and my answer is linked in the video description.
+[00:12:25.100 --> 00:12:28.160]   This concludes our last video in the PPO tutorial series.
+[00:12:28.160 --> 00:12:32.040]   Thanks so much for following along, and if you have any questions, feel free to comment
+[00:12:32.040 --> 00:12:32.640]   down below.
+[00:12:32.720 --> 00:12:34.720]   [music]
+[00:12:34.720 --> 00:12:37.300]   (upbeat music)
+

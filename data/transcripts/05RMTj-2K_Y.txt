@@ -1,0 +1,173 @@
+
+[00:00:00.000 --> 00:00:04.340]   Hey, Kasa here.
+[00:00:04.340 --> 00:00:09.780]   Today we're going to take a look at Atari-specific implementation details for PPO.
+[00:00:09.780 --> 00:00:16.060]   In our last video, we have covered 11 general implementation details with PPO.
+[00:00:16.060 --> 00:00:21.500]   In today's video, we'll continue this journey and take a look at 9 Atari-specific implementation
+[00:00:21.500 --> 00:00:22.980]   details.
+[00:00:22.980 --> 00:00:27.200]   A quick reminder is you can find out where these implementation details come from by
+[00:00:27.200 --> 00:00:29.640]   checking out my blog post.
+[00:00:29.640 --> 00:00:34.040]   At the end of this video, you'll know how to use PPO to train agents to play the Atari
+[00:00:34.040 --> 00:00:35.900]   game Breakout.
+[00:00:35.900 --> 00:00:41.840]   In particular, our performance would match Stable Baseline 3's PPO, reaching about 400
+[00:00:41.840 --> 00:00:44.360]   episodic return in Breakout.
+[00:00:44.360 --> 00:00:47.840]   You may find our episodic return on the left looks a little bit noisy.
+[00:00:47.840 --> 00:00:52.320]   That is because we record the unprocessed raw episodic return from the environment,
+[00:00:52.320 --> 00:00:56.880]   and we can always smooth it later.
+[00:00:56.880 --> 00:00:59.960]   Without further ado, let's get started.
+[00:00:59.960 --> 00:01:09.680]   Our first step is to go to the repo and make a copy of the ppo.py and rename it to ppo_atari.py.
+[00:01:09.680 --> 00:01:15.560]   Then we're going to use our IDE spider to open the newly created file.
+[00:01:15.560 --> 00:01:23.720]   Here we're going to change the gem ID to Breakout_NoFrameSkip-v4, which is the unmodified Breakout gem environment.
+[00:01:23.720 --> 00:01:29.920]   Next, I'm going to scroll down and set up a RAID statement here so that we can run the
+[00:01:29.920 --> 00:01:33.440]   script and play around with the vector environment.
+[00:01:33.440 --> 00:01:38.720]   If you recall from our last video, we can check out the action space like this.
+[00:01:38.720 --> 00:01:44.920]   Here the agent has four discrete actions, which are null operation, fire, moving right,
+[00:01:44.920 --> 00:01:46.520]   and moving left.
+[00:01:46.520 --> 00:01:51.080]   We can also check out the single observation space like this, and we see an observation
+[00:01:51.080 --> 00:01:56.040]   is a 210x160 image with three channels.
+[00:01:56.040 --> 00:02:00.440]   It's very important to understand that the original implementation does a lot of preprocessing
+[00:02:00.440 --> 00:02:02.680]   to the environment.
+[00:02:02.680 --> 00:02:08.760]   Let us import the Atari preprocessing wrappers from the stable_baselines3 library.
+[00:02:08.760 --> 00:02:13.640]   Then we're going to implement the make_end function as follows.
+[00:02:13.640 --> 00:02:17.920]   Notice the setup is the same as the previous make_end function, where we would use the
+[00:02:17.920 --> 00:02:21.960]   record_episode_statistics and record_video wrapper.
+[00:02:21.960 --> 00:02:27.520]   The only difference is that we would use these wrappers to do preprocessing of the environment.
+[00:02:27.520 --> 00:02:31.840]   I am now going to remove the previous make_end function.
+[00:02:31.840 --> 00:02:36.800]   Our first implementation detail is the no_op_reset_env wrapper.
+[00:02:36.800 --> 00:02:43.200]   Here, if we command click on the wrapper, VS Code will take us to the source code.
+[00:02:43.200 --> 00:02:48.060]   According to the documentation, this wrapper samples initial states by taking random number
+[00:02:48.060 --> 00:02:50.560]   of noops on reset.
+[00:02:50.560 --> 00:02:54.920]   Here we see it implements the reset function of the gem_wrapper.
+[00:02:54.920 --> 00:03:00.720]   Every time the breakout noframescript-before environment gets reset, this wrapper samples
+[00:03:00.720 --> 00:03:09.200]   a random number of noops between 0 and noop_max=30, then execute these noops and return the initial
+[00:03:09.200 --> 00:03:11.280]   observation.
+[00:03:11.280 --> 00:03:17.400]   According to the corresponding papers, this wrapper adds stochasticity to the environment.
+[00:03:17.400 --> 00:03:21.600]   The second implementation detail is the max_and_skip_env wrapper.
+[00:03:21.600 --> 00:03:25.280]   Here, we can go check out the source code again.
+[00:03:25.280 --> 00:03:30.160]   The first thing the wrapper does is to skip 4 frames by default, and it will repeat the
+[00:03:30.160 --> 00:03:33.400]   agent's last actions on the skipped frames.
+[00:03:33.400 --> 00:03:38.640]   According to the DQM paper, this technique is introduced to save computational time.
+[00:03:38.640 --> 00:03:43.960]   This wrapper also takes the maximum pixel values over the last 2 frames.
+[00:03:43.960 --> 00:03:49.720]   And according to the DQM paper, this is for dealing with Atari environment quirks.
+[00:03:49.720 --> 00:03:53.240]   The third implementation detail is the episodic live_env.
+[00:03:53.240 --> 00:03:56.280]   Here, we check out the code again.
+[00:03:56.280 --> 00:04:00.800]   For games where there is a live counter, such as Breakout, this wrapper will treat the end
+[00:04:00.800 --> 00:04:07.000]   of live as the end of episode, returning done=true for every lost live.
+[00:04:07.000 --> 00:04:11.760]   Note that this is also a training detail in the original DQM paper.
+[00:04:11.760 --> 00:04:16.680]   The fourth implementation detail is the fire_reset_env wrapper.
+[00:04:16.680 --> 00:04:19.360]   Let's check out the source code of the wrapper.
+[00:04:19.360 --> 00:04:25.080]   So some Atari environments are stationary until the first fire action is being performed.
+[00:04:25.080 --> 00:04:29.120]   And this wrapper will automatically do the fire for us so that the agent doesn't have
+[00:04:29.120 --> 00:04:30.720]   to learn.
+[00:04:30.720 --> 00:04:32.120]   Here is a funny thing.
+[00:04:32.120 --> 00:04:36.080]   I couldn't really find any reference to this wrapper in the original papers.
+[00:04:36.080 --> 00:04:40.960]   Furthermore, based on the discussion thread on OpenAI Baselines, no one seems to know
+[00:04:40.960 --> 00:04:43.520]   where this wrapper comes from.
+[00:04:43.520 --> 00:04:47.920]   Folks at DeepMind even outright suggest they don't use the fire_reset_env at all.
+[00:04:47.920 --> 00:04:57.520]   So...
+[00:04:57.520 --> 00:05:02.200]   Our fifth implementation detail is the clip_reward_env.
+[00:05:02.200 --> 00:05:04.440]   Here we check out the source code again.
+[00:05:04.440 --> 00:05:09.680]   And what this wrapper does is to clip the sum of rewards from the 4 skipped frames to
+[00:05:09.680 --> 00:05:12.440]   the range of -1,1.
+[00:05:12.440 --> 00:05:17.360]   As suggested by the DQM paper, this wrapper helps deal with different reward scales from
+[00:05:17.360 --> 00:05:19.100]   various games.
+[00:05:19.100 --> 00:05:24.440]   The sixth implementation detail is the image_transformation wrappers.
+[00:05:24.440 --> 00:05:31.080]   It's a two-steps process to convert the image to grayscale, then resize it to 84x84 as shown
+[00:05:31.080 --> 00:05:33.000]   in the DQM paper.
+[00:05:33.000 --> 00:05:38.440]   Note, the original implementation uses the warp_frame wrapper to achieve the same purpose,
+[00:05:38.440 --> 00:05:42.480]   but here we use these two wrappers because they play nicer with the GM's frame stack
+[00:05:42.480 --> 00:05:43.480]   wrapper.
+[00:05:43.480 --> 00:05:48.840]   Also, there is a minor bug with the resize wrapper and we need to apply it before the
+[00:05:48.840 --> 00:05:50.800]   grayscale wrapper.
+[00:05:50.800 --> 00:05:55.520]   The seventh implementation detail is the use of frame_stack.
+[00:05:55.520 --> 00:06:01.240]   Here we use the frame_stack wrapper to stack the 4 passed observations together as a single
+[00:06:01.240 --> 00:06:02.400]   observation.
+[00:06:02.400 --> 00:06:07.440]   This technique is documented in the DQM paper and intuitively it could for example help
+[00:06:07.440 --> 00:06:11.880]   the agent identify the velocity of moving objects.
+[00:06:11.880 --> 00:06:15.920]   Let's test out this change on our spider IDE.
+[00:06:15.920 --> 00:06:18.880]   Here we see the action space remains the same.
+[00:06:18.880 --> 00:06:23.680]   However, the observation space now has a different shape.
+[00:06:23.680 --> 00:06:29.960]   Here we have an 84x84 image with 4 channels or 4 stacked frames.
+[00:06:29.960 --> 00:06:34.800]   The eighth implementation detail is a convolutional neural network from the DQM paper that is
+[00:06:34.800 --> 00:06:39.680]   used to calculate the hidden features for the policy and value heads.
+[00:06:39.680 --> 00:06:43.960]   If you recall our neural network setup, the actor and critic have their own respective
+[00:06:43.960 --> 00:06:44.960]   networks.
+[00:06:44.960 --> 00:06:49.520]   However, this could be a waste of computational power since the hidden layers are the same
+[00:06:49.520 --> 00:06:52.020]   and only the output heads are different.
+[00:06:52.020 --> 00:06:56.560]   To address this, let us create a shared network for feature extraction.
+[00:06:56.560 --> 00:07:00.480]   Notice here the shared network corresponds to the first 3 convolutional layers in the
+[00:07:00.480 --> 00:07:05.880]   original DQM paper, which can be visualized as follows.
+[00:07:05.880 --> 00:07:11.840]   Then I'm going to move the rays to a different place of the code to help debug.
+[00:07:11.840 --> 00:07:14.160]   Here we can run the code.
+[00:07:14.160 --> 00:07:17.920]   And when it's finished, we're going to check out the shape of the extracted features by
+[00:07:17.920 --> 00:07:22.480]   doing agent.network(nextops.shape).
+[00:07:22.480 --> 00:07:30.560]   Here we see the 84x84 image with 4 channels is being reduced to a 7x7 image with 64 channels.
+[00:07:30.560 --> 00:07:36.080]   Our next step is to flatten this extracted features and also create a linear layer that
+[00:07:36.080 --> 00:07:39.240]   takes the input of the flattened features.
+[00:07:39.240 --> 00:07:43.800]   At this point, the network outputs a hidden representation which we'll use for the actors
+[00:07:43.800 --> 00:07:45.720]   and critics head.
+[00:07:45.720 --> 00:07:51.400]   Now the beauty of having the getAction and value function is that we can do hidden equals
+[00:07:51.400 --> 00:07:58.080]   self.networkX and we can replace the actors and critics input with the hidden output.
+[00:07:58.080 --> 00:08:02.240]   Also don't forget to modify the getValue function correspondingly.
+[00:08:02.240 --> 00:08:06.680]   The ninth implementation detail is that the image observation is scaled to the range of
+[00:08:06.680 --> 00:08:08.880]   0, 1.
+[00:08:08.880 --> 00:08:15.520]   The image observation has a range of 0 to 255, but it is divided by 255 so that it gets
+[00:08:15.520 --> 00:08:18.240]   into the range of 0 to 1.
+[00:08:18.240 --> 00:08:24.640]   Our final step is to match the hyperparameters that was used in the original implementation.
+[00:08:24.640 --> 00:08:30.840]   Here we'll modify the total time steps to be 10 million, change the num_ems to be 8,
+[00:08:30.840 --> 00:08:34.480]   and change the clip range to 0.1.
+[00:08:34.480 --> 00:08:43.520]   That is it for the Atari implementation details and I can remove the race and give it a run.
+[00:08:43.520 --> 00:08:50.040]   Here it has about 100 SPS which is very slow, so we're going to use a GPU machine to speed
+[00:08:50.040 --> 00:08:52.080]   things up.
+[00:08:52.080 --> 00:08:58.000]   Here let us do nvidia-smi to check the GPU exists and then we're simply going to run
+[00:08:58.000 --> 00:08:59.800]   the script.
+[00:08:59.800 --> 00:09:04.000]   As we can see, the script runs with a much higher SPS.
+[00:09:04.000 --> 00:09:09.160]   We can also go to the experiment's run page to see the metrics being streamed live.
+[00:09:09.160 --> 00:09:13.640]   While we wait for the experiment to finish, let me show you something really cool.
+[00:09:13.640 --> 00:09:20.120]   I'm going to compare this experiment with some experiments that I've done a year earlier.
+[00:09:20.120 --> 00:09:24.580]   Here I'm in my project dashboard and I'm going to check out the report section, create a
+[00:09:24.580 --> 00:09:28.680]   new report, and just give it a dummy name.
+[00:09:28.680 --> 00:09:34.640]   Then I type forward slash to get the components menu, from which I'll select panel grid.
+[00:09:34.640 --> 00:09:39.480]   Here we see a run set containing the tracked experiments in the current project.
+[00:09:39.480 --> 00:09:45.000]   But now I am going to deselect this run set, create another run set, and retrieve the experiments
+[00:09:45.000 --> 00:09:48.380]   that I've been working on in a separate project.
+[00:09:48.380 --> 00:09:52.880]   There are hundreds of experiments in this project, but I'm only interested in the PPO
+[00:09:52.880 --> 00:09:57.960]   breakout related experiments, so I'm going to apply various filters.
+[00:09:57.960 --> 00:10:03.400]   After this is done, I'm going to toggle the visibility for the past experiments.
+[00:10:03.400 --> 00:10:06.280]   Then we create a panel and select line plot.
+[00:10:06.280 --> 00:10:10.640]   I'm also going to change the default axis to global step, which is what we use to keep
+[00:10:10.640 --> 00:10:13.400]   track of environment steps.
+[00:10:13.400 --> 00:10:18.640]   Notice episodic return curves looks very rough, so we're going to apply a smoothing parameter
+[00:10:18.640 --> 00:10:20.400]   and click OK.
+[00:10:20.400 --> 00:10:26.560]   We can also utilize the flexibility of the UI to resize the window to make it look nicer.
+[00:10:26.560 --> 00:10:31.000]   Next I'm going to select the default run set and toggle the visibility for the experiment
+[00:10:31.000 --> 00:10:32.900]   we just ran.
+[00:10:32.900 --> 00:10:37.240]   Notice the chart hasn't been updated, and that is because past experiments use a different
+[00:10:37.240 --> 00:10:42.840]   y axis of episode reward, which is a technically ambiguous term.
+[00:10:42.840 --> 00:10:47.520]   To address this, we simply add the episodic return of this experiment.
+[00:10:47.520 --> 00:10:52.920]   We have just joined experiments from two completely separate projects, and by zooming in, we can
+[00:10:52.920 --> 00:10:57.240]   see the experiment we just ran is rapidly catching up with the experiments that I have
+[00:10:57.240 --> 00:10:59.560]   done over a year ago.
+[00:10:59.560 --> 00:11:04.360]   So this is looking good that our agent will achieve 400 episodic return at the end of
+[00:11:04.360 --> 00:11:06.520]   training.
+[00:11:06.520 --> 00:11:09.920]   Fast forward a bit, this is the finished experiment.
+[00:11:09.920 --> 00:11:15.120]   We can see that our agent on average achieves episodic return of 400.
+[00:11:15.120 --> 00:11:20.540]   Scrolling up, we can see the policy loss has this interesting arc shape, and we can see
+[00:11:20.540 --> 00:11:23.040]   the videos of the agents playing the game.
+[00:11:23.040 --> 00:11:27.640]   By clicking on the download button located at the top right of the video, I get a pop-up
+[00:11:27.640 --> 00:11:30.360]   window.
+[00:11:30.360 --> 00:11:35.240]   In this window, we can see that our agent plays the game really well, achieving about
+[00:11:35.240 --> 00:11:38.280]   400 episodic return in the end.
+[00:11:38.280 --> 00:11:42.080]   And by scrolling the slider to the beginning of the training, we see the agent's behavior
+[00:11:42.080 --> 00:11:46.040]   is significantly worse.
+[00:11:46.040 --> 00:11:51.720]   To sum it up our changes in PPO Atari.py, we first import the preprocessing wrappers
+[00:11:51.720 --> 00:12:03.720]   from stable baselines 3, then modify the gem ID, total timestamps, non-mance, clip coefficient,
+[00:12:03.720 --> 00:12:09.400]   then actually use these preprocessing wrappers, and finally change the neural networks.
+[00:12:09.400 --> 00:12:13.400]   And everything else is the same.
+[00:12:13.400 --> 00:12:16.560]   This concludes our video, thanks so much for watching.
+[00:12:16.560 --> 00:12:19.440]   If you have any questions, feel free to comment down below.
+[00:12:19.440 --> 00:12:23.720]   I also encourage you to check out the links in the video description where you can find
+[00:12:23.720 --> 00:12:28.320]   my source code and blog posts on the implementation details.
+[00:12:28.320 --> 00:12:30.200]   Thank you and I'll see you in the next video.
+[00:12:30.200 --> 00:12:33.560]   [MUSIC PLAYING]
+[00:12:33.560 --> 00:12:35.560]   [music]
+

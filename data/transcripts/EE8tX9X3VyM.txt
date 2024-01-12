@@ -1,0 +1,1106 @@
+
+[00:00:00.000 --> 00:00:01.560]   I'm going to talk about feature learning infinite
+[00:00:01.560 --> 00:00:04.440]   with neural networks, and I'm going
+[00:00:04.440 --> 00:00:07.480]   to just dive straight into it.
+[00:00:07.480 --> 00:00:10.360]   So the plan for today are a couple of folders.
+[00:00:10.360 --> 00:00:12.520]   So we're going to first talk about why
+[00:00:12.520 --> 00:00:15.720]   pre-training transfer learning requires feature learning.
+[00:00:15.720 --> 00:00:19.640]   Then we briefly review some of the current theory revolving
+[00:00:19.640 --> 00:00:21.360]   around neural tangent kernel.
+[00:00:21.360 --> 00:00:24.400]   And then we'll talk about our proposal,
+[00:00:24.400 --> 00:00:26.800]   which is the feature learning limit of neural networks.
+[00:00:29.680 --> 00:00:33.040]   So pre-training and transfer learning
+[00:00:33.040 --> 00:00:36.000]   is very successful in deep learning.
+[00:00:36.000 --> 00:00:38.600]   And there's no more prominent examples
+[00:00:38.600 --> 00:00:45.080]   than ImageNet, ResNet on the image domain, and BERT-GBT3,
+[00:00:45.080 --> 00:00:48.520]   and so on, on the NLP domain.
+[00:00:48.520 --> 00:00:54.000]   And in both cases, pre-training and transfer learning
+[00:00:54.000 --> 00:00:57.920]   cannot happen without feature learning.
+[00:00:57.920 --> 00:01:01.240]   And before I explain why I say this,
+[00:01:01.240 --> 00:01:04.000]   which might come as really obvious to some of you,
+[00:01:04.000 --> 00:01:08.040]   but might need some more justification for others.
+[00:01:08.040 --> 00:01:10.360]   So before I justify, let me just be
+[00:01:10.360 --> 00:01:12.360]   very straight about what I mean by feature
+[00:01:12.360 --> 00:01:15.040]   learning in this talk.
+[00:01:15.040 --> 00:01:18.800]   So any neural network, you can express
+[00:01:18.800 --> 00:01:20.240]   the structure of a neural network
+[00:01:20.240 --> 00:01:22.800]   as simply a composition of two functions.
+[00:01:22.800 --> 00:01:25.040]   The first function is a nonlinear embedding function
+[00:01:25.040 --> 00:01:28.640]   over an input space to the hidden layer
+[00:01:28.640 --> 00:01:30.640]   of the neural network.
+[00:01:30.640 --> 00:01:32.960]   And then there is another linear map
+[00:01:32.960 --> 00:01:37.600]   from the hidden layer, which you can think of as embedding space,
+[00:01:37.600 --> 00:01:43.720]   to the output space, which usually is the label space.
+[00:01:43.720 --> 00:01:47.840]   So you output a logis over labels.
+[00:01:47.840 --> 00:01:52.600]   And then via softmax, you can output probabilities.
+[00:01:52.600 --> 00:01:55.440]   So by feature learning, I mean the embedding function is
+[00:01:55.440 --> 00:01:55.940]   learned.
+[00:01:55.940 --> 00:02:05.720]   And just to briefly review how the pre-training and fine
+[00:02:05.720 --> 00:02:09.000]   tuning paradigm right now works.
+[00:02:09.000 --> 00:02:11.080]   Right now, during pre-training, you
+[00:02:11.080 --> 00:02:16.480]   train a really large model on a very large data set.
+[00:02:16.480 --> 00:02:18.720]   Sorry, somebody raised their hand.
+[00:02:18.720 --> 00:02:20.240]   I don't know if I should--
+[00:02:20.240 --> 00:02:25.040]   so is a paradigm that I should respond immediately or--
+[00:02:25.040 --> 00:02:27.720]   So if you have a question, rather than raising your hand,
+[00:02:27.720 --> 00:02:30.360]   just put it in the Q&A or the chat.
+[00:02:30.360 --> 00:02:33.760]   So folks in the audience, go ahead and do that.
+[00:02:33.760 --> 00:02:34.480]   All right, cool.
+[00:02:34.480 --> 00:02:35.760]   So I'll just keep going, right?
+[00:02:35.760 --> 00:02:47.000]   So during pre-training, so for example, ImageNet and GPT-3,
+[00:02:47.000 --> 00:02:50.000]   during pre-training, you train on a very large data
+[00:02:50.000 --> 00:02:52.880]   set from a general domain, usually
+[00:02:52.880 --> 00:02:56.040]   without a lot of labels.
+[00:02:56.040 --> 00:02:59.640]   For example, in the GPT-3 case of ImageNet,
+[00:02:59.640 --> 00:03:01.440]   you do have a lot of labels.
+[00:03:01.440 --> 00:03:03.120]   But you train on a very large data set.
+[00:03:03.120 --> 00:03:05.200]   And then during the transfer stage,
+[00:03:05.200 --> 00:03:10.640]   you care about this actually very specific subdomain
+[00:03:10.640 --> 00:03:12.720]   where you want to apply your model to.
+[00:03:12.720 --> 00:03:18.280]   And you collect very expensive but well-labeled data
+[00:03:18.280 --> 00:03:19.560]   in that domain.
+[00:03:19.560 --> 00:03:23.160]   And then you apply your pre-trained model.
+[00:03:23.160 --> 00:03:27.080]   And then you train it a little bit on the small data set.
+[00:03:27.080 --> 00:03:29.960]   And usually what you find is that the performance
+[00:03:29.960 --> 00:03:33.880]   of such a transfer network is much, much better
+[00:03:33.880 --> 00:03:36.480]   than if you train from scratch on this small data
+[00:03:36.480 --> 00:03:40.200]   set from the get-go.
+[00:03:40.200 --> 00:03:43.720]   And the way we usually do this is first,
+[00:03:43.720 --> 00:03:46.280]   we discard the readout layer from the pre-training.
+[00:03:46.280 --> 00:03:50.080]   So just to be clear, readout means this linear layer
+[00:03:50.080 --> 00:03:52.400]   that goes from the last layer of the neural network
+[00:03:52.400 --> 00:03:54.280]   to the output space.
+[00:03:54.280 --> 00:03:55.440]   So you discard this layer.
+[00:03:55.440 --> 00:03:58.800]   And this is just because during pre-training,
+[00:03:58.800 --> 00:04:01.720]   you usually have a different objective and different output
+[00:04:01.720 --> 00:04:05.000]   space than the downstream tasks you're actually interested in.
+[00:04:05.000 --> 00:04:07.760]   So just for type checking reasons,
+[00:04:07.760 --> 00:04:10.560]   you have to discard it anyway.
+[00:04:10.560 --> 00:04:15.440]   And there are two very popular ways of doing this fine tuning.
+[00:04:15.440 --> 00:04:17.360]   So in a linear fine tuning case, you just
+[00:04:17.360 --> 00:04:20.760]   train a new readout layer of the right type.
+[00:04:20.760 --> 00:04:23.280]   Like if you want to classify cats and dogs,
+[00:04:23.280 --> 00:04:27.240]   you would train a new layer with output dimension 2.
+[00:04:27.240 --> 00:04:35.000]   And so it's very easy to see that if pre-training improves
+[00:04:35.000 --> 00:04:37.840]   linear fine tuning, then the embeddings, i.e.
+[00:04:37.840 --> 00:04:42.520]   the features of the inputs, must change during pre-training.
+[00:04:42.520 --> 00:04:46.480]   I mean, the fine tuning stage is entirely a linear problem.
+[00:04:46.480 --> 00:04:48.480]   It only depends on--
+[00:04:48.480 --> 00:04:51.160]   the performance only depends on the embeddings,
+[00:04:51.160 --> 00:04:54.600]   the quality of the embeddings.
+[00:04:54.600 --> 00:04:57.720]   So in this particular case of linear fine tuning,
+[00:04:57.720 --> 00:05:01.560]   this justifies why I say that transfer learning really
+[00:05:01.560 --> 00:05:04.280]   requires feature learning.
+[00:05:04.280 --> 00:05:07.160]   There's another popular way of doing fine tuning, which
+[00:05:07.160 --> 00:05:09.200]   is called total fine tuning, where
+[00:05:09.200 --> 00:05:11.160]   you train the entire neural network, not just
+[00:05:11.160 --> 00:05:12.400]   the last layer.
+[00:05:12.400 --> 00:05:14.800]   You can actually get the same conclusion,
+[00:05:14.800 --> 00:05:17.480]   though the logic is a bit more involved.
+[00:05:17.480 --> 00:05:18.760]   So I won't go in detail here.
+[00:05:18.760 --> 00:05:21.680]   But the point is that in the end,
+[00:05:21.680 --> 00:05:24.160]   my point states that transfer learning really
+[00:05:24.160 --> 00:05:25.680]   requires you to do feature learning.
+[00:05:25.680 --> 00:05:32.800]   So now let's look at how current theory deals
+[00:05:32.800 --> 00:05:38.120]   with transfer learning or feature learning.
+[00:05:38.120 --> 00:05:43.440]   So one of the most popular theories nowadays
+[00:05:43.440 --> 00:05:46.760]   is this thing called neural tangent kernel.
+[00:05:46.760 --> 00:05:48.880]   The idea is actually really simple.
+[00:05:48.880 --> 00:05:53.760]   So we take the neural network function f of x
+[00:05:53.760 --> 00:05:56.200]   with parameters theta, and we just
+[00:05:56.200 --> 00:05:59.560]   do a naive first-order theta expansion
+[00:05:59.560 --> 00:06:03.520]   around the initialized value.
+[00:06:03.520 --> 00:06:05.840]   I don't know if you can see my mouse cursor or not.
+[00:06:05.840 --> 00:06:13.040]   Yes?
+[00:06:13.040 --> 00:06:14.600]   Sorry.
+[00:06:14.600 --> 00:06:15.560]   You can see it?
+[00:06:15.560 --> 00:06:16.060]   OK.
+[00:06:16.060 --> 00:06:22.840]   So you do a first-order theta expansion,
+[00:06:22.840 --> 00:06:26.560]   and you can write this difference of essentially
+[00:06:26.560 --> 00:06:29.120]   the change in the neural network due to a change
+[00:06:29.120 --> 00:06:32.160]   in the parameters as this inner product
+[00:06:32.160 --> 00:06:36.520]   between the gradient of f with respect to the parameters
+[00:06:36.520 --> 00:06:39.960]   and the change in the parameters.
+[00:06:39.960 --> 00:06:42.800]   And you can rewrite this as a kernel equation
+[00:06:42.800 --> 00:06:45.240]   where the change of f in the function space
+[00:06:45.240 --> 00:06:49.280]   is equal to essentially a kernel times a loss derivative.
+[00:06:49.280 --> 00:06:51.200]   And the kernel is this kernel induced
+[00:06:51.200 --> 00:06:56.160]   by the gradient of the function evaluated
+[00:06:56.160 --> 00:06:58.240]   at the initial parameters.
+[00:06:58.240 --> 00:07:03.800]   So the really nice thing about this, of course,
+[00:07:03.800 --> 00:07:06.040]   is that you essentially have linearized
+[00:07:06.040 --> 00:07:08.760]   a really complicated dynamics of training
+[00:07:08.760 --> 00:07:10.840]   of nonlinear neural network.
+[00:07:10.840 --> 00:07:16.960]   And as a result, essentially in this particular framework,
+[00:07:16.960 --> 00:07:19.240]   if you look in the function space,
+[00:07:19.240 --> 00:07:21.160]   then the optimization landscape actually
+[00:07:21.160 --> 00:07:24.240]   becomes convex, kind of like this figure,
+[00:07:24.240 --> 00:07:27.480]   this animation illustrates.
+[00:07:27.480 --> 00:07:32.000]   And theoretically, this is easy to analyze.
+[00:07:32.000 --> 00:07:34.640]   And we can obtain a lot of optimization generalization
+[00:07:34.640 --> 00:07:38.120]   results, I think, for the first time
+[00:07:38.120 --> 00:07:42.880]   for really complicated neural networks that was not really
+[00:07:42.880 --> 00:07:44.720]   in reach before.
+[00:07:44.720 --> 00:07:46.960]   So from a theoretical angle, this
+[00:07:46.960 --> 00:07:50.320]   is actually a very significant framework
+[00:07:50.320 --> 00:07:55.520]   to think about neural networks, large neural networks.
+[00:07:55.520 --> 00:07:59.720]   But the very crucial drawback of this framework
+[00:07:59.720 --> 00:08:04.800]   is that this particular NTK limit does not learn features.
+[00:08:04.800 --> 00:08:08.680]   So pre-training is no better than randomization
+[00:08:08.680 --> 00:08:12.080]   in the NTK limit.
+[00:08:12.080 --> 00:08:16.560]   So this statement, again, could be really obvious to some
+[00:08:16.560 --> 00:08:19.760]   of you, but some other of you might
+[00:08:19.760 --> 00:08:20.920]   require some justification.
+[00:08:20.920 --> 00:08:25.120]   So let me do that very quickly.
+[00:08:25.120 --> 00:08:30.160]   So again, we have the first-order tail expansion
+[00:08:30.160 --> 00:08:31.840]   framework for NTK.
+[00:08:31.840 --> 00:08:38.800]   And of course, first-order tail expansion really only
+[00:08:38.800 --> 00:08:43.000]   works if the change in the parameters
+[00:08:43.000 --> 00:08:45.640]   here is not very large.
+[00:08:45.640 --> 00:08:49.320]   So if NTK describes actual neural networks,
+[00:08:49.320 --> 00:08:53.280]   then it must be the case that theta minus theta 0 is small.
+[00:08:53.280 --> 00:08:56.560]   But then this implies that the embedding function cannot
+[00:08:56.560 --> 00:09:01.240]   change too much, which implies that essentially the features
+[00:09:01.240 --> 00:09:03.560]   don't change.
+[00:09:03.560 --> 00:09:07.560]   So this is just a very, very simple intuition
+[00:09:07.560 --> 00:09:12.280]   about why in the NTK limit, you do not have feature learning.
+[00:09:12.280 --> 00:09:17.760]   Of course, the real math is a bit more complicated than that.
+[00:09:17.760 --> 00:09:23.720]   But here's a very vivid example to show that the NTK limit
+[00:09:23.720 --> 00:09:26.440]   doesn't learn features.
+[00:09:26.440 --> 00:09:34.360]   So in this example, I trained Ortovec embeddings
+[00:09:34.360 --> 00:09:35.880]   of a bunch of different words.
+[00:09:35.880 --> 00:09:41.760]   But here is words corresponding to US cities and states.
+[00:09:41.760 --> 00:09:45.880]   And I did a PCA of the learned embeddings
+[00:09:45.880 --> 00:09:49.280]   into a two-dimensional space.
+[00:09:49.280 --> 00:09:53.880]   And the models I trained here are first with 64.
+[00:09:53.880 --> 00:09:56.800]   So a 64-dimensional embedding, Ortovec's just
+[00:09:56.800 --> 00:09:59.040]   like the conventional Ortovec.
+[00:09:59.040 --> 00:10:03.000]   On the left, I computed the same thing for the NTK limit.
+[00:10:03.000 --> 00:10:08.480]   So essentially, the theoretical limit
+[00:10:08.480 --> 00:10:12.800]   of the entire Ortovec training procedure in the NTK limit.
+[00:10:12.800 --> 00:10:15.480]   And then on the right, I did the same thing.
+[00:10:15.480 --> 00:10:18.000]   Essentially, I took the feature learning limit,
+[00:10:18.000 --> 00:10:21.640]   which I'll describe later what exactly is meant by this.
+[00:10:21.640 --> 00:10:26.000]   But I took the feature learning limit of the Ortovec training
+[00:10:26.000 --> 00:10:28.240]   procedure, the neural network.
+[00:10:28.240 --> 00:10:33.080]   And the resulting infinite width embeddings
+[00:10:33.080 --> 00:10:36.880]   are projected into two dimensions via PCA.
+[00:10:36.880 --> 00:10:42.200]   And the thing you should take away from these plots
+[00:10:42.200 --> 00:10:47.680]   is that whereas in the NTK case, the two types of words,
+[00:10:47.680 --> 00:10:53.120]   US cities and US states, are essentially all mixed together
+[00:10:53.120 --> 00:10:56.400]   in the 2D space.
+[00:10:56.400 --> 00:10:58.920]   In the finite width case with 64,
+[00:10:58.920 --> 00:11:01.080]   you can see some natural separation
+[00:11:01.080 --> 00:11:02.880]   between the two types of words, indicating
+[00:11:02.880 --> 00:11:07.960]   that the geometry of the word embedding
+[00:11:07.960 --> 00:11:11.800]   really encoded some semantic information of the words.
+[00:11:11.800 --> 00:11:15.240]   And furthermore, in the infinite width case,
+[00:11:15.240 --> 00:11:19.240]   you have an even more clean natural separation
+[00:11:19.240 --> 00:11:22.600]   between the two clusters, the two types of words,
+[00:11:22.600 --> 00:11:24.760]   compared to the finite width case.
+[00:11:24.760 --> 00:11:30.760]   So this indicates that, one, NTK is not
+[00:11:30.760 --> 00:11:35.200]   the right limit to take to understand feature learning,
+[00:11:35.200 --> 00:11:38.240]   which was made very obvious by the contrast between the first
+[00:11:38.240 --> 00:11:40.280]   plot and the second two plots.
+[00:11:40.280 --> 00:11:42.520]   And two, the feature learning limit
+[00:11:42.520 --> 00:11:46.480]   that I'll describe very quickly, very soon,
+[00:11:46.480 --> 00:11:51.240]   will be a very natural notion of feature learning
+[00:11:51.240 --> 00:11:54.320]   as you had this kind of natural increase
+[00:11:54.320 --> 00:11:57.440]   in the semantical content of the learned word embeddings.
+[00:12:00.280 --> 00:12:03.000]   A quick question, Greg, from the audience.
+[00:12:03.000 --> 00:12:08.600]   So is the neural tangent kernel the only kernel
+[00:12:08.600 --> 00:12:10.440]   that you can use there?
+[00:12:10.440 --> 00:12:13.480]   Are there other potential choices there?
+[00:12:13.480 --> 00:12:14.960]   Yeah, good question.
+[00:12:14.960 --> 00:12:18.880]   So essentially, it doesn't matter which kernel it is.
+[00:12:18.880 --> 00:12:22.240]   As long as it's in the kernel style limit,
+[00:12:22.240 --> 00:12:23.700]   you're going to get the same thing.
+[00:12:23.700 --> 00:12:28.920]   So it doesn't depend on what the kernel itself is.
+[00:12:28.920 --> 00:12:31.680]   It's just that as soon as you have a kernel,
+[00:12:31.680 --> 00:12:34.400]   it doesn't work.
+[00:12:34.400 --> 00:12:39.600]   So I'll talk about, actually, very quickly, a bit later,
+[00:12:39.600 --> 00:12:41.160]   essentially, you have a dichotomy
+[00:12:41.160 --> 00:12:47.860]   between kernel limits, just like the NTK,
+[00:12:47.860 --> 00:12:50.760]   and you have the other categories of feature learning
+[00:12:50.760 --> 00:12:51.360]   limit.
+[00:12:51.360 --> 00:12:56.760]   And essentially, any natural, in some sense,
+[00:12:56.760 --> 00:13:01.800]   natural limit of a neural network is either one of them.
+[00:13:01.800 --> 00:13:04.120]   But we cannot have both.
+[00:13:04.120 --> 00:13:05.720]   So if you want to do feature learning,
+[00:13:05.720 --> 00:13:08.400]   then it's definitely not a kernel limit.
+[00:13:08.400 --> 00:13:14.840]   OK, so let me move on.
+[00:13:14.840 --> 00:13:24.840]   OK, so let me just give you one more quick plot
+[00:13:24.840 --> 00:13:30.200]   on some numbers, concrete numbers, on Word2Vec.
+[00:13:30.200 --> 00:13:33.280]   So in Word2Vec, you learn these embeddings,
+[00:13:33.280 --> 00:13:38.160]   but of course, you want to use them, actually, downstream.
+[00:13:38.160 --> 00:13:41.680]   And you can use them in very many different ways.
+[00:13:41.680 --> 00:13:45.160]   But academically, a very common evaluation task
+[00:13:45.160 --> 00:13:49.640]   is word analogy, which asks this famous question, what
+[00:13:49.640 --> 00:13:52.520]   to a queen is a man to a woman?
+[00:13:52.520 --> 00:13:57.320]   It sounds real philosophical, but it's
+[00:13:57.320 --> 00:14:01.520]   a collection of these analogy questions
+[00:14:01.520 --> 00:14:07.000]   that you use the word embeddings learn to answer
+[00:14:07.000 --> 00:14:10.440]   via some algebraic manipulations.
+[00:14:10.440 --> 00:14:13.440]   But I'm not going to talk about the details of how
+[00:14:13.440 --> 00:14:16.280]   the actual evaluation is done, but let me just
+[00:14:16.280 --> 00:14:18.560]   highlight some numbers.
+[00:14:18.560 --> 00:14:24.440]   In the plot here, we evaluated a bunch of different Word2Vec
+[00:14:24.440 --> 00:14:26.600]   embeddings.
+[00:14:26.600 --> 00:14:30.960]   Well, for the final ones, we have width or dimensionally
+[00:14:30.960 --> 00:14:35.160]   embedding from 2 to the 6th power to 2 to the 10th power.
+[00:14:35.160 --> 00:14:38.280]   And then we have the infinite width feature learning limit
+[00:14:38.280 --> 00:14:41.080]   that I'll explain very soon.
+[00:14:41.080 --> 00:14:44.880]   And then finally, we have the NTK limit.
+[00:14:44.880 --> 00:14:49.920]   So there are a couple of different takeaways.
+[00:14:49.920 --> 00:14:54.080]   First is that the NTK limit, of course,
+[00:14:54.080 --> 00:14:57.520]   has essentially zero performance on word analogy.
+[00:14:57.520 --> 00:15:01.520]   And like I said, that's because NTK doesn't really
+[00:15:01.520 --> 00:15:03.040]   learn anything.
+[00:15:03.040 --> 00:15:04.880]   The word embeddings are essentially random.
+[00:15:04.880 --> 00:15:10.360]   It's just the same, essentially, as the initialization
+[00:15:10.360 --> 00:15:12.800]   of the training procedure.
+[00:15:12.800 --> 00:15:15.360]   So during evaluation, you're essentially
+[00:15:15.360 --> 00:15:17.440]   just doing random guessing.
+[00:15:17.440 --> 00:15:20.800]   And because the number of words is so large,
+[00:15:20.800 --> 00:15:22.520]   when you do random guessing on this plot,
+[00:15:22.520 --> 00:15:25.000]   you cannot actually see the real number.
+[00:15:25.000 --> 00:15:29.160]   It's just essentially the same as zero.
+[00:15:29.160 --> 00:15:31.280]   And in contrast, of course, finite width
+[00:15:31.280 --> 00:15:33.480]   and infinite feature learning Word2Vec
+[00:15:33.480 --> 00:15:37.000]   have non-trivial performances.
+[00:15:37.000 --> 00:15:39.800]   And then the other thing you can notice
+[00:15:39.800 --> 00:15:46.640]   is that on the x-axis, I have the epoch.
+[00:15:46.640 --> 00:15:51.640]   So this is the training time of the models.
+[00:15:51.640 --> 00:15:57.800]   And you can see that as width increases,
+[00:15:57.800 --> 00:16:01.600]   which corresponds to color becoming darker.
+[00:16:01.600 --> 00:16:05.840]   At every point in the training procedure,
+[00:16:05.840 --> 00:16:11.160]   the wider the model is, the better the training performance.
+[00:16:11.160 --> 00:16:14.760]   And actually, sorry, the y-axis is actually
+[00:16:14.760 --> 00:16:17.760]   the evaluation on downstream tasks.
+[00:16:17.760 --> 00:16:21.080]   It's actually like test performance.
+[00:16:21.080 --> 00:16:23.800]   But what I'm saying here is that at any given time
+[00:16:23.800 --> 00:16:27.320]   during the training, if you take that partially trained model
+[00:16:27.320 --> 00:16:30.280]   and evaluate it on the downstream task,
+[00:16:30.280 --> 00:16:32.760]   you see a uniform increase in performance
+[00:16:32.760 --> 00:16:34.800]   as the width increases.
+[00:16:34.800 --> 00:16:37.440]   So this indicates that this feature learning limit
+[00:16:37.440 --> 00:16:41.400]   that I'm about to introduce to you is the right notion.
+[00:16:41.400 --> 00:16:43.640]   It captures feature learning in a meaningful way,
+[00:16:43.640 --> 00:16:48.240]   such that as width increases, the performance also increases.
+[00:16:48.240 --> 00:16:51.920]   And presumably, the features learned actually
+[00:16:51.920 --> 00:16:56.120]   becomes more and more meaningful.
+[00:16:56.120 --> 00:16:59.960]   But we also have similar results on meta-learning on MAML.
+[00:16:59.960 --> 00:17:01.920]   But essentially, the takeaways are the same.
+[00:17:01.920 --> 00:17:05.680]   So I'm not going to actually talk about it in this talk.
+[00:17:05.680 --> 00:17:06.760]   All right.
+[00:17:06.760 --> 00:17:09.800]   So now we'll get to the juicy part, where we actually talk
+[00:17:09.800 --> 00:17:11.400]   about the feature learning limit.
+[00:17:11.400 --> 00:17:17.680]   So before I begin, let me just give you some way
+[00:17:17.680 --> 00:17:21.640]   to frame this, to think about the different kinds
+[00:17:21.640 --> 00:17:25.080]   of possible limits.
+[00:17:25.080 --> 00:17:27.920]   And I think the right way to think about it
+[00:17:27.920 --> 00:17:31.400]   is that for any finite neural network,
+[00:17:31.400 --> 00:17:34.000]   when you write PyTorch code, you assume some parametrization
+[00:17:34.000 --> 00:17:35.720]   of your neural network.
+[00:17:35.720 --> 00:17:38.320]   I mean, just as concrete examples,
+[00:17:38.320 --> 00:17:41.400]   when you write PyTorch code, you use, by default,
+[00:17:41.400 --> 00:17:46.320]   like Lacunae initialization, so like fan-in initialization.
+[00:17:46.320 --> 00:17:50.880]   And every such parametrization induces some kind
+[00:17:50.880 --> 00:17:54.360]   of infinite width limit, or infinite width training
+[00:17:54.360 --> 00:17:56.080]   dynamics.
+[00:17:56.080 --> 00:17:59.840]   If you just naturally just change your width number
+[00:17:59.840 --> 00:18:03.240]   in your code from 1,000 to 10,000 to 100,000,
+[00:18:03.240 --> 00:18:05.080]   and so on and so forth, assuming you
+[00:18:05.080 --> 00:18:08.400]   have to compute to actually run this computation,
+[00:18:08.400 --> 00:18:14.040]   then the dynamics of your neural network
+[00:18:14.040 --> 00:18:16.240]   will actually converge to something
+[00:18:16.240 --> 00:18:18.320]   as you increase that width number in your code.
+[00:18:18.320 --> 00:18:23.160]   So my point here is that every parametrization
+[00:18:23.160 --> 00:18:26.680]   corresponds to an infinite width dynamics.
+[00:18:26.680 --> 00:18:31.280]   And the feature learning limit that I've been talking about
+[00:18:31.280 --> 00:18:34.520]   and I'm going to be more concrete on
+[00:18:34.520 --> 00:18:37.280]   is induced by this thing we call the maximal update
+[00:18:37.280 --> 00:18:42.440]   parametrization, which I'll describe shortly.
+[00:18:42.440 --> 00:18:45.120]   But just before that, let me quickly
+[00:18:45.120 --> 00:18:49.800]   give you a big picture of what's going on.
+[00:18:49.800 --> 00:18:53.960]   So in general, you have a lot of different parametrizations.
+[00:18:53.960 --> 00:18:55.560]   And there's a way to formalize this
+[00:18:55.560 --> 00:18:57.480]   into something called ABC parametrizations.
+[00:18:57.480 --> 00:19:01.360]   But I'm not going to go into details about this in this talk.
+[00:19:01.360 --> 00:19:04.800]   I'll briefly give you some pointers later.
+[00:19:04.800 --> 00:19:07.960]   But you have the space of possible parametrizations,
+[00:19:07.960 --> 00:19:12.720]   which includes the neural tangent parametrization
+[00:19:12.720 --> 00:19:15.000]   and the standard parametrization, like the Lacoon
+[00:19:15.000 --> 00:19:17.880]   initialization, or whatever you use in PyTorch,
+[00:19:17.880 --> 00:19:19.880]   or mean field parametrization, which
+[00:19:19.880 --> 00:19:24.420]   is more relevant in the theoretical literature.
+[00:19:24.420 --> 00:19:28.920]   Most of them are going to induce unstable or trivial limits
+[00:19:28.920 --> 00:19:31.360]   in the sense that training dynamics in the infinite width
+[00:19:31.360 --> 00:19:36.840]   limit will blow up, or the infinite width neural network
+[00:19:36.840 --> 00:19:42.720]   will not move during training from initialization.
+[00:19:42.720 --> 00:19:47.560]   But within those that are stable and non-trivial, most of them
+[00:19:47.560 --> 00:19:49.360]   are going to be in the kernel regime.
+[00:19:49.360 --> 00:19:51.440]   So they're going to induce kernel limits.
+[00:19:51.440 --> 00:19:54.120]   So in particular, neural tangent is a prominent example,
+[00:19:54.120 --> 00:19:56.360]   but also standard parametrization
+[00:19:56.360 --> 00:19:58.840]   with the appropriate learning rate.
+[00:19:58.840 --> 00:20:02.560]   But if you actually use a standard parametrization
+[00:20:02.560 --> 00:20:05.120]   with a constant learning rate, things
+[00:20:05.120 --> 00:20:06.800]   are actually going to blow up.
+[00:20:06.800 --> 00:20:09.480]   So it's going to be unstable.
+[00:20:09.480 --> 00:20:12.520]   And the thing, the maximal update parametrization
+[00:20:12.520 --> 00:20:17.080]   that I'm going to introduce next is essentially
+[00:20:17.080 --> 00:20:22.600]   like this vertex in this very small region that actually does
+[00:20:22.600 --> 00:20:23.940]   feature learning.
+[00:20:23.940 --> 00:20:29.440]   And this being a vertex means that it's maximal in some sense.
+[00:20:29.440 --> 00:20:32.840]   Colloquially, you can understand this as saying that if there's
+[00:20:32.840 --> 00:20:36.960]   features to be learned, you learn some features.
+[00:20:36.960 --> 00:20:40.600]   OK, that's all I'm going to say about this, the big picture.
+[00:20:40.600 --> 00:20:44.160]   Now let me drop down into something concrete.
+[00:20:44.160 --> 00:20:48.040]   Let me tell you about the maximal update parametrization,
+[00:20:48.040 --> 00:20:50.000]   which is abbreviated as MUP.
+[00:20:53.840 --> 00:20:55.160]   So let's be very concrete.
+[00:20:55.160 --> 00:20:59.600]   I'm going to tell you what this parametrization actually is.
+[00:20:59.600 --> 00:21:02.160]   And the easiest way to understand
+[00:21:02.160 --> 00:21:05.040]   this is to modify the standard parametrization
+[00:21:05.040 --> 00:21:07.880]   to get a maximal update parametrization.
+[00:21:07.880 --> 00:21:16.000]   So you need to make two changes to the standard parametrization.
+[00:21:16.000 --> 00:21:22.360]   And I'll tell you intuitively why we need those changes.
+[00:21:22.360 --> 00:21:26.280]   But the first change is in the last layer.
+[00:21:26.280 --> 00:21:29.040]   And the reason why we need to make that change
+[00:21:29.040 --> 00:21:32.080]   is because in standard parametrization,
+[00:21:32.080 --> 00:21:34.480]   the last layer, essentially, one,
+[00:21:34.480 --> 00:21:36.920]   is too large anitrization.
+[00:21:36.920 --> 00:21:40.800]   And two, it gets too much gradient.
+[00:21:40.800 --> 00:21:44.760]   And with this modification, essentially,
+[00:21:44.760 --> 00:21:48.280]   the purpose is to make the last layer a bit smaller
+[00:21:48.280 --> 00:21:53.120]   and also make its gradient a bit smaller.
+[00:21:53.120 --> 00:21:57.520]   And this is so that you can use a larger learning rate such
+[00:21:57.520 --> 00:22:03.480]   that all the previous layers get more gradient.
+[00:22:03.480 --> 00:22:07.000]   So concretely, what we do is we divide the largest
+[00:22:07.000 --> 00:22:09.440]   by square root of n and use a constant learning rate.
+[00:22:09.440 --> 00:22:13.500]   So you can see here, there is a 1 over square root of n factor
+[00:22:13.500 --> 00:22:15.600]   at the end of the neural network.
+[00:22:15.600 --> 00:22:20.040]   And the last layer weights are sampled the usual way,
+[00:22:20.040 --> 00:22:24.560]   using the Lagoon or Vannian anitrization.
+[00:22:24.560 --> 00:22:27.520]   And this alone suffices to enable feature learning.
+[00:22:27.520 --> 00:22:30.520]   And let me remind you that in the standard parametrization,
+[00:22:30.520 --> 00:22:33.960]   in the figure I just showed you, if you don't divide
+[00:22:33.960 --> 00:22:38.720]   by square root of n and you use a constant learning rate,
+[00:22:38.720 --> 00:22:42.200]   essentially, as you train a really, really wide neural
+[00:22:42.200 --> 00:22:46.120]   network, the output of neural network will blow up.
+[00:22:46.120 --> 00:22:49.080]   And as well as the pre-activation
+[00:22:49.080 --> 00:22:50.960]   of neural network, it will blow up.
+[00:22:50.960 --> 00:22:56.360]   OK, so second modification is in the first layer.
+[00:22:56.360 --> 00:23:02.080]   And the intuition of why we need to make this modification
+[00:23:02.080 --> 00:23:03.640]   is that in standard parametrization,
+[00:23:03.640 --> 00:23:05.720]   the first layer actually gets very little gradient
+[00:23:05.720 --> 00:23:07.360]   compared to the rest of neural network.
+[00:23:07.360 --> 00:23:11.560]   So taking a slightly larger picture,
+[00:23:11.560 --> 00:23:13.880]   essentially, in the standard parametrization,
+[00:23:13.880 --> 00:23:15.920]   the last layer gets too much gradient,
+[00:23:15.920 --> 00:23:18.120]   the middle gets OK amount of gradient,
+[00:23:18.120 --> 00:23:20.080]   and the first layer gets too little gradient.
+[00:23:20.080 --> 00:23:23.080]   So we're fixing the problem in the first layer.
+[00:23:23.080 --> 00:23:27.040]   And the easy fix here is that we multiply the pre-activation
+[00:23:27.040 --> 00:23:30.720]   by square root of n, and we use Fann-Auw anitrization.
+[00:23:30.720 --> 00:23:33.600]   So here's a square root of n in the pre-activation
+[00:23:33.600 --> 00:23:34.860]   in the first layer.
+[00:23:34.860 --> 00:23:38.760]   And the weights are sampled like Fann-Auw.
+[00:23:38.760 --> 00:23:41.800]   So 1 over n, where n is the output dimension.
+[00:23:41.800 --> 00:23:48.440]   And so this will serve to increase the gradient by n.
+[00:23:48.440 --> 00:23:52.840]   This is needed to enable feature learning in every layer.
+[00:23:52.840 --> 00:23:55.600]   All other weights are initialized kind of same way
+[00:23:55.600 --> 00:23:57.280]   using Fann-Auw anitrization.
+[00:23:57.280 --> 00:24:07.120]   OK, so that's essentially the maximal update parametrization.
+[00:24:07.120 --> 00:24:10.360]   Now, next part of the talk, most of it
+[00:24:10.360 --> 00:24:14.720]   is going to be about giving you some intuition of how
+[00:24:14.720 --> 00:24:17.840]   to compute this limit.
+[00:24:17.840 --> 00:24:22.600]   The gist of the story is that you can essentially
+[00:24:22.600 --> 00:24:26.680]   compute the limit for any neural network
+[00:24:26.680 --> 00:24:30.440]   in essentially any algorithm.
+[00:24:30.440 --> 00:24:36.880]   Like, essentially, if you have a PyTorch code describing
+[00:24:36.880 --> 00:24:40.720]   whatever you're trying to do, anything in deep learning,
+[00:24:40.720 --> 00:24:44.080]   you can convert it systematically
+[00:24:44.080 --> 00:24:47.520]   to a computation for infinite width neural network
+[00:24:47.520 --> 00:24:50.120]   and a way to compute that limit.
+[00:24:50.120 --> 00:24:54.240]   But I'm going to focus very, very specifically
+[00:24:54.240 --> 00:24:57.040]   on a one-headed layer in your neural network
+[00:24:57.040 --> 00:24:59.600]   as a motivating example.
+[00:24:59.600 --> 00:25:02.640]   So I'll go into that very shortly.
+[00:25:02.640 --> 00:25:05.760]   Now, let me go a bit one level deeper
+[00:25:05.760 --> 00:25:08.560]   into the intuition of how to compute this.
+[00:25:08.560 --> 00:25:11.600]   And this is given by this quote.
+[00:25:11.600 --> 00:25:14.920]   "When width is very large, every activation vector
+[00:25:14.920 --> 00:25:16.560]   has roughly id coordinates.
+[00:25:16.560 --> 00:25:22.320]   So at any time during training and using tensor programs,
+[00:25:22.320 --> 00:25:25.560]   we can recursively calculate such coordinate distributions
+[00:25:25.560 --> 00:25:27.840]   and consequently understand how the neural network
+[00:25:27.840 --> 00:25:30.160]   function evolves."
+[00:25:30.160 --> 00:25:35.440]   OK, so if you have been doing some calculations with NTK,
+[00:25:35.440 --> 00:25:38.280]   you might be familiar with the first sentence
+[00:25:38.280 --> 00:25:39.640]   in a sense that at neutralization,
+[00:25:39.640 --> 00:25:43.560]   every activation vector has roughly id coordinates.
+[00:25:43.560 --> 00:25:46.640]   But this is at neutralization, not any time during training.
+[00:25:46.640 --> 00:25:50.640]   So I need to justify why at any time during training,
+[00:25:50.640 --> 00:25:54.560]   every activation vector has roughly id coordinates.
+[00:25:54.560 --> 00:25:58.880]   And then I'll briefly touch on how
+[00:25:58.880 --> 00:26:03.240]   we can recursively calculate such coordinate distributions.
+[00:26:03.240 --> 00:26:05.600]   All right, so as a motivating example,
+[00:26:05.600 --> 00:26:09.880]   let's look at a linear 100-layer neural network.
+[00:26:09.880 --> 00:26:15.800]   So assume input and output dimension are both 1.
+[00:26:15.800 --> 00:26:23.440]   Then the neural network can be represented by two,
+[00:26:23.440 --> 00:26:26.760]   essentially, vectors, because the input/output dimensions
+[00:26:26.760 --> 00:26:27.280]   are 1.
+[00:26:27.280 --> 00:26:31.840]   The first layer and second layer weights are both vectors.
+[00:26:31.840 --> 00:26:34.360]   And a forward pass is represented
+[00:26:34.360 --> 00:26:36.720]   by, essentially, the multiplication
+[00:26:36.720 --> 00:26:41.240]   of these two vectors times the input, which is a scalar.
+[00:26:41.240 --> 00:26:47.440]   We're going to have id coordinates at neutralization.
+[00:26:47.440 --> 00:26:49.960]   Initialize accordingly, essentially,
+[00:26:49.960 --> 00:26:50.880]   variance 1 over n.
+[00:26:50.880 --> 00:26:55.400]   But we won't need that detail until later.
+[00:26:55.400 --> 00:26:56.360]   OK.
+[00:26:56.360 --> 00:27:01.240]   So let's look at what happens in the first forward pass.
+[00:27:01.240 --> 00:27:08.880]   Again, f is the scalar product of the two vectors times input.
+[00:27:08.880 --> 00:27:10.360]   And because it's a scalar product,
+[00:27:10.360 --> 00:27:17.120]   it's sum of a large number of roughly id elements, which
+[00:27:17.120 --> 00:27:22.520]   specifically are first layer element times second layer
+[00:27:22.520 --> 00:27:24.320]   element.
+[00:27:24.320 --> 00:27:29.880]   And these things are id across the width dimension.
+[00:27:29.880 --> 00:27:32.520]   So as width becomes larger and larger,
+[00:27:32.520 --> 00:27:34.800]   f of xi will converge to something,
+[00:27:34.800 --> 00:27:38.160]   to some deterministic number, by a lot of large numbers,
+[00:27:38.160 --> 00:27:41.920]   which in this specific case of random neutralization
+[00:27:41.920 --> 00:27:42.640]   is just 0.
+[00:27:42.640 --> 00:27:46.240]   OK.
+[00:27:46.240 --> 00:27:49.720]   So if f converges, then the loss derivative of f
+[00:27:49.720 --> 00:27:53.360]   also converges, usually because loss
+[00:27:53.360 --> 00:27:55.920]   derivative is a continuous function.
+[00:27:55.920 --> 00:27:59.680]   So if f converges, then this continuous image of f
+[00:27:59.680 --> 00:28:02.200]   has to converge.
+[00:28:02.200 --> 00:28:03.040]   All right.
+[00:28:03.040 --> 00:28:07.320]   Now let's look at the first backward pass.
+[00:28:07.320 --> 00:28:10.880]   In particular, let's look at the gradients of the weights.
+[00:28:10.880 --> 00:28:13.240]   So you can do a very simple calculation.
+[00:28:13.240 --> 00:28:17.800]   But the point here is that the gradient of the second layer
+[00:28:17.800 --> 00:28:22.200]   is essentially the first layer weights times these two
+[00:28:22.200 --> 00:28:25.960]   scalars, the input times the loss derivative.
+[00:28:25.960 --> 00:28:28.840]   And similarly, the first layer gradients
+[00:28:28.840 --> 00:28:31.400]   are the second layer weights times these two scalars.
+[00:28:31.400 --> 00:28:38.240]   And like I said, the scalars are roughly deterministic.
+[00:28:38.240 --> 00:28:43.280]   I mean, xi, the input, by definition, is deterministic.
+[00:28:43.280 --> 00:28:45.280]   And the loss derivative is deterministic
+[00:28:45.280 --> 00:28:48.920]   because f converges and upwards continuous.
+[00:28:48.920 --> 00:28:53.680]   So the structure of this gradient
+[00:28:53.680 --> 00:28:56.120]   actually implies that both layers' gradients
+[00:28:56.120 --> 00:28:59.800]   are approximately iid.
+[00:28:59.800 --> 00:29:03.280]   So when you add the gradients to the weights
+[00:29:03.280 --> 00:29:07.640]   via the first gradient step, you maintain this property
+[00:29:07.640 --> 00:29:12.280]   that the weights have approximately iid corners.
+[00:29:12.280 --> 00:29:15.040]   And something else we can observe
+[00:29:15.040 --> 00:29:19.880]   is that, of course, at this point in time,
+[00:29:19.880 --> 00:29:22.600]   in the second forward pass, the weights
+[00:29:22.600 --> 00:29:26.560]   are linear combinations of the original weights
+[00:29:26.560 --> 00:29:29.960]   from initialization.
+[00:29:29.960 --> 00:29:34.160]   And this fact will be important for calculating the infinite
+[00:29:34.160 --> 00:29:35.680]   width limit later on.
+[00:29:35.680 --> 00:29:39.480]   But for now, we don't actually need it.
+[00:29:39.480 --> 00:29:42.920]   So let's keep going forward and see
+[00:29:42.920 --> 00:29:47.040]   what's happening elsewhere in the second forward pass.
+[00:29:47.040 --> 00:29:52.240]   The computation f, again, implies
+[00:29:52.240 --> 00:29:53.960]   that it converges by large numbers
+[00:29:53.960 --> 00:29:59.680]   because it's a sum of large number of iid things.
+[00:29:59.680 --> 00:30:02.320]   And the loss derivative converges as well
+[00:30:02.320 --> 00:30:03.200]   because f does.
+[00:30:03.200 --> 00:30:08.560]   And again, the gradients have the same structure.
+[00:30:08.560 --> 00:30:13.880]   That means that they have approximately iid corners.
+[00:30:13.880 --> 00:30:19.080]   And when you update, the weights remain roughly iid.
+[00:30:19.080 --> 00:30:27.040]   So this logic obviously repeats for all times.
+[00:30:27.040 --> 00:30:30.160]   And this justifies what I said earlier
+[00:30:30.160 --> 00:30:32.640]   about how when the width is large,
+[00:30:32.640 --> 00:30:35.680]   every activation vector has roughly iid corners
+[00:30:35.680 --> 00:30:38.000]   any time during training.
+[00:30:38.000 --> 00:30:40.280]   And the stress is on any time during training.
+[00:30:40.280 --> 00:30:49.920]   Now, earlier I also said that weights at any time
+[00:30:49.920 --> 00:30:52.760]   are linear combinations of weights from initialization.
+[00:30:52.760 --> 00:30:58.040]   And this is already hinted at by the calculation
+[00:30:58.040 --> 00:31:00.240]   we did earlier.
+[00:31:00.240 --> 00:31:06.040]   And using this observation, we can
+[00:31:06.040 --> 00:31:09.360]   see how to calculate the infinite width limit
+[00:31:09.360 --> 00:31:13.520]   without resorting to an actual neural network.
+[00:31:13.520 --> 00:31:19.640]   So let me just give you an overview of what is involved.
+[00:31:19.640 --> 00:31:22.280]   So let me establish some quick notations.
+[00:31:22.280 --> 00:31:24.400]   I'll let you denote the first layer of weights
+[00:31:24.400 --> 00:31:26.520]   and V denote the second layer of weights.
+[00:31:26.520 --> 00:31:29.080]   And in particular, without the subscripts,
+[00:31:29.080 --> 00:31:33.440]   I'm going to just use them to denote the initialized values,
+[00:31:33.440 --> 00:31:38.440]   so the random initialization of the weights.
+[00:31:38.440 --> 00:31:43.800]   And initialization, they're sampled with variance 1/n,
+[00:31:43.800 --> 00:31:44.760]   where n is the width.
+[00:31:44.760 --> 00:31:51.680]   And additionally, another piece of notation
+[00:31:51.680 --> 00:31:54.600]   is that during the t plus 1 forward pass,
+[00:31:54.600 --> 00:32:00.280]   we use subscript t to denote the particular values of u and v
+[00:32:00.280 --> 00:32:01.640]   at that time.
+[00:32:02.640 --> 00:32:06.040]   So when I say weights at any time
+[00:32:06.040 --> 00:32:08.520]   are linear combinations of weights from initialization,
+[00:32:08.520 --> 00:32:10.880]   this implies that for any t, there
+[00:32:10.880 --> 00:32:15.600]   are coefficients at, bt, ct, dt, which converge roughly
+[00:32:15.600 --> 00:32:21.080]   deterministically, such that we can write vt equal to at times
+[00:32:21.080 --> 00:32:25.840]   v plus bt times u, ut equals ct times v plus dt times u,
+[00:32:25.840 --> 00:32:28.000]   where again, u and v without subscripts
+[00:32:28.000 --> 00:32:33.080]   are denoting the initial values of the weights.
+[00:32:33.080 --> 00:32:41.440]   And of course, when t was 0 at initialization,
+[00:32:41.440 --> 00:32:47.080]   at and dt are 1, and bt and ct are 0.
+[00:32:47.080 --> 00:32:47.580]   Sorry.
+[00:32:47.580 --> 00:32:51.400]   OK.
+[00:32:51.400 --> 00:32:54.600]   So with that said, we can look at what
+[00:32:54.600 --> 00:32:58.360]   happens during the t plus 1 forward pass.
+[00:32:58.360 --> 00:33:01.800]   And essentially via the same kind of low-large number
+[00:33:01.800 --> 00:33:04.280]   intuition, we can see that f of xi
+[00:33:04.280 --> 00:33:08.640]   equals at times ct plus bt times dt times xi.
+[00:33:08.640 --> 00:33:13.360]   And you can get this by just expanding
+[00:33:13.360 --> 00:33:18.920]   the product of bt times ut and noticing that because u and v,
+[00:33:18.920 --> 00:33:21.320]   again, they refer to the initialized values.
+[00:33:21.320 --> 00:33:23.160]   u and v are independent.
+[00:33:23.160 --> 00:33:27.960]   So there's no correlation between the uv and vu
+[00:33:27.960 --> 00:33:29.360]   cross terms.
+[00:33:29.360 --> 00:33:32.800]   So the only terms that survive are contracting v with v
+[00:33:32.800 --> 00:33:35.160]   and u with vu.
+[00:33:35.160 --> 00:33:38.040]   And that results in the terms ac and bd.
+[00:33:38.040 --> 00:33:47.280]   And then we can investigate the t plus 1 backward pass.
+[00:33:47.280 --> 00:33:52.320]   And along the same lines of what we did before,
+[00:33:52.320 --> 00:33:56.080]   we can notice that the gradients are also
+[00:33:56.080 --> 00:34:01.200]   linear combinations of the initial u and v's.
+[00:34:01.200 --> 00:34:04.320]   In particular, they take these particular forms.
+[00:34:04.320 --> 00:34:09.040]   And when you make the updates, now
+[00:34:09.040 --> 00:34:14.640]   it's very apparent how the a's and the b's, the c's and d's,
+[00:34:14.640 --> 00:34:19.120]   will update after this particular time, like so.
+[00:34:20.120 --> 00:34:20.600]   OK.
+[00:34:20.600 --> 00:34:25.800]   So I hope this convinces you that you can repeat
+[00:34:25.800 --> 00:34:28.560]   this logic over and over.
+[00:34:28.560 --> 00:34:32.680]   And the point here is that to compute this infinite width
+[00:34:32.680 --> 00:34:37.760]   limit, you only need to compute the values of a and b and c
+[00:34:37.760 --> 00:34:40.400]   and d across time.
+[00:34:40.400 --> 00:34:42.200]   And if you want to train for 1,000 steps,
+[00:34:42.200 --> 00:34:45.480]   you just have to calculate what the values of a, b, c, d
+[00:34:45.480 --> 00:34:46.880]   at time t.
+[00:34:46.880 --> 00:34:50.960]   What the values of a, b, c, d at time 1,000 is.
+[00:34:50.960 --> 00:34:54.120]   And you can do this via these recursive formulas.
+[00:34:54.120 --> 00:34:57.520]   And they're summarized here.
+[00:34:57.520 --> 00:35:00.760]   So again, we're in the context of this linear one-headed layer
+[00:35:00.760 --> 00:35:03.080]   neural network for illustration purposes.
+[00:35:03.080 --> 00:35:08.280]   And here we have the input and output dimension equal to 1
+[00:35:08.280 --> 00:35:10.320]   and learning rate equal to 1.
+[00:35:10.320 --> 00:35:13.760]   And then in the infinite width limit,
+[00:35:13.760 --> 00:35:19.040]   we have that at any time, the function, the neural network f,
+[00:35:19.040 --> 00:35:26.360]   is equal to ac plus bd times the input xi, where a, b, c, d are
+[00:35:26.360 --> 00:35:30.960]   updated like so, with the initial condition
+[00:35:30.960 --> 00:35:35.680]   that a and d are 1 and b and c are 0.
+[00:35:35.680 --> 00:35:39.480]   All right, so if you've been paying a bit of attention,
+[00:35:39.480 --> 00:35:42.280]   then you might notice that this looks
+[00:35:42.280 --> 00:35:49.080]   awfully like a linear one-headed layer with two neural network,
+[00:35:49.080 --> 00:35:54.680]   where the hidden dimension corresponds to a, b, and c, d.
+[00:35:54.680 --> 00:35:59.360]   So in particular, a, b are the second layer weights.
+[00:35:59.360 --> 00:36:01.080]   And c, d are the first layer weights.
+[00:36:01.080 --> 00:36:07.440]   But in contrast to how people usually
+[00:36:07.440 --> 00:36:09.160]   train their neural networks, what's
+[00:36:09.160 --> 00:36:11.000]   different is the initialization.
+[00:36:11.000 --> 00:36:12.640]   So here we have some kind of quote,
+[00:36:12.640 --> 00:36:15.080]   unquote "diagonal initialization,"
+[00:36:15.080 --> 00:36:19.120]   which can be summarized by this matrix equation in contrast
+[00:36:19.120 --> 00:36:24.000]   to random initialization that people usually have.
+[00:36:24.000 --> 00:36:27.760]   So we can summarize this whole box
+[00:36:27.760 --> 00:36:34.760]   as this kind of psychological equality.
+[00:36:34.760 --> 00:36:37.240]   So in other words, feature learning limit
+[00:36:37.240 --> 00:36:39.320]   of a linear one-headed layer neural network
+[00:36:39.320 --> 00:36:43.960]   with random initialization is equivalent to a width d in
+[00:36:43.960 --> 00:36:47.240]   plus d out linear one-headed layer neural network
+[00:36:47.240 --> 00:36:48.920]   with diagonal initialization.
+[00:36:48.920 --> 00:36:53.560]   So we instantiated this with d in, d out equal to 1.
+[00:36:53.560 --> 00:36:58.040]   But this is, in general, true for any input and output
+[00:36:58.040 --> 00:36:58.520]   dimension.
+[00:36:58.520 --> 00:37:02.160]   We can generalize this logic very easily.
+[00:37:02.160 --> 00:37:06.040]   And in fact, this equality is essentially
+[00:37:06.040 --> 00:37:09.320]   what we use to compute the large-scale experiments
+[00:37:09.320 --> 00:37:11.000]   like Word2Vec.
+[00:37:11.000 --> 00:37:14.680]   And just to be very concrete, in that particular example
+[00:37:14.680 --> 00:37:18.520]   of Word2Vec, d in, d out are the vocab sizes,
+[00:37:18.520 --> 00:37:23.320]   which are like 140k to 280k depends on the data set.
+[00:37:23.320 --> 00:37:29.760]   So let me just summarize what we've been through just now.
+[00:37:29.760 --> 00:37:34.920]   In the one-headed layer case, the weight matrices
+[00:37:34.920 --> 00:37:37.600]   have iid coordinates initialization.
+[00:37:37.600 --> 00:37:41.520]   Function output converges due to low or large numbers.
+[00:37:41.520 --> 00:37:44.480]   Gradients have approximately iid coordinates.
+[00:37:44.480 --> 00:37:46.520]   So after gradient update, weight coordinates
+[00:37:46.520 --> 00:37:48.720]   are still approximately iid.
+[00:37:48.720 --> 00:37:50.480]   And then you can repeat this logic.
+[00:37:50.480 --> 00:37:57.120]   So this should convince you that the weights at any given time
+[00:37:57.120 --> 00:37:59.000]   have approximately iid coordinates.
+[00:37:59.000 --> 00:38:02.840]   But first, they're going to be correlated across weights.
+[00:38:03.560 --> 00:38:06.720]   And then in the linear case, we can express the weights
+[00:38:06.720 --> 00:38:09.640]   at any given time as linear combinations of weights
+[00:38:09.640 --> 00:38:11.560]   from initialization.
+[00:38:11.560 --> 00:38:15.000]   This allows us to have efficient calculation of the limit.
+[00:38:15.000 --> 00:38:18.840]   All right.
+[00:38:18.840 --> 00:38:21.160]   So that was one-headed layer.
+[00:38:21.160 --> 00:38:24.800]   Let me give you an appetizer for the deeper case,
+[00:38:24.800 --> 00:38:28.520]   where the math will actually significantly
+[00:38:28.520 --> 00:38:30.360]   become more complex.
+[00:38:30.360 --> 00:38:34.400]   So I don't have any room to give you the full course.
+[00:38:34.400 --> 00:38:37.880]   But an appetizer should suffice.
+[00:38:37.880 --> 00:38:40.000]   So the main difficulty here is that you
+[00:38:40.000 --> 00:38:42.200]   have this n-times-n Gaussian random matrix
+[00:38:42.200 --> 00:38:45.040]   W in the middle network, which comes from the random
+[00:38:45.040 --> 00:38:48.560]   initialization of weights.
+[00:38:48.560 --> 00:38:50.840]   So it has two kinds of behaviors that you
+[00:38:50.840 --> 00:38:52.200]   have to keep track of.
+[00:38:52.200 --> 00:38:54.280]   One is the central limit behavior,
+[00:38:54.280 --> 00:38:56.200]   which is essentially something you're
+[00:38:56.200 --> 00:38:58.560]   familiar with if you have done n-ticket calculations
+[00:38:58.560 --> 00:38:59.560]   before.
+[00:38:59.560 --> 00:39:03.120]   But essentially, here, if x is a vector independent of W,
+[00:39:03.120 --> 00:39:05.040]   then Wx is a Gaussian vector.
+[00:39:05.040 --> 00:39:09.440]   And the other thing is that you have
+[00:39:09.440 --> 00:39:15.520]   to be careful about how W correlate with W transpose.
+[00:39:15.520 --> 00:39:18.240]   During SED, if you use W in the forward pass,
+[00:39:18.240 --> 00:39:22.200]   then you have to use W transpose in the backward pass.
+[00:39:22.200 --> 00:39:25.200]   So this correlation actually doesn't
+[00:39:25.200 --> 00:39:27.480]   matter so much for the calculation of the linear
+[00:39:27.480 --> 00:39:30.520]   so much for the calculation of n-ticket
+[00:39:30.520 --> 00:39:32.680]   because that only depends essentially
+[00:39:32.680 --> 00:39:35.280]   on the first backward pass.
+[00:39:35.280 --> 00:39:38.600]   But if you do more than one set of SED,
+[00:39:38.600 --> 00:39:41.160]   you'll see this occurring.
+[00:39:41.160 --> 00:39:47.120]   So it's important to be careful about both of these behaviors
+[00:39:47.120 --> 00:39:51.280]   and keep track of them in a systematic way.
+[00:39:51.280 --> 00:39:53.960]   And that's by no means a trivial thing.
+[00:39:53.960 --> 00:39:57.760]   And this series is called TensorFlow M series.
+[00:39:57.760 --> 00:40:00.240]   And there were three papers--
+[00:40:00.240 --> 00:40:02.440]   four if you count the zero paper, I guess--
+[00:40:02.440 --> 00:40:03.040]   before this.
+[00:40:03.040 --> 00:40:06.800]   And the crux of the mathematical foundation
+[00:40:06.800 --> 00:40:09.040]   is to deal with this complexity here.
+[00:40:09.040 --> 00:40:16.200]   Yeah, and in the framework, this TensorFlow M machinery
+[00:40:16.200 --> 00:40:18.200]   essentially automates all of these derivations.
+[00:40:18.200 --> 00:40:20.760]   So essentially, even if you don't know anything
+[00:40:20.760 --> 00:40:23.760]   about probability theory, you can just
+[00:40:23.760 --> 00:40:28.160]   read the machinery as an algorithm.
+[00:40:28.160 --> 00:40:33.000]   And as an engineer, you can just implement this
+[00:40:33.000 --> 00:40:36.560]   and can automatically translate between PyTorch code
+[00:40:36.560 --> 00:40:39.360]   and infinite-width neural networks.
+[00:40:39.360 --> 00:40:45.080]   I'm almost done.
+[00:40:45.080 --> 00:40:47.800]   But let me just highlight some other results in the papers
+[00:40:47.800 --> 00:40:52.960]   to give you some pointers if you're interested.
+[00:40:52.960 --> 00:40:55.200]   We isolate a natural class of parametrizations,
+[00:40:55.200 --> 00:40:59.560]   which I briefly mentioned before as the ABC parametrizations,
+[00:40:59.560 --> 00:41:03.760]   which contains the NTK mean field standard parametrizations
+[00:41:03.760 --> 00:41:06.680]   as well as the maximal update parametrization I introduced
+[00:41:06.680 --> 00:41:07.180]   here.
+[00:41:07.180 --> 00:41:13.680]   We classify these parametrizations essentially
+[00:41:13.680 --> 00:41:17.280]   into either feature learning parametrization,
+[00:41:17.280 --> 00:41:19.240]   which induces a feature learning limit,
+[00:41:19.240 --> 00:41:23.760]   or kernel parametrization like NTK.
+[00:41:23.760 --> 00:41:25.480]   But you cannot have both.
+[00:41:25.480 --> 00:41:26.600]   So it's a dichotomy.
+[00:41:26.600 --> 00:41:33.560]   And this gives you some interesting consequences.
+[00:41:33.560 --> 00:41:35.640]   One is that certain functional dynamics are not
+[00:41:35.640 --> 00:41:37.720]   valid infinite-width limits.
+[00:41:37.720 --> 00:41:41.120]   So in other words, it's not like if you just
+[00:41:41.120 --> 00:41:44.520]   grab something from the bag, some kind of dynamics,
+[00:41:44.520 --> 00:41:46.160]   some functional dynamics.
+[00:41:46.160 --> 00:41:48.440]   But then there's a neural network
+[00:41:48.440 --> 00:41:51.720]   that corresponds to that in the infinite-width limit.
+[00:41:51.720 --> 00:41:53.120]   And that's not the case.
+[00:41:53.120 --> 00:41:55.680]   And I give you some concrete examples.
+[00:41:55.680 --> 00:41:57.800]   For example, higher-order generalizations
+[00:41:57.800 --> 00:42:00.120]   of NTK dynamics.
+[00:42:00.120 --> 00:42:02.160]   So I think this example is actually
+[00:42:02.160 --> 00:42:06.320]   very pertinent because a lot of people after the NTK paper
+[00:42:06.320 --> 00:42:08.440]   essentially just try to expand more terms.
+[00:42:08.440 --> 00:42:10.160]   Instead of first-order Taylor expansion,
+[00:42:10.160 --> 00:42:12.040]   you do higher-order Taylor expansion.
+[00:42:12.040 --> 00:42:18.280]   And they're saying that essentially doing that doesn't
+[00:42:18.280 --> 00:42:19.560]   give you valid limits.
+[00:42:19.560 --> 00:42:24.880]   And another interesting consequence
+[00:42:24.880 --> 00:42:27.520]   is that any feature learning limits function values
+[00:42:27.520 --> 00:42:30.720]   must be 0 everywhere initialization.
+[00:42:30.720 --> 00:42:34.400]   So this contrasts with, for example, in the NTK limit,
+[00:42:34.400 --> 00:42:40.440]   the initialization is a GP, is a Gaussian process
+[00:42:40.440 --> 00:42:42.200]   in the infinite-width limit.
+[00:42:42.200 --> 00:42:46.200]   And what this is saying is that if you have a Gaussian process
+[00:42:46.200 --> 00:42:49.720]   initialization, that means your last layer initialization
+[00:42:49.720 --> 00:42:51.400]   is too large.
+[00:42:51.400 --> 00:42:54.440]   And this prevents you from using a large learning rate
+[00:42:54.440 --> 00:42:57.360]   to make the body of the network learn features.
+[00:42:57.360 --> 00:43:00.960]   So you should initialize so that last layer is smaller.
+[00:43:00.960 --> 00:43:03.760]   And then you use a larger learning rate
+[00:43:03.760 --> 00:43:07.480]   so that the features are learned.
+[00:43:07.480 --> 00:43:08.600]   OK, so that's it.
+[00:43:08.600 --> 00:43:09.520]   I'm going to end here.
+[00:43:09.520 --> 00:43:14.680]   And here are some QR codes to the paper and a longer two-hour
+[00:43:14.680 --> 00:43:19.120]   talk with more details in case you're interested in further.
+[00:43:19.120 --> 00:43:19.680]   Yeah, thanks.
+[00:43:19.680 --> 00:43:23.520]   And I'll take any questions you have.
+[00:43:23.520 --> 00:43:24.360]   Great.
+[00:43:24.360 --> 00:43:25.160]   I've got lots.
+[00:43:25.160 --> 00:43:29.360]   But folks in the audience, feel free to put them in the chat.
+[00:43:29.360 --> 00:43:35.240]   The thing I wanted to start off with, I think, was--
+[00:43:35.240 --> 00:43:37.480]   so you noted that the standard parameterization
+[00:43:37.480 --> 00:43:40.400]   that everybody uses is unstable, that you can't essentially
+[00:43:40.400 --> 00:43:42.920]   take an infinite-width limit with it.
+[00:43:42.920 --> 00:43:45.400]   Do you think that that's something
+[00:43:45.400 --> 00:43:47.240]   that's actually a benefit for working
+[00:43:47.240 --> 00:43:48.480]   with finite-width networks?
+[00:43:48.480 --> 00:43:49.940]   Or do you think that switching over
+[00:43:49.940 --> 00:43:52.480]   to a parameterization like the maximal update one,
+[00:43:52.480 --> 00:43:54.920]   scaling down our logics, scaling up our inputs,
+[00:43:54.920 --> 00:43:56.960]   do you think that's something that would actually
+[00:43:56.960 --> 00:44:00.280]   make finite-width neural networks have better properties,
+[00:44:00.280 --> 00:44:02.040]   perform better?
+[00:44:02.040 --> 00:44:06.080]   Yeah, that's a good question.
+[00:44:06.080 --> 00:44:07.640]   So this is also--
+[00:44:07.640 --> 00:44:10.640]   it's a good question, but it's also a very subtle question.
+[00:44:10.640 --> 00:44:15.280]   And in some sense, it requires a paper to answer.
+[00:44:15.280 --> 00:44:18.360]   And that's what's coming next in the series.
+[00:44:18.360 --> 00:44:23.320]   But let me give you at least some overview,
+[00:44:23.320 --> 00:44:25.320]   or some of the punchlines, perhaps.
+[00:44:25.320 --> 00:44:29.800]   Not into details, but some vague punchlines.
+[00:44:29.800 --> 00:44:35.760]   So I say it's a subtle question because if you
+[00:44:35.760 --> 00:44:40.160]   only-- if you fix your width, like your width is finite,
+[00:44:40.160 --> 00:44:43.120]   then really all the parameterizations
+[00:44:43.120 --> 00:44:46.600]   are the same up to constants.
+[00:44:46.600 --> 00:44:50.440]   Because if your n is a finite number,
+[00:44:50.440 --> 00:44:53.760]   you can insert constants in front of the 1 over n
+[00:44:53.760 --> 00:44:56.400]   or whatever, such that you can just
+[00:44:56.400 --> 00:45:00.280]   go between different parameterizations very freely.
+[00:45:04.680 --> 00:45:10.440]   And as an aside, everything I talked about here,
+[00:45:10.440 --> 00:45:15.200]   I say that 1 over n or something, really,
+[00:45:15.200 --> 00:45:18.160]   the thing that matters is the scaling with n.
+[00:45:18.160 --> 00:45:19.640]   And I say 1 over n because I want
+[00:45:19.640 --> 00:45:21.400]   to simplify the presentation.
+[00:45:21.400 --> 00:45:23.640]   But in practice, if you want to implement these,
+[00:45:23.640 --> 00:45:27.360]   like the constants in front of the 1 over n,
+[00:45:27.360 --> 00:45:30.680]   and whatever power n is actually very important.
+[00:45:30.680 --> 00:45:34.200]   So if you put all those constants in,
+[00:45:34.200 --> 00:45:37.400]   then like I said, you can essentially
+[00:45:37.400 --> 00:45:40.440]   go between all the different parameterizations
+[00:45:40.440 --> 00:45:44.160]   as soon as you fix the width.
+[00:45:44.160 --> 00:45:47.360]   And what is important and what is
+[00:45:47.360 --> 00:45:52.720]   important indicated by all of this material
+[00:45:52.720 --> 00:45:58.520]   is not that one parameterization is better than another one
+[00:45:58.520 --> 00:46:02.840]   if you fix the width, but rather if you fix the parameterization
+[00:46:02.840 --> 00:46:04.720]   and you let width go to infinity,
+[00:46:04.720 --> 00:46:07.120]   then one is better than another.
+[00:46:07.120 --> 00:46:09.040]   It's a scaling behavior that really matters.
+[00:46:09.040 --> 00:46:15.480]   So maybe this is a roundabout way of answering a question,
+[00:46:15.480 --> 00:46:18.400]   but this is what I mean by subtlety.
+[00:46:18.400 --> 00:46:21.880]   And so you cannot make a statement--
+[00:46:21.880 --> 00:46:24.960]   that kind of doesn't really make sense to make a statement saying,
+[00:46:24.960 --> 00:46:26.920]   oh, one parameterization is better
+[00:46:26.920 --> 00:46:31.920]   than another parameterization for a particular finite
+[00:46:31.920 --> 00:46:34.640]   width neural network in the context
+[00:46:34.640 --> 00:46:37.520]   of this kind of parameterization where I'm really
+[00:46:37.520 --> 00:46:41.360]   talking about scaling with width.
+[00:46:41.360 --> 00:46:50.680]   But you can talk about certain things you cannot do before,
+[00:46:50.680 --> 00:46:54.080]   but you can do now if you use these kind of parameterizations.
+[00:46:54.080 --> 00:46:57.480]   So as a sneak peek, the next paper
+[00:46:57.480 --> 00:47:00.800]   will be talking about the benefits of maximum outdate
+[00:47:00.800 --> 00:47:04.280]   parameterization over any other kind of parameterizations
+[00:47:04.280 --> 00:47:08.200]   enabling you to do things that you probably
+[00:47:08.200 --> 00:47:13.920]   didn't think it was possible before by doing so.
+[00:47:13.920 --> 00:47:17.080]   So that was a long version, but the short version is yes,
+[00:47:17.080 --> 00:47:20.240]   you should use maximum outdate parameterization,
+[00:47:20.240 --> 00:47:24.360]   but I'll tell you why you should use it in the next paper.
+[00:47:24.360 --> 00:47:25.360]   Gotcha.
+[00:47:25.360 --> 00:47:27.640]   The motivating question-- or the motivation
+[00:47:27.640 --> 00:47:30.280]   for that question for me was just that my intuition that I got
+[00:47:30.280 --> 00:47:34.280]   reading the derivations of the maximal update
+[00:47:34.280 --> 00:47:36.240]   and why the other parameterizations fail
+[00:47:36.240 --> 00:47:39.120]   was that essentially it's a matter of gradient flow.
+[00:47:39.120 --> 00:47:41.800]   Like either the gradients all get soaked up by the top layer
+[00:47:41.800 --> 00:47:45.040]   or they don't make it all the way to the first layer.
+[00:47:45.040 --> 00:47:49.520]   And so those are problems that you can imagine.
+[00:47:49.520 --> 00:47:52.040]   Obviously, I mean, constants are important in that case.
+[00:47:52.040 --> 00:47:54.800]   It's really just a scale between the first layer's gradients
+[00:47:54.800 --> 00:47:55.920]   and last layer's gradients.
+[00:47:55.920 --> 00:47:57.360]   It's not a difference of like zero
+[00:47:57.360 --> 00:47:59.320]   versus non-zero versus infinite.
+[00:47:59.320 --> 00:48:00.880]   And so that's the kind of phenomenon
+[00:48:00.880 --> 00:48:03.640]   I was trying to get at with that question.
+[00:48:03.640 --> 00:48:10.040]   Yeah, so maybe concretely you're asking, perhaps in practice
+[00:48:10.040 --> 00:48:12.320]   it's OK or maybe even beneficial to have
+[00:48:12.320 --> 00:48:14.560]   imbalance between the gradients of different layers?
+[00:48:14.560 --> 00:48:21.080]   Yeah, I think that's one way to put it, yeah.
+[00:48:21.080 --> 00:48:22.960]   Yeah, so that's a good question.
+[00:48:22.960 --> 00:48:29.400]   And I believe that that's probably a valid question.
+[00:48:29.400 --> 00:48:33.400]   And that's probably true in some cases or many cases.
+[00:48:33.400 --> 00:48:39.760]   It's an empirical question I think that can be looked at.
+[00:48:39.760 --> 00:48:45.840]   Of course, now, like in the context of this paper
+[00:48:45.840 --> 00:48:51.480]   and infinite with limits, of course,
+[00:48:51.480 --> 00:48:54.680]   I think it doesn't make sense if you, for example,
+[00:48:54.680 --> 00:48:57.640]   you have a three-layer neural network,
+[00:48:57.640 --> 00:49:00.680]   but you parameterize it so that in the infinite width limit,
+[00:49:00.680 --> 00:49:03.160]   your first layer just don't move.
+[00:49:03.160 --> 00:49:05.760]   Then it's kind of a shame that you have all these parameters.
+[00:49:05.760 --> 00:49:06.960]   You didn't actually use them.
+[00:49:06.960 --> 00:49:14.440]   So while I agree with your sentiment
+[00:49:14.440 --> 00:49:16.680]   that maybe the imbalance helps, the way
+[00:49:16.680 --> 00:49:18.480]   I will implement this imbalance is actually
+[00:49:18.480 --> 00:49:22.920]   to parameterize things in the maximal update framework.
+[00:49:22.920 --> 00:49:26.760]   But you have constants that you can adjust so that you can
+[00:49:26.760 --> 00:49:28.320]   adjust how much gradient is going
+[00:49:28.320 --> 00:49:30.960]   to the first layer versus the second layer,
+[00:49:30.960 --> 00:49:33.840]   rather than putting them in a standard parameterization
+[00:49:33.840 --> 00:49:38.000]   where when you go to infinite width limit,
+[00:49:38.000 --> 00:49:42.120]   the first layer just don't learn at all.
+[00:49:42.120 --> 00:49:44.560]   You essentially leave money on the table
+[00:49:44.560 --> 00:49:46.760]   if you use any other kind of parameterization.
+[00:49:47.320 --> 00:49:48.320]   That makes sense.
+[00:49:48.320 --> 00:49:50.720]   A question from the audience asking
+[00:49:50.720 --> 00:49:54.720]   about the intuition in the second backward pass with SGD
+[00:49:54.720 --> 00:49:56.320]   and how that's different.
+[00:49:56.320 --> 00:50:00.280]   And in particular, is there a way
+[00:50:00.280 --> 00:50:03.360]   to think of what's going on, the difference in the distributions
+[00:50:03.360 --> 00:50:07.560]   as being something like a prior or something like that?
+[00:50:07.560 --> 00:50:09.040]   OK, so let's go back to that slide.
+[00:50:10.040 --> 00:50:11.280]   Something like this, I guess.
+[00:50:11.280 --> 00:50:22.040]   OK, so the question was how to understand the backward pass
+[00:50:22.040 --> 00:50:25.040]   and if there's a prior.
+[00:50:25.040 --> 00:50:26.840]   It corresponds to some kind of prior?
+[00:50:26.840 --> 00:50:28.840]   Yeah, the question-- here, I'll just read it out.
+[00:50:28.840 --> 00:50:31.760]   What's the intuition behind the second backward pass in SGD
+[00:50:31.760 --> 00:50:34.440]   and how it's different from the prior?
+[00:50:34.440 --> 00:50:36.680]   So the question is, how do you understand
+[00:50:36.680 --> 00:50:40.000]   the second backward pass in SGD and how are the Gaussian
+[00:50:40.000 --> 00:50:41.680]   process utilized here?
+[00:50:41.680 --> 00:50:46.280]   I think that might be a bit of a confusion, perhaps as priors.
+[00:50:46.280 --> 00:50:46.760]   I see.
+[00:50:46.760 --> 00:50:51.840]   So I would say that I'm not using really anything
+[00:50:51.840 --> 00:50:54.160]   about the Gaussian process here.
+[00:50:54.160 --> 00:50:58.960]   So in particular, like I mentioned very briefly
+[00:50:58.960 --> 00:51:02.240]   at the end, if you're in a feature learning limit,
+[00:51:02.240 --> 00:51:04.920]   then in initialization, you have a trivial Gaussian process
+[00:51:04.920 --> 00:51:06.600]   in the sense that your variance is zero.
+[00:51:06.600 --> 00:51:10.680]   You have a delta distribution at the zero function.
+[00:51:10.680 --> 00:51:17.240]   So I'm not using anything about the Gaussian process.
+[00:51:17.240 --> 00:51:23.720]   I am using the fact that u and v are Gaussian initialization
+[00:51:23.720 --> 00:51:27.080]   with variance 1/n.
+[00:51:27.080 --> 00:51:32.560]   And in terms of intuition for the backward pass,
+[00:51:32.560 --> 00:51:36.760]   so here I'm not using anything special.
+[00:51:36.760 --> 00:51:43.720]   Here I'm just literally doing manual derivation of backprop.
+[00:51:43.720 --> 00:51:47.920]   So there's nothing complicated here.
+[00:51:47.920 --> 00:51:53.240]   So the statement that the gradients of the first layer--
+[00:51:53.240 --> 00:51:55.560]   sorry, second layer is first layer weights
+[00:51:55.560 --> 00:52:00.400]   times the loss derivative times the input.
+[00:52:00.400 --> 00:52:04.240]   This is just straightforward from backprop.
+[00:52:04.240 --> 00:52:07.440]   If you do backprop manually, this is what you get.
+[00:52:07.440 --> 00:52:10.560]   Very, very straightforward.
+[00:52:10.560 --> 00:52:14.800]   And as soon as you have this identity,
+[00:52:14.800 --> 00:52:22.440]   you can see that because the first layer blue weights,
+[00:52:22.440 --> 00:52:26.360]   they're essentially copied into the second layer gradients.
+[00:52:26.360 --> 00:52:30.040]   And because these two scalars are roughly terministic,
+[00:52:30.040 --> 00:52:35.080]   you have approximately ID coordinates in this gradient.
+[00:52:35.080 --> 00:52:37.400]   And similarly for the first layer,
+[00:52:37.400 --> 00:52:42.440]   and then you can iteratively push forward this observation
+[00:52:42.440 --> 00:52:45.040]   to every future step in the training process.
+[00:52:45.040 --> 00:52:49.160]   I hope that answers your question.
+[00:52:49.160 --> 00:52:55.560]   Yeah, and there's some more questions.
+[00:52:55.560 --> 00:53:02.560]   One, are there any punch lines with regard to sparsity here?
+[00:53:02.560 --> 00:53:04.640]   So there is a paper in the last ICML
+[00:53:04.640 --> 00:53:08.280]   that talked about transfer with the neural tangent
+[00:53:08.280 --> 00:53:09.520]   kernel and sparsity.
+[00:53:09.520 --> 00:53:20.000]   So I think I've seen that paper, but I don't remember
+[00:53:20.000 --> 00:53:20.880]   exactly what it is.
+[00:53:20.880 --> 00:53:28.200]   So I guess-- so I would say the following.
+[00:53:28.200 --> 00:53:29.920]   I think a lot of papers nowadays,
+[00:53:29.920 --> 00:53:33.560]   they do experiments on CIFAR-10.
+[00:53:33.560 --> 00:53:37.160]   But my point of view, especially after this paper,
+[00:53:37.160 --> 00:53:39.560]   is that's not a good data set to do experiments on if you
+[00:53:39.560 --> 00:53:41.640]   care about feature learning.
+[00:53:41.640 --> 00:53:45.680]   Because kernels do so well on it.
+[00:53:45.680 --> 00:53:48.360]   Like whatever you do on now, this
+[00:53:48.360 --> 00:53:52.840]   includes, for example, neural architecture search.
+[00:53:52.840 --> 00:53:59.400]   Whatever you do on it, it's kind of like you're not--
+[00:53:59.400 --> 00:54:06.840]   in some sense, you're not isolating
+[00:54:06.840 --> 00:54:08.400]   the effect of feature learning.
+[00:54:08.400 --> 00:54:13.440]   So for example, if you were to do architecture search
+[00:54:13.440 --> 00:54:17.680]   on ImageNet or do pruning on ImageNet,
+[00:54:17.680 --> 00:54:21.240]   I think that's a lot more meaningful in the sense
+[00:54:21.240 --> 00:54:26.520]   that in the CIFAR-10 case, I think
+[00:54:26.520 --> 00:54:29.080]   when you try to induce sparsity, yeah,
+[00:54:29.080 --> 00:54:33.040]   it suffices to just approximate the neural tangent kernel.
+[00:54:33.040 --> 00:54:36.960]   And from the sketching literature, whatever,
+[00:54:36.960 --> 00:54:43.160]   there's a lot of these, I guess, like projection literature,
+[00:54:43.160 --> 00:54:46.120]   which essentially just deals with sparsity.
+[00:54:46.120 --> 00:54:48.000]   You can do a lot of things with that
+[00:54:48.000 --> 00:54:53.960]   by just try to approximate NTK from a very--
+[00:54:53.960 --> 00:54:57.840]   yeah, just try to approximate using sparse weights
+[00:54:57.840 --> 00:54:58.880]   very efficiently.
+[00:54:58.880 --> 00:55:01.360]   You can get pretty good performance
+[00:55:01.360 --> 00:55:03.440]   on these smaller data sets.
+[00:55:03.440 --> 00:55:05.720]   But as soon as you go to larger data sets,
+[00:55:05.720 --> 00:55:07.880]   I think these things won't work because you can't just
+[00:55:07.880 --> 00:55:09.880]   approximate a fixed kernel.
+[00:55:09.880 --> 00:55:12.800]   You essentially have to--
+[00:55:12.800 --> 00:55:15.880]   yeah, you have to find the right architecture
+[00:55:15.880 --> 00:55:18.080]   to do the right feature learning.
+[00:55:18.080 --> 00:55:21.240]   So yeah, I don't know.
+[00:55:21.240 --> 00:55:22.440]   That was a rambling.
+[00:55:22.440 --> 00:55:25.080]   I'm not sure if I answered your question.
+[00:55:25.080 --> 00:55:28.200]   It looked like, yeah, they responded in the chat
+[00:55:28.200 --> 00:55:30.520]   that they liked the answer.
+[00:55:30.520 --> 00:55:31.000]   OK, great.
+[00:55:31.000 --> 00:55:32.200]   Thanks.
+[00:55:32.200 --> 00:55:36.840]   One question I wanted to ask was about computing all this stuff.
+[00:55:36.840 --> 00:55:39.920]   Because you mentioned that you made use of that construction
+[00:55:39.920 --> 00:55:43.680]   that you showed in order to do the word to that calculations.
+[00:55:43.680 --> 00:55:45.760]   And then there's also some sections where you talk
+[00:55:45.760 --> 00:55:46.960]   about computational scaling.
+[00:55:46.960 --> 00:55:50.360]   And it seems like it's really unfavorable.
+[00:55:50.360 --> 00:55:52.200]   So I'm just curious, what thoughts
+[00:55:52.200 --> 00:55:55.760]   do you have in that direction in terms of actually starting
+[00:55:55.760 --> 00:55:58.000]   to use infinite width networks?
+[00:55:58.000 --> 00:56:03.800]   Yeah, so we'll have papers later on about this topic.
+[00:56:03.800 --> 00:56:10.640]   But the gist is that, kind of like in Bayesian literature,
+[00:56:10.640 --> 00:56:13.600]   exact base is essentially intractable.
+[00:56:13.600 --> 00:56:16.560]   You can't do it other than the simple cases.
+[00:56:16.560 --> 00:56:18.840]   But I mean, there is still an entire industry
+[00:56:18.840 --> 00:56:21.120]   academically behind it.
+[00:56:21.120 --> 00:56:23.800]   And the gist there is that if you're creative,
+[00:56:23.800 --> 00:56:27.360]   you can approximate the Bayesian inference
+[00:56:27.360 --> 00:56:30.440]   using some clever ways.
+[00:56:30.440 --> 00:56:35.040]   And that strikes a middle ground between efficiency
+[00:56:35.040 --> 00:56:39.400]   and the optimality of inference.
+[00:56:39.400 --> 00:56:42.400]   And in this case, it's very similar.
+[00:56:42.400 --> 00:56:44.960]   You can come up with different approximations
+[00:56:44.960 --> 00:56:46.760]   to the infinite width limit, which
+[00:56:46.760 --> 00:56:49.120]   is not as trivial as just training a really
+[00:56:49.120 --> 00:56:53.960]   wide neural network, but still kind of goes part of the way
+[00:56:53.960 --> 00:56:56.120]   to the infinite width limit.
+[00:56:56.120 --> 00:56:59.120]   And you can also think about different kinds of limit
+[00:56:59.120 --> 00:57:01.280]   to take, and so on and so forth.
+[00:57:01.280 --> 00:57:03.160]   So there's a lot-- if you're creative,
+[00:57:03.160 --> 00:57:05.120]   you can do a lot of things in this area.
+[00:57:05.120 --> 00:57:11.440]   One thing it seemed to me from reading through the way
+[00:57:11.440 --> 00:57:14.360]   we're doing the actual calculations
+[00:57:14.360 --> 00:57:17.320]   was that the tricky parts are evaluating
+[00:57:17.320 --> 00:57:22.200]   a bunch of expectations for correlated random variables.
+[00:57:22.200 --> 00:57:24.640]   So it sounds like essentially the trouble there
+[00:57:24.640 --> 00:57:29.640]   is going to be doing efficient integration rather than doing
+[00:57:29.640 --> 00:57:31.760]   efficient and effective derivatives
+[00:57:31.760 --> 00:57:34.600]   as you have in normal finite width networks.
+[00:57:38.000 --> 00:57:41.520]   Yeah, so if you-- yeah, so generically speaking,
+[00:57:41.520 --> 00:57:44.440]   if you have just some kind of computation graph
+[00:57:44.440 --> 00:57:46.160]   that you want to just take the infinite width
+[00:57:46.160 --> 00:57:48.000]   limit of that, yeah, you're going
+[00:57:48.000 --> 00:57:50.540]   to end up with some really nasty integrals you want to solve.
+[00:57:50.540 --> 00:57:55.320]   So if you want to have a black box limit taker,
+[00:57:55.320 --> 00:57:58.160]   then you need to have a really, really good integration
+[00:57:58.160 --> 00:58:00.920]   solver.
+[00:58:00.920 --> 00:58:03.840]   But of course, like what I just said,
+[00:58:03.840 --> 00:58:07.080]   if you just care about a very specific case, not a black box
+[00:58:07.080 --> 00:58:09.800]   setting, I just want to train, I don't know,
+[00:58:09.800 --> 00:58:12.600]   an infinite width bird, where infinite width could
+[00:58:12.600 --> 00:58:14.800]   be some approximation of infinite width.
+[00:58:14.800 --> 00:58:17.720]   Maybe I can come up with some approximation of it
+[00:58:17.720 --> 00:58:19.200]   that works pretty well and doesn't
+[00:58:19.200 --> 00:58:22.680]   have to do this black box integration solving.
+[00:58:22.680 --> 00:58:25.040]   You know what I'm saying?
+[00:58:25.040 --> 00:58:27.720]   Yeah, no, I see that.
+[00:58:27.720 --> 00:58:32.240]   There was also a mention that the correlation structure
+[00:58:32.240 --> 00:58:34.280]   itself can be very complicated.
+[00:58:34.280 --> 00:58:35.740]   I don't remember the exact details,
+[00:58:35.740 --> 00:58:40.120]   but that it can become like an exponential number
+[00:58:40.120 --> 00:58:43.120]   of polynomial terms or something like that.
+[00:58:43.120 --> 00:58:46.000]   Yeah, so that's another difficulty, yes.
+[00:58:46.000 --> 00:58:47.360]   But the answer is the same.
+[00:58:47.360 --> 00:58:54.160]   If you're creative, you can ameliorize those problems.
+[00:58:54.160 --> 00:58:56.280]   Yeah, no, it sounds like a really exciting direction
+[00:58:56.280 --> 00:58:57.880]   for future work, I think.
+[00:58:57.880 --> 00:58:59.440]   Yeah, I definitely encourage people
+[00:58:59.440 --> 00:59:02.360]   to think about how to do those approximations.
+[00:59:02.360 --> 00:59:04.840]   And I mean, I really think the analogy with the Bayes case
+[00:59:04.840 --> 00:59:06.160]   is very similar.
+[00:59:06.160 --> 00:59:06.920]   It's really apt.
+[00:59:06.920 --> 00:59:14.920]   Yeah, yeah.
+[00:59:14.920 --> 00:59:17.040]   I guess, yeah, my interest in neural networks partly
+[00:59:17.040 --> 00:59:19.200]   developed because I got interested in Bayesian
+[00:59:19.200 --> 00:59:22.520]   inference, found out about how intractable exact Bayes
+[00:59:22.520 --> 00:59:26.440]   on graphs was, was not that enthused by the approximations,
+[00:59:26.440 --> 00:59:28.340]   and then ran into the arms of neural networks
+[00:59:28.340 --> 00:59:31.760]   as a way to do effective machine learning
+[00:59:31.760 --> 00:59:33.840]   without running into those problems.
+[00:59:33.840 --> 00:59:38.720]   Yeah, now you can kind of go a little bit back, maybe.
+[00:59:38.720 --> 00:59:43.320]   I've been sneakily drawn back into the field of integration
+[00:59:43.320 --> 00:59:45.480]   and inference.
+[00:59:45.480 --> 00:59:54.440]   Yeah, I guess one last question, I guess, before we go here.
+[00:59:54.440 --> 00:59:57.280]   So with finite width networks, when
+[00:59:57.280 --> 00:59:58.860]   you increase the number of parameters,
+[00:59:58.860 --> 01:00:02.120]   you often have to worry about overfitting.
+[01:00:02.120 --> 01:00:04.880]   So is that something that we don't
+[01:00:04.880 --> 01:00:07.200]   expect to happen with infinite width due to something
+[01:00:07.200 --> 01:00:09.000]   like the double descent phenomenon,
+[01:00:09.000 --> 01:00:12.520]   or to what extent do you have to worry about overfitting
+[01:00:12.520 --> 01:00:14.560]   in infinite width networks?
+[01:00:14.560 --> 01:00:17.240]   Yeah, this is a very, very good question.
+[01:00:17.240 --> 01:00:18.840]   So the short answer, I believe, you
+[01:00:18.840 --> 01:00:23.080]   need to take into account overfitting.
+[01:00:23.080 --> 01:00:30.000]   So in particular, in contrast with the kernel case,
+[01:00:30.000 --> 01:00:38.240]   where in some sense, there's some inductive bias.
+[01:00:38.240 --> 01:00:40.640]   I mean, I guess so does the feature learning case.
+[01:00:40.640 --> 01:00:43.920]   But in the kernel case, in some sense,
+[01:00:43.920 --> 01:00:46.960]   the capacity is kind of fixed in some sense.
+[01:00:46.960 --> 01:00:50.160]   I don't know, very intuitively compared to feature learning.
+[01:00:50.160 --> 01:00:52.400]   Feature learning, there's more wiggle room.
+[01:00:52.400 --> 01:00:53.600]   You can learn more things.
+[01:00:53.600 --> 01:00:56.240]   But of course, you can also overfit more things.
+[01:00:56.240 --> 01:01:00.560]   So you will run into overfitting for sure.
+[01:01:00.560 --> 01:01:05.080]   Like for our experiments, we have weight decay on.
+[01:01:05.080 --> 01:01:07.960]   And that essentially, that means that we
+[01:01:07.960 --> 01:01:16.160]   didn't run into the case where the wider neural networks
+[01:01:16.160 --> 01:01:19.920]   actually do worse on the evaluation.
+[01:01:19.920 --> 01:01:21.720]   But in general, I think this is true,
+[01:01:21.720 --> 01:01:24.400]   that you need to take into account overfitting,
+[01:01:24.400 --> 01:01:29.120]   how to take care of overfitting in the wider neural networks.
+[01:01:29.120 --> 01:01:33.960]   With that said, in the modern trend
+[01:01:33.960 --> 01:01:36.880]   of training larger and larger neural networks on larger
+[01:01:36.880 --> 01:01:41.680]   and larger data sets, with the prime example being BERT and GPT
+[01:01:41.680 --> 01:01:44.320]   and so on, we're actually not at the point
+[01:01:44.320 --> 01:01:47.080]   where the model is large enough to actually overfit
+[01:01:47.080 --> 01:01:49.840]   the data set significantly.
+[01:01:49.840 --> 01:01:56.640]   So in that sense, if you're going in that direction,
+[01:01:56.640 --> 01:01:59.480]   I think we don't need to worry too much about overfitting
+[01:01:59.480 --> 01:02:01.640]   at this point.
+[01:02:01.640 --> 01:02:05.400]   Because the data is so much larger than the possible model
+[01:02:05.400 --> 01:02:07.440]   we can train.
+[01:02:07.440 --> 01:02:10.240]   But yeah, for smaller things, if you care about something
+[01:02:10.240 --> 01:02:14.840]   like CIFAR 10 size, or even when you fine tune BERT
+[01:02:14.840 --> 01:02:17.000]   on downstream tasks, the small data
+[01:02:17.000 --> 01:02:19.120]   sets, you're going to run into a lot of overfitting.
+[01:02:19.120 --> 01:02:23.600]   You have to really be careful about regularizers.
+[01:02:23.600 --> 01:02:29.480]   And if you write papers, you know that for glue,
+[01:02:29.480 --> 01:02:32.200]   super glue, fine tuning on the smaller data sets
+[01:02:32.200 --> 01:02:34.720]   is all about regularization.
+[01:02:34.720 --> 01:02:38.040]   So in that sense, without even going to infinite width limit,
+[01:02:38.040 --> 01:02:39.400]   for large neural networks, you're
+[01:02:39.400 --> 01:02:40.840]   going to run into this issue.
+[01:02:48.360 --> 01:02:51.080]   All right, so that's all the time we have.
+[01:02:51.080 --> 01:02:55.760]   So I'll let you go, Greg and our audience.
+[01:02:55.760 --> 01:02:59.040]   Thanks for coming and presenting your work.
+[01:02:59.040 --> 01:03:01.480]   I'm really excited to see where this goes, where people take
+[01:03:01.480 --> 01:03:03.520]   these--
+[01:03:03.520 --> 01:03:06.320]   start coming up with smart ways to approximate this,
+[01:03:06.320 --> 01:03:08.960]   calculate this, and make use of this
+[01:03:08.960 --> 01:03:13.000]   as a new tool in our toolkit for working with neural networks.
+[01:03:13.000 --> 01:03:13.760]   Yeah, thanks, man.
+[01:03:13.760 --> 01:03:16.600]   Yeah, like you, I'm very excited about this work.
+[01:03:16.600 --> 01:03:21.480]   And I'm very excited to see what community does with it.
+[01:03:21.480 --> 01:03:22.920]   All right, thanks, guys.
+[01:03:22.920 --> 01:03:25.960]   [MUSIC PLAYING]
+[01:03:25.960 --> 01:03:29.320]   [MUSIC PLAYING]
+[01:03:29.880 --> 01:03:33.240]   [MUSIC PLAYING]
+[01:03:33.400 --> 01:03:36.760]   [MUSIC PLAYING]
+[01:03:37.080 --> 01:03:40.440]   [MUSIC PLAYING]
+[01:03:40.440 --> 01:03:42.440]   [music]
+

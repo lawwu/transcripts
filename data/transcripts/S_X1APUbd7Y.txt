@@ -1,0 +1,346 @@
+
+[00:00:00.000 --> 00:00:03.180]   All right, everyone, my name is Han,
+[00:00:03.180 --> 00:00:06.340]   and today I'm gonna talk about Reformers,
+[00:00:06.340 --> 00:00:11.340]   which is a short for reversible transformer.
+[00:00:11.340 --> 00:00:14.160]   It is an optimized version of the famous
+[00:00:14.160 --> 00:00:19.160]   Transformer from Attention is All You Need paper from 2017.
+[00:00:19.160 --> 00:00:24.420]   And Puja, this is for you.
+[00:00:26.700 --> 00:00:31.380]   So before we dive deep into Reformer,
+[00:00:31.380 --> 00:00:34.760]   here is the model architecture for Transformer.
+[00:00:34.760 --> 00:00:38.400]   So the Transformer, this is the base architecture
+[00:00:38.400 --> 00:00:41.100]   used by many state-of-the-art models,
+[00:00:41.100 --> 00:00:45.220]   such as BERT, GPT-2, XLNet, et cetera.
+[00:00:45.220 --> 00:00:48.820]   So Transformer follows the similar encoder-decoder
+[00:00:48.820 --> 00:00:52.880]   architecture for neural language models.
+[00:00:52.880 --> 00:00:55.520]   So on the left-hand side,
+[00:00:56.500 --> 00:01:00.060]   here we have the encoder,
+[00:01:00.060 --> 00:01:05.060]   and it takes a positionally encoded input embeddings
+[00:01:05.060 --> 00:01:10.080]   and pass it through multi-head attention layer,
+[00:01:10.080 --> 00:01:12.260]   and then go through a feed-forward network.
+[00:01:12.260 --> 00:01:15.640]   And the output is used for the decoder part
+[00:01:15.640 --> 00:01:17.700]   together with the expected,
+[00:01:17.700 --> 00:01:21.940]   or your trend dataset shifted one to the right,
+[00:01:21.940 --> 00:01:25.060]   or however many units to the right.
+[00:01:25.060 --> 00:01:29.680]   And go through the decoder part,
+[00:01:29.680 --> 00:01:32.320]   and you will learn the output probabilities
+[00:01:32.320 --> 00:01:35.420]   of what orders they would expect.
+[00:01:35.420 --> 00:01:41.660]   So usually the default Transformer is stacked here,
+[00:01:41.660 --> 00:01:47.800]   and it's six times, so there is six repeating modules of this
+[00:01:47.800 --> 00:01:50.960]   and the multi-head attention is stacked eight times.
+[00:01:51.920 --> 00:01:56.200]   So they can parallel process a lot more information.
+[00:01:56.200 --> 00:02:02.400]   But there's several problems with the Transformer model.
+[00:02:02.400 --> 00:02:07.160]   The model is notoriously memory-intensive
+[00:02:07.160 --> 00:02:08.760]   and time-consuming to train.
+[00:02:08.760 --> 00:02:12.720]   So for example, when I implemented a Transformer
+[00:02:12.720 --> 00:02:15.560]   for the Berkeley CS128 assignment,
+[00:02:15.560 --> 00:02:19.040]   I could only use a batch size of 48
+[00:02:19.040 --> 00:02:24.040]   for a very small vocab size of only 10,000 words
+[00:02:24.040 --> 00:02:27.100]   before getting TensorFlow through me,
+[00:02:27.100 --> 00:02:30.380]   like memory out of bound, not enough memory errors.
+[00:02:30.380 --> 00:02:34.540]   And the two primary reason is that Transformers,
+[00:02:34.540 --> 00:02:40.540]   there are two primary reasons for the memory-intensiveness.
+[00:02:40.540 --> 00:02:42.880]   So first is this multi-head attention part,
+[00:02:42.880 --> 00:02:47.680]   and the second one is doing the feed-forward network part.
+[00:02:47.680 --> 00:02:52.680]   So that's how the Reformer authors
+[00:02:52.680 --> 00:02:56.720]   apply computer science skills
+[00:02:56.720 --> 00:03:00.500]   or computer science discipline into deep learning.
+[00:03:00.500 --> 00:03:08.800]   So Transformer, it uses a scale dot attention
+[00:03:08.800 --> 00:03:11.560]   to find the best value for a query.
+[00:03:11.560 --> 00:03:14.080]   So here, I don't think this is quite right
+[00:03:14.080 --> 00:03:16.280]   'cause I don't think this is a dot attention.
+[00:03:16.280 --> 00:03:18.120]   It doesn't look like a dot attention.
+[00:03:18.120 --> 00:03:25.800]   So using my non-academic interpretation,
+[00:03:25.800 --> 00:03:28.560]   the bigger the value of it,
+[00:03:28.560 --> 00:03:30.760]   so usually when people do dot attention,
+[00:03:30.760 --> 00:03:32.220]   you have two vectors,
+[00:03:32.220 --> 00:03:35.000]   and the bigger the value of the dot product,
+[00:03:35.000 --> 00:03:37.200]   the closer the two vectors are together.
+[00:03:37.200 --> 00:03:40.120]   So basically, you're trying to find the best vector
+[00:03:40.120 --> 00:03:43.640]   for the best value for the query that you put in,
+[00:03:43.640 --> 00:03:45.480]   so which means the dot product attention
+[00:03:45.480 --> 00:03:48.520]   is trying to look up the embedding
+[00:03:48.520 --> 00:03:51.800]   that has the highest value given the input.
+[00:03:51.800 --> 00:03:54.120]   So in terms of computer science,
+[00:03:54.120 --> 00:03:59.080]   that's in terms of a huge lookup table that you have.
+[00:03:59.080 --> 00:04:02.200]   Give it a query, and you go through every single one,
+[00:04:02.200 --> 00:04:06.120]   and you find the best value of the big lookup table.
+[00:04:06.120 --> 00:04:08.300]   So that's how memory works.
+[00:04:08.300 --> 00:04:10.400]   So what's this?
+[00:04:10.400 --> 00:04:14.320]   So now, as with all the, I guess,
+[00:04:14.320 --> 00:04:17.360]   VCOE or computer science interviews,
+[00:04:17.360 --> 00:04:18.600]   after you have the algorithm,
+[00:04:18.600 --> 00:04:22.080]   you have to do a complexity analysis.
+[00:04:22.080 --> 00:04:25.120]   So what's the complexity of using,
+[00:04:25.120 --> 00:04:27.680]   of the transformer model?
+[00:04:27.680 --> 00:04:30.640]   So in the paper, they outline,
+[00:04:30.640 --> 00:04:35.640]   basically, this part is the equation
+[00:04:35.640 --> 00:04:39.080]   for the dot scale dot product attention,
+[00:04:39.080 --> 00:04:40.860]   dot scale dot attention.
+[00:04:40.860 --> 00:04:43.240]   So this one is sort of, you can ignore that
+[00:04:43.240 --> 00:04:46.200]   because that's just the dimension of the k.
+[00:04:46.200 --> 00:04:49.640]   But so here, you have q of this L,
+[00:04:49.640 --> 00:04:53.440]   and you have multiplied by the k.
+[00:04:53.440 --> 00:04:56.520]   So this is q vector, and this is k vector.
+[00:04:56.520 --> 00:04:57.960]   Those are then L.
+[00:04:57.960 --> 00:05:00.760]   You get a big, fat matrix.
+[00:05:00.760 --> 00:05:05.480]   So your space complexity is your length squared,
+[00:05:05.480 --> 00:05:08.880]   and your time complexity is also length squared.
+[00:05:08.880 --> 00:05:13.360]   So in the paper, they provided an example
+[00:05:13.360 --> 00:05:16.360]   that a sequence length of 64k
+[00:05:16.360 --> 00:05:20.880]   is going to produce a 64,000 by 64,000 matrix.
+[00:05:20.880 --> 00:05:24.020]   At 32 bits, that's gonna be 16 gig of memory.
+[00:05:24.020 --> 00:05:27.120]   So obviously, that is why it is very
+[00:05:27.120 --> 00:05:29.240]   memory intensive to train.
+[00:05:29.240 --> 00:05:35.880]   But since this is essentially a lookup table,
+[00:05:36.600 --> 00:05:38.880]   the reformer authors tried to approach this
+[00:05:38.880 --> 00:05:43.760]   using a hashtag, a specialty hashing mechanism
+[00:05:43.760 --> 00:05:46.360]   to solve this problem, to reduce the complexity.
+[00:05:46.360 --> 00:05:52.520]   So in the paper, it has this fancy diagram
+[00:05:52.520 --> 00:05:57.040]   talking about how they use locality-sensitive hashing
+[00:05:57.040 --> 00:06:01.080]   with chunking and sorting to reduce the complexity
+[00:06:01.080 --> 00:06:03.400]   of the dot product attention.
+[00:06:03.400 --> 00:06:05.820]   It's all in the paper, but since this is,
+[00:06:05.820 --> 00:06:07.260]   I guess, my presentation,
+[00:06:07.260 --> 00:06:10.280]   so I will provide my own interpretation.
+[00:06:10.280 --> 00:06:14.280]   So for example, here, we have four vectors,
+[00:06:14.280 --> 00:06:19.280]   V1, V0, 1, 2, 3, and we have four buckets, right?
+[00:06:19.280 --> 00:06:23.320]   So let's say, let's take the first two bits
+[00:06:23.320 --> 00:06:26.880]   as their locality, or how close they are.
+[00:06:26.880 --> 00:06:30.200]   So 1, 1 will go here.
+[00:06:30.200 --> 00:06:31.900]   This one goes here.
+[00:06:33.120 --> 00:06:38.060]   0, 1, 1, 0 goes here, and 0, 0 goes here.
+[00:06:38.060 --> 00:06:41.900]   So here, you have V1, V3,
+[00:06:41.900 --> 00:06:45.180]   and then here, you have V0,
+[00:06:45.180 --> 00:06:49.060]   and in the 0, 0 bucket, you have V2.
+[00:06:49.060 --> 00:06:53.100]   So that's how you sort, or how you hash things
+[00:06:53.100 --> 00:06:56.360]   into different buckets using locality-sensitive hashing.
+[00:06:56.360 --> 00:07:00.100]   And with this, you might notice right away
+[00:07:00.100 --> 00:07:01.320]   that there's a problem.
+[00:07:01.320 --> 00:07:04.880]   The bucket size is imbalanced, right?
+[00:07:04.880 --> 00:07:08.800]   'Cause you have two here, one, zero, and one here.
+[00:07:08.800 --> 00:07:10.480]   So how do you solve that?
+[00:07:10.480 --> 00:07:11.780]   You use chunking.
+[00:07:11.780 --> 00:07:16.360]   So basically, you chunk to make sure
+[00:07:16.360 --> 00:07:18.320]   every bucket are the same size.
+[00:07:18.320 --> 00:07:21.240]   So sometimes you have overflow from other buckets
+[00:07:21.240 --> 00:07:25.480]   to from a previous bucket to the next one,
+[00:07:25.480 --> 00:07:27.520]   and that is going to help you,
+[00:07:27.520 --> 00:07:30.060]   help the algorithm solve the problem.
+[00:07:30.060 --> 00:07:33.980]   And chunking might sound pretty fancy,
+[00:07:33.980 --> 00:07:36.840]   and in reality, if you look at the code,
+[00:07:36.840 --> 00:07:39.960]   this is directly from the reformer code,
+[00:07:39.960 --> 00:07:41.620]   it is basically just reshaping.
+[00:07:41.620 --> 00:07:44.160]   It's just a reshaping function
+[00:07:44.160 --> 00:07:46.960]   to make sure they are the same size.
+[00:07:46.960 --> 00:07:53.360]   And how, so since this is a language model,
+[00:07:53.360 --> 00:07:57.920]   so how do we compare how close they are together?
+[00:07:57.920 --> 00:07:59.520]   So previously, I mentioned that
+[00:07:59.520 --> 00:08:01.300]   when you want to compare two vectors,
+[00:08:01.300 --> 00:08:02.880]   how close they are together,
+[00:08:02.880 --> 00:08:04.680]   you take a dot product, right?
+[00:08:04.680 --> 00:08:08.000]   You want to find the smallest angle,
+[00:08:08.000 --> 00:08:12.540]   cosine similarity between the two vectors.
+[00:08:12.540 --> 00:08:14.640]   So they have this fancy diagram.
+[00:08:14.640 --> 00:08:20.920]   But here, I'm gonna draw it out
+[00:08:20.920 --> 00:08:23.320]   as to how I understand it.
+[00:08:23.320 --> 00:08:25.360]   So basically, if you can think,
+[00:08:25.360 --> 00:08:28.400]   you can try to think of like all the word vectors
+[00:08:28.400 --> 00:08:32.540]   you have here, all the vectors you have here.
+[00:08:32.540 --> 00:08:36.560]   But you have a lot of vectors,
+[00:08:36.560 --> 00:08:39.360]   and basically what they do is,
+[00:08:39.360 --> 00:08:44.360]   they just throw two lines,
+[00:08:44.360 --> 00:08:48.140]   and they put, this is a spocky one,
+[00:08:48.140 --> 00:08:53.000]   this is spocky two, spocky three,
+[00:08:53.000 --> 00:08:54.240]   and this is spocky four.
+[00:08:54.240 --> 00:08:57.360]   This is why they want to,
+[00:08:57.360 --> 00:08:59.160]   this is the reason why they use
+[00:08:59.160 --> 00:09:04.160]   an angular locality sensitive hashing,
+[00:09:04.160 --> 00:09:07.360]   because usually in deep learning,
+[00:09:07.360 --> 00:09:09.880]   we use cosine distances to measure
+[00:09:09.880 --> 00:09:12.560]   how close they are together for this angle, right?
+[00:09:12.560 --> 00:09:15.640]   'Cause you want this angle to be small,
+[00:09:15.640 --> 00:09:19.540]   so you know the vectors are closer together.
+[00:09:19.540 --> 00:09:23.360]   And they do this multiple times,
+[00:09:25.500 --> 00:09:28.540]   so they can achieve the best separation
+[00:09:28.540 --> 00:09:30.120]   between all the vectors.
+[00:09:30.120 --> 00:09:34.320]   So they sample the rotation, that's where this goes.
+[00:09:34.320 --> 00:09:36.980]   They do a random rotation, sample that,
+[00:09:36.980 --> 00:09:38.540]   random rotation, sample that,
+[00:09:38.540 --> 00:09:40.140]   and random rotation, sample that,
+[00:09:40.140 --> 00:09:42.140]   to make sure they get the best separation
+[00:09:42.140 --> 00:09:43.260]   of different vectors,
+[00:09:43.260 --> 00:09:49.180]   and get the best bucket size, et cetera.
+[00:09:49.180 --> 00:09:53.380]   And the code is actually not in the reformer repo,
+[00:09:53.380 --> 00:09:56.260]   but in Tracks Layers Research.
+[00:09:56.260 --> 00:09:58.780]   And since everyone is staying at home,
+[00:09:58.780 --> 00:10:03.780]   they have two versions of the locality sensitive hashing.
+[00:10:03.780 --> 00:10:08.620]   So here on the right, there is some simple rotation code.
+[00:10:08.620 --> 00:10:12.340]   Everyone stay at home, so feel free to read the code
+[00:10:12.340 --> 00:10:14.920]   and knock yourself out from here.
+[00:10:14.920 --> 00:10:19.600]   And so what does it help?
+[00:10:19.600 --> 00:10:20.800]   How much does it help?
+[00:10:20.800 --> 00:10:25.800]   So basically, so this is the equation they have on the paper,
+[00:10:25.800 --> 00:10:31.920]   but in summary, it reduced the time and space complexity
+[00:10:31.920 --> 00:10:35.400]   from O(n) squared, because you have two big things
+[00:10:35.400 --> 00:10:39.040]   multiplied together, into n log n,
+[00:10:39.040 --> 00:10:42.200]   because now you are searching for a very specific,
+[00:10:42.200 --> 00:10:43.960]   for much smaller buckets.
+[00:10:43.960 --> 00:10:48.000]   So that's gonna shrink down the size of your search
+[00:10:48.000 --> 00:10:49.400]   by quite a lot.
+[00:10:50.400 --> 00:10:53.980]   And now let's look at the second pin point
+[00:10:53.980 --> 00:10:55.700]   of the transformer model,
+[00:10:55.700 --> 00:10:58.820]   which is the caching at the feedforward network.
+[00:10:58.820 --> 00:11:07.220]   So we call in like plain vanilla affine layers.
+[00:11:07.220 --> 00:11:11.300]   We use some dynamic programming and caching techniques
+[00:11:11.300 --> 00:11:14.500]   to store the activations for the backward pass
+[00:11:14.500 --> 00:11:16.220]   to make it calculate faster.
+[00:11:17.140 --> 00:11:22.140]   So the author used an idea that came from a paper
+[00:11:22.140 --> 00:11:26.280]   called "Reversible Residual Network,"
+[00:11:26.280 --> 00:11:28.800]   which is published in 2017.
+[00:11:28.800 --> 00:11:33.440]   In that paper, the authors designed a network
+[00:11:33.440 --> 00:11:38.440]   which activation caching is no longer required.
+[00:11:38.440 --> 00:11:45.600]   So basically, a reversible net uses two inputs
+[00:11:46.160 --> 00:11:48.840]   and two outputs instead of just one single input
+[00:11:48.840 --> 00:11:51.640]   and one single output, and they zigzag.
+[00:11:51.640 --> 00:11:56.640]   And so the backward path is going to be a lot faster
+[00:11:56.640 --> 00:12:00.880]   and a lot more simple to calculate.
+[00:12:00.880 --> 00:12:07.680]   And here is a short snippet from the reformer code.
+[00:12:07.680 --> 00:12:12.720]   So here you can see they duplicate the input,
+[00:12:12.720 --> 00:12:15.800]   they swap it, and they get the output.
+[00:12:15.800 --> 00:12:20.720]   And this part is the actual highway layers.
+[00:12:20.720 --> 00:12:23.980]   So they have a block called pre-attention,
+[00:12:23.980 --> 00:12:26.800]   a block called attention,
+[00:12:26.800 --> 00:12:30.920]   and block called post-attention.
+[00:12:30.920 --> 00:12:32.480]   Oh, I'm running out of space.
+[00:12:32.480 --> 00:12:35.760]   And you go through here, here, here,
+[00:12:35.760 --> 00:12:37.120]   and then you go here,
+[00:12:37.120 --> 00:12:41.740]   and then you add together at the end.
+[00:12:42.900 --> 00:12:46.660]   So this is how they rotate,
+[00:12:46.660 --> 00:12:50.820]   and they just flip-flop the things on the backward paths
+[00:12:50.820 --> 00:12:53.680]   during training phase.
+[00:12:53.680 --> 00:13:00.620]   So overall, the time complexity analysis
+[00:13:00.620 --> 00:13:05.620]   from before and after is laid out in the paper as this.
+[00:13:05.620 --> 00:13:10.740]   But I mean, it's really quite, it looks quite complex,
+[00:13:10.740 --> 00:13:12.520]   but the only thing, well, not the only thing,
+[00:13:12.520 --> 00:13:16.500]   but the most important thing you can note is here.
+[00:13:16.500 --> 00:13:19.420]   You have a square turn right here,
+[00:13:19.420 --> 00:13:22.240]   and that is getting to,
+[00:13:22.240 --> 00:13:25.260]   that got reduced to the number of chunks
+[00:13:25.260 --> 00:13:28.000]   in the locality-sensitive hashing,
+[00:13:28.000 --> 00:13:30.820]   the trick they use.
+[00:13:30.820 --> 00:13:35.620]   So overall, it goes from O(n) squared to O(log n).
+[00:13:36.120 --> 00:13:38.880]   (mouse clicking)
+[00:13:38.880 --> 00:13:48.400]   So in summary, the key takeaway for this presentation
+[00:13:48.400 --> 00:13:52.520]   is transformers, O(n) squared,
+[00:13:52.520 --> 00:13:56.600]   reformer, O(n) log n.
+[00:13:56.600 --> 00:14:01.360]   So it reduces the time complexity and space complexity,
+[00:14:01.360 --> 00:14:04.900]   so you can fit a much bigger network
+[00:14:04.900 --> 00:14:08.060]   in a set amount when you are memory constrained.
+[00:14:08.060 --> 00:14:10.980]   It's leaner, it's faster,
+[00:14:10.980 --> 00:14:14.580]   and it supports either longer input sequences
+[00:14:14.580 --> 00:14:16.500]   or longer vocab size.
+[00:14:16.500 --> 00:14:20.580]   And in the paper, so for transformer,
+[00:14:20.580 --> 00:14:26.740]   usually the max input token size,
+[00:14:26.740 --> 00:14:30.060]   token length is 512.
+[00:14:30.060 --> 00:14:35.060]   And in the paper, they said something like 64,000,
+[00:14:35.060 --> 00:14:40.080]   but I'm not 100% sure about if that is a valid comparison,
+[00:14:40.080 --> 00:14:43.860]   but that's, so don't quote me on that,
+[00:14:43.860 --> 00:14:48.740]   but you can, it gives you a lot more work space
+[00:14:48.740 --> 00:14:49.620]   in the memory.
+[00:14:49.620 --> 00:14:52.360]   And they achieve it using,
+[00:14:52.360 --> 00:14:56.360]   first, angular locality-sensitive hashing,
+[00:14:56.360 --> 00:14:59.220]   and second, it uses reversible net
+[00:14:59.220 --> 00:15:01.000]   on the feedforward network part,
+[00:15:01.000 --> 00:15:03.880]   on the highway pass around.
+[00:15:03.880 --> 00:15:08.880]   And best of all, it is, everything is written in Trex.
+[00:15:08.880 --> 00:15:13.760]   It is yet another research-oriented deep learning library
+[00:15:13.760 --> 00:15:17.040]   that is, that doesn't read the same
+[00:15:17.040 --> 00:15:21.360]   as TensorFlow or PyTorch.
+[00:15:21.360 --> 00:15:24.920]   So, yep, I'm not sure why they want to torture
+[00:15:24.920 --> 00:15:28.280]   like normal people with yet another
+[00:15:28.280 --> 00:15:32.540]   research-oriented code and library, but that's that.
+[00:15:32.540 --> 00:15:36.400]   So here are the references.
+[00:15:36.400 --> 00:15:37.920]   The first is the reformer paper.
+[00:15:37.920 --> 00:15:40.640]   The second one is attention is all you need.
+[00:15:40.640 --> 00:15:44.960]   And the third one is the reversible residual network paper.
+[00:15:44.960 --> 00:15:49.200]   And of course, there's always the Jay Alomar blog,
+[00:15:49.200 --> 00:15:52.360]   which is awesome, it's graphical, it's interactive.
+[00:15:52.360 --> 00:15:54.520]   And any questions?
+[00:15:54.520 --> 00:15:56.680]   (silence)
+[00:15:56.680 --> 00:16:02.040]   - All right, so our first question is from Manny.
+[00:16:02.040 --> 00:16:05.800]   So Manny asked, why would cosine distance be used
+[00:16:05.800 --> 00:16:08.020]   instead of the Euclidean distance?
+[00:16:08.020 --> 00:16:17.760]   - The cosine distance is easy to calculate, right?
+[00:16:17.760 --> 00:16:20.240]   It's really fast and easy to calculate
+[00:16:20.240 --> 00:16:21.920]   the dot product of two matrices.
+[00:16:21.920 --> 00:16:24.400]   And you want to get the, you want to get
+[00:16:24.400 --> 00:16:26.760]   how close they are together.
+[00:16:26.760 --> 00:16:30.080]   They want to get angle, how close they are together
+[00:16:30.080 --> 00:16:33.960]   in the, of the two vectors, not the Manhattan
+[00:16:33.960 --> 00:16:37.440]   or the Euclidean distance of the two vectors.
+[00:16:37.440 --> 00:16:40.200]   That's usually the case for language models.
+[00:16:40.200 --> 00:16:45.200]   So like one of the good example is when people showcase
+[00:16:45.200 --> 00:16:50.200]   the simple work to Vec model, you have teen and queen
+[00:16:50.200 --> 00:16:53.720]   is similar to men and women, something like that.
+[00:16:53.720 --> 00:16:56.480]   That is measured by cosine distance
+[00:16:56.480 --> 00:16:59.600]   of the two war vectors.
+[00:16:59.600 --> 00:17:03.640]   So that's, there's a lot of research on top of that.
+[00:17:03.640 --> 00:17:05.960]   So that's how that propagate through.
+[00:17:05.960 --> 00:17:11.320]   - Great, and another question.
+[00:17:11.320 --> 00:17:14.800]   Well, first, yeah, another question from Manny.
+[00:17:14.800 --> 00:17:17.680]   You mentioned compression, can you elaborate on it?
+[00:17:18.360 --> 00:17:23.360]   - Compression, I don't recall.
+[00:17:23.360 --> 00:17:30.440]   - Okay, maybe, yeah, Manny, if you could clarify
+[00:17:30.440 --> 00:17:33.400]   that a little bit more in the Q&A.
+[00:17:33.400 --> 00:17:36.360]   While we're waiting for that, there's a question
+[00:17:36.360 --> 00:17:41.360]   from Krisha, when putting the vectors in the hash buckets,
+[00:17:41.360 --> 00:17:44.160]   why do we only consider the first two bits?
+[00:17:45.000 --> 00:17:50.000]   - Oh, right, so this one is, this slide is not particular,
+[00:17:50.000 --> 00:17:54.560]   it's not particular to how reformers perform.
+[00:17:54.560 --> 00:17:59.560]   This slide is just to help you or help me understand
+[00:17:59.560 --> 00:18:03.160]   how locality sensitive hashing works.
+[00:18:03.160 --> 00:18:08.160]   Because I want to showcase how you use certain measures.
+[00:18:08.160 --> 00:18:13.320]   In this case, we're using the same thing,
+[00:18:13.320 --> 00:18:16.000]   putting in the different buckets, right?
+[00:18:16.000 --> 00:18:21.000]   But in reality, for reformers, they use this,
+[00:18:21.000 --> 00:18:27.560]   because everything is, so every word has,
+[00:18:27.560 --> 00:18:30.800]   so in a, so in any, or every word is a vector,
+[00:18:30.800 --> 00:18:34.800]   or every token is a vector, and you want to compare, right?
+[00:18:34.800 --> 00:18:38.720]   So that's why in reformers, they stash two lines,
+[00:18:38.720 --> 00:18:41.960]   and then they set, so you have a lot of vectors
+[00:18:41.960 --> 00:18:45.560]   in the space, and you have two hyperplanes,
+[00:18:45.560 --> 00:18:49.200]   just through Ninja, and separate them
+[00:18:49.200 --> 00:18:51.880]   into different quadrants, and you put them,
+[00:18:51.880 --> 00:18:54.560]   put different quadrant into a bucket,
+[00:18:54.560 --> 00:19:00.080]   over and over until it's a lot more balanced
+[00:19:00.080 --> 00:19:01.560]   across different buckets.
+[00:19:01.560 --> 00:19:04.240]   So it's not particular to the first two bits.
+[00:19:04.240 --> 00:19:09.080]   So it was just to demonstrate the idea of LSH.
+[00:19:10.080 --> 00:19:13.480]   (mouse clicking)
+[00:19:13.480 --> 00:19:17.320]   Okay, I'm not seeing any additional questions,
+[00:19:17.320 --> 00:19:20.480]   so I'll just say, on the point about measuring angles,
+[00:19:20.480 --> 00:19:22.080]   there's actually some really interesting work
+[00:19:22.080 --> 00:19:25.080]   about how vectors in high-dimensional spaces,
+[00:19:25.080 --> 00:19:28.400]   measured with cosine similarity, essentially,
+[00:19:28.400 --> 00:19:31.360]   can be used to do representation of semantic concepts,
+[00:19:31.360 --> 00:19:35.440]   and in fact, even to do Turing-complete computation.
+[00:19:35.440 --> 00:19:38.800]   So I'll send a quick little link to the chat,
+[00:19:38.800 --> 00:19:41.800]   that gives a little bit of the background on that idea.
+[00:19:41.800 --> 00:19:44.080]   It's older than the idea of these transformer networks,
+[00:19:44.080 --> 00:19:46.600]   and sort of key query networks,
+[00:19:46.600 --> 00:19:49.200]   but it's really done quite well
+[00:19:49.200 --> 00:19:50.760]   with these new architectures.
+[00:19:50.760 --> 00:19:54.840]   - Yes, Charles is the expert in all this thing.
+[00:19:54.840 --> 00:19:57.000]   I am just a plaid trying to understand
+[00:19:57.000 --> 00:20:00.920]   what people do in different conferences,
+[00:20:00.920 --> 00:20:04.600]   trying to read the papers, and explain it in my own words.
+[00:20:07.520 --> 00:20:08.720]   - Thank you, Han.
+[00:20:08.720 --> 00:20:10.760]   That was really, really good.
+[00:20:10.760 --> 00:20:11.920]   I just wanna add a note.
+[00:20:11.920 --> 00:20:13.720]   We're gonna drop all of the slides
+[00:20:13.720 --> 00:20:15.240]   that the speakers are using,
+[00:20:15.240 --> 00:20:17.160]   'cause I saw your slide had a lot
+[00:20:17.160 --> 00:20:19.080]   of really interesting links.
+[00:20:19.080 --> 00:20:22.560]   So we will drop it in the WNB Slack community.
+[00:20:22.560 --> 00:20:25.520]   I just posted the link for that again in the chat.
+

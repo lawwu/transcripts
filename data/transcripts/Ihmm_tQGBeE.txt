@@ -1,0 +1,947 @@
+
+[00:00:00.000 --> 00:00:02.240]   So yeah, thanks for the introduction.
+[00:00:02.240 --> 00:00:04.640]   Just going to give a little bit more background
+[00:00:04.640 --> 00:00:07.840]   because I think it's relevant for the rest of the talk.
+[00:00:07.840 --> 00:00:14.680]   So we're building an AI layer for chat, texts, tickets,
+[00:00:14.680 --> 00:00:15.520]   emails.
+[00:00:15.520 --> 00:00:19.320]   And so part of that involves deploying language models.
+[00:00:19.320 --> 00:00:23.360]   It involves deploying these deep encoder decoder models,
+[00:00:23.360 --> 00:00:27.840]   and more recently, more QA style models as well.
+[00:00:27.840 --> 00:00:34.320]   And so James and I, who work on this, starting out,
+[00:00:34.320 --> 00:00:37.160]   we encountered lots of issues just
+[00:00:37.160 --> 00:00:41.240]   trying to go from what you see described in a research paper
+[00:00:41.240 --> 00:00:43.640]   towards something that you can deploy and have
+[00:00:43.640 --> 00:00:45.440]   other people use.
+[00:00:45.440 --> 00:00:49.520]   So I actually recorded us early on
+[00:00:49.520 --> 00:00:54.880]   during one of our discussions, just us working on this
+[00:00:54.880 --> 00:00:57.520]   during a particular hectic stretch.
+[00:00:57.520 --> 00:00:59.440]   And so let me play that for you.
+[00:00:59.440 --> 00:01:04.320]   I should say it's a little bit-- actually,
+[00:01:04.320 --> 00:01:06.160]   it might be a little bit loud, but I may not
+[00:01:06.160 --> 00:01:08.560]   have shared audio, which is also fine.
+[00:01:08.560 --> 00:01:11.760]   But if I did share audio, it might be a little bit loud.
+[00:01:11.760 --> 00:01:12.720]   Just fair warning.
+[00:01:26.520 --> 00:01:30.920]   All right, so obviously, that wasn't us, but pretty close.
+[00:01:30.920 --> 00:01:32.280]   Pretty close.
+[00:01:32.280 --> 00:01:34.520]   That's more or less how it feels like sometimes
+[00:01:34.520 --> 00:01:36.720]   when we're taking these models and putting them out
+[00:01:36.720 --> 00:01:38.240]   for people to use.
+[00:01:38.240 --> 00:01:41.040]   But fortunately, the first time around,
+[00:01:41.040 --> 00:01:43.880]   it was pretty much like this, really hectic.
+[00:01:43.880 --> 00:01:46.200]   But for the second and third model types
+[00:01:46.200 --> 00:01:48.320]   that I talked about, each time we
+[00:01:48.320 --> 00:01:52.680]   were able to deploy things and get things,
+[00:01:52.680 --> 00:01:56.000]   scale things on our cluster much more quickly, much more
+[00:01:56.000 --> 00:01:57.040]   smoothly.
+[00:01:57.040 --> 00:02:00.240]   And so it appears, at least, as though we're
+[00:02:00.240 --> 00:02:03.160]   learning something in this process of deploying
+[00:02:03.160 --> 00:02:05.160]   the different systems.
+[00:02:05.160 --> 00:02:09.760]   And so this talk is really describing our learnings.
+[00:02:09.760 --> 00:02:15.320]   So I wanted to focus actually around three high-level themes.
+[00:02:15.320 --> 00:02:19.800]   So the themes are recursive dimensionality, iteration time,
+[00:02:19.800 --> 00:02:21.960]   and opaque models.
+[00:02:21.960 --> 00:02:25.040]   And I know that many people watching
+[00:02:25.040 --> 00:02:27.600]   are probably familiar with these.
+[00:02:27.600 --> 00:02:30.400]   They probably encountered these.
+[00:02:30.400 --> 00:02:34.240]   These are not specific to NLP, although I described this
+[00:02:34.240 --> 00:02:37.960]   as a talk focusing on NLP.
+[00:02:37.960 --> 00:02:43.200]   But although I think these are themes that are quite familiar,
+[00:02:43.200 --> 00:02:46.600]   after quite a number of years working on applied AI,
+[00:02:46.600 --> 00:02:51.360]   applied ML, these are still a few of the themes
+[00:02:51.360 --> 00:02:53.840]   that I spend a lot of time thinking about,
+[00:02:53.840 --> 00:02:57.400]   that I learn new things about every month,
+[00:02:57.400 --> 00:03:00.240]   and that I'm still gaining new perspectives on.
+[00:03:00.240 --> 00:03:06.080]   So research, new papers are going on archive
+[00:03:06.080 --> 00:03:06.880]   quite frequently.
+[00:03:06.880 --> 00:03:09.200]   But I don't think these are three issues that
+[00:03:09.200 --> 00:03:12.200]   are going to go away if you're trying to take NLP models
+[00:03:12.200 --> 00:03:15.480]   from research to production.
+[00:03:15.480 --> 00:03:19.960]   So with that, let's talk about recursive dimensionality.
+[00:03:19.960 --> 00:03:24.080]   So I'm actually using the term in a very loose sense.
+[00:03:24.080 --> 00:03:27.360]   Actually, what I'll probably be talking about--
+[00:03:27.360 --> 00:03:28.880]   what I'll be talking about, rather,
+[00:03:28.880 --> 00:03:33.400]   is probably better described by the second term here,
+[00:03:33.400 --> 00:03:34.600]   combinatorial explosion.
+[00:03:34.600 --> 00:03:36.760]   And you should probably just group data sparsity
+[00:03:36.760 --> 00:03:39.440]   and recursive dimensionality together.
+[00:03:39.440 --> 00:03:41.360]   So yeah, I'm using this in a loose definition.
+[00:03:41.360 --> 00:03:44.520]   But this is something that we've all encountered
+[00:03:44.520 --> 00:03:46.000]   doing machine learning.
+[00:03:46.000 --> 00:03:49.640]   So whether it's that you don't have enough data,
+[00:03:49.640 --> 00:03:53.440]   or like we just saw, if a robot has lots of degrees of freedom
+[00:03:53.440 --> 00:03:57.320]   or you're training a model and the gradient keeps blowing up,
+[00:03:57.320 --> 00:04:01.240]   or certain issues pop up that you just never expected,
+[00:04:01.240 --> 00:04:05.000]   because there's a very long tail of possible inputs.
+[00:04:05.000 --> 00:04:08.520]   I kind of throw these into the same bucket
+[00:04:08.520 --> 00:04:12.040]   and think of them in a similar way.
+[00:04:12.040 --> 00:04:15.560]   One quick example, and I guess I'll just skim over this,
+[00:04:15.560 --> 00:04:17.280]   because it sounds like there's going
+[00:04:17.280 --> 00:04:19.840]   to be a talk after this that discusses more,
+[00:04:19.840 --> 00:04:21.880]   is hyperparameter settings.
+[00:04:21.880 --> 00:04:24.760]   So when you're setting hyperparameters,
+[00:04:24.760 --> 00:04:27.360]   hopefully you have a good starting point
+[00:04:27.360 --> 00:04:31.400]   to go with where you can change individual settings a bit
+[00:04:31.400 --> 00:04:33.240]   and see how it does.
+[00:04:33.240 --> 00:04:36.440]   Otherwise, even with a fairly short YAML file,
+[00:04:36.440 --> 00:04:38.040]   there's a pretty large space to explore
+[00:04:38.040 --> 00:04:40.320]   once you start tweaking optimization settings,
+[00:04:40.320 --> 00:04:45.640]   learning rates, number of layers, and so on.
+[00:04:45.640 --> 00:04:49.440]   Maybe something that is less obvious
+[00:04:49.440 --> 00:04:53.520]   of this type of combinatorial explosion problem
+[00:04:53.520 --> 00:04:56.880]   is if we consider a five-step pipeline.
+[00:04:56.880 --> 00:04:58.440]   So the task--
+[00:04:58.440 --> 00:05:00.280]   I just made up this task, but it's certainly
+[00:05:00.280 --> 00:05:03.720]   something similar to things we encounter at Sapling.
+[00:05:03.720 --> 00:05:08.200]   The task is spotting diagnoses in electronic health records.
+[00:05:08.200 --> 00:05:11.880]   And let's say the first try that we have
+[00:05:11.880 --> 00:05:14.040]   is where there's a document.
+[00:05:14.040 --> 00:05:17.160]   We extract certain sections that might be relevant,
+[00:05:17.160 --> 00:05:19.760]   that might contain the information that we need.
+[00:05:19.760 --> 00:05:22.760]   And after that is extracted, we tokenize it.
+[00:05:22.760 --> 00:05:26.280]   We apply some simple filtering, maybe just removing stop words.
+[00:05:26.280 --> 00:05:28.840]   And then finally, we have a classifier at the end
+[00:05:28.840 --> 00:05:33.440]   that we train to classify the token
+[00:05:33.440 --> 00:05:36.600]   into the correct diagnostics.
+[00:05:36.600 --> 00:05:38.960]   But the problem at the first pass
+[00:05:38.960 --> 00:05:41.560]   is that we're seeing lots of false positives
+[00:05:41.560 --> 00:05:44.600]   at the required recall that we need.
+[00:05:44.600 --> 00:05:46.640]   And so if you consider this pipeline,
+[00:05:46.640 --> 00:05:48.920]   one thing that you might consider doing
+[00:05:48.920 --> 00:05:50.880]   is adding an additional step.
+[00:05:50.880 --> 00:05:55.160]   So maybe you see that a lot of the tokens that
+[00:05:55.160 --> 00:05:59.840]   are erroneously classified as a particular disease
+[00:05:59.840 --> 00:06:02.320]   are actually not even the correct part of speech.
+[00:06:02.320 --> 00:06:05.040]   So you take your favorite part of speech tagger,
+[00:06:05.040 --> 00:06:08.560]   you run that, and you add a filter
+[00:06:08.560 --> 00:06:10.240]   that will remove certain parts of speech
+[00:06:10.240 --> 00:06:13.280]   before feeding everything into the classifier.
+[00:06:13.280 --> 00:06:15.400]   And maybe this helps.
+[00:06:15.400 --> 00:06:18.600]   Maybe this actually fixes things for you.
+[00:06:18.600 --> 00:06:21.200]   But this is the type of thing that I
+[00:06:21.200 --> 00:06:25.800]   think it's important to be very wary of.
+[00:06:25.800 --> 00:06:26.400]   Why is this?
+[00:06:26.400 --> 00:06:30.000]   Well, first of all, let's say later on you
+[00:06:30.000 --> 00:06:33.040]   build a much better classifier.
+[00:06:33.040 --> 00:06:36.920]   Is that a good bottleneck, the performance of your system?
+[00:06:36.920 --> 00:06:39.480]   Especially if, say, the part of speech tagger
+[00:06:39.480 --> 00:06:42.760]   is not really well-tuned to the domain.
+[00:06:42.760 --> 00:06:46.080]   Another thing is this is not too bad of a pipeline.
+[00:06:46.080 --> 00:06:48.800]   But once you start tossing in additional steps,
+[00:06:48.800 --> 00:06:53.280]   going from five to six to seven to eight steps in the pipeline,
+[00:06:53.280 --> 00:06:55.000]   then there's just many more points
+[00:06:55.000 --> 00:06:57.000]   where things can break down.
+[00:06:57.000 --> 00:06:59.760]   And so just from experiences-- and of course,
+[00:06:59.760 --> 00:07:02.160]   there's also the software debt you pay in order
+[00:07:02.160 --> 00:07:04.480]   to have all the different packages
+[00:07:04.480 --> 00:07:06.920]   and make sure everything's on the right version.
+[00:07:06.920 --> 00:07:09.960]   And so from our experiences, even though this
+[00:07:09.960 --> 00:07:12.880]   might be a band-aid that fixes things,
+[00:07:12.880 --> 00:07:16.480]   it's something where you should stop and really consider
+[00:07:16.480 --> 00:07:18.920]   if you need something like this.
+[00:07:18.920 --> 00:07:23.440]   I purposefully made that example a little bit more--
+[00:07:23.440 --> 00:07:26.840]   less controversial, rather.
+[00:07:26.840 --> 00:07:29.440]   So the more reasonable thing to do
+[00:07:29.440 --> 00:07:32.640]   would probably be to just allow the classifier access
+[00:07:32.640 --> 00:07:35.400]   to both the original filter tokens as well as part
+[00:07:35.400 --> 00:07:36.400]   of speech tags.
+[00:07:36.400 --> 00:07:38.800]   And then it can use the information that it needs.
+[00:07:38.800 --> 00:07:41.480]   So if part of speech tag turns out to be useful,
+[00:07:41.480 --> 00:07:42.680]   it should learn that.
+[00:07:42.680 --> 00:07:44.520]   Otherwise, it can ignore it.
+[00:07:44.520 --> 00:07:46.560]   But even something like this--
+[00:07:46.560 --> 00:07:48.720]   and I don't have a good justification for it--
+[00:07:48.720 --> 00:07:50.880]   even something like this, I feel a little bit
+[00:07:50.880 --> 00:07:55.600]   queasy about putting that into a system.
+[00:07:55.600 --> 00:07:58.880]   One other example-- and this is a really old example.
+[00:07:58.880 --> 00:08:05.640]   And I don't think it relates much to some of the tech
+[00:08:05.640 --> 00:08:07.320]   described in the previous talk.
+[00:08:07.320 --> 00:08:10.240]   But it's a robot pancake maker.
+[00:08:10.240 --> 00:08:11.560]   I'm not going to show the video.
+[00:08:11.560 --> 00:08:13.480]   There is a video on YouTube.
+[00:08:13.480 --> 00:08:18.360]   Because I'm going to mention some things that aren't
+[00:08:18.360 --> 00:08:20.160]   entirely positive about it.
+[00:08:20.160 --> 00:08:22.800]   But the idea was in 2011, there was
+[00:08:22.800 --> 00:08:27.640]   a group that had a robot make a pancake.
+[00:08:27.640 --> 00:08:29.720]   So it would pour the batter.
+[00:08:29.720 --> 00:08:32.160]   It would cook the pancake in the pan.
+[00:08:32.160 --> 00:08:34.000]   It would flip it onto a plate.
+[00:08:34.000 --> 00:08:36.800]   And then it would take the plate and put it on a table.
+[00:08:36.800 --> 00:08:40.640]   And I remember in 2011, when I saw this video,
+[00:08:40.640 --> 00:08:41.920]   I was doing some robotics.
+[00:08:41.920 --> 00:08:44.440]   And I got super excited.
+[00:08:44.440 --> 00:08:45.600]   I printed the paper.
+[00:08:45.600 --> 00:08:49.680]   And I was like, yeah, I'm going to read this and learn so much.
+[00:08:49.680 --> 00:08:52.720]   And I mentioned this to someone more senior in the lab.
+[00:08:52.720 --> 00:08:53.920]   And I'll never forget.
+[00:08:53.920 --> 00:08:55.280]   They just gave me this look.
+[00:08:55.280 --> 00:08:58.080]   And they said, you do realize everything in that demo
+[00:08:58.080 --> 00:09:00.920]   was hard-coded, right?
+[00:09:00.920 --> 00:09:04.720]   And at the time, that kind of took the wind out of my sails.
+[00:09:04.720 --> 00:09:05.920]   I still read the paper.
+[00:09:05.920 --> 00:09:09.760]   But I certainly wasn't as excited about it.
+[00:09:09.760 --> 00:09:15.600]   But looking back much later on, it's still pretty amazing
+[00:09:15.600 --> 00:09:17.520]   that they got that demo to work.
+[00:09:17.520 --> 00:09:20.680]   I mean, you can hard-code stuff as much as you want.
+[00:09:20.680 --> 00:09:26.080]   But there's still so many points at which the process can fail.
+[00:09:26.080 --> 00:09:31.440]   And maybe what the demo did doesn't
+[00:09:31.440 --> 00:09:34.720]   improve generalization or the performance of robots
+[00:09:34.720 --> 00:09:36.880]   in unstructured environments.
+[00:09:36.880 --> 00:09:39.360]   But I still think it was a really impressive feat.
+[00:09:39.360 --> 00:09:43.320]   And one other fun thing, too, if you see one of those videos,
+[00:09:43.320 --> 00:09:45.200]   look for someone in the background who
+[00:09:45.200 --> 00:09:48.600]   looks like they haven't showered or slept in a few days.
+[00:09:48.600 --> 00:09:50.080]   And that's probably the grad student
+[00:09:50.080 --> 00:09:51.120]   who was hard-coding stuff.
+[00:09:53.880 --> 00:09:57.520]   So going beyond pipelines and lots of steps,
+[00:09:57.520 --> 00:09:59.720]   one thing you might think of doing
+[00:09:59.720 --> 00:10:02.680]   is just looking at images, speech, and text.
+[00:10:02.680 --> 00:10:07.680]   And you might say, well, a medium-sized 480p image,
+[00:10:07.680 --> 00:10:10.200]   that's 300,000 pixels.
+[00:10:10.200 --> 00:10:13.760]   And then if you look at an RGB image, that's three channels.
+[00:10:13.760 --> 00:10:16.960]   So you end up with almost a million intake values, right?
+[00:10:16.960 --> 00:10:19.680]   And you can do similar math for audio.
+[00:10:19.680 --> 00:10:23.880]   So let's say it's 16 kilohertz, which is not very high
+[00:10:23.880 --> 00:10:26.440]   resolution audio, in 30 seconds.
+[00:10:26.440 --> 00:10:29.920]   And you end up with about half a million in 16 values.
+[00:10:29.920 --> 00:10:31.720]   And then you look at text.
+[00:10:31.720 --> 00:10:34.720]   So a three-sentence paragraph, let's say it's ASCII.
+[00:10:34.720 --> 00:10:37.520]   So we can represent each character
+[00:10:37.520 --> 00:10:42.400]   as a 0 to 255 integer and maybe 50 characters per sentence.
+[00:10:42.400 --> 00:10:46.080]   And you end up with 150 intake values.
+[00:10:46.080 --> 00:10:51.440]   And you might look at this and say, hmm,
+[00:10:51.440 --> 00:10:55.040]   those NLP folks have really been slacking.
+[00:10:55.040 --> 00:10:58.120]   The image-- representing images and text
+[00:10:58.120 --> 00:11:00.720]   just seems a lot more difficult.
+[00:11:00.720 --> 00:11:02.920]   And I've actually seen people who really should--
+[00:11:02.920 --> 00:11:06.200]   or actually heard people who really should know better
+[00:11:06.200 --> 00:11:08.240]   express that sentiment as well.
+[00:11:08.240 --> 00:11:10.360]   Text is just a 1D sequence as opposed
+[00:11:10.360 --> 00:11:14.480]   to images, which can be 3D, speech, which you can transform
+[00:11:14.480 --> 00:11:16.800]   into these 2D images.
+[00:11:16.800 --> 00:11:19.640]   And there's also, of course, the old adage,
+[00:11:19.640 --> 00:11:22.680]   a picture is worth 1,000 words.
+[00:11:22.680 --> 00:11:28.520]   But with text, one example that I frequently refer to
+[00:11:28.520 --> 00:11:31.520]   is, if you just take this six-word sentence here,
+[00:11:31.520 --> 00:11:35.000]   Alice enjoyed her trip to Wonderland.
+[00:11:35.000 --> 00:11:38.000]   This seems like a pretty reasonable sentence, right?
+[00:11:38.000 --> 00:11:41.800]   Outside Wonderland, all these unigrams, or tokens rather,
+[00:11:41.800 --> 00:11:44.200]   are ones that are frequently used.
+[00:11:44.200 --> 00:11:48.720]   But if you search on the web for that phrase, it never appears.
+[00:11:48.720 --> 00:11:54.080]   So the data sparsity problem is really extreme for text as
+[00:11:54.080 --> 00:11:54.840]   well.
+[00:11:54.840 --> 00:11:57.760]   And I think there's just this notion of brittleness,
+[00:11:57.760 --> 00:12:02.240]   which isn't well-captured by the math that I showed earlier.
+[00:12:02.240 --> 00:12:04.680]   So there was this tweet from Riza Zadeh
+[00:12:04.680 --> 00:12:06.480]   where he talked about how there's
+[00:12:06.480 --> 00:12:10.640]   tons of data augmentation strategies for computer vision,
+[00:12:10.640 --> 00:12:12.320]   but there's not many for NLP.
+[00:12:12.320 --> 00:12:14.960]   And the data can be a lot more brittle.
+[00:12:14.960 --> 00:12:19.000]   So obviously, for images, you can apply affine transforms.
+[00:12:19.000 --> 00:12:20.560]   You can flip it.
+[00:12:20.560 --> 00:12:23.000]   You can add Gaussian noise.
+[00:12:23.000 --> 00:12:25.400]   Some similar things for audio as well.
+[00:12:25.400 --> 00:12:29.040]   There's this notion of manifolds where you can perturb an image
+[00:12:29.040 --> 00:12:32.960]   off the image manifold and train the system to push it back.
+[00:12:32.960 --> 00:12:35.840]   The entire idea behind noise and autoencoders.
+[00:12:35.840 --> 00:12:38.440]   And that's something where the model can learn something
+[00:12:38.440 --> 00:12:40.320]   meaningful in coding.
+[00:12:40.320 --> 00:12:43.120]   But try doing something similar to text,
+[00:12:43.120 --> 00:12:46.960]   and I think you'll find that it's very easily mangled.
+[00:12:46.960 --> 00:12:51.920]   And so this is a case where I think
+[00:12:51.920 --> 00:12:54.920]   very simple back of the envelopes really don't apply.
+[00:12:54.920 --> 00:12:58.560]   And I really haven't seen that much research
+[00:12:58.560 --> 00:13:00.080]   into this notion of brittleness.
+[00:13:00.080 --> 00:13:02.680]   If anyone's seen any, I'd be very curious.
+[00:13:02.680 --> 00:13:05.280]   But this is just something to keep in mind
+[00:13:05.280 --> 00:13:07.280]   if you're doing data augmentation for text
+[00:13:07.280 --> 00:13:12.000]   or you think a particular task might be easy.
+[00:13:12.000 --> 00:13:16.800]   So lessons from first section on personal dimensionality.
+[00:13:16.800 --> 00:13:18.360]   You can try some rough calculations,
+[00:13:18.360 --> 00:13:21.120]   but keep in mind some complex entanglements.
+[00:13:21.120 --> 00:13:24.200]   I really do think you should try and keep the system simple
+[00:13:24.200 --> 00:13:28.080]   and try and push different components and software
+[00:13:28.080 --> 00:13:30.880]   complexity into the data loss function if you can.
+[00:13:30.880 --> 00:13:34.760]   Yes, this is me, perhaps just me being biased
+[00:13:34.760 --> 00:13:38.400]   towards more end-to-end systems.
+[00:13:38.400 --> 00:13:41.600]   And yeah, I think there's actually many more learnings
+[00:13:41.600 --> 00:13:44.080]   that you can extract from just this notion
+[00:13:44.080 --> 00:13:47.800]   of combinatorial explosion and personal dimensionality.
+[00:13:47.800 --> 00:13:51.360]   For example, if anyone's used Zapier,
+[00:13:51.360 --> 00:13:53.400]   it's this system like if this, then that,
+[00:13:53.400 --> 00:13:56.600]   where you chain together different integrations.
+[00:13:56.600 --> 00:14:01.400]   I have some zaps, and they break a surprising amount of the time.
+[00:14:01.400 --> 00:14:04.240]   And that's not even chaining together machine learning
+[00:14:04.240 --> 00:14:04.880]   systems, right?
+[00:14:04.880 --> 00:14:09.520]   That's chaining together REST APIs.
+[00:14:09.520 --> 00:14:12.920]   Where are things like RPA headed?
+[00:14:12.920 --> 00:14:16.600]   Lots more you could think about for this topic.
+[00:14:16.600 --> 00:14:21.080]   But let's move on to the second one, which is iteration time.
+[00:14:21.080 --> 00:14:24.840]   So I don't think folks really need
+[00:14:24.840 --> 00:14:29.040]   convincing that iteration time is really important.
+[00:14:29.040 --> 00:14:31.720]   I think there was a talk by Jeff Dean a few years back where
+[00:14:31.720 --> 00:14:35.240]   he described two extremes of the spectrum.
+[00:14:35.240 --> 00:14:40.160]   One is where you can iterate in a matter of seconds to minutes.
+[00:14:40.160 --> 00:14:44.520]   And he described this as nirvana, interactive coding.
+[00:14:44.520 --> 00:14:46.720]   And then on the other end of the spectrum,
+[00:14:46.720 --> 00:14:48.600]   maybe training something takes months.
+[00:14:48.600 --> 00:14:54.240]   And I think he said, don't even try it at that extreme.
+[00:14:54.240 --> 00:14:57.560]   Yoshua Bengio-- and I'm not 100% sure he said this,
+[00:14:57.560 --> 00:15:00.680]   but I believe at a deep learning summer school,
+[00:15:00.680 --> 00:15:03.560]   he said something along the lines of, in the '90s,
+[00:15:03.560 --> 00:15:06.400]   we trained models for weeks.
+[00:15:06.400 --> 00:15:08.080]   If we had only trained them for months,
+[00:15:08.080 --> 00:15:11.080]   we may have advanced the field by 5 to 10 years.
+[00:15:11.080 --> 00:15:14.360]   So speeding up that five-wheel or virtual cycle
+[00:15:14.360 --> 00:15:17.880]   or feedback loop is obviously really important.
+[00:15:17.880 --> 00:15:20.880]   One thing I don't think sees that much discussion,
+[00:15:20.880 --> 00:15:25.400]   though, is which feedback loop should you focus on when?
+[00:15:25.400 --> 00:15:28.640]   This figure here is one that I made
+[00:15:28.640 --> 00:15:32.200]   when I was really frustrated.
+[00:15:32.200 --> 00:15:37.800]   And the setting is it's 2017.
+[00:15:37.800 --> 00:15:41.680]   And we had been working on an NLP system that
+[00:15:41.680 --> 00:15:44.080]   would correct or denoise text.
+[00:15:44.080 --> 00:15:50.560]   And we started off with a LSTM model, encoder-decoder LSTM.
+[00:15:50.560 --> 00:15:53.480]   And then-- and I'm not sure if people remember this--
+[00:15:53.480 --> 00:15:55.600]   these convolutional sequence-to-sequence models
+[00:15:55.600 --> 00:16:00.400]   came out and got really excited, thought, wow,
+[00:16:00.400 --> 00:16:03.400]   this can really help us perhaps capture longer context.
+[00:16:03.400 --> 00:16:06.200]   And we ended up transferring our--
+[00:16:06.200 --> 00:16:09.440]   I think it was Theano encoder-decoder LSTM code
+[00:16:09.440 --> 00:16:12.320]   into the convolutional sequence-to-sequence code.
+[00:16:12.320 --> 00:16:14.440]   And then so we completed it.
+[00:16:14.440 --> 00:16:17.800]   Performance, I don't think it improved that much,
+[00:16:17.800 --> 00:16:19.640]   but was still pretty excited.
+[00:16:19.640 --> 00:16:22.720]   And then it turns out attention is all you need.
+[00:16:22.720 --> 00:16:27.240]   And at that point, I was just like, eh, I'm not going to--
+[00:16:27.240 --> 00:16:29.920]   I don't think we're going to switch this new architecture
+[00:16:29.920 --> 00:16:31.520]   for a little bit.
+[00:16:31.520 --> 00:16:35.720]   And to be fair, transformers have been ascendant for,
+[00:16:35.720 --> 00:16:37.520]   I think, pretty much three years now,
+[00:16:37.520 --> 00:16:39.520]   almost exactly three years.
+[00:16:39.520 --> 00:16:44.840]   So it might be the case that the architecture--
+[00:16:44.840 --> 00:16:47.920]   what I'm showing here isn't true anymore.
+[00:16:47.920 --> 00:16:50.880]   The idea is that architectures are changing.
+[00:16:50.880 --> 00:16:52.400]   And so how much--
+[00:16:52.400 --> 00:16:54.400]   if you have a fixed budget of time,
+[00:16:54.400 --> 00:16:57.000]   how much do you want to spend on optimizing architectures
+[00:16:57.000 --> 00:16:59.880]   versus focusing on other aspects?
+[00:16:59.880 --> 00:17:03.840]   One thing which I don't think perhaps people spend enough time
+[00:17:03.840 --> 00:17:06.280]   on in their--
+[00:17:06.280 --> 00:17:08.920]   or trying to improve the speed of is decoding,
+[00:17:08.920 --> 00:17:11.320]   because that's really fast.
+[00:17:11.320 --> 00:17:13.560]   It's a relatively unchanging procedure.
+[00:17:13.560 --> 00:17:16.720]   So you might as well just get the most you can out
+[00:17:16.720 --> 00:17:19.640]   of the decoding process and then switch back
+[00:17:19.640 --> 00:17:22.080]   once you're sure you have a really good decoding
+[00:17:22.080 --> 00:17:23.480]   procedure.
+[00:17:23.480 --> 00:17:26.720]   What I left out here was, of course, data.
+[00:17:26.720 --> 00:17:29.400]   As an academic, you assume--
+[00:17:29.400 --> 00:17:32.120]   most of the time, you assume you just have a data set.
+[00:17:32.120 --> 00:17:36.440]   But of course, here, we should include data.
+[00:17:36.440 --> 00:17:38.480]   And that's something where you should really
+[00:17:38.480 --> 00:17:40.760]   make sure that you're getting the data that you need,
+[00:17:40.760 --> 00:17:43.880]   because, of course, it could be weeks to months before that
+[00:17:43.880 --> 00:17:45.200]   it'll take to collect that data.
+[00:17:48.920 --> 00:17:53.600]   Another thing which I think is also under-discussed
+[00:17:53.600 --> 00:17:55.400]   is model update iteration time.
+[00:17:55.400 --> 00:17:58.800]   So by this, I mean you have a model.
+[00:17:58.800 --> 00:18:00.680]   You deploy it.
+[00:18:00.680 --> 00:18:03.600]   How frequently do you retrain and bring a new model
+[00:18:03.600 --> 00:18:05.000]   online for people to use?
+[00:18:05.000 --> 00:18:10.760]   So one example that I saw recently was Instacart.
+[00:18:10.760 --> 00:18:13.880]   They had a system for predicting the demand
+[00:18:13.880 --> 00:18:16.280]   for certain products at stores.
+[00:18:16.280 --> 00:18:19.480]   Of course, with COVID, that model just went way off.
+[00:18:19.480 --> 00:18:21.800]   And so they had to bring a new model online.
+[00:18:21.800 --> 00:18:26.960]   That model would focus on a much shorter time window.
+[00:18:26.960 --> 00:18:27.880]   I think it was--
+[00:18:27.880 --> 00:18:30.400]   they reduced it from something like a month to a week.
+[00:18:30.400 --> 00:18:33.040]   But of course, it was necessary in this case.
+[00:18:33.040 --> 00:18:35.640]   And then the horror story here, of course,
+[00:18:35.640 --> 00:18:38.600]   is Microsoft Tay, where they put the model out,
+[00:18:38.600 --> 00:18:40.000]   the chatbot model.
+[00:18:40.000 --> 00:18:43.240]   The chatbot learned from people tweeting to it
+[00:18:43.240 --> 00:18:44.320]   or chatting with it.
+[00:18:44.320 --> 00:18:46.960]   And it picked up the worst of the internet.
+[00:18:46.960 --> 00:18:52.440]   So that's kind of a cautionary tale of this.
+[00:18:52.440 --> 00:18:56.120]   So I just put two sentences here-- measure, divergence,
+[00:18:56.120 --> 00:18:57.120]   encourage, and variance.
+[00:18:57.120 --> 00:19:00.960]   I really don't know what either of those sentences mean.
+[00:19:00.960 --> 00:19:04.920]   But I think it's something that is a challenge.
+[00:19:04.920 --> 00:19:09.080]   And when I tried finding some libraries or literature,
+[00:19:09.080 --> 00:19:11.640]   there wasn't that much out there.
+[00:19:11.640 --> 00:19:17.520]   And so again, it's something where I'd
+[00:19:17.520 --> 00:19:19.520]   be curious if folks have thoughts.
+[00:19:19.520 --> 00:19:23.600]   And I would also love to see more libraries pop up
+[00:19:23.600 --> 00:19:27.360]   that help with this problem.
+[00:19:27.360 --> 00:19:29.160]   One thing you can contrast this with
+[00:19:29.160 --> 00:19:30.920]   is speed-up time, iteration time.
+[00:19:30.920 --> 00:19:33.600]   And by this, I mean, how long does it
+[00:19:33.600 --> 00:19:37.200]   take to speed up a system?
+[00:19:37.200 --> 00:19:40.640]   And I should say that if you're at a company that
+[00:19:40.640 --> 00:19:45.760]   makes more ad revenue than the GDP of certain countries,
+[00:19:45.760 --> 00:19:50.240]   or if you bought a lot of Nvidia stock in 2015,
+[00:19:50.240 --> 00:19:52.880]   you can probably just ignore the content of the slide.
+[00:19:52.880 --> 00:19:54.360]   I would, too.
+[00:19:54.360 --> 00:19:57.880]   But generally, from what I've seen,
+[00:19:57.880 --> 00:20:02.200]   speed-up time, iteration time is pretty fast,
+[00:20:02.200 --> 00:20:05.280]   so in contrast to the previous model iteration,
+[00:20:05.280 --> 00:20:07.680]   model update iteration time.
+[00:20:07.680 --> 00:20:09.640]   So why is this?
+[00:20:09.640 --> 00:20:12.920]   Especially for research to production,
+[00:20:12.920 --> 00:20:17.160]   researchers, they're not worried about the latency.
+[00:20:17.160 --> 00:20:18.600]   They're worried about the performance
+[00:20:18.600 --> 00:20:20.000]   on a certain benchmark.
+[00:20:20.000 --> 00:20:23.360]   And so they'll go well past the point of diminishing returns
+[00:20:23.360 --> 00:20:23.920]   oftentimes.
+[00:20:23.920 --> 00:20:27.400]   So maybe the model's way bigger than it really needs to be,
+[00:20:27.400 --> 00:20:31.320]   or maybe they're even using an ensemble of eight models.
+[00:20:31.320 --> 00:20:34.000]   So right off the bat, you probably
+[00:20:34.000 --> 00:20:36.040]   have five different ways in which
+[00:20:36.040 --> 00:20:40.120]   you can reduce the size or the amount of compute needed
+[00:20:40.120 --> 00:20:41.680]   for something by a factor of two.
+[00:20:41.680 --> 00:20:43.120]   So right off the bat, you probably
+[00:20:43.120 --> 00:20:45.760]   can get a 30x speed-up without too much effort.
+[00:20:45.760 --> 00:20:50.720]   And the other aspect is that this is well-defined.
+[00:20:50.720 --> 00:20:53.600]   And I think this is actually the most important point.
+[00:20:53.600 --> 00:20:57.760]   You have your system, and you want to make it go faster.
+[00:20:57.760 --> 00:21:01.320]   Well, oftentimes, you can just take your favorite profiler,
+[00:21:01.320 --> 00:21:05.400]   go through, figure out what you need to focus on,
+[00:21:05.400 --> 00:21:07.880]   and to be honest, generally, I'll
+[00:21:07.880 --> 00:21:12.240]   see that the hard parts, which are perhaps
+[00:21:12.240 --> 00:21:16.040]   the convolutional kernels, the matrix multiply kernels,
+[00:21:16.040 --> 00:21:17.680]   are done.
+[00:21:17.680 --> 00:21:19.480]   And I'm certainly not saying that making
+[00:21:19.480 --> 00:21:22.840]   matrix multiply kernels is easy.
+[00:21:22.840 --> 00:21:26.680]   I've tried it, and wow, was I confused.
+[00:21:26.680 --> 00:21:28.640]   But beyond that, other stuff that you're
+[00:21:28.640 --> 00:21:32.400]   working on on top of it, I think it's possible to profile
+[00:21:32.400 --> 00:21:33.720]   and get good speed-ups.
+[00:21:33.720 --> 00:21:41.720]   And yeah, if all else fails, what you can do
+[00:21:41.720 --> 00:21:46.200]   is just deploy your solastisom on AWS with GPU instances,
+[00:21:46.200 --> 00:21:49.200]   watch your cache go bye-bye, and you'll figure out some way
+[00:21:49.200 --> 00:21:51.400]   to speed things up.
+[00:21:51.400 --> 00:21:53.000]   One example I think is interesting,
+[00:21:53.000 --> 00:21:55.360]   which ties together the first couple of sections,
+[00:21:55.360 --> 00:22:00.600]   is in Texas Beach in a paper called WaveNet.
+[00:22:00.600 --> 00:22:03.400]   So this was 2016.
+[00:22:03.400 --> 00:22:08.160]   So the context is, at the time, most deployed--
+[00:22:08.160 --> 00:22:10.160]   sorry, I should say that this example--
+[00:22:10.160 --> 00:22:11.720]   there's so many other examples.
+[00:22:11.720 --> 00:22:13.840]   You can find this in neural machine translation.
+[00:22:13.840 --> 00:22:17.120]   You can find examples in object detection, I'm sure.
+[00:22:17.120 --> 00:22:19.720]   But this is just one example that I thought
+[00:22:19.720 --> 00:22:21.520]   was interesting for TTS.
+[00:22:21.520 --> 00:22:25.840]   So at the time, the dominant approach for deployed TTS
+[00:22:25.840 --> 00:22:28.520]   systems was this so-called unit selection method.
+[00:22:28.520 --> 00:22:30.480]   So you would have some text, say,
+[00:22:30.480 --> 00:22:33.080]   PG&E will file schedules on April 20,
+[00:22:33.080 --> 00:22:34.920]   and it should be text analysis.
+[00:22:34.920 --> 00:22:39.000]   You go through this text analysis step
+[00:22:39.000 --> 00:22:43.840]   to perform some analysis of the prosody and other attributes.
+[00:22:43.840 --> 00:22:48.680]   And then what would happen is short little snippets,
+[00:22:48.680 --> 00:22:51.440]   units would be selected, and then they
+[00:22:51.440 --> 00:22:53.160]   would be put together post-process
+[00:22:53.160 --> 00:22:54.960]   in order to generate the final waveform.
+[00:22:54.960 --> 00:22:58.800]   This was how TTS systems worked.
+[00:22:58.800 --> 00:23:02.080]   So if you think back to the first section
+[00:23:02.080 --> 00:23:07.080]   on these complex pipelines, this is certainly one of them.
+[00:23:07.080 --> 00:23:10.000]   And then in 2016, summer 2016, there
+[00:23:10.000 --> 00:23:12.880]   was this WaveNet paper that--
+[00:23:12.880 --> 00:23:15.440]   they still have the first steps here.
+[00:23:15.440 --> 00:23:17.880]   So they still would run some of this step.
+[00:23:17.880 --> 00:23:20.760]   But instead of doing unit selection, what they did
+[00:23:20.760 --> 00:23:24.960]   was they would condition on that information,
+[00:23:24.960 --> 00:23:28.280]   and then they would try and generate the waveform directly.
+[00:23:28.280 --> 00:23:31.080]   Meaning if you have a 16 kilohertz waveform,
+[00:23:31.080 --> 00:23:35.040]   you would generate 16,000 samples per second,
+[00:23:35.040 --> 00:23:36.720]   which seems kind of crazy.
+[00:23:36.720 --> 00:23:40.280]   But it got back to work.
+[00:23:40.280 --> 00:23:43.320]   It achieved a mean opinion score that was much higher
+[00:23:43.320 --> 00:23:45.120]   than other deployed systems.
+[00:23:45.120 --> 00:23:47.000]   I think people are saying it probably advanced
+[00:23:47.000 --> 00:23:49.920]   the field by five years.
+[00:23:49.920 --> 00:23:52.520]   And so this is, of course, just an example
+[00:23:52.520 --> 00:23:57.280]   of how these end-to-end deep learning systems can help.
+[00:23:57.280 --> 00:24:01.000]   But one criticism of the work when it came out
+[00:24:01.000 --> 00:24:02.600]   was that it was really slow.
+[00:24:02.600 --> 00:24:05.960]   So if you look at this, as you go along,
+[00:24:05.960 --> 00:24:08.760]   you have to condition on more and more previous context
+[00:24:08.760 --> 00:24:11.240]   in order to generate the next sample.
+[00:24:11.240 --> 00:24:15.960]   And so it gets slower as you're generating these later samples.
+[00:24:15.960 --> 00:24:17.520]   I don't know the exact number, but I
+[00:24:17.520 --> 00:24:21.880]   think it was at least 50x slower than real time.
+[00:24:21.880 --> 00:24:24.320]   And so people were critical of this.
+[00:24:24.320 --> 00:24:26.720]   I think I was also like, eh.
+[00:24:26.720 --> 00:24:31.480]   But looking back, it may be slow.
+[00:24:31.480 --> 00:24:34.960]   But if you think about the discussion of iteration time,
+[00:24:34.960 --> 00:24:38.000]   it's still much faster than the amount of time
+[00:24:38.000 --> 00:24:40.600]   they need to take to train the models.
+[00:24:40.600 --> 00:24:42.280]   And you know what?
+[00:24:42.280 --> 00:24:44.920]   I'm sure they thought that they could speed it up
+[00:24:44.920 --> 00:24:45.720]   if they needed to.
+[00:24:45.720 --> 00:24:47.760]   And sure enough, I think a year and a half later,
+[00:24:47.760 --> 00:24:51.360]   it was deployed and 1,000x faster than the system
+[00:24:51.360 --> 00:24:55.040]   that they described in this paper.
+[00:24:55.040 --> 00:24:58.080]   OK, so third topic, opaque models.
+[00:24:58.080 --> 00:25:03.360]   I have this comparison that tries
+[00:25:03.360 --> 00:25:05.800]   to give a sense of the trade-offs
+[00:25:05.800 --> 00:25:08.640]   with some of these deep learning models, which is really
+[00:25:08.640 --> 00:25:12.240]   kind of what I mean when saying opaque models.
+[00:25:12.240 --> 00:25:14.320]   So what we want is something that's
+[00:25:14.320 --> 00:25:19.200]   interpol, that's controllable, that's like a science.
+[00:25:19.200 --> 00:25:23.040]   It'd be really nice if you could write a compact set of laws
+[00:25:23.040 --> 00:25:25.880]   that describe how these systems behave.
+[00:25:25.880 --> 00:25:27.360]   Unfortunately, that's not the case.
+[00:25:27.360 --> 00:25:28.880]   But what we have is something that's
+[00:25:28.880 --> 00:25:31.480]   really powerful and expressive.
+[00:25:31.480 --> 00:25:33.920]   But you saw the NIPS talk a few years ago.
+[00:25:33.920 --> 00:25:37.720]   But it can be described more like alchemy.
+[00:25:37.720 --> 00:25:41.240]   And so there's this cute little analogy here
+[00:25:41.240 --> 00:25:43.440]   of knobs on a radio versus a kite,
+[00:25:43.440 --> 00:25:45.000]   where maybe you can kind of guide it.
+[00:25:45.000 --> 00:25:48.000]   But a lot of it is just up to the mercy of the winds.
+[00:25:48.000 --> 00:25:48.960]   So that's fine and all.
+[00:25:48.960 --> 00:25:51.040]   I think this describes some of the characteristics
+[00:25:51.040 --> 00:25:55.360]   of previous ML methods and deep neural nets.
+[00:25:55.360 --> 00:25:57.800]   But I don't really think it gives you a visceral sense
+[00:25:57.800 --> 00:26:03.120]   of what we mean when we say these opaque models.
+[00:26:03.120 --> 00:26:05.320]   And so I have an incantation here
+[00:26:05.320 --> 00:26:10.160]   to indoctrinate folks who perhaps don't completely
+[00:26:10.160 --> 00:26:13.960]   buy in to the cult of opaque models.
+[00:26:13.960 --> 00:26:15.200]   Here it is.
+[00:26:15.200 --> 00:26:17.520]   "We improved 3% on existing state-of-the-art
+[00:26:17.520 --> 00:26:20.040]   by training a bidirectional LSTM and stacking it
+[00:26:20.040 --> 00:26:24.960]   on top of another bidirectional LSTM."
+[00:26:24.960 --> 00:26:28.080]   I know we had the example Alice enjoyed her time in Wonderland,
+[00:26:28.080 --> 00:26:30.400]   where I was saying that it's quite
+[00:26:30.400 --> 00:26:34.560]   unlikely for certain sentences to occur, even at six tokens.
+[00:26:34.560 --> 00:26:37.960]   But you know there was some NLP researcher who basically
+[00:26:37.960 --> 00:26:40.640]   said this verbatim in 2015 or 2016.
+[00:26:40.640 --> 00:26:45.280]   I probably said this verbatim in 2015 and 2016.
+[00:26:45.280 --> 00:26:47.880]   And on the one hand, it's pretty amazing
+[00:26:47.880 --> 00:26:51.960]   that you have this level of abstraction in a sentence.
+[00:26:51.960 --> 00:26:55.720]   But on the other hand, does anybody really
+[00:26:55.720 --> 00:26:59.360]   know what's going on here when you say something like this?
+[00:26:59.360 --> 00:27:01.360]   So I think that kind of gives you
+[00:27:01.360 --> 00:27:04.560]   a more visceral sense of what we mean by these opaque or black
+[00:27:04.560 --> 00:27:06.920]   box models.
+[00:27:06.920 --> 00:27:08.560]   And if you're really hardcore, you
+[00:27:08.560 --> 00:27:12.760]   can get the equations tattooed as well.
+[00:27:12.760 --> 00:27:15.240]   So one other view is--
+[00:27:15.240 --> 00:27:17.880]   I saw this tweet recently from Kareem Karr,
+[00:27:17.880 --> 00:27:20.800]   who I think is a statistician.
+[00:27:20.800 --> 00:27:23.800]   He posted this video and captioned it,
+[00:27:23.800 --> 00:27:26.000]   "How statistics people feel watching people in machine
+[00:27:26.000 --> 00:27:27.880]   learning solve problems."
+[00:27:27.880 --> 00:27:29.280]   So let me play that really quick.
+[00:27:29.280 --> 00:27:36.160]   And when I saw this video, I started cracking up
+[00:27:36.160 --> 00:27:41.720]   because it's so true.
+[00:27:41.720 --> 00:27:44.720]   Sometimes methods we use for certain tasks
+[00:27:44.720 --> 00:27:47.080]   can really feel like overkill.
+[00:27:47.080 --> 00:27:49.240]   One fun exercise, actually, as you watch this video
+[00:27:49.240 --> 00:27:51.000]   is you can try and associate clips
+[00:27:51.000 --> 00:27:58.000]   with certain architectures, like Perceptron, the net,
+[00:27:58.000 --> 00:28:00.760]   Siamese net.
+[00:28:00.760 --> 00:28:03.200]   Anyways, yeah.
+[00:28:03.200 --> 00:28:06.320]   So what was the point I was trying to make here?
+[00:28:06.320 --> 00:28:08.480]   Right, what's the goal, though?
+[00:28:08.480 --> 00:28:14.560]   If your world is just popping balloons
+[00:28:14.560 --> 00:28:18.120]   and the entire reward function is
+[00:28:18.120 --> 00:28:22.400]   how you can pop balloons in really exquisite ways,
+[00:28:22.400 --> 00:28:26.560]   I think it's hard to argue against what this guy is doing.
+[00:28:26.560 --> 00:28:31.120]   But I think as an onlooker and taking a step back a little bit,
+[00:28:31.120 --> 00:28:33.000]   it seems pretty dangerous.
+[00:28:33.000 --> 00:28:37.160]   And so I think beyond just this being overkill
+[00:28:37.160 --> 00:28:41.440]   for certain tasks, I think it's also an apt analogy
+[00:28:41.440 --> 00:28:44.640]   because sometimes you should be a little bit cautious
+[00:28:44.640 --> 00:28:48.160]   before deploying these models.
+[00:28:48.160 --> 00:28:54.240]   So one case that illustrates that
+[00:28:54.240 --> 00:28:58.760]   is with what I think of as hard constraints.
+[00:28:58.760 --> 00:29:04.840]   And to demonstrate this, I think it's
+[00:29:04.840 --> 00:29:07.040]   useful to think about a couple of extremes.
+[00:29:07.040 --> 00:29:08.720]   One is click-through rate.
+[00:29:08.720 --> 00:29:11.840]   So say you're trying to improve the click-through of news
+[00:29:11.840 --> 00:29:14.720]   articles or product listings.
+[00:29:14.720 --> 00:29:17.240]   And then the other is vehicle detection, presumably
+[00:29:17.240 --> 00:29:20.680]   for autonomous vehicles.
+[00:29:20.680 --> 00:29:24.200]   Those two require very different approaches.
+[00:29:24.200 --> 00:29:28.520]   So obviously, for click-through rates,
+[00:29:28.520 --> 00:29:33.240]   if somebody doesn't click a particular article, it's OK.
+[00:29:33.240 --> 00:29:36.120]   Whereas on the other hand, if a vehicle isn't consistently
+[00:29:36.120 --> 00:29:40.360]   detected, that can have fatal consequences.
+[00:29:40.360 --> 00:29:43.120]   With these multi-armed bandit problems,
+[00:29:43.120 --> 00:29:45.000]   there's an entire notion of exploration
+[00:29:45.000 --> 00:29:48.640]   versus exploitation, whereas for vehicle detection,
+[00:29:48.640 --> 00:29:52.360]   hopefully you're only doing that in simulation.
+[00:29:52.360 --> 00:29:57.880]   So I also include this link to a pretty useful introduction
+[00:29:57.880 --> 00:30:01.080]   to different types of evaluation metrics.
+[00:30:01.080 --> 00:30:05.880]   And I think it's really important for research
+[00:30:05.880 --> 00:30:10.240]   production because say you have a trade-off curve,
+[00:30:10.240 --> 00:30:13.640]   and you're optimizing to hit the corner of the trade-off curve.
+[00:30:13.640 --> 00:30:17.760]   So say precision recall, and you need really high precision
+[00:30:17.760 --> 00:30:19.640]   and really high recall.
+[00:30:19.640 --> 00:30:23.800]   Depending on how close you are to that corner,
+[00:30:23.800 --> 00:30:28.520]   that makes a lot of decision for you on things
+[00:30:28.520 --> 00:30:32.520]   that you can and can't do, given, say, the amount of data
+[00:30:32.520 --> 00:30:33.360]   that you have.
+[00:30:33.360 --> 00:30:41.120]   And this goes beyond training and validation.
+[00:30:41.120 --> 00:30:46.680]   So one thing that I think could also be discussed more
+[00:30:46.680 --> 00:30:48.360]   is safeguards.
+[00:30:48.360 --> 00:30:52.520]   So say you've built a really nice text generation system,
+[00:30:52.520 --> 00:30:55.720]   and you want to deploy it.
+[00:30:55.720 --> 00:30:59.080]   And sometimes the system will generate profanity
+[00:30:59.080 --> 00:31:01.000]   because the training data had profanity,
+[00:31:01.000 --> 00:31:03.120]   so you want a profanity filter.
+[00:31:03.120 --> 00:31:06.280]   I looked for a profanity filter a couple of years back.
+[00:31:06.280 --> 00:31:09.040]   And let's just say there's no hugging face
+[00:31:09.040 --> 00:31:10.560]   for profanity filtering.
+[00:31:10.560 --> 00:31:11.480]   Maybe there is now.
+[00:31:11.480 --> 00:31:13.760]   At the time, there certainly wasn't.
+[00:31:13.760 --> 00:31:18.640]   And I don't think you want to build this amazing text
+[00:31:18.640 --> 00:31:22.760]   generation system and then build a really crummy,
+[00:31:22.760 --> 00:31:27.760]   thrown-together profanity filter at the end.
+[00:31:27.760 --> 00:31:31.920]   Another thing which I think is useful to do in these cases
+[00:31:31.920 --> 00:31:33.840]   is a different sort of validation set.
+[00:31:33.840 --> 00:31:36.520]   Not necessarily adversarial data,
+[00:31:36.520 --> 00:31:38.600]   where you have some attack vector,
+[00:31:38.600 --> 00:31:42.680]   but say data that users may input
+[00:31:42.680 --> 00:31:46.680]   in a perfectly normal interaction with your system.
+[00:31:46.680 --> 00:31:50.400]   But that ends up causing really pathological behavior.
+[00:31:50.400 --> 00:31:53.040]   I think that is actually really interesting,
+[00:31:53.040 --> 00:31:56.920]   and it can be sometimes really hard to figure out as well.
+[00:31:56.920 --> 00:31:58.640]   And of course, monitoring and updates.
+[00:31:58.640 --> 00:32:01.640]   But really, I think just this slide, what
+[00:32:01.640 --> 00:32:05.160]   I'm trying to get across is there's a depth and rigor
+[00:32:05.160 --> 00:32:09.680]   that exists for training models, validating models, that really
+[00:32:09.680 --> 00:32:11.080]   doesn't exist, I think, when you're
+[00:32:11.080 --> 00:32:15.640]   trying to deploy these models and put them out
+[00:32:15.640 --> 00:32:18.560]   into the wild, if you will.
+[00:32:18.560 --> 00:32:21.520]   With bias and fairness as well, I saw this tweet recently
+[00:32:21.520 --> 00:32:24.560]   from Hannah Wallach that described something similar.
+[00:32:24.560 --> 00:32:28.360]   So one of her students, Su Lin, surveyed 146 papers looking
+[00:32:28.360 --> 00:32:30.440]   at bias in NLP systems.
+[00:32:30.440 --> 00:32:33.600]   And they had a few conclusions and recommendations.
+[00:32:33.600 --> 00:32:37.080]   Among those, that people in the papers
+[00:32:37.080 --> 00:32:39.440]   tend to just focus on NLP literature.
+[00:32:39.440 --> 00:32:42.040]   They don't really go outside of the literature
+[00:32:42.040 --> 00:32:44.520]   to say literature, talk about social hierarchies.
+[00:32:44.520 --> 00:32:48.040]   They'll describe some metric regarding bias,
+[00:32:48.040 --> 00:32:50.960]   and then just say that it's good to lower that metric without
+[00:32:50.960 --> 00:32:53.680]   really thinking about the downstream effects.
+[00:32:53.680 --> 00:32:56.240]   And I think the third point they made
+[00:32:56.240 --> 00:32:59.200]   was just seeing more research, going from research
+[00:32:59.200 --> 00:33:01.000]   to application.
+[00:33:01.000 --> 00:33:04.400]   And so here, there's a certain amount
+[00:33:04.400 --> 00:33:06.760]   of looking at the downstream effects
+[00:33:06.760 --> 00:33:12.000]   and applying rigor to the process that
+[00:33:12.000 --> 00:33:14.040]   needs to be more of.
+[00:33:14.040 --> 00:33:18.120]   But assuming you build a system, and you
+[00:33:18.120 --> 00:33:23.280]   think that the constraints that you have make sense,
+[00:33:23.280 --> 00:33:26.080]   you set up safeguards, and you think about the downstream
+[00:33:26.080 --> 00:33:28.560]   effects, and you still want to deploy it,
+[00:33:28.560 --> 00:33:30.520]   there can still be funny little behavior.
+[00:33:30.520 --> 00:33:36.360]   So this is an old result from a while ago of Google's Neural
+[00:33:36.360 --> 00:33:38.280]   Machine Translation system, where a user typed
+[00:33:38.280 --> 00:33:41.600]   "egu, egu, egu" over and over.
+[00:33:41.600 --> 00:33:44.920]   And because the system has never seen this type of input before,
+[00:33:44.920 --> 00:33:48.480]   it would just hallucinate this crazy gibberish.
+[00:33:48.480 --> 00:33:50.680]   And there was this article from Douglas Hofstadter,
+[00:33:50.680 --> 00:33:52.600]   the author of Godel, Asher, Bach,
+[00:33:52.600 --> 00:33:54.680]   where he described these systems.
+[00:33:54.680 --> 00:33:57.040]   And he used just the perfect word
+[00:33:57.040 --> 00:34:01.080]   to describe this behavior, which is that it wobbles.
+[00:34:01.080 --> 00:34:04.880]   So the user inputs "egu, egu, egu," the model goes "wobble,
+[00:34:04.880 --> 00:34:09.920]   wobble, wobble," and you end up with this type of behavior.
+[00:34:09.920 --> 00:34:14.280]   So I think Google's Neural Machine Translation team
+[00:34:14.280 --> 00:34:16.280]   published a post recently talking
+[00:34:16.280 --> 00:34:18.920]   about how they improved things across the board,
+[00:34:18.920 --> 00:34:21.080]   including with these hallucinations.
+[00:34:21.080 --> 00:34:22.600]   It's still something to look out for.
+[00:34:26.240 --> 00:34:31.200]   I don't know what you feel when you read a paper that
+[00:34:31.200 --> 00:34:35.040]   describes an amazing result that's almost
+[00:34:35.040 --> 00:34:36.800]   like an existence proof.
+[00:34:36.800 --> 00:34:39.800]   You weren't quite sure if it was even possible before,
+[00:34:39.800 --> 00:34:44.080]   or the sensation you get when you deploy a system
+[00:34:44.080 --> 00:34:45.960]   or see a deep learning system deployed,
+[00:34:45.960 --> 00:34:49.480]   and you can tell it's one just by the strange ways
+[00:34:49.480 --> 00:34:51.040]   in which it misbehaves.
+[00:34:51.040 --> 00:34:54.280]   But to me, it feels like I'm watching something like this.
+[00:34:54.280 --> 00:34:57.280]   It's really such a thrill.
+[00:34:57.280 --> 00:35:03.840]   And I think that if you think about how to iterate quickly,
+[00:35:03.840 --> 00:35:08.360]   think about the trade-offs of these really opaque models,
+[00:35:08.360 --> 00:35:13.240]   and also factor in the ways in which different factors
+[00:35:13.240 --> 00:35:18.040]   of the problem can compound and change ways, if you haven't,
+[00:35:18.040 --> 00:35:19.920]   you'll deploy one of these systems
+[00:35:19.920 --> 00:35:22.400]   or deploy more of these systems, and there's
+[00:35:22.400 --> 00:35:25.520]   a good chance that it'll work better than anything else
+[00:35:25.520 --> 00:35:29.200]   that anyone's ever deployed.
+[00:35:29.200 --> 00:35:30.000]   That's it.
+[00:35:30.000 --> 00:35:30.500]   Thanks.
+[00:35:30.500 --> 00:35:36.680]   Nice.
+[00:35:36.680 --> 00:35:39.520]   Thank you so much.
+[00:35:39.520 --> 00:35:41.240]   All right, let's do questions.
+[00:35:41.240 --> 00:35:43.160]   I see some popping up already.
+[00:35:43.160 --> 00:35:46.600]   Oh my god, Hans got a three-pointer.
+[00:35:46.600 --> 00:35:47.600]   Let's dive in.
+[00:35:47.600 --> 00:35:51.120]   So the first question is, what data annotation tool
+[00:35:51.120 --> 00:35:56.160]   do you prefer for annotating text data for, say,
+[00:35:56.160 --> 00:36:00.800]   NER or multi-rank classification?
+[00:36:00.800 --> 00:36:04.320]   Yeah, it's a good question.
+[00:36:04.320 --> 00:36:06.120]   Data is obviously really critical.
+[00:36:06.120 --> 00:36:14.680]   So I have to admit, with us, due to budgetary constraints,
+[00:36:14.680 --> 00:36:17.440]   we would love to be able to annotate data,
+[00:36:17.440 --> 00:36:19.720]   but generally, we will try and figure out
+[00:36:19.720 --> 00:36:24.160]   data augmentation schemes based off of the existing data
+[00:36:24.160 --> 00:36:25.560]   that we already have.
+[00:36:25.560 --> 00:36:28.360]   I know there's great annotation systems out there.
+[00:36:28.360 --> 00:36:32.280]   I'm sure there's figure eights with Lucas, of course.
+[00:36:32.280 --> 00:36:36.720]   And I think-- oh, gosh, what was it?
+[00:36:36.720 --> 00:36:37.360]   Prodigy?
+[00:36:37.360 --> 00:36:39.840]   There's some other system out there,
+[00:36:39.840 --> 00:36:43.720]   but I'm really not familiar with them.
+[00:36:43.720 --> 00:36:46.360]   You mentioned data augmentation.
+[00:36:46.360 --> 00:36:49.600]   What kinds of data augmentation methodologies
+[00:36:49.600 --> 00:36:51.000]   do you think?
+[00:36:51.000 --> 00:36:55.520]   Sure, yeah, so for text in particular, as I mentioned,
+[00:36:55.520 --> 00:37:00.560]   the naive methods can sometimes really mingle the text
+[00:37:00.560 --> 00:37:01.640]   or change the meaning.
+[00:37:01.640 --> 00:37:04.440]   So I think the most obvious thing people try
+[00:37:04.440 --> 00:37:09.280]   is you will drop certain words, or you will swap them,
+[00:37:09.280 --> 00:37:11.040]   or insert additional words.
+[00:37:11.040 --> 00:37:13.440]   It could be at character level as well.
+[00:37:13.440 --> 00:37:15.240]   And the crazy thing is this has actually
+[00:37:15.240 --> 00:37:18.360]   worked well for all these different pre-training methods.
+[00:37:18.360 --> 00:37:20.280]   I didn't see that coming.
+[00:37:20.280 --> 00:37:23.400]   But for us, what we found actually worked
+[00:37:23.400 --> 00:37:26.280]   was actually this method called back translation, where
+[00:37:26.280 --> 00:37:28.400]   you take your existing parallel corpus--
+[00:37:28.400 --> 00:37:31.040]   so say you have a corpus from English to French--
+[00:37:31.040 --> 00:37:35.400]   and then you will take additional monolingual French
+[00:37:35.400 --> 00:37:38.120]   data, train a reverse system, and use your system
+[00:37:38.120 --> 00:37:39.840]   to actually translate it back to English.
+[00:37:39.840 --> 00:37:45.400]   And then you have additional half-synthesized parallel data.
+[00:37:45.400 --> 00:37:48.760]   So back translation is really useful.
+[00:37:48.760 --> 00:37:50.680]   Nice.
+[00:37:50.680 --> 00:37:51.280]   Awesome.
+[00:37:51.280 --> 00:37:53.400]   The second question from Han is, what
+[00:37:53.400 --> 00:37:55.640]   do you recommend as a metric or algorithm
+[00:37:55.640 --> 00:37:58.560]   to monitor input data--
+[00:37:58.560 --> 00:38:02.920]   monitor input data drift for NLP?
+[00:38:02.920 --> 00:38:06.680]   Yeah, input data drift.
+[00:38:06.680 --> 00:38:11.200]   So yeah, I have the slide on monitoring.
+[00:38:11.200 --> 00:38:15.320]   We have certain quality metrics at the end
+[00:38:15.320 --> 00:38:18.800]   where we look at how often users will accept suggestions
+[00:38:18.800 --> 00:38:20.920]   that we make.
+[00:38:20.920 --> 00:38:23.800]   Unfortunately, I don't have any great method
+[00:38:23.800 --> 00:38:26.760]   to share for measuring the input drift.
+[00:38:26.760 --> 00:38:28.840]   I know that there's--
+[00:38:28.840 --> 00:38:30.480]   the first thing that comes to mind
+[00:38:30.480 --> 00:38:34.000]   is something like just looking at comparing
+[00:38:34.000 --> 00:38:38.360]   the bag of words, bag of unigrams and bigrams.
+[00:38:38.360 --> 00:38:44.400]   But yeah, unfortunately, I don't have a great suggestion.
+[00:38:44.400 --> 00:38:44.920]   Nice.
+[00:38:44.920 --> 00:38:47.680]   And then Han's third question is,
+[00:38:47.680 --> 00:38:51.960]   what's a good alternate way to speed up text generation
+[00:38:51.960 --> 00:38:55.280]   in addition to feeding AWS a lot of money,
+[00:38:55.280 --> 00:38:59.600]   or reduce beam search sampling size?
+[00:38:59.600 --> 00:39:00.680]   Yeah.
+[00:39:00.680 --> 00:39:03.240]   So those are both good ways.
+[00:39:03.240 --> 00:39:05.640]   Reducing beam search, you can--
+[00:39:05.640 --> 00:39:08.440]   if people haven't tried, you can run with very low beam search
+[00:39:08.440 --> 00:39:12.440]   and usually get very good results.
+[00:39:12.440 --> 00:39:16.760]   Other ways, distillation is one method.
+[00:39:16.760 --> 00:39:20.640]   Quantization, if you can, that may prevent you
+[00:39:20.640 --> 00:39:24.320]   from using your favorite framework.
+[00:39:24.320 --> 00:39:26.080]   And then just also making sure that you're
+[00:39:26.080 --> 00:39:28.280]   using the best libraries.
+[00:39:28.280 --> 00:39:30.840]   If you're running on CPU, things like--
+[00:39:30.840 --> 00:39:33.440]   it's called SIMD or ADX.
+[00:39:33.440 --> 00:39:36.640]   If you're running on GPU, there's all those CUDA libraries
+[00:39:36.640 --> 00:39:38.640]   as well.
+[00:39:38.640 --> 00:39:40.000]   Cool.
+[00:39:40.000 --> 00:39:41.480]   Charles, did you have a question?
+[00:39:41.480 --> 00:39:43.600]   Because there's some on YouTube as well.
+[00:39:43.600 --> 00:39:44.760]   Yeah.
+[00:39:44.760 --> 00:39:47.600]   One thing-- I'm just going to drop this in the chat.
+[00:39:47.600 --> 00:39:51.000]   Just for natural language processing data augmentation,
+[00:39:51.000 --> 00:39:53.840]   there was a nice presentation at one of our previous salons
+[00:39:53.840 --> 00:40:00.840]   by Jack Morris on their text attack library.
+[00:40:00.840 --> 00:40:04.800]   And it's kind of like the things you were describing,
+[00:40:04.800 --> 00:40:09.800]   word substitution based off of word vector similarity
+[00:40:09.800 --> 00:40:14.520]   and synonym thesauruses.
+[00:40:14.520 --> 00:40:17.800]   So it's nowhere near as good as the perturbations
+[00:40:17.800 --> 00:40:21.200]   and translations that we can apply to images and audio.
+[00:40:21.200 --> 00:40:22.720]   But it is a step in that direction.
+[00:40:22.720 --> 00:40:24.720]   And it's a nice package.
+[00:40:24.720 --> 00:40:28.920]   I took a look at it after their talk, and it was very good.
+[00:40:28.920 --> 00:40:33.720]   So it might be worth checking out.
+[00:40:33.720 --> 00:40:35.800]   But I wanted to pull in actually one
+[00:40:35.800 --> 00:40:37.960]   of the questions from YouTube.
+[00:40:37.960 --> 00:40:43.480]   So do you do any work with audio natural language processing,
+[00:40:43.480 --> 00:40:44.680]   or is it primarily text?
+[00:40:44.680 --> 00:40:50.920]   So by audio natural language processing,
+[00:40:50.920 --> 00:40:53.400]   do they mean going from speech to text
+[00:40:53.400 --> 00:40:57.080]   or processing the audio in another way?
+[00:40:57.080 --> 00:41:01.920]   Yeah, I mean, their question is about vernaculars and accents.
+[00:41:01.920 --> 00:41:06.120]   So my presumption is that you need an audio in order
+[00:41:06.120 --> 00:41:08.280]   to have an accent, right?
+[00:41:08.280 --> 00:41:11.120]   So do you work with natural language processing
+[00:41:11.120 --> 00:41:14.040]   that uses recordings of natural language
+[00:41:14.040 --> 00:41:16.400]   to do some downstream NLP tasks?
+[00:41:16.400 --> 00:41:17.360]   Right.
+[00:41:17.360 --> 00:41:19.240]   So we do not.
+[00:41:19.240 --> 00:41:26.080]   But I know Aoni Hannun, A-W-N-I-H-A-N-N-U-N,
+[00:41:26.080 --> 00:41:28.680]   wrote a post maybe a year or two ago
+[00:41:28.680 --> 00:41:33.480]   about some of the phenomena with speech and accents.
+[00:41:33.480 --> 00:41:36.120]   He had this great post about remaining challenges
+[00:41:36.120 --> 00:41:39.320]   in speech recognition now that we have these speech systems
+[00:41:39.320 --> 00:41:41.280]   trained on a ton of data.
+[00:41:41.280 --> 00:41:43.280]   So that might be helpful.
+[00:41:43.280 --> 00:41:47.480]   But yeah, we don't work with that type of data.
+[00:41:47.480 --> 00:41:47.960]   Cool.
+[00:41:47.960 --> 00:41:48.720]   Yeah, thanks.
+[00:41:48.720 --> 00:41:51.400]   I found that question particularly interesting
+[00:41:51.400 --> 00:41:53.920]   because I was reading some papers earlier this week
+[00:41:53.920 --> 00:41:57.880]   about how court transcription done by humans, actually
+[00:41:57.880 --> 00:42:00.040]   just the quality of the transcriptions
+[00:42:00.040 --> 00:42:02.640]   when applied to African-American vernacular English
+[00:42:02.640 --> 00:42:07.120]   is substantially worse than to prestige dialects of English.
+[00:42:07.120 --> 00:42:08.640]   And this is the kind of thing we'd
+[00:42:08.640 --> 00:42:11.720]   like to be able to maybe use machine learning to automate
+[00:42:11.720 --> 00:42:12.520]   OA biases.
+[00:42:12.520 --> 00:42:16.600]   But contemporary methods can suffer from the same biases
+[00:42:16.600 --> 00:42:19.400]   that humans do.
+[00:42:19.400 --> 00:42:22.600]   Yeah, definitely.
+[00:42:22.600 --> 00:42:26.040]   And I think that is something where perhaps we don't
+[00:42:26.040 --> 00:42:27.720]   have the right data right now.
+[00:42:27.720 --> 00:42:32.520]   But it is a nice part about the ML system
+[00:42:32.520 --> 00:42:36.840]   as well is that if we can get that, we can adapt to it.
+[00:42:36.840 --> 00:42:42.360]   Salim asks, would you tell us more
+[00:42:42.360 --> 00:42:46.680]   about Sapling and also your transition from being a PhD
+[00:42:46.680 --> 00:42:50.000]   student to the industry?
+[00:42:50.000 --> 00:42:50.840]   Yeah, sure.
+[00:42:50.840 --> 00:42:56.000]   So Sapling.ai, you can check out the website.
+[00:42:56.000 --> 00:42:58.640]   We have this animated screenshot that
+[00:42:58.640 --> 00:43:01.480]   shows a few of the different features from autocomplete
+[00:43:01.480 --> 00:43:07.120]   to correcting the text to suggesting replies in chat.
+[00:43:07.120 --> 00:43:11.800]   But regarding going from PhD to this,
+[00:43:11.800 --> 00:43:17.400]   actually started working on some aspects of this
+[00:43:17.400 --> 00:43:19.480]   before I had finished.
+[00:43:19.480 --> 00:43:22.080]   And there's advantages to that.
+[00:43:22.080 --> 00:43:25.000]   But I personally would not recommend it
+[00:43:25.000 --> 00:43:27.640]   because it can also cause some misalignments.
+[00:43:27.640 --> 00:43:30.880]   So if you are thinking of doing a PhD,
+[00:43:30.880 --> 00:43:34.000]   but you're interested in a startup as well,
+[00:43:34.000 --> 00:43:36.400]   I would talk to some people who have done that.
+[00:43:36.400 --> 00:43:39.120]   And I imagine the suggestion you'll get
+[00:43:39.120 --> 00:43:41.640]   is finish your PhD, take a break,
+[00:43:41.640 --> 00:43:44.640]   and then get back to startup stuff
+[00:43:44.640 --> 00:43:47.400]   if you're interested in it.
+[00:43:47.400 --> 00:43:49.160]   You were doing both at the same time?
+[00:43:49.160 --> 00:43:50.040]   That's nuts.
+[00:43:54.080 --> 00:43:56.960]   If you can call it that, yeah.
+[00:43:56.960 --> 00:43:57.960]   Which one suffered?
+[00:43:57.960 --> 00:44:00.360]   I'm curious, the startup or the PhD?
+[00:44:00.360 --> 00:44:01.320]   I'm sure both suffered.
+[00:44:01.320 --> 00:44:08.000]   So someone on YouTube asks--
+[00:44:08.000 --> 00:44:10.280]   this is a slightly longer question.
+[00:44:10.280 --> 00:44:14.640]   So they're a linguistic major, then undergrad,
+[00:44:14.640 --> 00:44:16.720]   and they're in their senior year.
+[00:44:16.720 --> 00:44:20.040]   And they've been doing phonology research, which
+[00:44:20.040 --> 00:44:23.040]   has given them insight into formal language theory
+[00:44:23.040 --> 00:44:25.480]   and applications to natural language.
+[00:44:25.480 --> 00:44:28.280]   And they were wondering if they went to grad school
+[00:44:28.280 --> 00:44:34.560]   to study just linguistics, would they be hirable for NLP jobs?
+[00:44:34.560 --> 00:44:39.640]   If so, what should they leverage in their current program
+[00:44:39.640 --> 00:44:44.120]   to be competitive for NLP jobs?
+[00:44:44.120 --> 00:44:50.840]   Yeah, so one of my advisors was Dan Dandrowski.
+[00:44:50.840 --> 00:44:54.640]   I think he's in the CS and linguistics department.
+[00:44:54.640 --> 00:44:56.800]   I'm guessing his heart is really more
+[00:44:56.800 --> 00:44:58.360]   on the linguistic side of things.
+[00:44:58.360 --> 00:44:59.920]   Not sure.
+[00:44:59.920 --> 00:45:02.000]   But I think linguistics right now,
+[00:45:02.000 --> 00:45:05.840]   there's so much going on in computational linguistics.
+[00:45:05.840 --> 00:45:10.920]   And I wish I had learned more during grad school, actually.
+[00:45:10.920 --> 00:45:16.800]   But I feel now more than ever, there's lots of overlap there.
+[00:45:16.800 --> 00:45:20.040]   And I think you can do really cool stuff as well that
+[00:45:20.040 --> 00:45:24.000]   isn't just a function of amount of data and model size.
+[00:45:24.000 --> 00:45:26.880]   So this may also be a good time.
+[00:45:26.880 --> 00:45:28.520]   Yeah, I think it's really interesting.
+[00:45:28.520 --> 00:45:30.960]   And if you do cool work, I don't see
+[00:45:30.960 --> 00:45:33.640]   why it would bottleneck you.
+[00:45:33.640 --> 00:45:34.160]   Thanks.
+[00:45:34.160 --> 00:45:37.880]   They also asked, are you looking for an intern?
+[00:45:37.880 --> 00:45:39.040]   Oh, sapling.
+[00:45:39.040 --> 00:45:40.680]   We currently are not.
+[00:45:40.680 --> 00:45:43.440]   We wish we were positioned where we were, but currently no,
+[00:45:43.440 --> 00:45:43.940]   sadly.
+[00:45:46.920 --> 00:45:51.600]   So as somebody who also went very recently from academia
+[00:45:51.600 --> 00:45:53.760]   to industry, I found the point that you
+[00:45:53.760 --> 00:45:57.160]   made about how a lot of academic work
+[00:45:57.160 --> 00:46:00.480]   is obsessed with things that bring very diminishing returns.
+[00:46:00.480 --> 00:46:04.600]   So this sort of soda fetish that people have,
+[00:46:04.600 --> 00:46:07.560]   which is also reflected in Kaggle, where there's
+[00:46:07.560 --> 00:46:09.880]   these giant ensemble models that get just
+[00:46:09.880 --> 00:46:13.960]   a tiny fraction of additional performance on some test set.
+[00:46:13.960 --> 00:46:17.520]   So I'm wondering, you're out of academia now,
+[00:46:17.520 --> 00:46:20.440]   but do you have any thoughts about what kind of culture shift
+[00:46:20.440 --> 00:46:21.360]   might be necessary?
+[00:46:21.360 --> 00:46:24.240]   What changes and incentives could make it
+[00:46:24.240 --> 00:46:25.920]   so that people do research that would
+[00:46:25.920 --> 00:46:28.200]   be more helpful for people working
+[00:46:28.200 --> 00:46:33.640]   in applications in industry?
+[00:46:33.640 --> 00:46:36.800]   Yeah, it's a really good question.
+[00:46:36.800 --> 00:46:47.600]   And I don't think I have that great a feel for what's
+[00:46:47.600 --> 00:46:48.280]   best to do here.
+[00:46:48.280 --> 00:46:50.880]   But I do think that there have been some interesting
+[00:46:50.880 --> 00:46:53.880]   initiatives here, like, for example,
+[00:46:53.880 --> 00:46:58.200]   folks trying to push for how well you can perform
+[00:46:58.200 --> 00:47:01.240]   on a certain budget.
+[00:47:01.240 --> 00:47:05.560]   I think that the interest in leaderboards
+[00:47:05.560 --> 00:47:07.360]   and the amount of compute as well
+[00:47:07.360 --> 00:47:13.520]   has been largely driven by industry
+[00:47:13.520 --> 00:47:15.440]   with lots of budget who are trying
+[00:47:15.440 --> 00:47:18.640]   to compete on these for--
+[00:47:18.640 --> 00:47:23.080]   perhaps for the brand of a particular lab.
+[00:47:23.080 --> 00:47:25.800]   But yeah, I think, like you said,
+[00:47:25.800 --> 00:47:28.560]   folks are realizing that there needs
+[00:47:28.560 --> 00:47:31.520]   to be a broader range of work.
+[00:47:31.520 --> 00:47:34.120]   And if you're in academia, it may make sense
+[00:47:34.120 --> 00:47:39.680]   to focus on perhaps more fundamental aspects
+[00:47:39.680 --> 00:47:41.880]   of machine learning, of deep learning,
+[00:47:41.880 --> 00:47:44.040]   as opposed to competing on leaderboards.
+[00:47:44.040 --> 00:47:47.520]   But I'm sure it will continue.
+[00:47:47.520 --> 00:47:51.080]   And I really don't have a great suggestion.
+[00:47:51.080 --> 00:47:51.840]   Yeah, that's fair.
+[00:47:51.840 --> 00:47:55.560]   It's a tough, tough question, definitely.
+[00:47:55.560 --> 00:47:59.520]   And yeah, maybe the scale of the problem
+[00:47:59.520 --> 00:48:02.480]   is exemplified, actually, by the point you made about--
+[00:48:02.480 --> 00:48:04.360]   Yashua Bengio was saying that if only they'd
+[00:48:04.360 --> 00:48:06.160]   been training for months in the '90s,
+[00:48:06.160 --> 00:48:09.520]   they would have advanced like 5 or 10 years faster.
+[00:48:09.520 --> 00:48:12.160]   Like, the people working on neural networks in the '90s
+[00:48:12.160 --> 00:48:14.000]   were getting the pants beat off of them
+[00:48:14.000 --> 00:48:19.000]   by SVMs, Gaussian process models,
+[00:48:19.000 --> 00:48:21.040]   sophisticated approaches to linear and logistic
+[00:48:21.040 --> 00:48:22.120]   regression.
+[00:48:22.120 --> 00:48:24.600]   But it was only this sort of fundamental--
+[00:48:24.600 --> 00:48:26.480]   this fundamental shift that was able to get us
+[00:48:26.480 --> 00:48:27.440]   to where we are today.
+[00:48:27.440 --> 00:48:30.920]   It's really hard to figure out how to incentivize that.
+[00:48:30.920 --> 00:48:33.760]   Yeah, do you have some additional thoughts there
+[00:48:33.760 --> 00:48:37.720]   about how to incentivize that behavior?
+[00:48:37.720 --> 00:48:39.080]   Have you thought about it?
+[00:48:39.080 --> 00:48:41.240]   I got a lot of thoughts.
+[00:48:41.240 --> 00:48:44.600]   Not all of them are suitable for recording.
+[00:48:44.600 --> 00:48:48.040]   But I would say number one is increasing resources
+[00:48:48.040 --> 00:48:51.560]   to academia to allow people to get out
+[00:48:51.560 --> 00:48:54.040]   of the short feedback loop of having
+[00:48:54.040 --> 00:48:57.400]   to publish in order to get grants in order to publish.
+[00:48:57.400 --> 00:48:59.920]   If people were less squeezed, they
+[00:48:59.920 --> 00:49:01.560]   could think a little bit longer term.
+[00:49:01.560 --> 00:49:02.200]   But yeah.
+[00:49:02.200 --> 00:49:05.720]   All right.
+[00:49:05.720 --> 00:49:07.000]   Thank you, Zane.
+[00:49:07.000 --> 00:49:09.200]   That was really good.
+

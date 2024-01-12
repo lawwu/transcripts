@@ -1,0 +1,717 @@
+
+[00:00:00.000 --> 00:00:05.000]   Hey, everyone. Welcome to the fourth and the final session of our training and fine tuning
+[00:00:05.000 --> 00:00:11.000]   LLMs course. Before we get started with today's topic, please take a moment to introduce yourself
+[00:00:11.000 --> 00:00:16.320]   in the chat, share where you're joining us from. My name is Darek Kwecek. I'm a machine
+[00:00:16.320 --> 00:00:21.740]   learning engineer at Weights & Biases, connecting with you from Warsaw in Poland. And we're
+[00:00:21.740 --> 00:00:27.160]   absolutely delighted to have a special guest today for the second time, Jonathan Frankel,
+[00:00:27.160 --> 00:00:33.000]   chief scientist at MosaicML, who will be sharing his expertise on training and fine tuning
+[00:00:33.000 --> 00:00:39.280]   LLM techniques. Jonathan, we appreciate your presence with us today.
+[00:00:39.280 --> 00:00:44.760]   Thank you so much for having me. I'm really excited to be back. Awesome. So should I just
+[00:00:44.760 --> 00:00:48.120]   go ahead and dive in? Yeah, sure. Go ahead, please.
+[00:00:48.120 --> 00:00:53.500]   Awesome. Let me share my screen and let's get started. So I'm Jonathan. I'm chief scientist
+[00:00:53.500 --> 00:01:00.280]   at MosaicML and now chief scientist of neural networks at Databricks. And let's see, hopefully
+[00:01:00.280 --> 00:01:07.260]   you can see my presentation. Give me a thumbs up. Okay, looking good. So let's dive in.
+[00:01:07.260 --> 00:01:14.180]   So game plan for today. I really want to do three things. Well, four things. I'm going
+[00:01:14.180 --> 00:01:18.340]   to start and end with some friendly advice. I gave the same friendly advice last week.
+[00:01:18.340 --> 00:01:23.540]   So for those, if you're watching the presentation, you know, straight through from last week,
+[00:01:23.540 --> 00:01:28.260]   you're going to see the same thing again at the beginning and the end. But, you know,
+[00:01:28.260 --> 00:01:31.020]   I always like to give the same friendly advice whenever I give a talk. So you get to hear
+[00:01:31.020 --> 00:01:33.540]   it twice. And then we're going to talk about hardware requirements and costs. We're going
+[00:01:33.540 --> 00:01:37.300]   to actually do some math here. I do want to dig into the numbers and kind of get a sense
+[00:01:37.300 --> 00:01:41.900]   for how much it actually costs and how long it actually takes to do some of this training
+[00:01:41.900 --> 00:01:45.180]   and then think a little bit about memory and distributed systems and how to actually load
+[00:01:45.180 --> 00:01:49.380]   these models. And then, you know, when all said and done, we can actually get into the
+[00:01:49.380 --> 00:01:54.180]   finer points of pre-training and fine tuning. I'll actually start by saying one thing, which
+[00:01:54.180 --> 00:01:59.160]   is I hate the word fine tuning. I absolutely despise it because I think it's a very poor
+[00:01:59.160 --> 00:02:03.420]   description of what we do. I've learned to live with it. But whenever I say fine tuning,
+[00:02:03.420 --> 00:02:09.100]   I think in my head, the thing you do after pre-training, that thing could be very cheap,
+[00:02:09.100 --> 00:02:13.620]   like training on a few tokens or very, very expensive, like taking a model like Lama 2
+[00:02:13.620 --> 00:02:19.140]   and training it on another trillion tokens. And so fine tuning is often not very fine.
+[00:02:19.140 --> 00:02:23.140]   And so I hate that word. But I will think of training as divided into two phases. You
+[00:02:23.140 --> 00:02:26.980]   do a self-supervised, kind of more generic pre-training phase to create a good model
+[00:02:26.980 --> 00:02:30.740]   for doing a lot of different things. And then you may do many different things to it, which
+[00:02:30.740 --> 00:02:35.300]   we refer to as fine tuning, even if they're not very fine at the end of the day.
+[00:02:35.300 --> 00:02:40.140]   So moving along, again, my friendly advice. Number one, always start small and work your
+[00:02:40.140 --> 00:02:44.500]   way up. And, you know, I've gone over this in depth already, so I'll just go through
+[00:02:44.500 --> 00:02:48.540]   it very quickly. Number two, always be skeptical of what you read in the literature and test
+[00:02:48.540 --> 00:02:53.620]   things for yourself. Number three, don't trust your intuition. Again, test things for yourself.
+[00:02:53.620 --> 00:02:57.780]   And I just want to emphasize this is science. You have to run experiments and find out what's
+[00:02:57.780 --> 00:03:05.460]   going to happen. Okay, so let's talk about cost. So here's how much it costs to train
+[00:03:05.460 --> 00:03:15.060]   a network in a nutshell at a very high level. So a flop or a floating point operation is
+[00:03:15.060 --> 00:03:21.060]   one computation on a GPU or a TPU or any kind of ML accelerator, usually a multiply add
+[00:03:21.060 --> 00:03:27.820]   or something along those lines. And we approximate by saying that basically all floating point
+[00:03:27.820 --> 00:03:34.660]   operations cost about the same thing. And so we look at a GPU and we say, "Ah, that
+[00:03:34.660 --> 00:03:42.820]   GPU has 100 teraflops." And so it can do, that would be 100 times 10 to the 12th or
+[00:03:42.820 --> 00:03:50.740]   100 times, you know, yeah, times 10 to the 12th operations per second, in that case,
+[00:03:50.740 --> 00:03:55.420]   floating point operations per second. So, you know, that's a lot of operations, but
+[00:03:55.420 --> 00:03:58.360]   we also need to do a lot of operations when we train a network. So n here is the number
+[00:03:58.360 --> 00:04:04.620]   of parameters in the network. And so, you know, we have, you know, the number of parameters
+[00:04:04.620 --> 00:04:07.340]   in the network times the amount of data. You can think of this as just kind of the number
+[00:04:07.340 --> 00:04:10.180]   of steps you take during training or kind of the number of forward and backward passes
+[00:04:10.180 --> 00:04:14.780]   you have to do in the network. Then we've got this number six in here. And the idea
+[00:04:14.780 --> 00:04:18.540]   is that essentially, you know, you've got about two operations per parameter on the
+[00:04:18.540 --> 00:04:23.300]   forward pass and the backward pass is typically twice as expensive as the forward pass, because
+[00:04:23.300 --> 00:04:26.060]   you have to both update the weights and do the chain rule for the next layer back and
+[00:04:26.060 --> 00:04:29.780]   back propagation. I won't dwell on that too much, but an approximation we often make with
+[00:04:29.780 --> 00:04:34.440]   transformers is, you know, if you think of it as a fully connected network, the number
+[00:04:34.440 --> 00:04:40.420]   of flops is approximately six times the number of parameters times the amount of data. Now,
+[00:04:40.420 --> 00:04:45.260]   I said, if you think of it as a fully connected network, I'm ignoring self-attention. I'll
+[00:04:45.260 --> 00:04:48.540]   come back to why we can ignore self-attention a little bit later, but let's just assume
+[00:04:48.540 --> 00:04:55.580]   this is a basic approximation. Now, the chinchilla scaling laws that I talked about last time
+[00:04:55.580 --> 00:05:00.300]   tell you that, you know, essentially the amount of data that you should have is about 20 times
+[00:05:00.300 --> 00:05:04.580]   the number of parameters in the network, more or less. So from this, you can derive a pretty
+[00:05:04.580 --> 00:05:09.300]   easy formula. Just plug in 20 times N for D on that first line, and you get the number
+[00:05:09.300 --> 00:05:14.060]   of flops that, you know, it should take to train a transformer. So I'm actually going
+[00:05:14.060 --> 00:05:17.020]   to go through an exercise here. I want to calculate how long it's going to take to train
+[00:05:17.020 --> 00:05:24.700]   a 7 billion parameter model to, you know, the chinchilla amount of data on 64 A100s.
+[00:05:24.700 --> 00:05:29.620]   And I'm going to tell you that an A100 runs at about 312 teraflops per second. A teraflop
+[00:05:29.620 --> 00:05:38.060]   is, you know, 10 to the 12th. And an H100 is about 989 teraflops, according to NVIDIA.
+[00:05:38.060 --> 00:05:42.540]   Okay, so I'm about to show a bunch of math. First, chinchilla optimal, that puts us at
+[00:05:42.540 --> 00:05:47.580]   140 billion tokens. That's just 20 times the number of parameters. So here's the math.
+[00:05:47.580 --> 00:05:50.420]   I'm going to go line by line here, as I just threw a bunch of numbers up there. So let's
+[00:05:50.420 --> 00:05:56.940]   take it one line at a time. That first line, I'm just calculating the amount of data. 20
+[00:05:56.940 --> 00:06:04.020]   times 7 times 10 to the 9, that's 7 billion. And so that gives us 140 billion. So we can
+[00:06:04.020 --> 00:06:09.180]   plug that into our flops formula, and we get that our flops is 6 times the number of parameters,
+[00:06:09.180 --> 00:06:13.860]   7 billion, times 20 times 7 billion, the amount of data. And that gives us that number on
+[00:06:13.860 --> 00:06:21.180]   the third line, 5.88 times 10 to the 21. That is a really big number. Okay, so now we can
+[00:06:21.180 --> 00:06:25.940]   calculate, you know, the number of floating point operations that we can do on this cluster
+[00:06:25.940 --> 00:06:30.340]   per second, ignoring network costs and any other stuff that might slow us down. So that's
+[00:06:30.340 --> 00:06:36.620]   312 teraflops, so 312 times 10 to the 12th times 64. So that gives us about 2 times 10
+[00:06:36.620 --> 00:06:41.460]   to the 16th, you know, flops we can process per second. And then we just divide these
+[00:06:41.460 --> 00:06:44.940]   two, take my number of flops, divide it by the flops I can do per second. And that gives
+[00:06:44.940 --> 00:06:50.140]   you the number of seconds. And so you can see that gives me, you know, 2.94 times 10
+[00:06:50.140 --> 00:06:54.380]   to the 5th seconds. That doesn't mean very much to me as a human being, but 3.4 days
+[00:06:54.380 --> 00:06:59.540]   does. And that's how long this is going to take to train. That's it. Awesome, right?
+[00:06:59.540 --> 00:07:06.660]   I mean, that's all you got to do to calculate costs. Okay, so there's a little more to this.
+[00:07:06.660 --> 00:07:11.380]   This was assuming that you were fully utilizing the A100. You were getting all 312 teraflops
+[00:07:11.380 --> 00:07:15.820]   per second out of the A100. That's never going to happen in practice. There are always going
+[00:07:15.820 --> 00:07:23.780]   to be reasons that you're not fully utilizing the A100s. And so, you know, we have to take
+[00:07:23.780 --> 00:07:27.060]   into account the fact that we're not, you know, we're not always going to get the most
+[00:07:27.060 --> 00:07:32.460]   out of the hardware. And so I'm going to add one more number here, which is this MFU number.
+[00:07:32.460 --> 00:07:38.420]   MFU is, it stands for model flop utilization. And the way to think about it is, you know,
+[00:07:38.420 --> 00:07:44.140]   how many flops of those available in the chip are you actually using properly? And so the
+[00:07:44.140 --> 00:07:47.780]   way you can calculate this is you can actually just run the model. We can count the number
+[00:07:47.780 --> 00:07:52.100]   of flops in that first operation, and then we can just run the model for a while and
+[00:07:52.100 --> 00:07:55.740]   see how many tokens we're getting through per second. And then from there, you can extrapolate,
+[00:07:55.740 --> 00:08:00.820]   well, if an A100 is 312 teraflops, and I'm getting this many tokens per second, that
+[00:08:00.820 --> 00:08:04.940]   many tokens per second, every token I'm doing the number of flops on the first line, and
+[00:08:04.940 --> 00:08:08.980]   you can divide and figure out what fraction of the, you know, max theoretical flops are
+[00:08:08.980 --> 00:08:13.780]   you actually getting. And that tells you the utilization of the chip. That gives you that
+[00:08:13.780 --> 00:08:18.940]   MFU number. Now, why not just call it U? Why not just call it utilization or flop utilization?
+[00:08:18.940 --> 00:08:23.660]   Why M? Model flop utilization. So there are a bunch of ways of measuring utilization.
+[00:08:23.660 --> 00:08:29.100]   If you've ever typed in NVIDIA SMI into your terminal, you'll see, you know, to some extent,
+[00:08:29.100 --> 00:08:32.940]   kind of a momentary look at what percentage of the chip that you're using. And often it's
+[00:08:32.940 --> 00:08:37.540]   close to 100%, or, you know, you're seeing some very big number. So it's important to
+[00:08:37.540 --> 00:08:42.060]   keep in mind that not every operation the chip is doing is actually productive for moving
+[00:08:42.060 --> 00:08:47.500]   the model forward. I'll give you one example. We're going to talk about memory in a moment,
+[00:08:47.500 --> 00:08:52.700]   but one thing that can happen is the activations that you compute for the model gets so big
+[00:08:52.700 --> 00:08:57.180]   that you actually run out of memory because you don't have room to store the activations.
+[00:08:57.180 --> 00:09:01.340]   One thing that people do is they do a procedure called activation checkpointing. They will
+[00:09:01.340 --> 00:09:06.220]   basically compute the activations and then delete the activations for some layers. That
+[00:09:06.220 --> 00:09:09.420]   saves you some memory. And then on the backward pass, you can recompute those activations
+[00:09:09.420 --> 00:09:13.500]   when you have to using the other ones that you saved. This saves you some memory, but
+[00:09:13.500 --> 00:09:18.020]   it costs you some compute because for some layers, you have to do the forward pass twice.
+[00:09:18.020 --> 00:09:21.300]   That means that some of your flops aren't actually being used productively. They're
+[00:09:21.300 --> 00:09:25.520]   just being used for recomputation. MFU doesn't take that into account because all you're
+[00:09:25.520 --> 00:09:30.260]   looking at is the actual flops the model should have taken that first line six times N. You're
+[00:09:30.260 --> 00:09:33.620]   not looking at every single operation that was run on the hardware because many of them
+[00:09:33.620 --> 00:09:39.260]   are redundant. There's another computation you could do for hardware flop utilization
+[00:09:39.260 --> 00:09:43.140]   or HFU, which is in some sense, how many actual operations are you doing in the hardware versus
+[00:09:43.140 --> 00:09:47.300]   how many could it do? We don't like to use that number at Mosaic. I personally don't
+[00:09:47.300 --> 00:09:51.700]   like it because it doesn't tell you the story of how productive is training. Anyway, long-winded
+[00:09:51.700 --> 00:09:56.500]   way of talking about MFUs, but MFU is really, really important. That tells us the actual
+[00:09:56.500 --> 00:10:02.620]   utilization. Now, if I want to go to this link, I'm actually going to go to this link,
+[00:10:02.620 --> 00:10:09.860]   but this is our Mosaic ML throughput table. This tells you what kind of MFU and HFU you
+[00:10:09.860 --> 00:10:14.900]   should expect to get for a given model on a given hardware at a given training sequence
+[00:10:14.900 --> 00:10:20.860]   length. This is for our repository. It wouldn't apply to any other code base, but it should
+[00:10:20.860 --> 00:10:26.540]   give you a sense. A typical really good number is around 50%. If you're getting 50%, you're
+[00:10:26.540 --> 00:10:31.940]   actually doing really well. If we go and look this up, the MFU for a 7 billion parameter
+[00:10:31.940 --> 00:10:39.460]   model on 64 A140 gigabytes for a standard sequence length is about 50.7% MFU. We can
+[00:10:39.460 --> 00:10:43.060]   then go back and plug that in on that bottom line here, and you can see, well, I'm only
+[00:10:43.060 --> 00:10:48.900]   actually utilizing 50.7% of the hardware, so my 3.4 days turns into 6.7 days. You can
+[00:10:48.900 --> 00:10:54.540]   see why MFU is so important. A lot of people at a lot of places who are building LLMs sweat
+[00:10:54.540 --> 00:10:57.820]   the details of getting another percentage point here and another percentage point here
+[00:10:57.820 --> 00:11:01.820]   because it dramatically changes how long it takes. If you could get this to 100%, you'd
+[00:11:01.820 --> 00:11:07.860]   have the training time. That would be fantastic. That's what I wanted to say about training
+[00:11:07.860 --> 00:11:13.380]   cost. Before I go any further, I do want to pause and see if there are any questions.
+[00:11:13.380 --> 00:11:18.500]   So, Dirk, you can tell me if there are any questions that have come in.
+[00:11:18.500 --> 00:11:24.220]   >> Yeah. There are a couple of questions. I can answer one of them. There was a question
+[00:11:24.220 --> 00:11:28.900]   about showing weights and biases visualizations. We will not be getting into those details
+[00:11:28.900 --> 00:11:33.820]   today, but we can definitely take it as an offline follow-up. There is a question if
+[00:11:33.820 --> 00:11:39.020]   we're going to cover the difference between fine tuning versus instruction fine tuning.
+[00:11:39.020 --> 00:11:42.220]   I think that might be -- >> Yes, we'll talk about that a little bit
+[00:11:42.220 --> 00:11:47.740]   later. >> Yeah. There is a question about is it better
+[00:11:47.740 --> 00:11:58.140]   to fine tune a smaller LLM for a special use case or to use like a bigger LLM, a more general
+[00:11:58.140 --> 00:12:05.020]   LLM? I guess -- I'm not sure if this is a question for this part of the presentation,
+[00:12:05.020 --> 00:12:06.860]   but if you have any -- >> I don't know if it's the right part for
+[00:12:06.860 --> 00:12:11.860]   this presentation, but I'll answer it based on my friendly advice, which is try both.
+[00:12:11.860 --> 00:12:14.580]   >> That's really the honest answer. It's hard to know.
+[00:12:14.580 --> 00:12:19.740]   >> Okay. I think we can proceed. >> Awesome. So there's one other thing I wanted
+[00:12:19.740 --> 00:12:24.380]   to talk about, which is memory usage. So you can start to do some back-of-the-envelope
+[00:12:24.380 --> 00:12:31.540]   math for memory. So each parameter is typically represented in 16 bits or 2 bytes. So 2 bytes
+[00:12:31.540 --> 00:12:36.820]   per parameter for the weights. Optimizer state often stores up to two full copies of the
+[00:12:36.820 --> 00:12:39.860]   model depending on the optimizer you're using if you need first and second moments or things
+[00:12:39.860 --> 00:12:45.300]   like that. Okay. That's another 4 bytes per parameter, depending on kind of how large
+[00:12:45.300 --> 00:12:50.100]   of optimizer state you're saving. You also need 2 bytes per parameter for the gradients.
+[00:12:50.100 --> 00:12:55.980]   And so we're already at, you know, 8 bytes per parameter. You can do the math. 8 times
+[00:12:55.980 --> 00:13:03.580]   7E9, that's, you know, 56 or 5.6 times 10 to the 10th. If you divide that by 1024 to
+[00:13:03.580 --> 00:13:07.420]   the third, remember when we're converting to bytes, we do need to use powers of 2, so
+[00:13:07.420 --> 00:13:14.540]   it's not, you know, 1000 bytes per kilobyte. It's 1024 bytes per kilobyte. Then we get
+[00:13:14.540 --> 00:13:19.540]   to 52 gigabytes, and you're going to run out of memory on an A140 gig. Okay. That's not
+[00:13:19.540 --> 00:13:24.520]   good. And keep in mind, that doesn't even include the activations. So we're already
+[00:13:24.520 --> 00:13:31.620]   in pretty deep trouble before we've even gotten started. Okay. So what do we do? You have
+[00:13:31.620 --> 00:13:35.440]   to distribute. You have to share across more than one chip. There are lots and lots of
+[00:13:35.440 --> 00:13:40.340]   ways to do this. So the typical way that we might train on multiple GPUs is data parallel.
+[00:13:40.340 --> 00:13:43.880]   And I'm stealing some great figures from Colossal AI. They have a nice guide on this. So thank
+[00:13:43.880 --> 00:13:49.260]   you to our friends at Colossal AI for the figures. And data parallelism is where you
+[00:13:49.260 --> 00:13:53.580]   have multiple GPUs, you have a separate copy of the model on each GPU, and then you just
+[00:13:53.580 --> 00:13:57.180]   do different data on each GPU. So then you can average the gradients when you're done.
+[00:13:57.180 --> 00:14:00.300]   This is not going to work for us, because I just said we're going to run out of memory
+[00:14:00.300 --> 00:14:04.860]   on each GPU. We can't even have one model copy per GPU. So data parallel, nope, out
+[00:14:04.860 --> 00:14:09.780]   the door. The next thing you can do is something called tensor parallelism, where, as you can
+[00:14:09.780 --> 00:14:15.300]   see, this is a nice figure from Misha Laskin. So on the left side here is a matrix multiply
+[00:14:15.300 --> 00:14:19.180]   that we're doing. Multiplying matrix A times matrix B. But you can actually split it along
+[00:14:19.180 --> 00:14:25.340]   the columns and split B along the rows. And in doing so, you can create four smaller matrix
+[00:14:25.340 --> 00:14:31.220]   multiplies. This is a way to save memory. You can actually do A1 times B1 on one GPU
+[00:14:31.220 --> 00:14:36.500]   and A1 times B2 on another GPU or maybe both on the same GPU, but do A2 separately. And
+[00:14:36.500 --> 00:14:41.860]   this reduces the amount of memory you need for both the actual weights that you're working
+[00:14:41.860 --> 00:14:48.180]   on and the activations that you create. So this is great. There's a much more complicated
+[00:14:48.180 --> 00:14:52.180]   strategy called pipeline parallelism. This is where you actually have each layer of the
+[00:14:52.180 --> 00:14:56.300]   network on a different GPU, and you're constantly sending data forward through the GPUs and
+[00:14:56.300 --> 00:15:01.020]   backward through the GPUs, kind of conducting a forward and backward pass on each GPU, depending
+[00:15:01.020 --> 00:15:04.500]   on where the data is in the network. And it forms a pipeline. You're constantly passing
+[00:15:04.500 --> 00:15:09.740]   data forward to the next GPU and back to the previous GPU all the way through as you compute
+[00:15:09.740 --> 00:15:15.020]   a batch. Pipeline parallel tends to, you know, it's probably the most scalable of these approaches
+[00:15:15.020 --> 00:15:18.860]   once you take everything else into account until your layers are too big to even run
+[00:15:18.860 --> 00:15:23.620]   on a single GPU. And then maybe you make them tensor parallel on a node. The biggest challenge
+[00:15:23.620 --> 00:15:27.340]   of pipeline parallelism is actually that you get these bubbles. So what happens is when
+[00:15:27.340 --> 00:15:31.180]   you send through that first batch, all the other GPUs are idle when that first batch
+[00:15:31.180 --> 00:15:35.100]   is in layer zero. And when the last batch is coming through, the GPUs become idle as
+[00:15:35.100 --> 00:15:38.780]   you pass through that last batch. So you need to do this on a lot of data before it makes
+[00:15:38.780 --> 00:15:43.860]   sense because those bubbles do cost you a lot of utilization. Now I've mentioned all
+[00:15:43.860 --> 00:15:48.700]   this stuff, but actually I want to mention, I said data parallel doesn't work. I actually
+[00:15:48.700 --> 00:15:53.340]   want to spend some time saying data parallel is great. So I just told you this doesn't
+[00:15:53.340 --> 00:15:57.660]   work because, you know, as I showed you before, like I'll go back to that figure. I just said
+[00:15:57.660 --> 00:16:03.580]   the model is not going to fit on any GPU. So what am I even talking about here? So there's
+[00:16:03.580 --> 00:16:09.060]   this fancy strategy called zero. And it's actually a set of strategies, but here's the
+[00:16:09.060 --> 00:16:15.700]   idea. You know, I have all this optimizer state for Adam, but I don't actually need
+[00:16:15.700 --> 00:16:23.580]   it until the very end. And so while I'm doing my, my passes on the network, I can actually
+[00:16:23.580 --> 00:16:26.900]   just take that state and I can shard it. I can break it up into, let's say I'm training
+[00:16:26.900 --> 00:16:32.940]   on 64 GPUs, break it up into 64 pieces and keep one piece on each GPU. There, I just
+[00:16:32.940 --> 00:16:37.860]   reduced my optimizer state per GPU by 64 X. And if I have more GPUs, it goes down even
+[00:16:37.860 --> 00:16:42.740]   further. Now there's a cost to this that, you know, when I want to update the optimizer,
+[00:16:42.740 --> 00:16:46.220]   I also have to update it in a distributed way. And when I want to use it, I have to
+[00:16:46.220 --> 00:16:50.820]   use it in a distributed way. But, you know, sharding that optimizer, that just saved me
+[00:16:50.820 --> 00:16:57.100]   a bunch of memory. And that's stage one, what's written here. Then you go to stage two, you're
+[00:16:57.100 --> 00:17:02.540]   getting all these gradients. And so, you know, we only have part of the optimizer, so you
+[00:17:02.540 --> 00:17:05.980]   only need the part of the gradient that corresponds to that. So you can actually share the gradients
+[00:17:05.980 --> 00:17:10.220]   and kind of split them up and shard them among all the GPUs. That's awesome. That just saved
+[00:17:10.220 --> 00:17:15.140]   you a ton of memory. Keep in mind, gradients were, you know, four out of our eight bytes.
+[00:17:15.140 --> 00:17:18.540]   And then, you know, the third stage is that even the model parameters are partitioned
+[00:17:18.540 --> 00:17:22.660]   around the network. So the idea here, this gets a little tricky, but the idea here is
+[00:17:22.660 --> 00:17:26.380]   that if I'm using a layer of the network, every GPU has to have that layer, otherwise
+[00:17:26.380 --> 00:17:32.220]   it can't compute the forward pass. But once I'm done with that layer, I can shard it.
+[00:17:32.220 --> 00:17:36.140]   You know, I can divide it into 64 pieces and keep one piece on each GPU. And then I need
+[00:17:36.140 --> 00:17:40.380]   to collect all the pieces of the next layer on every GPU, use that layer, and then I can
+[00:17:40.380 --> 00:17:52.660]   shard it again. So I can spread the model weights over the entire network. Or over all
+[00:17:52.660 --> 00:17:58.460]   the GPUs. And in doing so, I can almost treat my GPUs like one big shared memory. Instead
+[00:17:58.460 --> 00:18:05.620]   of, you know, all these different individual memories. So this process called zero is really,
+[00:18:05.620 --> 00:18:10.340]   really helpful. The folks at DeepSpeed pioneered a really great implementation of it. Today,
+[00:18:10.340 --> 00:18:14.820]   we tend to use FSDP, or fully sharded data parallel. This is built into PyTorch. You
+[00:18:14.820 --> 00:18:20.060]   can just use it right off the bat. I tried to find a snazzy logo, but the folks haven't
+[00:18:20.060 --> 00:18:25.140]   created one for FSDP yet. So if any of the FSDP creators are listening right now, you
+[00:18:25.140 --> 00:18:30.540]   could definitely use a snazzy logo. But we love FSDP at Mosaic. And, you know, it's integrated
+[00:18:30.540 --> 00:18:34.820]   very deeply into our LLM foundry. This is our kind of default way of training networks.
+[00:18:34.820 --> 00:18:39.220]   We'll use FSDP at scale. And that's allowed us to scale up to hundreds of billions of
+[00:18:39.220 --> 00:18:47.060]   parameters and thousands of GPUs. And hopefully beyond that. So that's really, you know, when
+[00:18:47.060 --> 00:18:51.060]   it comes to distribution, I think that's pretty much everything you need to know about training
+[00:18:51.060 --> 00:18:57.460]   time and flops and memory and cost and utilization. And then how to actually distribute it. I
+[00:18:57.460 --> 00:18:59.820]   want to pause again to see if there are any questions or comments that people want to
+[00:18:59.820 --> 00:19:05.020]   throw in. >> We have a couple of questions. There's
+[00:19:05.020 --> 00:19:11.500]   actually a request from some of the audience about the quality of the audio. So if you
+[00:19:11.500 --> 00:19:14.980]   can check, Jonathan, if there's any applications you can close.
+[00:19:14.980 --> 00:19:17.100]   >> Interesting. >> I think that would be --
+[00:19:17.100 --> 00:19:24.740]   >> Everything should be closed. >> Okay. For those that have a hard time
+[00:19:24.740 --> 00:19:29.700]   following, the recording that we will post afterwards should have all of the audio issues
+[00:19:29.700 --> 00:19:35.660]   fixed. So at least if you bear with us for some time, we'll make sure to upload the high
+[00:19:35.660 --> 00:19:44.660]   quality video. But hopefully it works at least for some of the audience. I will post another
+[00:19:44.660 --> 00:19:50.860]   question in the chat as well. I'm going to read it. The chinchilla loss estimation don't
+[00:19:50.860 --> 00:19:56.000]   take into account many hyperparams and choice of architecture for the model. Those also
+[00:19:56.000 --> 00:20:00.900]   not the inductive biases allowed by the training setting. Do you think it's an overly gross
+[00:20:00.900 --> 00:20:05.700]   estimate of the loss? >> So it's a -- you know, the crux of the
+[00:20:05.700 --> 00:20:10.460]   question is like all this chinchilla stuff, it's a rough estimate. It doesn't take into
+[00:20:10.460 --> 00:20:17.060]   account a lot of stuff. And it may vary in every setting. So can we trust it? And the
+[00:20:17.060 --> 00:20:23.580]   answer is, well, no, we can't trust it. But, you know, I challenge whomever asked the question,
+[00:20:23.580 --> 00:20:28.900]   can you do better? Do you have enough GPUs to do better? Do you have enough GPUs to,
+[00:20:28.900 --> 00:20:32.780]   you know, go and do this for a wide swath of hyperparameters or do it for a different
+[00:20:32.780 --> 00:20:40.860]   model architecture? So in some sense, it's not perfect. But it is a really helpful approximation
+[00:20:40.860 --> 00:20:45.020]   that gives us some guidance on what to do. And it's the best we're going to get, to be
+[00:20:45.020 --> 00:20:50.940]   honest. And if you wanted to redo this in every setting, you'd be training so much that,
+[00:20:50.940 --> 00:20:53.900]   you know, you'd have to train the network you wanted to train and a hundred others or
+[00:20:53.900 --> 00:20:59.020]   hundreds or thousands of others in the process. And so it's just not feasible in practice.
+[00:20:59.020 --> 00:21:04.340]   So yeah, you know, and what's the famous quote? All models are wrong, some models are useful.
+[00:21:04.340 --> 00:21:10.220]   Chinchilla is a very useful model that is completely wrong. It's a great question.
+[00:21:10.220 --> 00:21:17.540]   >> I appreciate it. Maybe one more question from me. We see all of your example actually
+[00:21:17.540 --> 00:21:24.260]   based on A100s and it seems like everyone is training these models on A100s. How about
+[00:21:24.260 --> 00:21:31.220]   some of the older GPUs that might be more available like V100s or D4 maybe? Like, does
+[00:21:31.220 --> 00:21:37.860]   it make sense to consider them for training or fine tuning LLMs or do they have some deficiencies
+[00:21:37.860 --> 00:21:40.860]   and we should default to A100s?
+[00:21:40.860 --> 00:21:47.060]   >> It's a great question. So V100s are excellent GPUs. They're thoroughly outmoded at this
+[00:21:47.060 --> 00:21:53.380]   point compared to the latest stuff. If I recall correctly, a V100 will get you, I'm trying
+[00:21:53.380 --> 00:21:58.340]   to remember the exact number of teraflops for a V100, but you know, nothing that will
+[00:21:58.340 --> 00:22:04.100]   blow your mind today, but what blew my mind back in 2017. I'm now actually Googling it.
+[00:22:04.100 --> 00:22:11.620]   A V100 has 130 teraflops. So it is about, you know, A100 is about two and a half times
+[00:22:11.620 --> 00:22:19.660]   more and an H100 is, what is that? About six times more, seven times more. So you're in
+[00:22:19.660 --> 00:22:24.780]   a place where, you know, in some sense, if you told me I could have any GPU I wanted
+[00:22:24.780 --> 00:22:29.620]   and you told me the prices and, you know, based on the prices I tend to see on marketplaces,
+[00:22:29.620 --> 00:22:34.700]   I would take, you know, I would look at those prices and say, wow, if V100 is not, you know,
+[00:22:34.700 --> 00:22:39.460]   not really that competitive because modern GPUs are just so fast. But, you know, if you
+[00:22:39.460 --> 00:22:44.380]   have nothing else, a V100 is still an excellent GPU and you can get a ton of work done. So,
+[00:22:44.380 --> 00:22:48.180]   you know, definitely not a bad thing. The biggest trickiness with V100s is actually
+[00:22:48.180 --> 00:22:52.880]   if you wanted to do a multi-node training job, if you want to go more than eight GPUs,
+[00:22:52.880 --> 00:22:57.220]   if you wanted to do that, you'll be in a very tricky place because many of the V100s were
+[00:22:57.220 --> 00:23:01.500]   not built with very high bandwidth between them. It just wasn't the days of doing this
+[00:23:01.500 --> 00:23:05.660]   large scale multi-node training in the clouds. And, you know, nobody's upgraded that because
+[00:23:05.660 --> 00:23:09.180]   they've moved on to new things. So you'll end up in a place where things may get a little
+[00:23:09.180 --> 00:23:14.380]   slow if you try to do multi-node training. But at the same time, still an excellent GPU.
+[00:23:14.380 --> 00:23:18.500]   When you get to things even older than that, things start to get very tricky. The V100
+[00:23:18.500 --> 00:23:22.540]   was the first mainstream NVIDIA GPU that had tensor cores and the tensor cores are built
+[00:23:22.540 --> 00:23:27.060]   for things to run really, really fast. If you go back to, say, a P100, you'll no longer
+[00:23:27.060 --> 00:23:28.860]   have those and things get tricky.
+[00:23:28.860 --> 00:23:35.820]   Awesome. Any other questions we should cover or should we keep going?
+[00:23:35.820 --> 00:23:39.180]   I think we should keep going. Thank you.
+[00:23:39.180 --> 00:23:45.300]   Awesome. So now we get to the question of architectures. What should you train? And
+[00:23:45.300 --> 00:23:49.680]   I'm going to give you more questions than answers in the spirit of test things yourself
+[00:23:49.680 --> 00:23:55.300]   and don't believe what you read. First, architecture sizes and scaling are pretty standard. Like,
+[00:23:55.300 --> 00:23:59.780]   you know, we have standard ways to increase the number of layers or increase, you know,
+[00:23:59.780 --> 00:24:03.620]   the width of the network as we scale up. You can kind of follow the best guidance from,
+[00:24:03.620 --> 00:24:08.420]   you know, the Chinchilla paper or the OPT paper or what the Lama models did. There are
+[00:24:08.420 --> 00:24:12.100]   a lot of excellent references where those folks did their homework and, you know, we
+[00:24:12.100 --> 00:24:17.700]   can trust largely what they found. At least, you know, not very many of us have the number
+[00:24:17.700 --> 00:24:22.460]   of GPUs necessary to go and question what they found and try to do better. But there
+[00:24:22.460 --> 00:24:25.620]   is a tradeoff between training and inference costs. And this is where Chinchilla kind of
+[00:24:25.620 --> 00:24:28.060]   comes back.
+[00:24:28.060 --> 00:24:31.660]   You have to take into account, well, how fast do you want inference to be and how much work
+[00:24:31.660 --> 00:24:36.740]   is happening at inference time? You could train a Chinchilla optimal model, but that
+[00:24:36.740 --> 00:24:39.700]   model may not be optimal for inference, depending on, you know, if you've got a lot of inference
+[00:24:39.700 --> 00:24:42.940]   queries, you actually want a smaller model. It'll do inference more efficiently. It'll
+[00:24:42.940 --> 00:24:46.820]   be lower latency. It'll be cheaper to run. And in that case, it might actually be worth
+[00:24:46.820 --> 00:24:52.660]   your time to train a suboptimal model at training time to train longer on a smaller model. This
+[00:24:52.660 --> 00:24:56.060]   is exactly what the Lama folks did. That was kind of the revolution to me of the paper.
+[00:24:56.060 --> 00:24:59.940]   They, you know, they trained for a very long time on some small networks and still got
+[00:24:59.940 --> 00:25:03.820]   pretty good results, even if they were suboptimal compared to what they would have done if they
+[00:25:03.820 --> 00:25:07.700]   had spent the compute perfectly for training. But the networks became really popular in
+[00:25:07.700 --> 00:25:10.820]   my view, because they were easy for anybody to use at home and do inference on. You could
+[00:25:10.820 --> 00:25:15.300]   do it on your gaming GPU. That was a big deal. And so really, at the end of the day, your
+[00:25:15.300 --> 00:25:18.860]   architecture choice involves this tradeoff you need to make between, you know, how much
+[00:25:18.860 --> 00:25:22.060]   you want to spend for training and are you willing to actually spend a little bit more
+[00:25:22.060 --> 00:25:27.460]   for training to get cheaper inference? And that's a tradeoff you can then calculate.
+[00:25:27.460 --> 00:25:34.900]   The next big decision you have to make is sequence length. Sequence length is tricky.
+[00:25:34.900 --> 00:25:39.220]   Longer sequences increase the cost of attention because, you know, the self-attention operation
+[00:25:39.220 --> 00:25:43.660]   is quadratic. If you have a longer sequence, then the model needs to attend, you know,
+[00:25:43.660 --> 00:25:49.340]   every token has to attend to every token. And so you end up paying this very big penalty.
+[00:25:49.340 --> 00:25:53.620]   And you know, it gets quadratically worse as you increase the sequence length. Now,
+[00:25:53.620 --> 00:25:57.260]   it's important to note that with some modern, you know, techniques like flash attention,
+[00:25:57.260 --> 00:26:01.700]   I won't talk about flash attention, but it's just a fast way to do attention. The attention
+[00:26:01.700 --> 00:26:06.180]   costs are relatively small compared to the overall cost of using the feed forward layers
+[00:26:06.180 --> 00:26:11.180]   in a transformer network. And so you end up in a place where actually, you'll see before,
+[00:26:11.180 --> 00:26:15.220]   I didn't even take attention into account when I was computing the flops, because attention
+[00:26:15.220 --> 00:26:21.340]   is so negligible and so fast compared to all the other fully connected layers in the network.
+[00:26:21.340 --> 00:26:26.840]   So you know, eventually you get long enough sequences that attention cost does actually
+[00:26:26.840 --> 00:26:32.740]   start to matter. And it's kind of interesting. If you look at some of our throughput tables,
+[00:26:32.740 --> 00:26:38.260]   you'll see something pretty remarkable. As you get to really big networks, there's basically
+[00:26:38.260 --> 00:26:41.980]   no penalty for having longer sequences because the cost of attention is completely drowned
+[00:26:41.980 --> 00:26:45.300]   out by the cost of the bigger network. For a 30 billion parameter network, I believe
+[00:26:45.300 --> 00:26:50.700]   there's no penalty in going from sequence length 2048 to 4096. And only if I recall
+[00:26:50.700 --> 00:26:57.260]   correctly, a 15% penalty in going to sequence length 8192. That's not too bad. That's, you
+[00:26:57.260 --> 00:27:02.460]   know, a price potentially worth paying. For a 7 billion parameter network, the kind of
+[00:27:02.460 --> 00:27:05.700]   relative price to you escalates pretty quickly because the rest of the network is so much
+[00:27:05.700 --> 00:27:10.700]   smaller. Then you get to a question of, you know, just data. Do you have enough data to
+[00:27:10.700 --> 00:27:15.800]   use a longer sequence length? It's a tricky question. We found that in a lot of the standard
+[00:27:15.800 --> 00:27:19.980]   datasets that are out there, there just isn't a lot of long sequence data. So if you wanted
+[00:27:19.980 --> 00:27:22.780]   to train a long sequence model, you may not have much to work with. And even if you did
+[00:27:22.780 --> 00:27:26.540]   have stuff to work with, you have to be very careful where you pull it from. If you try
+[00:27:26.540 --> 00:27:30.260]   to kind of sample from all your datasets evenly, some datasets don't have any long sequence
+[00:27:30.260 --> 00:27:33.380]   data and you'll see the same few examples over and over and over again.
+[00:27:33.380 --> 00:27:37.860]   Let me get into one last open question. I think this is more of an open scientific question
+[00:27:37.860 --> 00:27:42.760]   right now. Just because we can cram really long sequences into memory does not mean the
+[00:27:42.760 --> 00:27:46.080]   model is actually taking advantage of them. You know, just because you can get the bits
+[00:27:46.080 --> 00:27:50.060]   from point A to point B doesn't mean that, you know, you're able to, you know, actually
+[00:27:50.060 --> 00:27:53.220]   use them in an effective way. The model may not be able to learn or may not be able to
+[00:27:53.220 --> 00:27:57.980]   holistically take advantage of all that information. And I think that question is still out there.
+[00:27:57.980 --> 00:28:03.320]   We still have a lot to learn about long sequence training.
+[00:28:03.320 --> 00:28:07.380]   So there are so many other choices. I'm not going to go through every single one. I lumped
+[00:28:07.380 --> 00:28:10.900]   all these choices together into one slide. I'm going to go through them, but I lumped
+[00:28:10.900 --> 00:28:14.980]   them together because I don't think there are clear answers to any of these. Positional
+[00:28:14.980 --> 00:28:18.660]   encodings, how you represent, you know, which token is in which part. There are lots of
+[00:28:18.660 --> 00:28:23.460]   different methods. The two most popular rotary embeddings are rope, rotary position embeddings,
+[00:28:23.460 --> 00:28:27.700]   and alibi. Rotary position embeddings actually learn position embeddings. Alibi just adds
+[00:28:27.700 --> 00:28:32.980]   a bit of a bias to, you know, the attention operations of things that are further apart.
+[00:28:32.980 --> 00:28:37.020]   We use alibi at Mosaic because it's a little bit faster. You don't need to really change
+[00:28:37.020 --> 00:28:40.180]   anything about the network. You just need to, you know, plug in a little bit of a bias
+[00:28:40.180 --> 00:28:43.940]   into the attention operation. There's no real problem with that. Rotary embeddings do slow
+[00:28:43.940 --> 00:28:49.100]   things down a little bit. Rotary embeddings do tend to be a popular choice, or rope. Whenever
+[00:28:49.100 --> 00:28:54.300]   I say rotary embeddings, I mean rope here, rotary position encodings. You know, the Lama
+[00:28:54.300 --> 00:28:59.660]   models used rope. I think the folks at Adept.ai mentioned that they used rope for the 8 billion
+[00:28:59.660 --> 00:29:03.780]   parameter model they released a little while ago. And so, you know, it's a choice that
+[00:29:03.780 --> 00:29:08.360]   I don't think really is settled right now. We used to say that alibi was really good
+[00:29:08.360 --> 00:29:12.020]   at extrapolating. Alibi automatically gives the model the ability to kind of look at longer
+[00:29:12.020 --> 00:29:15.380]   sequences than it was trained on. But now there are lots of interesting ways of also
+[00:29:15.380 --> 00:29:20.020]   interpolating to get extrapolation with rope embeddings. So it's a little bit of a mixed
+[00:29:20.020 --> 00:29:25.780]   picture there. Okay, next up is the activation function. This is also a bit of a mixed picture.
+[00:29:25.780 --> 00:29:30.000]   You see people using all sorts of different things. You see ReLU, just kind of a standard
+[00:29:30.000 --> 00:29:34.860]   rectified linear unit. You see gated linear units, which actually kind of have their own,
+[00:29:34.860 --> 00:29:40.980]   I think of it as almost an attention operation inside the activation. Then you have SuiGlue,
+[00:29:40.980 --> 00:29:45.940]   which is gated linear units, but uses switch activation. There are a lot of different choices
+[00:29:45.940 --> 00:29:49.820]   here. And again, you see many different choices in many different models right now. We use
+[00:29:49.820 --> 00:29:55.940]   ReLU at Mosaic. I believe that the Lama models used a different, I believe they used SuiGlue,
+[00:29:55.940 --> 00:30:00.940]   but I may not have gotten that exactly right. And, you know, there are a lot of different
+[00:30:00.940 --> 00:30:04.340]   choices here, a lot of different received wisdom, but no real definitive answers as
+[00:30:04.340 --> 00:30:09.940]   far as I've seen. Okay, then you get to optimizers. And Atom is the typical default optimizer
+[00:30:09.940 --> 00:30:13.540]   that people tend to use. But there are a lot of challenges with Atom, mainly that it just
+[00:30:13.540 --> 00:30:18.580]   takes up a lot of memory. You need two full copies of the model in terms of memory, just
+[00:30:18.580 --> 00:30:22.660]   because you have to, you know, you have to fit in the first and second moments as you're
+[00:30:22.660 --> 00:30:27.220]   training. And so there tend to be, there've been a lot of other optimizers. There are
+[00:30:27.220 --> 00:30:31.140]   eight bit variants of Atom that kind of reduce the memory by half. There's an optimizer called
+[00:30:31.140 --> 00:30:35.900]   Lion that came out this spring that also kind of has some of those behaviors. Another optimizer
+[00:30:35.900 --> 00:30:40.500]   called Sophia that came out that claims to be better. There are a lot of different choices
+[00:30:40.500 --> 00:30:44.180]   here and I don't think there's a definitive answer. My recommendation when there aren't
+[00:30:44.180 --> 00:30:50.820]   definitive answers is, you know, choose something that's popular. Look at what we did at Mosaic.
+[00:30:50.820 --> 00:30:54.900]   Look at what our friends at Meta did for the Lama models. And, you know, those are reasonable
+[00:30:54.900 --> 00:30:58.980]   choices that are pretty battle tested. If it was able to produce a good model, you know,
+[00:30:58.980 --> 00:31:02.900]   it's something hopefully you can believe in and stand by. So, you know, that means rope
+[00:31:02.900 --> 00:31:09.220]   or alibi. Lama used rope, we used alibi. RelUse are fine. You know, Atom is fine. There are
+[00:31:09.220 --> 00:31:13.820]   a lot of different choices. Last part is the tokenizer. So I'm not going to spend too much
+[00:31:13.820 --> 00:31:18.300]   time on tokenization today because I could probably talk for years on tokenizers and
+[00:31:18.300 --> 00:31:22.620]   I'm not an expert in that and the experts could probably talk for even longer. Tokenizers
+[00:31:22.620 --> 00:31:27.060]   are, you know, how do we translate actual text into individual discrete tokens that
+[00:31:27.060 --> 00:31:32.060]   the model can process? And there is a whole art and literature to this. This is a very
+[00:31:32.060 --> 00:31:37.740]   big meaty topic in the NLP world that people have spent a very long time working on. There
+[00:31:37.740 --> 00:31:41.180]   are lots of different tokenizers. Byte pair encoding or BPE and sentence piece tend to
+[00:31:41.180 --> 00:31:44.740]   be the two most popular from what I've seen. And you can train your own tokenizer that
+[00:31:44.740 --> 00:31:51.100]   is developed, use a tokenizer to develop its own kind of vocabulary on your data. And or
+[00:31:51.100 --> 00:31:55.540]   you can use a generic off the shelf tokenizer like the GPT NeoX tokenizer developed by the
+[00:31:55.540 --> 00:32:02.660]   folks at Eleuther AI. There are pros and cons to building your own tokenizer. Building your
+[00:32:02.660 --> 00:32:06.340]   own means that you're taking the risk that maybe your data doesn't represent what people
+[00:32:06.340 --> 00:32:09.620]   are going to use the model for and your model may not be as efficient or as effective at
+[00:32:09.620 --> 00:32:14.540]   processing that kind of data. There are benefits though. If you're dealing with code, for example,
+[00:32:14.540 --> 00:32:17.500]   the kinds of tokens you get with code are very different than the kinds of tokens you
+[00:32:17.500 --> 00:32:20.900]   get from natural language text. You'd get, you know, if and for and curly braces and
+[00:32:20.900 --> 00:32:25.140]   things like that. It also helps a lot if you're dealing with a language that is not well
+[00:32:25.140 --> 00:32:28.540]   represented in existing models. You know, if you're dealing with a non English language,
+[00:32:28.540 --> 00:32:31.380]   essentially the kinds of tokens that you're going to want are probably going to be very
+[00:32:31.380 --> 00:32:34.380]   different or the vocabulary that you're going to want is going to be very different and
+[00:32:34.380 --> 00:32:38.380]   it might help to train your own tokenizer. The ask that I make is if you're going to
+[00:32:38.380 --> 00:32:43.980]   train your own tokenizer, it is a messy, difficult art. And I strongly recommend comparing anything
+[00:32:43.980 --> 00:32:49.460]   you create against a good general purpose tokenizer like the GPT NeoX one, just to make
+[00:32:49.460 --> 00:32:55.460]   sure that you actually did a better job. You know, certainly it's a very difficult thing
+[00:32:55.460 --> 00:32:59.020]   to do and not all the tokenizers we've created at Mosaic are actually better than the generic
+[00:32:59.020 --> 00:33:02.460]   one. And so you need to evaluate your models. It's also worth keeping in mind that if you
+[00:33:02.460 --> 00:33:06.340]   change your vocabulary size and even if you change your tokenizer, loss is not necessarily
+[00:33:06.340 --> 00:33:10.620]   going to be comparable between two models. So you do need to look at downstream metrics.
+[00:33:10.620 --> 00:33:13.900]   I want to pause here again for any questions about, you know, architecture and design choices
+[00:33:13.900 --> 00:33:19.100]   in building an LLM. This has been super helpful. I was actually
+[00:33:19.100 --> 00:33:23.740]   planning to ask about like what would be your default recommendations, but I like this like
+[00:33:23.740 --> 00:33:31.500]   popularity rule, like just pick what most frameworks are using.
+[00:33:31.500 --> 00:33:35.020]   Pick what has been proven to work. I kind of think that, you know, unless you have a
+[00:33:35.020 --> 00:33:39.300]   huge amount of GPUs sitting idle and you can go and test this all for yourself, the best
+[00:33:39.300 --> 00:33:44.260]   thing to do is, you know, work for LLM works for you, work for MPT works for you. You know,
+[00:33:44.260 --> 00:33:47.620]   you're not going to do worse than those models. Maybe there are better choices out there,
+[00:33:47.620 --> 00:33:53.140]   but LLM is a pretty good model. You can't go wrong if you follow what they did.
+[00:33:53.140 --> 00:33:59.620]   Maybe one question, because I think for the vocab sizes, I've seen like a really broad
+[00:33:59.620 --> 00:34:06.700]   range from like 20,000 tokens to like 128 or even more. Do you have any good heuristic
+[00:34:06.700 --> 00:34:11.480]   on how to choose the vocab size? It's a little tricky because the vocab size
+[00:34:11.480 --> 00:34:16.940]   will impact the efficiency of the model. And so, you know, you need to, bigger vocabs will
+[00:34:16.940 --> 00:34:20.980]   be less efficient, but bigger vocabs mean you have more tokens and you may be more token
+[00:34:20.980 --> 00:34:25.740]   efficient. That is to say a piece of text may fit into fewer tokens and kind of get
+[00:34:25.740 --> 00:34:30.180]   back some of that inefficiency. There's a lot of debate. OpenAI from what I understand
+[00:34:30.180 --> 00:34:34.580]   tends to go with very large vocabularies. Other folks I've worked with like very small
+[00:34:34.580 --> 00:34:39.460]   vocabularies. In some sense, it is in the eye of the beholder. And that's something
+[00:34:39.460 --> 00:34:44.020]   that I don't think has really been definitively studied. And it probably varies by domain
+[00:34:44.020 --> 00:34:49.320]   quite a bit. So the answer here is like a standard 50,000 or so tends to be pretty popular.
+[00:34:49.320 --> 00:34:53.860]   I don't think you can go wrong with that. But I have seen, you know, down to 25,000
+[00:34:53.860 --> 00:34:58.200]   and up to over 100,000 before in production. And none of them have been like make or break
+[00:34:58.200 --> 00:35:02.780]   in terms of making a model much better or making a model much less efficient. I think
+[00:35:02.780 --> 00:35:04.980]   somewhere in that range, you can make a very safe choice.
+[00:35:04.980 --> 00:35:12.220]   >> Thank you. Maybe one more question on optimizers. I've heard like some people considering SGD
+[00:35:12.220 --> 00:35:17.060]   for also for training or fine tuning LLMs because it doesn't have this memory overhead
+[00:35:17.060 --> 00:35:23.060]   of Adam. Do you have an opinion if SGD is a valid choice as well?
+[00:35:23.060 --> 00:35:28.020]   >> It's complicated. I've certainly tried SGD for pre-training and it has not gone well.
+[00:35:28.020 --> 00:35:31.340]   My experience as a computer vision researcher was always that kind of you use Adam when
+[00:35:31.340 --> 00:35:34.820]   you don't have a better choice or you don't know something that's more specific for the
+[00:35:34.820 --> 00:35:39.540]   problem. In vision, they used to use Adam until we had batch normalization, which smoothed
+[00:35:39.540 --> 00:35:44.140]   out training and reduced a lot of the instabilities. And then everybody switched to SGD. And SGD
+[00:35:44.140 --> 00:35:49.300]   tends to outperform Adam in well-tuned settings in computer vision. For transformers, I sometimes
+[00:35:49.300 --> 00:35:54.080]   wonder is Adam the right thing or maybe we haven't gotten training to be well-behaved
+[00:35:54.080 --> 00:35:57.340]   enough that we can use something more specific. So I think it's an open question. When it
+[00:35:57.340 --> 00:36:01.500]   comes to fine tuning, I don't really have any clear guidance there. I think it is going
+[00:36:01.500 --> 00:36:07.180]   to vary setting by setting. It's hard to go wrong with Adam. If you really sat me down
+[00:36:07.180 --> 00:36:10.620]   and said you get one try at this and you can only do one thing, I would say, okay, I'm
+[00:36:10.620 --> 00:36:14.700]   doing Adam. But if you have multiple tries and you can play around a little bit, optimizers
+[00:36:14.700 --> 00:36:18.540]   can make a huge difference in terms of quality of results. After all, a trained neural network
+[00:36:18.540 --> 00:36:23.460]   is just solving an optimization problem. So different solution, better solution, they
+[00:36:23.460 --> 00:36:27.580]   are out there. So it really depends on your budget and how much risk you can take.
+[00:36:27.580 --> 00:36:33.780]   Thank you. I think we can go on. This has been super helpful.
+[00:36:33.780 --> 00:36:41.540]   Awesome. So then you train the model and all hell breaks loose. And I say this a little
+[00:36:41.540 --> 00:36:45.980]   bit tongue in cheek, but also especially in pre-training, there are lots and lots of stories
+[00:36:45.980 --> 00:36:49.460]   out there and a lot of experience that I've lived through where pre-training has just
+[00:36:49.460 --> 00:36:55.180]   gone horribly wrong for reasons that people don't always understand. You often see loss
+[00:36:55.180 --> 00:37:02.900]   spikes and I'm showing you a couple of examples here from internally at Mosaic ML where suddenly,
+[00:37:02.900 --> 00:37:07.300]   unexpectedly loss jumps up and sometimes it comes back down and sometimes it catastrophically,
+[00:37:07.300 --> 00:37:11.340]   you can look at this model on the right, it just kind of catastrophically kills the model.
+[00:37:11.340 --> 00:37:14.340]   It's a big problem. I will also note experiment tracking. I just want to give a shout out
+[00:37:14.340 --> 00:37:18.860]   quickly because somebody asked about it. We do use weights and biases at Mosaic ML and
+[00:37:18.860 --> 00:37:22.580]   this is a weights and biases event. These screenshots are from weights and biases where
+[00:37:22.580 --> 00:37:27.380]   I went and found some models that had lost spikes and took some screenshots of them.
+[00:37:27.380 --> 00:37:32.340]   So there are lots of different ways to address loss spikes. There's some algorithmic ones.
+[00:37:32.340 --> 00:37:36.560]   One of the most popular ones you'll see in the literature is simply roll back to a checkpoint,
+[00:37:36.560 --> 00:37:43.220]   change the random seed, maybe change the learning rate, lower it, and then try again. That tends
+[00:37:43.220 --> 00:37:45.980]   to be kind of the state of the art in some sense from what I hear people describe in
+[00:37:45.980 --> 00:37:49.240]   a lot of practical settings. There are other proposed approaches and a lot of research
+[00:37:49.240 --> 00:37:55.240]   going into this topic, but I do think it's kind of, you know, it is a tricky thing and
+[00:37:55.240 --> 00:38:01.380]   it does bedevil, especially, you know, I think in the single digit billions and above, you
+[00:38:01.380 --> 00:38:04.140]   are going to run into loss spikes if you're trying to push your learning rate high enough
+[00:38:04.140 --> 00:38:10.940]   to get state of the art results. Next thing I'll mention is hardware failures.
+[00:38:10.940 --> 00:38:17.780]   You know, a lot of GPUs die. This may sound obvious to some people and it may sound surprising
+[00:38:17.780 --> 00:38:25.020]   to other people, but GPUs die pretty frequently or GPUs run into different issues. I have
+[00:38:25.020 --> 00:38:31.380]   great stories about all the creative ways that GPUs can die. And I think I lost a slide
+[00:38:31.380 --> 00:38:36.300]   here, but, you know, what I was going to talk about here is that there are really, you know,
+[00:38:36.300 --> 00:38:43.940]   a bunch of challenges when you lose a GPU. The first is that once you lose a GPU, the
+[00:38:43.940 --> 00:38:49.860]   training job dies. We haven't built fault tolerant ways to train. And so, your training
+[00:38:49.860 --> 00:38:55.260]   job dies and, you know, what do you do? You just have to resume from a checkpoint and,
+[00:38:55.260 --> 00:39:00.100]   you know, pick up some more GPUs that are alive and keep going. There are a lot of challenges
+[00:39:00.100 --> 00:39:04.500]   here in even detecting a dead GPU. I've seen situations where the GPU isn't dead dead.
+[00:39:04.500 --> 00:39:09.260]   The GPU is straggling and running slowly and you have to detect that and then, you know,
+[00:39:09.260 --> 00:39:13.580]   get rid of that GPU and keep going. The GPUs also die in groups of eight because on all
+[00:39:13.580 --> 00:39:16.700]   the major cloud providers, they're soldered to the motherboard, eight to a motherboard.
+[00:39:16.700 --> 00:39:20.820]   This is how you get the fast, you know, multi GPU kind of, you know, multi node interconnect
+[00:39:20.820 --> 00:39:26.500]   that NVIDIA provides or that any provider offers you. And so, you know, you can't really
+[00:39:26.500 --> 00:39:32.060]   just swap out one. You have to swap out a whole board or leave out a whole node. The,
+[00:39:32.060 --> 00:39:37.820]   you know, the next big challenge here is that, you know, you got to pick the size of how
+[00:39:37.820 --> 00:39:42.420]   many GPUs you're dealing with very carefully. Because let's say I'm running a job on 512
+[00:39:42.420 --> 00:39:48.060]   GPUs and one GPU dies. My job may not fit anymore. If I split my checkpoint into 512
+[00:39:48.060 --> 00:39:54.460]   pieces, how do I even resume? If I picked my data set around, you know, having 512 separate
+[00:39:54.460 --> 00:40:00.580]   workers on it, what do I do when I lose a GPU? I've, you know, I may lose determinism.
+[00:40:00.580 --> 00:40:07.060]   If I try to resume on 511 GPUs or 504 GPUs, if I lose a whole node. It's really nasty
+[00:40:07.060 --> 00:40:11.300]   because as your training jobs get bigger and bigger, it's more likely you're going to encounter
+[00:40:11.300 --> 00:40:14.820]   a GPU failure. There are just more opportunities for that to happen, but there's still no fault
+[00:40:14.820 --> 00:40:20.020]   tolerance. So it's your most expensive, highest risk jobs that are the ones that are most
+[00:40:20.020 --> 00:40:27.540]   likely to confront a GPU failure just by probabilities. And that's really, really challenging. So
+[00:40:27.540 --> 00:40:31.620]   what do you do? I have a few pieces of advice here because this is a persistent problem
+[00:40:31.620 --> 00:40:36.900]   for us and in general. First is there's a lot of work you can do to automatically detect
+[00:40:36.900 --> 00:40:40.340]   failures. You can look for NVIDIA errors, you can look for the failure conditions, like
+[00:40:40.340 --> 00:40:44.260]   the job suddenly gets really slow, and identify those proactively. Because a lot of the time
+[00:40:44.260 --> 00:40:50.020]   your job won't just crash. It will just get really slow or get stuck somewhere. And oftentimes
+[00:40:50.020 --> 00:40:53.020]   the error messages can be pretty cryptic if you just look at what prints out on the command
+[00:40:53.020 --> 00:40:59.900]   line and aren't monitoring the GPUs. It also tends to be helpful to keep spare GPUs available.
+[00:40:59.900 --> 00:41:03.820]   I generally never train with a full cluster. I'll always keep a few GPUs on the side so
+[00:41:03.820 --> 00:41:09.740]   that I can swap them in as necessary. And you can still use those GPUs for low priority
+[00:41:09.740 --> 00:41:13.580]   work. You can still get things done on them, but they'll just get taken over if they're
+[00:41:13.580 --> 00:41:17.780]   needed. You can use sharded checkpointing. So one thing I forgot to mention before is
+[00:41:17.780 --> 00:41:21.500]   that the other problem with resumption, your checkpoints are really big. We can do some
+[00:41:21.500 --> 00:41:28.300]   math here, but just taking optimizer state plus GPU or plus model, that's 6x the number
+[00:41:28.300 --> 00:41:34.180]   of parameters in terms of bytes. So if I have 100 billion parameter model, that's 600 gigabytes.
+[00:41:34.180 --> 00:41:40.260]   That is huge. In fact, in many cases that may be too big to fit into memory on a single
+[00:41:40.260 --> 00:41:44.300]   node depending on how big your memory is. But it's also very tricky because it takes
+[00:41:44.300 --> 00:41:49.100]   a long time to save that to storage and to load it back from storage. PyTorch has introduced
+[00:41:49.100 --> 00:41:52.580]   some really great support for sharded checkpointing and we've taken advantage of that in our Mosaic
+[00:41:52.580 --> 00:41:57.740]   work so that you can split the checkpoint up into, if you've got N GPUs, you can split
+[00:41:57.740 --> 00:42:02.420]   it into N pieces. And so that way each GPU can use its network bandwidth and storage
+[00:42:02.420 --> 00:42:05.380]   connections and save much more quickly and load much more quickly. That tends to help
+[00:42:05.380 --> 00:42:11.740]   a lot. And the last piece here is that there are data loaders that provide random access.
+[00:42:11.740 --> 00:42:16.780]   Again, if you load from a checkpoint, you may end up having to spin all the way through
+[00:42:16.780 --> 00:42:20.860]   your data loader to go back to where you were. And we have a data loader that I mentioned
+[00:42:20.860 --> 00:42:25.460]   last time at Mosaic that allows you to just have random access. And our data loader actually
+[00:42:25.460 --> 00:42:30.140]   will do deterministic training, even if the number of GPUs changes. And we have what we
+[00:42:30.140 --> 00:42:33.780]   call elastic sharded checkpointing, where you can actually have a checkpoint sharded
+[00:42:33.780 --> 00:42:38.660]   for let's say 512 GPUs and resume at just fine on 504 GPUs or whatever other number
+[00:42:38.660 --> 00:42:41.780]   you want. So there are a lot of mitigations, some of which are built in the software, some
+[00:42:41.780 --> 00:42:45.020]   of which involve monitoring hardware, some of which are just best practices, but it is
+[00:42:45.020 --> 00:42:50.820]   something you need to be very careful about. And then you fine tune. So we get to the fun
+[00:42:50.820 --> 00:42:54.300]   part. We fine tune. And I'm going to say just a little bit on this. So someone asked about
+[00:42:54.300 --> 00:42:58.740]   fine tuning versus instruction fine tuning. RLHF is in there. And I want to-- I kind of
+[00:42:58.740 --> 00:43:01.620]   left the slide blank to answer any questions that we had there. So I'll clarify a little
+[00:43:01.620 --> 00:43:06.660]   bit and then put out a call for questions. But the way to think about fine tuning is
+[00:43:06.660 --> 00:43:11.620]   that you're taking a model and you're training it and using it for some other purpose. That
+[00:43:11.620 --> 00:43:15.540]   purpose may be more specific. It may be a particular domain, like fine tuning a model
+[00:43:15.540 --> 00:43:22.660]   for code, maybe a particular task, like classification. It may be some other paradigm. And what tends
+[00:43:22.660 --> 00:43:26.740]   to be popular for general purpose chatbots is a process where we start by fine tuning
+[00:43:26.740 --> 00:43:31.220]   for anything. Fine tuning is kind of the umbrella term. And one thing we might do is what's
+[00:43:31.220 --> 00:43:36.340]   called instruction fine tuning or supervised fine tuning, SFT or IFT. SFT is becoming more
+[00:43:36.340 --> 00:43:40.020]   popular, so I've started switching to that. And the idea is that you have a lot of example
+[00:43:40.020 --> 00:43:44.100]   interactions with the model, a command or an instruction and then a response. And all
+[00:43:44.100 --> 00:43:48.180]   you're doing is you're kind of training the model to see its first part of its input as
+[00:43:48.180 --> 00:43:52.100]   an instruction and then respond to it. Because naively, the model is just trained to spit
+[00:43:52.100 --> 00:43:56.020]   out documents. It's trained to just kind of continue generating tokens. And giving it
+[00:43:56.020 --> 00:44:00.220]   some examples of instructions and responses is really helpful. And I mentioned last time,
+[00:44:00.220 --> 00:44:04.540]   on the order of tens of thousands, we'll get you into the ballpark of LLAMA2 in terms of
+[00:44:04.540 --> 00:44:08.620]   what they did, as long as they're really good quality. And quality matters.
+[00:44:08.620 --> 00:44:12.140]   Then there's a process called RLHF. And I'm going to say a little more about RLHF. Hugging
+[00:44:12.140 --> 00:44:17.540]   Face has this beautiful blog post on how RLHF works. And I recommend reading it, but I stole
+[00:44:17.540 --> 00:44:22.900]   a couple of figures from it. And the idea is that we can ignore the RL part. I think
+[00:44:22.900 --> 00:44:28.340]   almost there is RL going on here, but I think it overcomplicates things in terms of understanding.
+[00:44:28.340 --> 00:44:31.180]   All you do is you take your language model, you generate some outputs with respect to
+[00:44:31.180 --> 00:44:35.700]   some prompts and ask humans what they think of them. Was this good or bad? Was this one
+[00:44:35.700 --> 00:44:39.260]   better than that one? How much better was this one than that one? And then you train
+[00:44:39.260 --> 00:44:44.260]   a model to predict a score for each response. Like, how good was this response? Or how good
+[00:44:44.260 --> 00:44:50.100]   would humans say this response was? And then you go through this more complicated
+[00:44:50.100 --> 00:44:53.740]   process. This is the RL part. So I'm not going to dwell too much on this. But all you do
+[00:44:53.740 --> 00:45:00.660]   is you essentially train your model to maximize the reward. To give prompts that humans would
+[00:45:00.660 --> 00:45:04.980]   give high scores to, based on this reward model. You can also -- you'll see this initial
+[00:45:04.980 --> 00:45:07.860]   language model over here. You can also kind of -- you don't want the model to stray too
+[00:45:07.860 --> 00:45:14.500]   far or kind of get too, you know, get too obedient in some sense. Or kind of, you know,
+[00:45:14.500 --> 00:45:18.340]   try to max out the reward. So you can also constrain the model to behave like the initial
+[00:45:18.340 --> 00:45:22.460]   language model a little bit. So that it doesn't change too much.
+[00:45:22.460 --> 00:45:29.180]   So you know, that's the RLHF process. And the idea with RLHF is that you, you know,
+[00:45:29.180 --> 00:45:32.300]   you're trying to get the model to align better with human preferences. When people talk about
+[00:45:32.300 --> 00:45:36.900]   alignment, this is often the technique that they're looking to use.
+[00:45:36.900 --> 00:45:39.780]   The last thing I'll mention is LoRa. Because LoRa tends to always come up in the context
+[00:45:39.780 --> 00:45:45.220]   of fine tuning. And I didn't want to go without mentioning it. So when you fine tune, often
+[00:45:45.220 --> 00:45:50.540]   what happens is you're modifying the weights of the whole model. But not all of us have
+[00:45:50.540 --> 00:45:55.220]   a big fancy GPU where we can fit all the weights in the model. And sometimes we want to have
+[00:45:55.220 --> 00:45:58.300]   many, many different copies of the model fine tuned for different things. This is where
+[00:45:58.300 --> 00:46:03.820]   LoRa comes in handy. All LoRa is, is a way of kind of, you learn a, you learn this thing
+[00:46:03.820 --> 00:46:07.420]   on the right. You've got your pre-trained weights on the left. And you learn a modification,
+[00:46:07.420 --> 00:46:13.140]   a delta, a change to those pre-trained weights. And that change is actually, you would typically
+[00:46:13.140 --> 00:46:17.140]   have to have a matrix as big as the matrix representing your weights. But in LoRa, you
+[00:46:17.140 --> 00:46:21.540]   split up that matrix. You factorize it into two kind of low rank matrices that you can
+[00:46:21.540 --> 00:46:25.980]   multiply by each other to create one big matrix. The idea is that this does give you a way
+[00:46:25.980 --> 00:46:29.980]   to change all the parameters in the pre-trained weights, but it takes up a lot less memory
+[00:46:29.980 --> 00:46:35.420]   because you don't have a full additional copy of that matrix, just too much smaller tensors.
+[00:46:35.420 --> 00:46:38.860]   So it's lower rank. It doesn't allow you to change, you know, it, it gives you a limited
+[00:46:38.860 --> 00:46:42.820]   basis on which to change the weights, but LoRa tends to work really well in practice.
+[00:46:42.820 --> 00:46:46.900]   And so it tends to be pretty popular, especially if you're at home and you have a 3080 or,
+[00:46:46.900 --> 00:46:51.220]   you know, some older GPU that doesn't have as much memory or just a gaming GPU in general.
+[00:46:51.220 --> 00:46:54.420]   LoRa tends to be a lifesaver because, you know, you don't need to store that much when
+[00:46:54.420 --> 00:46:57.660]   you're doing the forward and backward pass, just the LoRa weights plus the main model.
+[00:46:57.660 --> 00:47:02.460]   You don't have to do a backward pass and store a second or third or fourth copy of all those
+[00:47:02.460 --> 00:47:06.940]   weights or optimizer state for all those weights, just for kind of these orange weights on the
+[00:47:06.940 --> 00:47:13.220]   right that saves you a lot of memory. With that, I'm actually going to pause and see
+[00:47:13.220 --> 00:47:16.380]   if we have any more questions. That is all the content that I brought for you today.
+[00:47:16.380 --> 00:47:22.220]   So, you know, I'm happy to chat from here. This is awesome. Thanks a lot, Jonathan. So
+[00:47:22.220 --> 00:47:30.380]   one question I have since you showed this loss charts from weights and biases, it's
+[00:47:30.380 --> 00:47:36.580]   like the most obvious metric to monitor, but is it sufficient? Like in practice, either
+[00:47:36.580 --> 00:47:41.500]   during training or fine tuning, do you have other ways of evaluating if the model is improving,
+[00:47:41.500 --> 00:47:46.780]   if it's worth to train it longer or is loss sufficient to make that decision?
+[00:47:46.780 --> 00:47:51.340]   Loss is definitely not sufficient. When pre-training loss gives you a really good directional sense
+[00:47:51.340 --> 00:47:54.620]   that you're making progress and it does tend to correlate with other metrics, but once
+[00:47:54.620 --> 00:47:59.260]   you get into fine tuning, loss tells you almost nothing. So I mentioned this a lot last week,
+[00:47:59.260 --> 00:48:03.740]   but I guess it's worth really emphasizing this week as well. Evaluation is where it
+[00:48:03.740 --> 00:48:08.740]   all begins. You have to know what you're measuring and what success looks like. And it has to
+[00:48:08.740 --> 00:48:13.940]   be on a downstream task. Loss is not enough. Your objective is not enough. So, you know,
+[00:48:13.940 --> 00:48:17.140]   I'll just emphasize that. I know you know that, but, you know, for everybody else out
+[00:48:17.140 --> 00:48:21.500]   there, just as a reminder, evaluation is where everything starts. And until you know what
+[00:48:21.500 --> 00:48:28.260]   you're measuring, don't even get started training because you don't know why you're training.
+[00:48:28.260 --> 00:48:36.620]   Thank you. I wanted to ask this question, like with a limited budget for fine tuning,
+[00:48:36.620 --> 00:48:43.660]   would you recommend people to go for a bigger model, sorry, for a smaller model and fine
+[00:48:43.660 --> 00:48:48.500]   tune all of the parameters? Or do it make more sense to take a bigger model and do like
+[00:48:48.500 --> 00:48:56.780]   LoRa or QLoRa or any other methods? Like what would be your default approach here?
+[00:48:56.780 --> 00:49:00.260]   So it depends on what your budget is. I want to emphasize LoRa is really interesting. I
+[00:49:00.260 --> 00:49:07.140]   know we talked at the beginning about, you know, the actual speed and the, you know,
+[00:49:07.140 --> 00:49:13.620]   and the memory usage. LoRa will dramatically reduce your memory usage. LoRa will not help
+[00:49:13.620 --> 00:49:17.620]   your speed very much. The reason being that you have to still forward propagate through
+[00:49:17.620 --> 00:49:21.740]   the whole network all the way. And you have to backward propagate through the whole network
+[00:49:21.740 --> 00:49:25.820]   all the way. And then update the LoRa parameters. But you still have to do that chain rule.
+[00:49:25.820 --> 00:49:30.620]   So LoRa, we found doesn't save you very much in terms of training time. It will save you
+[00:49:30.620 --> 00:49:35.100]   some memory. So if you have a low memory GPU, it's really, I think LoRa is super popular
+[00:49:35.100 --> 00:49:39.420]   for two reasons. One is that if you want to like very quickly swap out multiple models,
+[00:49:39.420 --> 00:49:43.100]   LoRa gives you a very convenient way to do that. And if you're, if you have a gaming
+[00:49:43.100 --> 00:49:47.180]   GPU, LoRa is a great way to be able to fine tune something really big. But LoRa is not
+[00:49:47.180 --> 00:49:51.540]   going to be any cheaper. It's not going to save you any cost. So at the end of the day,
+[00:49:51.540 --> 00:49:55.220]   you know, it really comes down to what your budget is. And LoRa is not going to rescue
+[00:49:55.220 --> 00:50:03.900]   you in that respect.
+[00:50:03.900 --> 00:50:09.680]   We have another question from the audience. What are the scenarios when fine tuning makes
+[00:50:09.680 --> 00:50:16.300]   more sense than, for example, prompt engineering or training from scratch?
+[00:50:16.300 --> 00:50:23.340]   So I'm going to go back to my friendly advice page, because this is where I go for everything.
+[00:50:23.340 --> 00:50:26.780]   And this is going to be friendly advice piece number one. Start small and work your way
+[00:50:26.780 --> 00:50:30.680]   up. Start by prompt engineering. If that gets the job done, great. If you can't get the
+[00:50:30.680 --> 00:50:35.740]   job done, then explore fine tuning. If fine tuning gets the job done, great. If fine tuning
+[00:50:35.740 --> 00:50:40.420]   doesn't, then we need to talk about pre-training or whether anything can solve your task. But
+[00:50:40.420 --> 00:50:44.660]   you know, I always instruct people start small and work your way up. Even though a lot of
+[00:50:44.660 --> 00:50:48.740]   our business at Mosaic is training the big stuff, I don't want anybody to waste their
+[00:50:48.740 --> 00:50:53.560]   money. If they don't need to train the big stuff, they shouldn't. And so my answer to
+[00:50:53.560 --> 00:50:57.780]   you is try it and see, but start with the easiest thing first and the cheapest thing
+[00:50:57.780 --> 00:51:00.960]   first.
+[00:51:00.960 --> 00:51:09.620]   We have a question about how to think about designing evaluations for downstream tasks.
+[00:51:09.620 --> 00:51:14.340]   I think we covered this a little bit in the previous lecture, but you mentioned this is
+[00:51:14.340 --> 00:51:20.460]   the critical topic, how to do evaluations. I think it's worth sharing that question again.
+[00:51:20.460 --> 00:51:24.460]   Yeah, I direct that person to more of what we talked about last time, but what I will
+[00:51:24.460 --> 00:51:30.660]   say is it is the most critical topic and the thing we understand the least. We know so
+[00:51:30.660 --> 00:51:35.140]   little about evaluation and how to evaluate properly. It's something where there aren't
+[00:51:35.140 --> 00:51:38.460]   really best practices in the field. If you have a process you're already integrating
+[00:51:38.460 --> 00:51:41.980]   a model into, however you would measure success for that process, measure the model in the
+[00:51:41.980 --> 00:51:48.540]   same way. But otherwise it's incredibly bespoke, use case by use case. And I wish I had general
+[00:51:48.540 --> 00:51:52.700]   advice, but the general advice is try to get it as close to the real world as possible.
+[00:51:52.700 --> 00:51:55.780]   And the rest is kind of up to you as the domain expert.
+[00:51:55.780 --> 00:52:04.420]   Thank you. And then maybe a question from me, like we've learned a lot from you throughout
+[00:52:04.420 --> 00:52:07.980]   like this lecture and the previous one. In the previous one, just as a reminder, we covered
+[00:52:07.980 --> 00:52:16.740]   data. And today we learned about different techniques, including both like choices of
+[00:52:16.740 --> 00:52:25.420]   architecture or fine tuning methods or training methods. And if, let's say I have like a limited
+[00:52:25.420 --> 00:52:32.540]   budget or limited time working on an enterprise use case, like how much time should I allocate
+[00:52:32.540 --> 00:52:36.780]   to each of these buckets? Should I spend more time on the data front and just go with the
+[00:52:36.780 --> 00:52:41.900]   defaults for all of the training techniques? Or should I spend more time like with a given
+[00:52:41.900 --> 00:52:48.900]   data, just focus on getting, squeezing more out of the model? Like what would be your
+[00:52:48.900 --> 00:52:49.900]   recommendation here?
+[00:52:49.900 --> 00:52:55.580]   Oh, this is so hard. It's very scenario specific, so it's hard to give advice. What I tend to
+[00:52:55.580 --> 00:52:59.180]   do is I like to kind of round robin a little bit, get everything to the point where I can
+[00:52:59.180 --> 00:53:02.460]   get something end to end, spend a little time on data, a little time on modeling, just get
+[00:53:02.460 --> 00:53:06.940]   something minimally working. And then you can start improving and optimizing. But I
+[00:53:06.940 --> 00:53:11.460]   think the biggest mistake you can make, the thing you should not do is spend tons of time
+[00:53:11.460 --> 00:53:15.420]   on the data and then go and train the model. You need a way to measure whether the changes
+[00:53:15.420 --> 00:53:21.060]   you make actually matter. And so if you, once you have a minimal model and a minimal dataset,
+[00:53:21.060 --> 00:53:24.380]   you can measure like this easy thing I did to tweak the dataset, did that help meaningfully
+[00:53:24.380 --> 00:53:28.060]   or not? This easy thing I did to tweak the model, did that help? And you can figure out
+[00:53:28.060 --> 00:53:31.260]   where to invest your time and resources, where you're getting returns, what is working, what
+[00:53:31.260 --> 00:53:35.240]   isn't working. But I think the most dangerous thing would be if you did a deep dive into
+[00:53:35.240 --> 00:53:38.380]   one of these before you had something end to end working and you could evaluate your
+[00:53:38.380 --> 00:53:42.260]   success. Again, it really, in some sense, it does go back to start small and work your
+[00:53:42.260 --> 00:53:48.340]   way up and test for yourself. You know, it's all about spending your time, money, energy
+[00:53:48.340 --> 00:53:51.860]   as efficiently as possible, because this is so expensive and you can go down so many very
+[00:53:51.860 --> 00:53:55.260]   deep rabbit holes.
+[00:53:55.260 --> 00:54:02.260]   We have another question and this is very specific. Would you recommend using FP16 or
+[00:54:02.260 --> 00:54:05.260]   BF16 for training?
+[00:54:05.260 --> 00:54:11.860]   BF16. BF16 is a slightly different floating point representation than FP16 that shifts
+[00:54:11.860 --> 00:54:15.860]   around a few of the bits in, you know, between the exponent and the mantissa. I can never
+[00:54:15.860 --> 00:54:21.420]   keep track of which is which. But BF16 tends to be a little bit more numerically stable
+[00:54:21.420 --> 00:54:26.260]   for the kinds of scenarios we see for training in practice in FP16.
+[00:54:26.260 --> 00:54:36.820]   Let me check if there are any questions left that we have not answered yet. Yeah, we have
+[00:54:36.820 --> 00:54:41.940]   this question, which I think it would be like a really good question to finish with. And
+[00:54:41.940 --> 00:54:47.020]   the question is about this point from the slide. If you can expand on it. This is data
+[00:54:47.020 --> 00:54:52.460]   science in its truest form. I think I remember you talking about this in the previous lecture,
+[00:54:52.460 --> 00:54:57.380]   but I think it makes like a perfect conclusion to this series.
+[00:54:57.380 --> 00:55:03.420]   Yeah, I completely agree. So, you know, I always heard the term data science and I never
+[00:55:03.420 --> 00:55:06.020]   really thought much of it. I thought it was a little bit of marketing. You know, I'm a
+[00:55:06.020 --> 00:55:13.660]   data scientist. What does that mean? But, you know, this is really when I look at deep
+[00:55:13.660 --> 00:55:20.340]   learning and in building anything, you have to be a true scientist. You have to pose hypotheses,
+[00:55:20.340 --> 00:55:24.420]   run experiments, build knowledge for yourself about your situation and about the world.
+[00:55:24.420 --> 00:55:26.980]   There are a lot of experiments that have never been run before. And chances are when you're
+[00:55:26.980 --> 00:55:30.180]   building a network, you're going to run an experiment that nobody has ever written about
+[00:55:30.180 --> 00:55:33.600]   before to understand, like, you know, should I use this activation or that one or what
+[00:55:33.600 --> 00:55:40.780]   have you? And so you have to be a scientist. You have to embrace that empirical scientific
+[00:55:40.780 --> 00:55:45.200]   frame of mind. Everything is an experiment. Everything is a scientific question. And your
+[00:55:45.200 --> 00:55:50.020]   goal is to generate knowledge that will be useful to you. So I kind of think of this
+[00:55:50.020 --> 00:55:54.980]   feels like when I hear the word data science, that's what this feels like it is. This is
+[00:55:54.980 --> 00:55:58.660]   really being a scientist in the same way that a physicist runs experiments or a biologist
+[00:55:58.660 --> 00:56:03.460]   runs experiments. It's the same thing. And so, you know, I think the thing I want to
+[00:56:03.460 --> 00:56:08.140]   leave people with is really be critical, think for yourself and be a scientist. Every situation
+[00:56:08.140 --> 00:56:12.780]   is different and we know a lot less than what we don't know right now about deep learning
+[00:56:12.780 --> 00:56:17.860]   and LLMs in general. So chances are, you know, for a lot of this, I didn't even give answers.
+[00:56:17.860 --> 00:56:21.020]   I didn't tell you what to do. I just kind of described what's out there and the choices
+[00:56:21.020 --> 00:56:27.020]   and the trade-offs because I don't know what the right answers are in general or for you.
+[00:56:27.020 --> 00:56:32.100]   So you know, that's really, you're going to have to be a scientist and I'm not going to
+[00:56:32.100 --> 00:56:36.100]   have all the answers for you. Nobody will. Figure it out for yourself and good luck.
+[00:56:36.100 --> 00:56:42.980]   Thanks a lot, Jonathan. This has been both super educative and also inspirational. So
+[00:56:42.980 --> 00:56:50.980]   appreciate you investing this time, sharing this knowledge with the community. It's been
+[00:56:50.980 --> 00:56:56.980]   a great honor to be learning from you. And I recommend everyone to follow Jonathan, follow
+[00:56:56.980 --> 00:57:03.160]   MosaicML and Databricks. I know you're training fantastic models and it's a great service
+[00:57:03.160 --> 00:57:09.460]   that we can recommend. And for everyone that joined us in this series, we appreciate you
+[00:57:09.460 --> 00:57:16.700]   staying with us and we hope you get to train and fine-tune LLMs that meet your needs, meet
+[00:57:16.700 --> 00:57:23.740]   your business needs, that score high on whatever evaluation you've chosen. And for any questions
+[00:57:23.740 --> 00:57:29.140]   and ongoing conversations, we recommend you join our Discord and we'll post a link to
+[00:57:29.140 --> 00:57:34.460]   the Discord below the video, wherever the video is posted. So thanks everyone. Thanks
+[00:57:34.460 --> 00:57:38.140]   a lot again, Jonathan. It's been a great pleasure to be learning from you.
+[00:57:39.140 --> 00:57:41.140]   Thank you so much.
+[00:57:41.140 --> 00:57:44.140]   Have a great day, everyone.
+[00:57:44.140 --> 00:57:46.140]   Bye.
+[00:57:46.140 --> 00:57:56.140]   [BLANK_AUDIO]
+

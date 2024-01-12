@@ -1,0 +1,786 @@
+
+[00:00:00.000 --> 00:00:08.900]   We focus so much effort on training models, getting features on all that crazy architectures.
+[00:00:08.900 --> 00:00:14.460]   The space of models that we can consider is increasing rapidly, but we still are bottlenecked
+[00:00:14.460 --> 00:00:18.320]   on is this model better than the one that we already had?
+[00:00:18.320 --> 00:00:22.680]   You're listening to Gradient Dissent, a show about machine learning in the real world,
+[00:00:22.680 --> 00:00:25.360]   and I'm your host, Lukas Biewald.
+[00:00:25.360 --> 00:00:30.160]   Today I'm talking with Sean Taylor, who's the head of Rideshare Labs at Lyft.
+[00:00:30.160 --> 00:00:35.480]   Previously, he was a research scientist on Facebook's core data science team, and before
+[00:00:35.480 --> 00:00:40.520]   that he got his PhD in information systems at NYU Stern School of Business.
+[00:00:40.520 --> 00:00:45.960]   He also has a BS in economics from the University of Pennsylvania, and he tells me that he prefers
+[00:00:45.960 --> 00:00:47.600]   R to Python.
+[00:00:47.600 --> 00:00:50.600]   I'm excited to get into that with him today.
+[00:00:50.600 --> 00:00:57.080]   I guess where I wanted to start is the stuff you're working on now on ridesharing at Lyft.
+[00:00:57.080 --> 00:01:03.000]   My first question is just for people who haven't thought deeply about this, how does data science
+[00:01:03.000 --> 00:01:07.200]   and ML factor into a ridesharing app that probably everyone has used?
+[00:01:07.200 --> 00:01:11.760]   What are the pieces that matter, and what role does data science and ML play?
+[00:01:11.760 --> 00:01:14.080]   Yeah, that's a great question.
+[00:01:14.080 --> 00:01:18.600]   I think it's a pretty abstract concept because you just tell an app where you want to go
+[00:01:18.600 --> 00:01:23.040]   and a driver shows up, and there's a lot of things that happen under the hood to enable
+[00:01:23.040 --> 00:01:24.040]   that.
+[00:01:24.040 --> 00:01:30.720]   I think of Lyft as a stack of algorithms that all add up to a driver arriving when and where
+[00:01:30.720 --> 00:01:31.720]   you want.
+[00:01:31.720 --> 00:01:37.280]   That driver showing up there is just a sequence of well-made decisions, and you can trace
+[00:01:37.280 --> 00:01:42.720]   those decisions back as far as you want, all the way to when we acquired that driver and
+[00:01:42.720 --> 00:01:48.080]   signed them up to drive for Lyft, and when we acquired the rider and got them to install
+[00:01:48.080 --> 00:01:49.560]   the app and decide to use it.
+[00:01:49.560 --> 00:01:54.520]   So there's all those decisions added up to that match that we got in the marketplace.
+[00:01:54.520 --> 00:01:59.000]   On the actual matching at the time of the ride request, I would think about it as, well,
+[00:01:59.000 --> 00:02:01.840]   there's the map, and we have to have a high-quality map.
+[00:02:01.840 --> 00:02:05.840]   On top of the map, we come up with ETA estimates, so how long will it take a driver to get to
+[00:02:05.840 --> 00:02:06.840]   a rider.
+[00:02:06.840 --> 00:02:08.560]   That helps us perform a more efficient matching.
+[00:02:08.560 --> 00:02:11.540]   Then there's a dispatch algorithm, which actually performs the matching.
+[00:02:11.540 --> 00:02:15.640]   So there's a wide set of available drivers for some ride requests, so we have to decide
+[00:02:15.640 --> 00:02:17.760]   which one is the best driver to send.
+[00:02:17.760 --> 00:02:22.040]   Then also, there's just we have to decide on a price.
+[00:02:22.040 --> 00:02:24.320]   Pricing is a core algorithm for Lyft.
+[00:02:24.320 --> 00:02:27.360]   On top of planned pricing, there's adaptive pricing.
+[00:02:27.360 --> 00:02:32.640]   We have to respond to marketplace conditions to try to make sure the market stays liquid.
+[00:02:32.640 --> 00:02:35.040]   That's an algorithm that we have to run.
+[00:02:35.040 --> 00:02:40.200]   Then I guess on top of that, we'll give drivers incentives, we give riders coupons, so there's
+[00:02:40.200 --> 00:02:43.840]   algorithms to decide how we disperse those.
+[00:02:43.840 --> 00:02:47.720]   It's just a wide variety of little mini algorithms, all the way down to just now we have, say,
+[00:02:47.720 --> 00:02:52.560]   we're predicting where you're headed so that when you open up the app, maybe we can be
+[00:02:52.560 --> 00:02:56.560]   intelligent about what shows up on the screen.
+[00:02:56.560 --> 00:02:57.560]   So it's a lot.
+[00:02:57.560 --> 00:03:02.520]   I think a good experience is the conjunction of all those good decisions made.
+[00:03:02.520 --> 00:03:05.560]   If any one of them goes wrong, it can be a very bad experience.
+[00:03:05.560 --> 00:03:10.200]   I think of the Lyft problem as more of quality control, in a way.
+[00:03:10.200 --> 00:03:12.200]   The product itself is pretty exchangeable.
+[00:03:12.200 --> 00:03:13.200]   We have competitors.
+[00:03:13.200 --> 00:03:15.800]   You have other ways to get where you need to go.
+[00:03:15.800 --> 00:03:19.500]   So really it's all about making sure that those decisions are made really reliably.
+[00:03:19.500 --> 00:03:24.160]   Every one of those decisions is powered by some estimate of some state of the world.
+[00:03:24.160 --> 00:03:27.320]   So the ETA estimate is probably the most tangible.
+[00:03:27.320 --> 00:03:31.480]   How long is it going to take a driver to get to a specific spot on the map right now?
+[00:03:31.480 --> 00:03:34.720]   But we have to estimate all kinds of other quantities of interest.
+[00:03:34.720 --> 00:03:38.560]   How will riders respond to higher or lower prices?
+[00:03:38.560 --> 00:03:41.320]   How will they respond to higher or lower wait times?
+[00:03:41.320 --> 00:03:46.560]   We're all combination of machine learning and causal inference problems, in a way.
+[00:03:46.560 --> 00:03:49.320]   Because ultimately at the end of the day, we're going to change something.
+[00:03:49.320 --> 00:03:50.920]   And we don't want to just train on some...
+[00:03:50.920 --> 00:03:52.440]   It's not a supervised learning problem.
+[00:03:52.440 --> 00:03:55.320]   We actually want to say, "What would happen if we did this differently?
+[00:03:55.320 --> 00:03:57.320]   What would happen if we sent this other driver instead?"
+[00:03:57.320 --> 00:04:03.560]   And so the problems are quite a bit more complex than just a standard predictive modeling setup.
+[00:04:03.560 --> 00:04:07.120]   So how do you think about that?
+[00:04:07.120 --> 00:04:09.800]   Changing a price is such an interesting thing.
+[00:04:09.800 --> 00:04:16.320]   I agree it doesn't fit neatly into a normal ML prediction.
+[00:04:16.320 --> 00:04:18.200]   Do you have training data that you can run on?
+[00:04:18.200 --> 00:04:19.920]   How do you even model that?
+[00:04:19.920 --> 00:04:23.160]   Yeah, it's a super interesting question where you have...
+[00:04:23.160 --> 00:04:26.400]   One way to think about it for machine learning people that I like the way to explain it is
+[00:04:26.400 --> 00:04:30.240]   that there are features that are not under your control.
+[00:04:30.240 --> 00:04:33.160]   And then there are features that are under your control.
+[00:04:33.160 --> 00:04:36.000]   And you want to think about modeling them differently.
+[00:04:36.000 --> 00:04:39.840]   And it's important that the features under your control are subject to some randomization
+[00:04:39.840 --> 00:04:44.240]   in order to be able to estimate a causal quantity of interest.
+[00:04:44.240 --> 00:04:46.600]   If you really want to know what's going to happen when you raise prices, you have to
+[00:04:46.600 --> 00:04:48.160]   raise prices sometimes.
+[00:04:48.160 --> 00:04:52.400]   And so part of the problem with training models like that is you have to let the causal part
+[00:04:52.400 --> 00:04:55.040]   of the model speak a little bit more than the features.
+[00:04:55.040 --> 00:04:59.840]   There's going to be other things that predict conversion rate on a ride much better than
+[00:04:59.840 --> 00:05:00.840]   price.
+[00:05:00.840 --> 00:05:03.040]   Price is a powerful predictor, but if you don't randomize it, then there'll be other
+[00:05:03.040 --> 00:05:06.960]   things that could explain the change in conversion rate that are correlated with price, like
+[00:05:06.960 --> 00:05:08.600]   say ride distance.
+[00:05:08.600 --> 00:05:13.000]   So controlling for a rich set of things, having randomization of the variable is really important.
+[00:05:13.000 --> 00:05:17.800]   But also just there's a whole bunch of modeling architectures that we employ that help let
+[00:05:17.800 --> 00:05:20.520]   the causal part of the model speak a little bit more.
+[00:05:20.520 --> 00:05:24.040]   There's some really exciting work going on in say, people call these heterogeneous treatment
+[00:05:24.040 --> 00:05:25.240]   effects models.
+[00:05:25.240 --> 00:05:30.280]   And there's even neural network architectures for doing these kinds of things these days.
+[00:05:30.280 --> 00:05:34.240]   But at the end of the day, you have to have been running some experiment in the background
+[00:05:34.240 --> 00:05:38.320]   in order to make those models be able to tell you what's going to happen when you change
+[00:05:38.320 --> 00:05:40.120]   the state of the world in some way.
+[00:05:40.120 --> 00:05:47.160]   I mean, I would think price specifically is obviously a sensitive topic for users, but
+[00:05:47.160 --> 00:05:50.240]   also probably even way more for the driver.
+[00:05:50.240 --> 00:05:52.640]   Do you think about other considerations there?
+[00:05:52.640 --> 00:05:56.120]   Do you put constraints around yourself around setting price?
+[00:05:56.120 --> 00:06:00.760]   Instead of just like modeling the sort of most efficient market or something like that?
+[00:06:00.760 --> 00:06:05.600]   I think that one of the core problems for Lyft, and it's very pervasive, is what's your
+[00:06:05.600 --> 00:06:07.960]   objective function for the business?
+[00:06:07.960 --> 00:06:11.520]   You have to at some point, you have all these algorithms that are all working together.
+[00:06:11.520 --> 00:06:14.200]   Like what common goal are they working toward?
+[00:06:14.200 --> 00:06:17.960]   And at the end of the day, there's some kind of welfare being created by the system.
+[00:06:17.960 --> 00:06:22.160]   And it's going to be allocated, like some of the welfare is being allocated to the rider,
+[00:06:22.160 --> 00:06:27.360]   some to the driver, and some to Lyft, which we'll take as profit.
+[00:06:27.360 --> 00:06:30.240]   So we have to figure out where we're going to split those things.
+[00:06:30.240 --> 00:06:32.560]   And there's trade-offs in splitting them different ways.
+[00:06:32.560 --> 00:06:38.920]   If we just greedily took all the objective for ourself, we'd charge really high prices,
+[00:06:38.920 --> 00:06:42.600]   pay the drivers almost nothing, and no one would use our platform.
+[00:06:42.600 --> 00:06:44.960]   So there's these short-term, long-term trade-offs.
+[00:06:44.960 --> 00:06:47.480]   So finding the right balance there is really important.
+[00:06:47.480 --> 00:06:51.080]   One of the ways that we do that is we have a lot of guardrails in the system.
+[00:06:51.080 --> 00:06:57.400]   So we'll say we would really prefer if certain things never exceeded some tolerances.
+[00:06:57.400 --> 00:07:01.360]   And that's sort of a way of us heuristically applying some guidelines that help the algorithm
+[00:07:01.360 --> 00:07:02.920]   stay in a safe place.
+[00:07:02.920 --> 00:07:07.440]   For driver earnings, for instance, we really like to increase driver earnings as much as
+[00:07:07.440 --> 00:07:08.440]   we can.
+[00:07:08.440 --> 00:07:10.880]   One way to do that is to just have people pay more.
+[00:07:10.880 --> 00:07:14.760]   A better way to do it for everybody is to improve the efficiency of the system.
+[00:07:14.760 --> 00:07:19.720]   So if we can get drivers to have a passenger in the car more often, then they just make
+[00:07:19.720 --> 00:07:23.640]   more money and the total surplus is greater for everybody.
+[00:07:23.640 --> 00:07:25.040]   So that should really be our goal.
+[00:07:25.040 --> 00:07:27.920]   So when we think about pricing, it's like the zero-sum game version of the thing.
+[00:07:27.920 --> 00:07:31.280]   We would like to make the sum of the game larger for everybody, so we split a bigger
+[00:07:31.280 --> 00:07:32.280]   pie.
+[00:07:32.280 --> 00:07:35.160]   So a lot of our algorithmic improvements that we think about are more on the efficiency
+[00:07:35.160 --> 00:07:39.960]   side than they are on can we take more money from this person and give it to this person?
+[00:07:39.960 --> 00:07:43.680]   Because that just you run out of options there very quickly and you end up in just sort of
+[00:07:43.680 --> 00:07:44.680]   like somebody's unhappy.
+[00:07:44.680 --> 00:07:45.680]   Lukas: Right.
+[00:07:45.680 --> 00:07:46.680]   That makes sense.
+[00:07:46.680 --> 00:07:52.840]   I guess probably a loss function that everyone can relate to is the ETA estimation, right?
+[00:07:52.840 --> 00:07:56.680]   We've all kind of been in a rush and had a car come late.
+[00:07:56.680 --> 00:08:01.440]   And you had a really nice post about this and thinking about what the right loss function
+[00:08:01.440 --> 00:08:02.440]   is.
+[00:08:02.440 --> 00:08:06.240]   But I wonder if you could sort of say how you think about what it means to have an accurate
+[00:08:06.240 --> 00:08:08.000]   ETA function.
+[00:08:08.000 --> 00:08:09.280]   Yeah.
+[00:08:09.280 --> 00:08:12.440]   I think that that's a fascinating statistical topic.
+[00:08:12.440 --> 00:08:18.280]   That post was about there's a wide space of loss functions that all sort of have some
+[00:08:18.280 --> 00:08:21.880]   desirable properties of producing an unbiased estimate of ETA.
+[00:08:21.880 --> 00:08:24.240]   You might even think about applying a bias estimator.
+[00:08:24.240 --> 00:08:26.840]   So maybe I don't care about getting it accurate.
+[00:08:26.840 --> 00:08:29.480]   I care about giving the user an upper bound or something like that.
+[00:08:29.480 --> 00:08:32.040]   So you could think about some kind of like quantile loss.
+[00:08:32.040 --> 00:08:36.480]   But ultimately ETA predictions are inputs into some downstream algorithms.
+[00:08:36.480 --> 00:08:39.640]   So we've decomposed the optimization problem into pieces.
+[00:08:39.640 --> 00:08:44.400]   And so the ETA estimates are sort of like a thing where we have to have a contract with
+[00:08:44.400 --> 00:08:49.240]   the dispatch system, which is that our ETA estimates have some statistical properties.
+[00:08:49.240 --> 00:08:52.800]   So unbiasedness is a really key piece there because we're going to run an optimization
+[00:08:52.800 --> 00:08:55.800]   on top of those predicted values.
+[00:08:55.800 --> 00:09:00.120]   And if we say like, "Hey, we're going to add like a little bit of buffer on top so that
+[00:09:00.120 --> 00:09:05.760]   the rider doesn't have a bad experience thinking that we underestimated, that would be bad
+[00:09:05.760 --> 00:09:07.440]   for the downstream optimization.
+[00:09:07.440 --> 00:09:10.720]   So sort of like the algorithm consumption of the estimates and the human consumption
+[00:09:10.720 --> 00:09:14.040]   of the estimates are a little bit at odds in what would be desirable.
+[00:09:14.040 --> 00:09:21.320]   So I think we tend to prefer to get the statistical unbiasedness right, and then figure out how
+[00:09:21.320 --> 00:09:25.320]   to make the user experience better in a separate layer as much as possible.
+[00:09:25.320 --> 00:09:29.280]   I think that historically we play with displaying ranges of ETAs.
+[00:09:29.280 --> 00:09:32.520]   A better answer to this question is not like estimate the thing differently, but just be
+[00:09:32.520 --> 00:09:38.040]   honest about the distribution of errors that you're likely to make in practice.
+[00:09:38.040 --> 00:09:39.040]   Sure.
+[00:09:39.040 --> 00:09:40.040]   Yeah.
+[00:09:40.040 --> 00:09:43.240]   Well, tell me this, what loss function do you use?
+[00:09:43.240 --> 00:09:48.960]   Unbiased could mean different things depending on the context, right?
+[00:09:48.960 --> 00:09:52.400]   So I personally haven't worked on our ETA estimation problem.
+[00:09:52.400 --> 00:09:56.360]   We have a really strong team of researchers there doing some really interesting stuff,
+[00:09:56.360 --> 00:09:59.000]   but I haven't worked on it, so I don't know what we landed on.
+[00:09:59.000 --> 00:10:03.760]   I know that we're at the point now where it's pretty hard to eke out gains in that algorithm,
+[00:10:03.760 --> 00:10:08.320]   and I think it's a thing where most of the effort is on just accuracy.
+[00:10:08.320 --> 00:10:12.560]   One of the super interesting things about ETA is that not all accuracy is equal.
+[00:10:12.560 --> 00:10:19.960]   So being correct about ETA in certain situations is more pivotal for your downstream optimization
+[00:10:19.960 --> 00:10:21.000]   than others.
+[00:10:21.000 --> 00:10:23.080]   You might think of that as label weights in some way.
+[00:10:23.080 --> 00:10:27.560]   So there are cases where getting the ETA right could really make the difference between getting
+[00:10:27.560 --> 00:10:32.280]   the routing decision right or wrong, and cases where you're basically going to do the same
+[00:10:32.280 --> 00:10:33.280]   thing either way.
+[00:10:33.280 --> 00:10:35.000]   Could you give me an example of that?
+[00:10:35.000 --> 00:10:37.000]   It's hard for me to picture.
+[00:10:37.000 --> 00:10:40.480]   Of course, that's sort of the situation for any algorithm, but what's a case where ETA
+[00:10:40.480 --> 00:10:42.000]   is super crucial?
+[00:10:42.000 --> 00:10:43.000]   Yeah.
+[00:10:43.000 --> 00:10:50.800]   So say that there are two drivers that we could potentially route to a rider.
+[00:10:50.800 --> 00:10:56.080]   In cases where the estimates end up being ordered the same, then the estimates aren't
+[00:10:56.080 --> 00:10:57.080]   pivotal, right?
+[00:10:57.080 --> 00:11:00.880]   There's a wide class of estimates that would rank them the same, and so always dispatch
+[00:11:00.880 --> 00:11:03.360]   the same driver.
+[00:11:03.360 --> 00:11:07.440]   In markets where we have a lot of options and there's lots of drivers available, then
+[00:11:07.440 --> 00:11:08.680]   you start to make mistakes, right?
+[00:11:08.680 --> 00:11:12.880]   So it's kind of like a ranking problem, and if you invert the ranking because the estimate
+[00:11:12.880 --> 00:11:15.000]   was off in some cases.
+[00:11:15.000 --> 00:11:17.280]   So in thicker markets, we have opportunities to do better.
+[00:11:17.280 --> 00:11:21.320]   We have opportunities also to do worse because we're getting the ordering of the drivers
+[00:11:21.320 --> 00:11:23.920]   that's efficient to send wrong.
+[00:11:23.920 --> 00:11:25.480]   I see.
+[00:11:25.480 --> 00:11:26.840]   Interesting.
+[00:11:26.840 --> 00:11:30.240]   There's also a weird bias problem in the data that we have for ETA.
+[00:11:30.240 --> 00:11:34.640]   So we only observe the drivers that drive certain routes.
+[00:11:34.640 --> 00:11:37.600]   So they only drive to places that they've been routed to.
+[00:11:37.600 --> 00:11:43.480]   So estimating ETA for segments of the road that we don't observe drivers on, it's a set
+[00:11:43.480 --> 00:11:46.520]   of missing data.
+[00:11:46.520 --> 00:11:48.480]   Missingness is not at random.
+[00:11:48.480 --> 00:11:51.640]   They might not be driving a certain place because we're not routing them somewhere,
+[00:11:51.640 --> 00:11:55.780]   because we think the ETA estimate is really long, but it could now be short.
+[00:11:55.780 --> 00:11:59.940]   So there's a sense in which you'd prefer if you collected your data under a little bit
+[00:11:59.940 --> 00:12:05.120]   of extra randomization or noise to get a better estimator.
+[00:12:05.120 --> 00:12:11.120]   So it's kind of like an interesting bias training set problem that I think is a little underrated.
+[00:12:11.120 --> 00:12:14.620]   We haven't quite figured out what to do about that.
+[00:12:14.620 --> 00:12:16.520]   That does seem super tricky.
+[00:12:16.520 --> 00:12:20.760]   And I guess it's probably hard to run random experiments to collect more data.
+[00:12:20.760 --> 00:12:22.560]   I think that might make people frustrated.
+[00:12:22.560 --> 00:12:24.280]   Yes, that's right.
+[00:12:24.280 --> 00:12:25.280]   It's very analogous.
+[00:12:25.280 --> 00:12:26.780]   I mean, I used to work at Facebook.
+[00:12:26.780 --> 00:12:31.680]   One of the things that you'd worry about is you're ranking a story really low in newsfeed
+[00:12:31.680 --> 00:12:33.920]   and no one ever sees it, so they don't engage with it.
+[00:12:33.920 --> 00:12:36.720]   So your training algorithm doesn't know that there's some features in there that could
+[00:12:36.720 --> 00:12:37.960]   say like, "Hey, this is really good.
+[00:12:37.960 --> 00:12:39.480]   We should be displaying this at the top."
+[00:12:39.480 --> 00:12:44.100]   So you can end up in these feedback loops where some friends of yours, you might not
+[00:12:44.100 --> 00:12:48.160]   ever see their posts again because they just aren't getting any eyeballs on their posts
+[00:12:48.160 --> 00:12:49.160]   anymore.
+[00:12:49.160 --> 00:12:52.400]   I don't know if that actually played out at Facebook, but it's super similar sort of problem
+[00:12:52.400 --> 00:12:57.000]   is that you have to acknowledge that your training data isn't some random sample of
+[00:12:57.000 --> 00:12:58.000]   what you're looking for.
+[00:12:58.000 --> 00:12:59.000]   Right, right, right.
+[00:12:59.000 --> 00:13:04.560]   I guess when I look at the ride share challenges that you mentioned, they seem like situations
+[00:13:04.560 --> 00:13:09.680]   where you have pretty structured data coming in and maybe lots and lots of data and you
+[00:13:09.680 --> 00:13:12.740]   have to deploy into a high volume production.
+[00:13:12.740 --> 00:13:15.840]   It seems like a case where neural nets might struggle a little bit.
+[00:13:15.840 --> 00:13:23.280]   Have you found that mostly neural nets work better than maybe kind of older, I guess older
+[00:13:23.280 --> 00:13:27.440]   is the wrong word, maybe like less complicated algorithms?
+[00:13:27.440 --> 00:13:33.320]   I would say, so we do have a kind of like a bias for simpler solutions and I think that's
+[00:13:33.320 --> 00:13:37.640]   for good reasons of needing to keep things reliable.
+[00:13:37.640 --> 00:13:41.320]   And historically people at Liftoven have gotten a lot of successful results with tree-based
+[00:13:41.320 --> 00:13:47.040]   models, so things like light GBM and XGBoost are pretty popular techniques for supervised
+[00:13:47.040 --> 00:13:48.040]   learning problems.
+[00:13:48.040 --> 00:13:49.320]   And I think that's for good reasons.
+[00:13:49.320 --> 00:13:54.840]   I think trees do well with geospatial data, like latitude and longitude and time are things
+[00:13:54.840 --> 00:13:59.160]   that trees can find good segmentations of.
+[00:13:59.160 --> 00:14:04.560]   And so the features are naturally encoded very well, the representation is learned by
+[00:14:04.560 --> 00:14:06.720]   tree very effectively.
+[00:14:06.720 --> 00:14:11.280]   And so neural networks might provide a boost over that in the long run if you had a lot
+[00:14:11.280 --> 00:14:16.160]   of data, but you have this thing that learns really quickly and doesn't overfit too much.
+[00:14:16.160 --> 00:14:19.320]   And so it's like an easy drop in thing to use.
+[00:14:19.320 --> 00:14:24.760]   I think that we're moving toward using neural networks in some cases kind of gradually.
+[00:14:24.760 --> 00:14:29.200]   And I think, yeah, we are trying to sort out some of these deployment challenges and making
+[00:14:29.200 --> 00:14:30.680]   sure that they run reliably.
+[00:14:30.680 --> 00:14:34.920]   And I think all the kind of model quality control stuff is something you have to relearn
+[00:14:34.920 --> 00:14:38.880]   a little bit as you move to a new modeling paradigm.
+[00:14:38.880 --> 00:14:45.440]   I guess you mentioned online at one point that your team uses entirely PyTorch.
+[00:14:45.440 --> 00:14:46.440]   Is that right?
+[00:14:46.440 --> 00:14:50.600]   And could you kind of talk about the trade-offs there?
+[00:14:50.600 --> 00:14:51.600]   So part of it is historical.
+[00:14:51.600 --> 00:14:56.040]   I worked at Facebook and I did a hack a month at FAIR.
+[00:14:56.040 --> 00:14:59.560]   And so that was right when they were deploying PyTorch for the first time.
+[00:14:59.560 --> 00:15:01.000]   So I learned about it before TensorFlow.
+[00:15:01.000 --> 00:15:05.120]   So it wasn't like I thought PyTorch was better than TensorFlow.
+[00:15:05.120 --> 00:15:08.520]   Fast forward to last year, my team was working on...
+[00:15:08.520 --> 00:15:12.400]   We're building a forecasting tool that has a plan built into the forecast.
+[00:15:12.400 --> 00:15:15.960]   So we can change some policy variables and have the forecast reflect the change.
+[00:15:15.960 --> 00:15:20.080]   So we might say like, "Hey, we increased our couponing volume and so that's going to increase
+[00:15:20.080 --> 00:15:21.080]   demand.
+[00:15:21.080 --> 00:15:22.760]   And so we'd like the forecast to reflect that."
+[00:15:22.760 --> 00:15:26.040]   So it's sort of like forecast with some causal effect baked in.
+[00:15:26.040 --> 00:15:29.160]   If you can produce a forecast like that, one of the natural things that you'd like to do
+[00:15:29.160 --> 00:15:31.980]   with it is actually run an optimization on top of it.
+[00:15:31.980 --> 00:15:37.440]   So you'd say, "I will produce this forecast and then actually optimize the plan to make
+[00:15:37.440 --> 00:15:39.680]   the forecast look as good as I would like it to look."
+[00:15:39.680 --> 00:15:44.240]   And so if you're doing that, a really desirable property is that the model that you fit is
+[00:15:44.240 --> 00:15:49.080]   a differentiable object so that you can use basically the same methods that you use for
+[00:15:49.080 --> 00:15:53.000]   optimizing the fit of the model, you can use for optimizing the policy variables that you're
+[00:15:53.000 --> 00:15:54.800]   plugging into the model.
+[00:15:54.800 --> 00:15:59.520]   So we really wanted to be able to produce a Python function that we had fit from data,
+[00:15:59.520 --> 00:16:01.840]   but that was differentiable.
+[00:16:01.840 --> 00:16:05.860]   So having the model be done in something that was autogradable was really important.
+[00:16:05.860 --> 00:16:11.180]   So I'm a big Stan fan and I like Bayesian modeling, but a lot of the Bayesian modeling
+[00:16:11.180 --> 00:16:13.800]   tools don't naturally just produce this object that is differentiable.
+[00:16:13.800 --> 00:16:16.900]   So we're like, "Okay, well we should work in some space where we have these autograd
+[00:16:16.900 --> 00:16:17.900]   tools available."
+[00:16:17.900 --> 00:16:20.140]   It's been a bit of a trade off.
+[00:16:20.140 --> 00:16:25.740]   I think we're doing things that look a lot like Bayesian models, but on top of PyTorch.
+[00:16:25.740 --> 00:16:30.340]   And so we're having to kind of invent a lot of ways to do that ourselves that would have
+[00:16:30.340 --> 00:16:33.860]   been a lot easier if we did something like PyMC or Stan.
+[00:16:33.860 --> 00:16:37.860]   And so it's been a little bit of a challenge, but the upside has been a lot of modeling
+[00:16:37.860 --> 00:16:42.520]   flexibility and also the ability to kind of borrow from what all the neural network people
+[00:16:42.520 --> 00:16:46.340]   are doing for improving the speed and reliability of fitting.
+[00:16:46.340 --> 00:16:51.500]   So there's a little bit of like, it's fun to do things that look like neural networks,
+[00:16:51.500 --> 00:16:53.260]   but we're not using them to fit.
+[00:16:53.260 --> 00:16:57.060]   There aren't any layers or pooling or anything interesting going on.
+[00:16:57.060 --> 00:17:01.300]   They're very similar to just like the kind of models that you would fit in R, but we
+[00:17:01.300 --> 00:17:05.260]   really needed this engineering requirement of that we would produce this model that had
+[00:17:05.260 --> 00:17:08.300]   this nice property of being able to run optimizations and gradient.
+[00:17:08.300 --> 00:17:11.700]   Getting the gradients is a really beautiful thing at a place like Lyft because we care
+[00:17:11.700 --> 00:17:14.000]   about marginal effects of everything.
+[00:17:14.000 --> 00:17:19.540]   So if you want to know what the lifetime value of getting an additional rider is, which is
+[00:17:19.540 --> 00:17:24.140]   a very common thing in business, what's your marginal benefit of getting one more person
+[00:17:24.140 --> 00:17:25.820]   on the platform?
+[00:17:25.820 --> 00:17:28.740]   With a differentiable model, it's very easy to do queries like that.
+[00:17:28.740 --> 00:17:32.860]   We can sort of just say like, what's the gradient of the total lifetime value of Lyft, which
+[00:17:32.860 --> 00:17:34.460]   is something we can estimate with the model.
+[00:17:34.460 --> 00:17:39.580]   We can do the forecast, add up all the future revenue, discount it, and then just like actually
+[00:17:39.580 --> 00:17:44.840]   just look at the gradient with that variable with respect to a rider activation and say
+[00:17:44.840 --> 00:17:45.840]   what that is.
+[00:17:45.840 --> 00:17:49.740]   And so PyTorch was a really natural fit for doing those kinds of queries.
+[00:17:49.740 --> 00:17:54.140]   So yeah, it's a little bit of like, we got really low level to solve a problem.
+[00:17:54.140 --> 00:17:58.740]   I think sometimes we regret being that low level.
+[00:17:58.740 --> 00:17:59.740]   That's so interesting.
+[00:17:59.740 --> 00:18:06.100]   So it wasn't PyTorch versus TensorFlow, it was PyTorch versus like a Bayesian framework.
+[00:18:06.100 --> 00:18:10.700]   And it also sounds like you're using PyTorch essentially for data science because you want
+[00:18:10.700 --> 00:18:16.060]   the sort of like auto grad, or do you want the gradients to be able to pull them out?
+[00:18:16.060 --> 00:18:18.700]   I guess where have been the pain points?
+[00:18:18.700 --> 00:18:22.060]   Where has that felt frustrating compared to what you've done in the past?
+[00:18:22.060 --> 00:18:27.400]   I think part of it is that we bet on the optimizers that are used for neural networks are not
+[00:18:27.400 --> 00:18:30.980]   particularly great for some of them.
+[00:18:30.980 --> 00:18:33.960]   A lot of the models that we fit are pretty small, fit into memory.
+[00:18:33.960 --> 00:18:35.900]   We should be using some second order methods.
+[00:18:35.900 --> 00:18:43.860]   So we've struggled a little bit with confirming that we're at the global optimum for the model.
+[00:18:43.860 --> 00:18:45.540]   These are models that we should be able to confirm that.
+[00:18:45.540 --> 00:18:51.460]   So if we had done it in a more traditional model package, then we might've ended up with
+[00:18:51.460 --> 00:18:54.340]   a more stable optimization procedure.
+[00:18:54.340 --> 00:18:58.580]   I think the modeling flexibility that you get from PyTorch is partly a cost that you
+[00:18:58.580 --> 00:19:02.620]   pay is that everything's pretty low level unless you have these higher level abstractions.
+[00:19:02.620 --> 00:19:05.860]   So we had to build a lot of those abstractions ourselves.
+[00:19:05.860 --> 00:19:12.500]   So things like building spline basis expansion and building ways to...
+[00:19:12.500 --> 00:19:14.920]   We actually have 40 or 50 models that compose together.
+[00:19:14.920 --> 00:19:19.660]   We had to build a way to compose a bunch of models so that they become one big graph of
+[00:19:19.660 --> 00:19:20.660]   models.
+[00:19:20.660 --> 00:19:21.820]   So we had to build a lot of that stuff ourselves.
+[00:19:21.820 --> 00:19:24.700]   We have a couple of people on the team that just got really interested in that part of
+[00:19:24.700 --> 00:19:25.700]   the problem.
+[00:19:25.700 --> 00:19:28.620]   I hope that one day we can open source the modeling architecture.
+[00:19:28.620 --> 00:19:31.620]   The other super interesting pain point that caused us to develop something that I think
+[00:19:31.620 --> 00:19:36.380]   was pretty interesting was that everything in our system is a tensor.
+[00:19:36.380 --> 00:19:39.820]   And tensors are really natural representation of marketplace data because it has a regular
+[00:19:39.820 --> 00:19:40.820]   structure to it.
+[00:19:40.820 --> 00:19:45.140]   So you can say like geography and time are two dimensions of the tensor and you might
+[00:19:45.140 --> 00:19:46.920]   add other dimensions.
+[00:19:46.920 --> 00:19:49.920]   And that neatly encapsulates a lot of the kind of data that we capture.
+[00:19:49.920 --> 00:19:57.140]   We ended up kind of creating a labeled tensor implementation that we find really useful.
+[00:19:57.140 --> 00:20:00.220]   It's kind of like a tidy data frame in R, but it's a tensor.
+[00:20:00.220 --> 00:20:04.100]   And so we can use them as just variables in the system and compose them and multiply them
+[00:20:04.100 --> 00:20:06.060]   and do operations on top of them.
+[00:20:06.060 --> 00:20:08.340]   And I later found out that there's this kind of label.
+[00:20:08.340 --> 00:20:12.540]   There are a bunch of these labeled tensor packages out there that do similar things.
+[00:20:12.540 --> 00:20:15.700]   I think that that was something that we didn't realize we needed to build, but keeping track
+[00:20:15.700 --> 00:20:19.700]   of all the dimensions of all the tensors that we were passing around became sort of like
+[00:20:19.700 --> 00:20:21.260]   a first class problem very quickly.
+[00:20:21.260 --> 00:20:26.260]   It almost sounds like you want to use data frames.
+[00:20:26.260 --> 00:20:31.980]   Yeah, they're data frames except that they're dense.
+[00:20:31.980 --> 00:20:38.020]   So you can guarantee that you always have at any pair of coordinates, you always have
+[00:20:38.020 --> 00:20:39.020]   a value.
+[00:20:39.020 --> 00:20:43.740]   So it's like a special class of data frames where you know some properties are true about
+[00:20:43.740 --> 00:20:44.740]   them.
+[00:20:44.740 --> 00:20:49.300]   I guess this is a more open-ended question that I hadn't planned to ask.
+[00:20:49.300 --> 00:20:55.020]   But since you've done a lot of Python in R, I'm kind of curious how you compare the two.
+[00:20:55.020 --> 00:20:58.500]   If you have one that feels more natural that you like to live in or-
+[00:20:58.500 --> 00:21:03.860]   Yeah, I think this will probably be pretty controversial, but I do everything in R until
+[00:21:03.860 --> 00:21:04.860]   I can't anymore.
+[00:21:04.860 --> 00:21:05.860]   That is controversial.
+[00:21:05.860 --> 00:21:06.860]   Interesting.
+[00:21:06.860 --> 00:21:13.820]   I think that the tidyverse people have figured out a lot of the interactive data analysis
+[00:21:13.820 --> 00:21:14.820]   stuff.
+[00:21:14.820 --> 00:21:18.440]   It's just much more kind of first class in R.
+[00:21:18.440 --> 00:21:22.740]   One of the things that's an interesting consequence of R syntax is that the lack of white space
+[00:21:22.740 --> 00:21:28.380]   sensitivity and some of the ability to kind of just use unbounded variables means that
+[00:21:28.380 --> 00:21:33.540]   you just have a lot less typing to do kind of similar things.
+[00:21:33.540 --> 00:21:36.900]   I'll poke fun at Wes because I've had this conversation with him.
+[00:21:36.900 --> 00:21:39.740]   I think the pandas API could use a little love.
+[00:21:39.740 --> 00:21:44.540]   If we could reinvent pandas from scratch and do Python data frames again, we'd probably
+[00:21:44.540 --> 00:21:46.460]   do it a little differently.
+[00:21:46.460 --> 00:21:51.320]   Something with a little bit less surface area for developers.
+[00:21:51.320 --> 00:21:53.560]   I think that Hadley is sort of a designer.
+[00:21:53.560 --> 00:21:59.240]   Hadley Wickham is the creator of dplyr and a lot of the tidyverse packages.
+[00:21:59.240 --> 00:22:03.520]   I think he thinks really deeply about these micro interactions that people have with the
+[00:22:03.520 --> 00:22:04.520]   code.
+[00:22:04.520 --> 00:22:06.680]   What are you trying to accomplish?
+[00:22:06.680 --> 00:22:09.080]   What's the minimum way to get there?
+[00:22:09.080 --> 00:22:11.640]   Then also, is it going to stick in your brain?
+[00:22:11.640 --> 00:22:13.640]   Are you going to remember to do it next time?
+[00:22:14.120 --> 00:22:16.960]   I've just found that that sort of fit my brain a little better.
+[00:22:16.960 --> 00:22:19.680]   All the production code that we write at Lyft is in Python.
+[00:22:19.680 --> 00:22:26.360]   I found myself sort of like porting some of my analysis in R over to Python quite commonly.
+[00:22:26.360 --> 00:22:30.440]   Can you give me an example of where data frames frustrate you?
+[00:22:30.440 --> 00:22:33.000]   Where pandas data frames are frustrating?
+[00:22:33.000 --> 00:22:34.240]   Sure.
+[00:22:34.240 --> 00:22:39.560]   One thing that is a little annoying is having to kind of...
+[00:22:39.560 --> 00:22:41.680]   Some of the operations will emit data frames.
+[00:22:41.680 --> 00:22:44.920]   Some of the operations will emit a series, depending on what kind of aggregation that
+[00:22:44.920 --> 00:22:46.560]   you're doing.
+[00:22:46.560 --> 00:22:50.720]   This is sort of like a functional programming no-no, right?
+[00:22:50.720 --> 00:22:53.400]   dplyr is designed the opposite way, where there's a very standard interface.
+[00:22:53.400 --> 00:22:57.480]   Most of the functions take a data frame as the first input and always return a data frame.
+[00:22:57.480 --> 00:23:00.160]   That allows you to do this kind of like chaining kind of thing.
+[00:23:00.160 --> 00:23:03.120]   If you look up method chaining in pandas, you'll find a couple of good articles on how
+[00:23:03.120 --> 00:23:04.120]   to do it.
+[00:23:04.120 --> 00:23:09.200]   It's a real stretch to do chaining in pandas, where you can kind of apply a series of operations
+[00:23:09.200 --> 00:23:11.560]   and read through them.
+[00:23:11.560 --> 00:23:16.440]   You can do this, but it just doesn't look as readable and it requires a lot of clunkiness.
+[00:23:16.440 --> 00:23:20.040]   The dot pipe operator in pandas is something that I use a lot when I'm using pandas, because
+[00:23:20.040 --> 00:23:23.560]   I think it sort of does what I like about dplyr.
+[00:23:23.560 --> 00:23:29.280]   It just requires a lot of you to write your own code to fill in some of the missing pieces.
+[00:23:29.280 --> 00:23:35.600]   I think reshaping data frames from long to wide is just dramatically easier in R, because
+[00:23:35.600 --> 00:23:39.840]   that interface is a little bit simpler, like stack and unstack operations.
+[00:23:39.840 --> 00:23:44.480]   In Ruby, they call it principle of least surprise.
+[00:23:44.480 --> 00:23:46.680]   The API should return something that is unsurprising to you.
+[00:23:46.680 --> 00:23:51.280]   I think sometimes I think some of the stuff in Python is most surprising.
+[00:23:51.280 --> 00:23:56.040]   You're like, "How did I get here with this object?
+[00:23:56.040 --> 00:23:57.040]   I have no idea."
+[00:23:57.040 --> 00:24:00.480]   This is a long rant and a long complaint, but I think it's like, we can get there.
+[00:24:00.480 --> 00:24:04.200]   There's plenty of great Python developers that are working on this, but I think that
+[00:24:04.200 --> 00:24:08.160]   we made some design decisions early on that made it a little bit challenging to create
+[00:24:08.160 --> 00:24:09.640]   these expressive interfaces.
+[00:24:09.640 --> 00:24:12.480]   It's so funny.
+[00:24:12.480 --> 00:24:19.400]   My experience was I wrote code in mostly R for years, and I always found R a little baffling.
+[00:24:19.400 --> 00:24:25.840]   When I switched to Python, I was so happy, and it made so much more sense to me.
+[00:24:25.840 --> 00:24:29.160]   It's really interesting that you feel exactly the opposite.
+[00:24:29.160 --> 00:24:32.480]   I wonder what's different about our brains or what we were trying to do.
+[00:24:32.480 --> 00:24:35.440]   I think maybe functional languages are more natural for you.
+[00:24:35.440 --> 00:24:39.520]   I feel like all my smartest friends, that's the case.
+[00:24:39.520 --> 00:24:40.520]   Maybe that's what's going on.
+[00:24:40.520 --> 00:24:45.440]   The thing for R that I always missed was I just felt like the plotting was so much more
+[00:24:45.440 --> 00:24:46.440]   natural than Python.
+[00:24:46.440 --> 00:24:50.040]   I feel like I still have to look up Python's plotting stuff.
+[00:24:50.040 --> 00:24:52.160]   It's interesting that you don't even mention that as a-
+[00:24:52.160 --> 00:24:53.160]   Yeah.
+[00:24:53.160 --> 00:24:54.480]   I hate Matplotlib a lot.
+[00:24:54.480 --> 00:24:56.000]   I would complain about that to anybody.
+[00:24:56.000 --> 00:24:59.040]   I think Altera really solved that problem for me.
+[00:24:59.040 --> 00:25:00.040]   Interesting.
+[00:25:00.040 --> 00:25:03.160]   Jake Van Der Plas wrote a really nice package.
+[00:25:03.160 --> 00:25:05.240]   It's very ggplot-like in concept.
+[00:25:05.240 --> 00:25:09.360]   In syntax, it's a little different, but I think it's a close map, so it's pretty easy.
+[00:25:09.360 --> 00:25:10.360]   I had the opposite.
+[00:25:10.360 --> 00:25:15.920]   I was a Python developer since 2004 through grad school.
+[00:25:15.920 --> 00:25:17.920]   I spent a long time in Python.
+[00:25:17.920 --> 00:25:19.400]   I started learning R in grad school.
+[00:25:19.400 --> 00:25:21.960]   It was my later language, but I like it more.
+[00:25:21.960 --> 00:25:22.960]   Yeah.
+[00:25:22.960 --> 00:25:29.200]   Maybe it is just like some people have a certain kind of brain that fits one thing or the other.
+[00:25:29.200 --> 00:25:30.200]   Well, cool.
+[00:25:30.200 --> 00:25:34.880]   I also wanted to ask you about the Profit project that you worked on at Facebook.
+[00:25:34.880 --> 00:25:38.640]   Could you say a little about what that did and why you made it?
+[00:25:38.640 --> 00:25:39.640]   Sure.
+[00:25:39.640 --> 00:25:42.480]   Profit is a time series forecasting package.
+[00:25:42.480 --> 00:25:46.760]   It was built because we had some applications internally at Facebook that we didn't have
+[00:25:46.760 --> 00:25:48.200]   good tools for.
+[00:25:48.200 --> 00:25:53.000]   At the time, I was on the Core Data Science team looking for interesting high-impact problems
+[00:25:53.000 --> 00:25:54.000]   to work on.
+[00:25:54.000 --> 00:25:58.320]   We had a couple people come to us just with forecasting problems.
+[00:25:58.320 --> 00:25:59.320]   I looked around.
+[00:25:59.320 --> 00:26:02.560]   I was like, "Forecasting can't be that hard," and I started to Google around and look for
+[00:26:02.560 --> 00:26:04.000]   what tools are available.
+[00:26:04.000 --> 00:26:07.720]   I really felt like the tooling landscape was a little primitive.
+[00:26:07.720 --> 00:26:12.120]   In particular, there's one interesting aspect of business time series that's just difficult
+[00:26:12.120 --> 00:26:17.560]   to model traditionally, which is this multi-period seasonality.
+[00:26:17.560 --> 00:26:22.520]   You have a yearly cycle and data is super common, a weekly cycle is super common.
+[00:26:22.520 --> 00:26:27.400]   You just end up with needing to think about carefully modeling these kinds of ... They're
+[00:26:27.400 --> 00:26:33.880]   just features that can be extracted from time, but they're not easy to do in an auto-regression
+[00:26:33.880 --> 00:26:36.840]   or exponential smoothing kind of framework.
+[00:26:36.840 --> 00:26:37.840]   I worked with Ben Lethem.
+[00:26:37.840 --> 00:26:42.160]   I have to give a great call out for it because I think he invented all the important stuff
+[00:26:42.160 --> 00:26:43.160]   in profit.
+[00:26:43.160 --> 00:26:48.080]   That project was going really poorly until Ben got involved and helped me solve a couple
+[00:26:48.080 --> 00:26:49.760]   really key problems there.
+[00:26:49.760 --> 00:26:55.320]   Then what we figured out was that we just had this class of time series problems that
+[00:26:55.320 --> 00:26:56.680]   are really common in practice.
+[00:26:56.680 --> 00:26:59.720]   It's actually a really constrained modeling space.
+[00:26:59.720 --> 00:27:03.080]   It's almost like an architecture for time series models.
+[00:27:03.080 --> 00:27:08.160]   We just said, "Hey, there's a small set of models that capture a lot of data that we
+[00:27:08.160 --> 00:27:09.640]   see in practice."
+[00:27:09.640 --> 00:27:14.920]   That prior over the models is a really useful thing to know because it means ... Time series
+[00:27:14.920 --> 00:27:18.120]   data is always data constrained.
+[00:27:18.120 --> 00:27:21.960]   You might have a year, you might have 300 observations, 400 observations.
+[00:27:21.960 --> 00:27:25.800]   You're not talking about something you can learn a lot from the data.
+[00:27:25.800 --> 00:27:29.560]   You have to bring a lot of priors to a time series problem.
+[00:27:29.560 --> 00:27:33.080]   By coming up with reasonable priors for what that should be ... If you look at the profit
+[00:27:33.080 --> 00:27:37.920]   code, it's got hard-coded parameters that are our priors over what we think is likely
+[00:27:37.920 --> 00:27:38.920]   to happen in practice.
+[00:27:38.920 --> 00:27:41.880]   It's not an elegant model in the sense of that it's not super general.
+[00:27:41.880 --> 00:27:45.960]   It's actually very specific, but that happens to work well in practice.
+[00:27:45.960 --> 00:27:49.880]   Sometimes I just call it a bag of heuristics that we cobble together.
+[00:27:49.880 --> 00:27:54.560]   I think real time series modelers probably get a little frustrated with us for having
+[00:27:54.560 --> 00:27:58.920]   empirical success from something that's not as principled as the work that they've been
+[00:27:58.920 --> 00:28:02.080]   doing, but people get a lot of value out of it.
+[00:28:02.080 --> 00:28:06.360]   Part of it is just that they don't really want to learn about time series modeling that
+[00:28:06.360 --> 00:28:07.360]   much.
+[00:28:07.360 --> 00:28:10.240]   They'd prefer to just get it done and move on to another problem.
+[00:28:10.240 --> 00:28:12.240]   Profit provides a pretty easy way to get there.
+[00:28:12.240 --> 00:28:16.440]   I have a feeling a lot of people listening to this might find this useful.
+[00:28:16.440 --> 00:28:21.400]   Could you say what's the case where profit's going to do well and where it might not do
+[00:28:21.400 --> 00:28:22.400]   well?
+[00:28:22.400 --> 00:28:29.160]   Yeah, so profit is built on a lot of local smoothness assumptions.
+[00:28:29.160 --> 00:28:34.680]   If your time series jumps around a lot or is very random or it has a non-human periodicity
+[00:28:34.680 --> 00:28:37.200]   to it, then it's unlikely to work.
+[00:28:37.200 --> 00:28:44.080]   It's really designed for these human behavior generated time series.
+[00:28:44.080 --> 00:28:48.320]   Web data where you're counting how many visits come to a website is bread and butter for
+[00:28:48.320 --> 00:28:50.480]   profit because it's highly seasonal.
+[00:28:50.480 --> 00:28:56.440]   It has all these very predictable patterns to it, but those patterns need to be encoded
+[00:28:56.440 --> 00:29:00.000]   in a way that allows the model to extrapolate them.
+[00:29:00.000 --> 00:29:04.560]   When I see time series that come from more physical processes, really high frequency
+[00:29:04.560 --> 00:29:09.160]   stuff, stuff that jumps around, stuff with a lot of really abrupt changes in it, which
+[00:29:09.160 --> 00:29:13.760]   violate this local smoothness idea, then you can see right away.
+[00:29:13.760 --> 00:29:17.680]   My prior can be expressed as looking at a time...
+[00:29:17.680 --> 00:29:20.000]   When someone shows me a time series and they're like, "Would profit work on this?"
+[00:29:20.000 --> 00:29:22.960]   I know right away if it will or not.
+[00:29:22.960 --> 00:29:28.080]   A lot of it's just knowing what human generated data looks like from having seen it a bunch
+[00:29:28.080 --> 00:29:29.080]   of times.
+[00:29:29.080 --> 00:29:37.600]   So you're essentially encoding somehow earth human things like week and month and year.
+[00:29:37.600 --> 00:29:43.080]   It's designed for more demand forecasting versus the position of Jupiter's moons.
+[00:29:43.080 --> 00:29:44.080]   Is that fair?
+[00:29:44.080 --> 00:29:45.720]   Yeah, I think that's right.
+[00:29:45.720 --> 00:29:51.080]   I think when we first released profit, Andrew Gelman on his blog was very flattering to
+[00:29:51.080 --> 00:29:52.320]   get mentioned by him.
+[00:29:52.320 --> 00:29:56.080]   He was like, "I'll show you a time series that profit won't do well for."
+[00:29:56.080 --> 00:29:59.400]   And it was some physical process.
+[00:29:59.400 --> 00:30:00.400]   I forget what it was.
+[00:30:00.400 --> 00:30:03.680]   I think it was like lemur population or something like that.
+[00:30:03.680 --> 00:30:09.120]   So it's one of these physical processes, like population ecology, where it has a chaotic
+[00:30:09.120 --> 00:30:13.720]   period to it because it has a feedback loop built into it.
+[00:30:13.720 --> 00:30:17.720]   So the period is not regular and it's like, "Well, if the period is not regular, then
+[00:30:17.720 --> 00:30:22.040]   there's no way a model that's trying to learn a regular period structure is ever going to
+[00:30:22.040 --> 00:30:23.040]   fit that."
+[00:30:23.040 --> 00:30:27.200]   So I think we ended up having to admit that, "Yeah, sorry, Andrew, you can't forecast lemur
+[00:30:27.200 --> 00:30:30.360]   population using profit."
+[00:30:30.360 --> 00:30:32.080]   But I think that we're fine with that.
+[00:30:32.080 --> 00:30:33.080]   It's an 80/20 thing.
+[00:30:33.080 --> 00:30:37.080]   We'd like to capture the kinds of problems that we see in practice.
+[00:30:37.080 --> 00:30:41.120]   And so can you say a little bit about what you're doing under the hood with profit?
+[00:30:41.120 --> 00:30:48.400]   Yeah, there's probably two or three tricks that I think add up to the whole thing.
+[00:30:48.400 --> 00:30:53.640]   Probably the most important trick is just that we have these trend change points.
+[00:30:53.640 --> 00:30:57.520]   So the actual profit forecasting model can be really simple.
+[00:30:57.520 --> 00:31:01.400]   If you strip out the seasonality, it's just a piecewise linear regression.
+[00:31:01.400 --> 00:31:05.280]   Making a linear regression extrapolate well is challenging because you don't really always
+[00:31:05.280 --> 00:31:10.240]   know how much of the historical time series to use to fit the slope at the last point.
+[00:31:10.240 --> 00:31:11.600]   So you're trying to go into the future.
+[00:31:11.600 --> 00:31:15.360]   You need to know the slope at that last point where that's coming from.
+[00:31:15.360 --> 00:31:20.640]   So what we do is we introduce this idea that the slope can change at various points in
+[00:31:20.640 --> 00:31:24.160]   the past and that we prefer those changes to be sparse.
+[00:31:24.160 --> 00:31:27.000]   So we just use an L1 penalty in order to do that.
+[00:31:27.000 --> 00:31:30.200]   So it's a really standard trick in machine learning.
+[00:31:30.200 --> 00:31:34.680]   And what that does is it comes up with a pretty, I would say parsimonious representation of
+[00:31:34.680 --> 00:31:39.440]   the trend of the time series, which it's like a sequence of lines that fit together.
+[00:31:39.440 --> 00:31:42.360]   And the last line segment is the slope into the future.
+[00:31:42.360 --> 00:31:44.840]   And so that actually works quite well.
+[00:31:44.840 --> 00:31:50.040]   And it's very similar to exponential smoothing procedures, which are sort of getting the
+[00:31:50.040 --> 00:31:54.560]   local slope that you're trying to use to extrapolate from the more recent data rather than from
+[00:31:54.560 --> 00:31:55.820]   the far past.
+[00:31:55.820 --> 00:31:58.120]   It's just like a sparse version of that.
+[00:31:58.120 --> 00:32:00.680]   So that's one big trick.
+[00:32:00.680 --> 00:32:03.200]   But then how does that model periodic effects into the future?
+[00:32:03.200 --> 00:32:05.880]   Or is that not part of its thing that it's trying to do?
+[00:32:05.880 --> 00:32:08.460]   So the seasonality is just applied additively.
+[00:32:08.460 --> 00:32:12.040]   So at its core, profit is just a generalized additive model.
+[00:32:12.040 --> 00:32:17.600]   So very similar to a lot of GAM packages will fit all kinds of stuff that looks like profit.
+[00:32:17.600 --> 00:32:19.960]   It's just that they're not really designed to extrapolate well.
+[00:32:19.960 --> 00:32:24.520]   So they interpolate well, because that's what GAMs, the loss function for GAMs is kind of
+[00:32:24.520 --> 00:32:25.640]   capturing that.
+[00:32:25.640 --> 00:32:30.440]   For profit, we just sort of had to make these modifications in order to get the extrapolation
+[00:32:30.440 --> 00:32:31.440]   performance.
+[00:32:31.440 --> 00:32:36.180]   And really, if you think about it, it's all about controlling the complexity of the model
+[00:32:36.180 --> 00:32:41.520]   that you're fitting close to the boundary of the data, which is like, because it's extrapolation,
+[00:32:41.520 --> 00:32:46.560]   you really don't want it to get overfit at the last part where you're trying to go past
+[00:32:46.560 --> 00:32:47.560]   it.
+[00:32:47.560 --> 00:32:51.120]   So in typical machine learning, we do way more interpolation than extrapolation.
+[00:32:51.120 --> 00:32:55.400]   So we commonly don't think about controlling complexity at any particular point.
+[00:32:55.400 --> 00:32:57.720]   We just want the best model.
+[00:32:57.720 --> 00:33:03.480]   But in forecasting, it's like you really prefer simple models when you're going off of the
+[00:33:03.480 --> 00:33:05.120]   data that you've seen already.
+[00:33:05.120 --> 00:33:06.120]   Totally.
+[00:33:06.120 --> 00:33:10.720]   I guess that's a good segue into one more topic I want to ask you about, which is election
+[00:33:10.720 --> 00:33:11.720]   forecasting.
+[00:33:11.720 --> 00:33:16.320]   And I think you've talked about or thought about election forecasting with using prediction
+[00:33:16.320 --> 00:33:21.600]   markets, which is something that I think probably me and a lot of people listening to this have
+[00:33:21.600 --> 00:33:22.600]   thought about.
+[00:33:22.600 --> 00:33:23.600]   I guess I'm just curious.
+[00:33:23.600 --> 00:33:26.440]   I mean, the question that's top of mind right now, and this is probably going to be out
+[00:33:26.440 --> 00:33:31.880]   of date as soon as we release this, is we have 538 in all the election models showing
+[00:33:31.880 --> 00:33:38.120]   a really high percent chance for Biden compared to the prediction markets and the betting
+[00:33:38.120 --> 00:33:39.120]   markets.
+[00:33:39.120 --> 00:33:43.360]   Do you have any thoughts on how those two things have diverged and why?
+[00:33:43.360 --> 00:33:47.040]   Yeah, that's a really interesting question.
+[00:33:47.040 --> 00:33:52.480]   I think the prediction market people, Dave Rothschild at MSR was a really big believer
+[00:33:52.480 --> 00:33:56.440]   in the prediction markets last cycle and has since switched over to polling.
+[00:33:56.440 --> 00:34:00.160]   And I think he'd be a better person to tell you why prediction markets are failing to
+[00:34:00.160 --> 00:34:01.160]   do this.
+[00:34:01.160 --> 00:34:07.840]   I think one part of it that I find interesting is that prediction markets, I think one reasonable
+[00:34:07.840 --> 00:34:10.560]   use case for them is to do emotional hedging.
+[00:34:10.560 --> 00:34:14.600]   So you could say, "Oh man, it would be the worst thing in the world if Trump won, so
+[00:34:14.600 --> 00:34:19.880]   I'm going to go bet every cent that I have on him winning in a prediction market so that
+[00:34:19.880 --> 00:34:23.600]   if he wins, I'm just going to win a lot of money."
+[00:34:23.600 --> 00:34:27.360]   So not every prediction market participant is trying to maximize earnings.
+[00:34:27.360 --> 00:34:29.440]   They can be hedging and it's a tool for hedging.
+[00:34:29.440 --> 00:34:34.600]   So you might think of like, okay, so part of the difference in price could be suppressed
+[00:34:34.600 --> 00:34:35.600]   because of-
+[00:34:35.600 --> 00:34:39.120]   But shouldn't some kind of, I mean, I'm out of my depth here a little bit, but isn't there
+[00:34:39.120 --> 00:34:43.840]   some kind of efficient market hypothesis that someone would sort of exploit the emotional
+[00:34:43.840 --> 00:34:46.760]   hedging to make themselves a lot of money?
+[00:34:46.760 --> 00:34:49.160]   Yeah, that's true.
+[00:34:49.160 --> 00:34:54.040]   If the constitution of the market were like, if you had an infinite population of traders,
+[00:34:54.040 --> 00:34:55.560]   then yeah, I think you'd get there.
+[00:34:55.560 --> 00:35:01.040]   But without a lot of liquidity, if most of the people...
+[00:35:01.040 --> 00:35:07.280]   All the market stuff depends on having a lot of people and if a certain fraction of them
+[00:35:07.280 --> 00:35:09.680]   were profit motivated, then I think you're good.
+[00:35:09.680 --> 00:35:12.600]   But part of it is also transaction costs.
+[00:35:12.600 --> 00:35:13.600]   So it's not...
+[00:35:13.600 --> 00:35:19.000]   Predicted, for instance, has a 20% fee for removing, for taking your money out.
+[00:35:19.000 --> 00:35:25.040]   So it sort of makes the incentives not quite the same as trading in a financial market.
+[00:35:25.040 --> 00:35:26.040]   Yeah, I don't know.
+[00:35:26.040 --> 00:35:28.360]   I think it's an interesting empirical puzzle.
+[00:35:28.360 --> 00:35:31.880]   Because also if you go to predict it and you look at the state level predictions, I think
+[00:35:31.880 --> 00:35:37.160]   they align quite well with 538, but the aggregate one, it doesn't.
+[00:35:37.160 --> 00:35:41.000]   To me, that feels like the hedging explanation is my favorite way to explain it.
+[00:35:41.000 --> 00:35:43.640]   But I don't have a better explanation.
+[00:35:43.640 --> 00:35:48.440]   Well, it sounds like to me then you're siding with the pull aggregation versus prediction
+[00:35:48.440 --> 00:35:49.760]   markets.
+[00:35:49.760 --> 00:35:52.920]   Well, I am a big believer in pulls.
+[00:35:52.920 --> 00:35:57.440]   I think that it's a really well understood technology that we've been deploying for a
+[00:35:57.440 --> 00:35:58.840]   long time.
+[00:35:58.840 --> 00:36:00.920]   And there's a lot of great science behind it.
+[00:36:00.920 --> 00:36:07.680]   I think you see Elliott Morris at The Economist, working with Andrew Gellman and doing best
+[00:36:07.680 --> 00:36:10.880]   of breed Bayesian modeling of the pulls.
+[00:36:10.880 --> 00:36:16.220]   At the end of the day, I think of this as there's some latent variable, which is intention
+[00:36:16.220 --> 00:36:21.040]   to vote for one candidate or the other that we're just getting noisy observations from.
+[00:36:21.040 --> 00:36:25.800]   And when you have a latent variable that you don't observe, you want to pull as much information
+[00:36:25.800 --> 00:36:30.560]   that you have about that as you can, and you want to try to de-bias it as much as you can.
+[00:36:30.560 --> 00:36:31.800]   And we've gotten quite good at that.
+[00:36:31.800 --> 00:36:37.560]   I think that the real epistemological problem here is whether pulls mean what we hope them
+[00:36:37.560 --> 00:36:39.040]   to mean.
+[00:36:39.040 --> 00:36:44.560]   I think it might just be that people answer polls differently now or think about them
+[00:36:44.560 --> 00:36:45.560]   differently.
+[00:36:45.560 --> 00:36:51.160]   I think that's the shy Trump voter hypothesis from 2016 is maybe people legitimately aren't
+[00:36:51.160 --> 00:36:53.640]   telling you how they're really going to vote.
+[00:36:53.640 --> 00:36:59.080]   And in a world where that breaks down, I think polls become a lot less credible as a source
+[00:36:59.080 --> 00:37:00.080]   of information.
+[00:37:00.080 --> 00:37:05.240]   So I think we always have to take on faith that people are answering these things in
+[00:37:05.240 --> 00:37:08.520]   accordance with their beliefs, at least most of the time.
+[00:37:08.520 --> 00:37:13.200]   I hope that that will sustain itself because I can't even really imagine a world four years
+[00:37:13.200 --> 00:37:17.440]   from now, eight years from now, where we actually don't have any credible estimates of these
+[00:37:17.440 --> 00:37:18.440]   things.
+[00:37:18.440 --> 00:37:21.520]   We've sort of gotten used to feeling some level of certainty about where the election
+[00:37:21.520 --> 00:37:22.520]   stands.
+[00:37:22.520 --> 00:37:29.440]   Well, I guess what role then, if you believe the polls, I guess what role would prediction
+[00:37:29.440 --> 00:37:34.000]   markets play or could they play in election forecasting?
+[00:37:34.000 --> 00:37:38.480]   Certainly the polls are informing the participants of the prediction markets, right?
+[00:37:38.480 --> 00:37:42.720]   I can't imagine that they're coming up with their beliefs.
+[00:37:42.720 --> 00:37:46.920]   People in the prediction markets have some subjective belief about what's going to happen.
+[00:37:46.920 --> 00:37:50.880]   That's informed by some information about the world, whether that's just them talking
+[00:37:50.880 --> 00:37:57.480]   to their friends or reading the news or whatever, or actually just doing and analyzing data.
+[00:37:57.480 --> 00:38:01.800]   I think at the limit, if you really want to do well in a prediction market, you would
+[00:38:01.800 --> 00:38:05.320]   want to bring as much information as you could to bear on the problem.
+[00:38:05.320 --> 00:38:09.020]   But also, I guess this comes up a lot where it's kind of like maybe the people who analyze
+[00:38:09.020 --> 00:38:12.880]   the data the most are not as willing to participate in the prediction markets.
+[00:38:12.880 --> 00:38:20.400]   People are always calling on Nate Silver to make large bets about what he's estimated,
+[00:38:20.400 --> 00:38:23.200]   and he seems a little bit reticent about that.
+[00:38:23.200 --> 00:38:27.040]   So I guess, yeah, there is this interesting question of maybe the polls aren't driving
+[00:38:27.040 --> 00:38:30.240]   the prediction markets as much as you think.
+[00:38:30.240 --> 00:38:34.480]   To be honest with you, I don't really know what's motivating a lot of the people participating
+[00:38:34.480 --> 00:38:39.740]   in the prediction markets and whether they're really acting in a profit-motivated way or
+[00:38:39.740 --> 00:38:41.240]   they're just kind of gaming.
+[00:38:41.240 --> 00:38:44.520]   You can think about fantasy football players who are doing a similar thing.
+[00:38:44.520 --> 00:38:47.520]   They're kind of moving some things around on the internet and hoping that they win a
+[00:38:47.520 --> 00:38:51.080]   little bit of money as a result of it, but they might not be thinking too deeply about
+[00:38:51.080 --> 00:38:52.080]   it.
+[00:38:52.080 --> 00:38:54.840]   I'd love to see some research on just actually talking to those people about what their process
+[00:38:54.840 --> 00:38:55.840]   is and what they're doing.
+[00:38:55.840 --> 00:39:00.960]   If you go to a website like Metaculous, which I'm a big fan of, it's not a prediction market,
+[00:39:00.960 --> 00:39:05.440]   but a prediction aggregator, you see a really nice community of people that actually talk
+[00:39:05.440 --> 00:39:09.280]   about how they end up with the forecast that they came up with.
+[00:39:09.280 --> 00:39:12.120]   I think that you get a lot of insight from that, sort of like what are they actually
+[00:39:12.120 --> 00:39:16.120]   doing in practice to figure out the future state of the world.
+[00:39:16.120 --> 00:39:20.200]   And it does look a little bit like this foxes versus hedgehogs thing.
+[00:39:20.200 --> 00:39:24.280]   They just kind of cobble together little bits of information and make more directional changes.
+[00:39:24.280 --> 00:39:25.280]   Yeah.
+[00:39:25.280 --> 00:39:26.280]   I mean, I guess you could imagine...
+[00:39:26.280 --> 00:39:31.760]   I mean, Nate Silver is so spectacularly good at articulating what he's doing, but you could
+[00:39:31.760 --> 00:39:37.720]   imagine someone who's really good at forecasting, but maybe not as compelling of a writer or
+[00:39:37.720 --> 00:39:42.320]   as clear of a thinker, doing really well in a prediction market, but not having a famous
+[00:39:42.320 --> 00:39:43.320]   website.
+[00:39:43.320 --> 00:39:49.240]   So it does seem like that could provide them room to shine.
+[00:39:49.240 --> 00:39:52.440]   I was a big believer in it, and I think I'm just starting to have doubts now.
+[00:39:52.440 --> 00:39:56.840]   I mean, I built a prediction market a few years ago because I thought that there were
+[00:39:56.840 --> 00:39:59.560]   a lot of Nate Silver types out there doing this kind of stuff.
+[00:39:59.560 --> 00:40:01.720]   And I guess I just didn't end up...
+[00:40:01.720 --> 00:40:04.400]   It's really hard to get people to participate in prediction markets.
+[00:40:04.400 --> 00:40:06.280]   I think this is an underrated aspect of it.
+[00:40:06.280 --> 00:40:09.200]   I built one, I tried to get people to use it.
+[00:40:09.200 --> 00:40:15.240]   It's cognitively costly to create predictions, and especially ones where you're going to
+[00:40:15.240 --> 00:40:18.040]   have some skin in the game, you're going to even incur more.
+[00:40:18.040 --> 00:40:22.120]   So it's not free to get participation in a prediction market.
+[00:40:22.120 --> 00:40:27.880]   You're doing computation in the background that's expensive to produce their predictions.
+[00:40:27.880 --> 00:40:31.440]   I think this is an underrated part of the problem is that in financial markets, we just
+[00:40:31.440 --> 00:40:35.720]   assume that the incentives to participate far outweigh the cost to the participants.
+[00:40:35.720 --> 00:40:39.500]   But in prediction markets, I think that the problems that they're solving are cognitively
+[00:40:39.500 --> 00:40:41.960]   expensive and the payoffs are a little bit smaller.
+[00:40:41.960 --> 00:40:45.160]   So we might be in a world where we get sort of under participation.
+[00:40:45.160 --> 00:40:50.600]   And so you don't end up with these great stories about markets being amazing aggregators of
+[00:40:50.600 --> 00:40:52.360]   all available information.
+[00:40:52.360 --> 00:40:53.360]   Totally.
+[00:40:53.360 --> 00:40:58.600]   Well, we always end with two questions and I want to give you some space to answer these
+[00:40:58.600 --> 00:40:59.600]   questions.
+[00:40:59.600 --> 00:41:03.560]   So our second to last question is, what's an underrated aspect of machine learning or
+[00:41:03.560 --> 00:41:07.160]   data science that you think people should pay more attention to?
+[00:41:07.160 --> 00:41:10.400]   Yeah, that one I always have strong opinions about.
+[00:41:10.400 --> 00:41:14.920]   And to me, it's very obviously model comparison and evaluation.
+[00:41:14.920 --> 00:41:21.720]   I think we focus so much effort on training models, getting features on all that crazy
+[00:41:21.720 --> 00:41:23.040]   architectures.
+[00:41:23.040 --> 00:41:28.600]   The space of models that we can consider is increasing rapidly, but we still are bottlenecked
+[00:41:28.600 --> 00:41:32.200]   on is this model better than the one that we already had?
+[00:41:32.200 --> 00:41:36.840]   And I think that that's a nuanced problem and it's usually a lot of criteria that go
+[00:41:36.840 --> 00:41:37.840]   into that.
+[00:41:37.840 --> 00:41:41.560]   And coming up with good model evaluation procedures is hard.
+[00:41:41.560 --> 00:41:46.020]   It's not just like AUC, it's not precision recall curves.
+[00:41:46.020 --> 00:41:51.360]   That's a part of the problem, but there's just so much more to model comparison.
+[00:41:51.360 --> 00:41:57.640]   Cost of the model, upkeep, decay, stability, interpretability.
+[00:41:57.640 --> 00:42:01.680]   It's just this wide array of things that we like about models that we're not really encoding.
+[00:42:01.680 --> 00:42:06.080]   So I just feel like it's always the thing that people, when I'm talking to them, have
+[00:42:06.080 --> 00:42:08.400]   thought the least about, but it's the part that I'm most interested in.
+[00:42:08.400 --> 00:42:11.520]   So that's my very clear answer to that one.
+[00:42:11.520 --> 00:42:12.520]   Interesting.
+[00:42:12.520 --> 00:42:16.360]   Is there any work that you could point people to if they want to learn more about that?
+[00:42:16.360 --> 00:42:22.020]   I think that the posterior predictive check stuff in the Bayesian community is getting
+[00:42:22.020 --> 00:42:23.020]   in the right direction.
+[00:42:23.020 --> 00:42:27.400]   It's sort of a general approach to inspecting of the predictions that a model makes.
+[00:42:27.400 --> 00:42:32.040]   You see actually in the Elliott, Morris, and Andrew Gelman doing this with their election
+[00:42:32.040 --> 00:42:33.040]   probability model.
+[00:42:33.040 --> 00:42:38.000]   It's like they're looking at predictions and trying to see, does this make sense to me?
+[00:42:38.000 --> 00:42:39.640]   And where can we make improvements?
+[00:42:39.640 --> 00:42:42.360]   So I think that that's a really fruitful place to look.
+[00:42:42.360 --> 00:42:46.720]   I guess the other literature that I point people to is off-policy evaluation.
+[00:42:46.720 --> 00:42:50.960]   So usually if you have a model, you're going to go and make decisions with it at some point.
+[00:42:50.960 --> 00:42:53.640]   Those decisions will add up to some value in some way.
+[00:42:53.640 --> 00:42:58.160]   So the most faithful representation of how good a model is, is if you actually plugged
+[00:42:58.160 --> 00:43:03.200]   it into your production system and ran an online test, how well would it do?
+[00:43:03.200 --> 00:43:08.840]   So off-policy evaluation is just sort of like an offline way to try to estimate what would
+[00:43:08.840 --> 00:43:11.240]   happen online if you ran your model in production.
+[00:43:11.240 --> 00:43:14.860]   And so it's a hard approximation to make, but if you can do it, then you can be much
+[00:43:14.860 --> 00:43:19.160]   more sure that your model is the right one for the task that you're going to deploy it
+[00:43:19.160 --> 00:43:20.160]   for.
+[00:43:20.160 --> 00:43:21.160]   Interesting.
+[00:43:21.160 --> 00:43:30.200]   So my final question is, what's the biggest practical challenge of making machine learning
+[00:43:30.200 --> 00:43:31.360]   models useful in the real world?
+[00:43:31.360 --> 00:43:35.840]   And I would say for you at Lyft, what do you see as the biggest bottleneck to taking a
+[00:43:35.840 --> 00:43:40.320]   model from researcher conception to used in production?
+[00:43:40.320 --> 00:43:41.320]   Good question.
+[00:43:41.320 --> 00:43:45.120]   I think there's still a lot of really base needs that need to be met.
+[00:43:45.120 --> 00:43:52.040]   I think getting training data into shape that the model can be trained on it, I think it's
+[00:43:52.040 --> 00:43:53.920]   still something that...
+[00:43:53.920 --> 00:43:58.320]   We spend a lot of time just making datasets for consumption of models.
+[00:43:58.320 --> 00:44:01.160]   I think that that's something that's still a little bit slow.
+[00:44:01.160 --> 00:44:04.440]   There's some technology that's helping there, like feature store type ideas.
+[00:44:04.440 --> 00:44:05.680]   I think that that's a challenge.
+[00:44:05.680 --> 00:44:09.600]   I think that this just model lifecycle stuff is still a big thing.
+[00:44:09.600 --> 00:44:13.160]   I think two people collaborating on a model is a pretty challenging thing these days.
+[00:44:13.160 --> 00:44:18.160]   I think you see sort of like if one person gets to work alone, they can move much more
+[00:44:18.160 --> 00:44:20.320]   quickly than they do in a group.
+[00:44:20.320 --> 00:44:23.760]   But getting a group's worth of effort on a model is a really useful thing.
+[00:44:23.760 --> 00:44:28.640]   So I think that decomposing the problem into something that multiple people can work on
+[00:44:28.640 --> 00:44:29.640]   is a big opportunity.
+[00:44:29.640 --> 00:44:35.400]   And finally, I think that the monitoring and making sure that things are behaving the way
+[00:44:35.400 --> 00:44:38.880]   that you'd like in production, that trust when it's running in production.
+[00:44:38.880 --> 00:44:43.400]   And for us at Lyft, it's like if we screw this up, then the marketplace falls apart
+[00:44:43.400 --> 00:44:45.840]   and drivers don't make money and riders don't get rides.
+[00:44:45.840 --> 00:44:49.120]   It's a really big downside risk to losing reliability.
+[00:44:49.120 --> 00:44:52.640]   So getting to the point where we trust the decisions and that we can...
+[00:44:52.640 --> 00:44:57.320]   So we end up spending a lot of time just making sure that we're confident that the models
+[00:44:57.320 --> 00:45:01.360]   are going to do something reasonable in the real world and a lot of layers of testing
+[00:45:01.360 --> 00:45:02.360]   in between.
+[00:45:02.360 --> 00:45:05.800]   And I think that in the future, I would hope that we can get to a point where that friction
+[00:45:05.800 --> 00:45:08.680]   starts to go down and we can be a little bit more iterative.
+[00:45:08.680 --> 00:45:09.680]   Awesome.
+[00:45:09.680 --> 00:45:12.560]   Well, great sentiment to end on.
+[00:45:12.560 --> 00:45:14.280]   I really appreciate your time.
+[00:45:14.280 --> 00:45:15.280]   Thanks.
+[00:45:15.280 --> 00:45:16.280]   Thanks for all the great questions.
+[00:45:16.280 --> 00:45:18.320]   This is super fun.
+[00:45:18.320 --> 00:45:21.560]   Thanks for listening to another episode of Gradient Dissent.
+[00:45:21.560 --> 00:45:25.840]   Doing these interviews are a lot of fun and it's especially fun for me when I can actually
+[00:45:25.840 --> 00:45:28.600]   hear from the people that are listening to these episodes.
+[00:45:28.600 --> 00:45:32.680]   So if you wouldn't mind leaving a comment and telling me what you think or starting
+[00:45:32.680 --> 00:45:36.640]   a conversation, that would make me inspired to do more of these episodes.
+[00:45:36.640 --> 00:45:40.200]   And also if you wouldn't mind liking and subscribing, I'd appreciate that a lot.
+

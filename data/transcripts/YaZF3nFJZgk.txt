@@ -1,0 +1,287 @@
+
+[00:00:00.000 --> 00:00:07.880]   Hey folks, pleasure to be talking tonight. So like Lavanya said, we're gonna be talking about long-term context in transformers.
+[00:00:07.880 --> 00:00:17.240]   And the goal of this talk is to give a pretty shallow look at a breadth of diverse ideas for long-term attention.
+[00:00:17.240 --> 00:00:21.680]   I want to just make sure you're aware of some practical tips and tricks that you might be able to apply
+[00:00:21.680 --> 00:00:26.600]   to your own problems that might even be outside of the NLP field. And in general,
+[00:00:26.600 --> 00:00:31.640]   it's going to be an engineering lens into NLP with a focus on computational and memory cost.
+[00:00:31.640 --> 00:00:34.440]   And this is just because of my own background.
+[00:00:34.440 --> 00:00:40.240]   So this is the result of a couple weekends spent diving into this particular subfield and
+[00:00:40.240 --> 00:00:43.120]   doing a bit of writing and blogging on the topic.
+[00:00:43.120 --> 00:00:47.200]   And if like me, you're based in the East Coast, getting a bit tired,
+[00:00:47.200 --> 00:00:53.240]   having some trouble staying awake, I've hidden tiny images of BERT on every slide. So you can
+[00:00:54.800 --> 00:00:56.800]   use this talk that way instead if you prefer.
+[00:00:56.800 --> 00:01:04.160]   We appreciate that. Also, I'm so sorry. I didn't realize that it's like 10 p.m. for you. We should have had you go.
+[00:01:04.160 --> 00:01:10.080]   So why might we care about long-term context?
+[00:01:10.080 --> 00:01:13.440]   Well, first of all, if we're interested in text generation,
+[00:01:13.440 --> 00:01:21.120]   we might want to remember characters or key plot elements in a story for more coherent text generation.
+[00:01:21.960 --> 00:01:26.000]   We might want to keep a consistent style throughout longer generated texts.
+[00:01:26.000 --> 00:01:30.160]   Or if you're like me and you're in industry, you might be interested in
+[00:01:30.160 --> 00:01:36.520]   processing long documents that reference previous content, for instance, something like a legal definition.
+[00:01:36.520 --> 00:01:42.440]   So most of you at this point are probably familiar with BERT.
+[00:01:42.440 --> 00:01:50.360]   BERT uses this concept called self-attention, dot product self-attention, to route information between tokens.
+[00:01:51.160 --> 00:01:53.160]   And just for kind of a brief overview,
+[00:01:53.160 --> 00:01:59.920]   we take our hidden state from a layer, we project it out to a set of queries, a set of keys, a set of values.
+[00:01:59.920 --> 00:02:03.960]   We compute a measure of agreement between queries and keys
+[00:02:03.960 --> 00:02:08.080]   via a matrix multiply to get our attention matrix.
+[00:02:08.080 --> 00:02:12.280]   Then we normalize these values and we use them to weight
+[00:02:12.280 --> 00:02:20.440]   the values that were projected out from our hidden state. And the problem we're going to be focusing on today is this matrix multiply and
+[00:02:20.480 --> 00:02:22.480]   this large attention matrix.
+[00:02:22.480 --> 00:02:30.120]   Because as our sequences scale in length, it's these two steps that become particularly problematic in our network.
+[00:02:30.120 --> 00:02:38.280]   Like I said, this is gonna be kind of an engineering lens into the problem. So let's talk a little bit about runtime complexity.
+[00:02:38.280 --> 00:02:42.080]   So for a simple dot product self-attention, we
+[00:02:42.080 --> 00:02:48.880]   have as an input for a natural language processing problem a tensor of shape ND, where N is our sequence length and
+[00:02:49.120 --> 00:02:51.040]   D is our hidden dimension.
+[00:02:51.040 --> 00:02:54.440]   And we want to compute the dot product between every possible token pair.
+[00:02:54.440 --> 00:02:59.280]   So to do a little bit of simple math, we need N by N by D multiplies.
+[00:02:59.280 --> 00:03:05.720]   So for typical choices of N, like in BERT defaults, we have 512 and 768.
+[00:03:05.720 --> 00:03:09.120]   That amounts to about 200 million multiplies.
+[00:03:09.120 --> 00:03:12.120]   But if we look at a context length of
+[00:03:13.480 --> 00:03:17.160]   8096, so about 16x longer or exactly 16x longer,
+[00:03:17.160 --> 00:03:22.440]   we now have 50 billion multiplies required to compute our attention matrix.
+[00:03:22.440 --> 00:03:27.160]   And more generally, we have an operation that is big O of N squared D.
+[00:03:27.160 --> 00:03:35.680]   And it's kind of worth noting that 8096 really isn't that long in practice, like long books are hundreds of thousands of tokens. So
+[00:03:35.680 --> 00:03:38.560]   we have quite a long way to go.
+[00:03:40.840 --> 00:03:47.280]   Memory complexity also becomes problematic and in some cases is more problematic than the computational cost of dealing with long sequences.
+[00:03:47.280 --> 00:03:53.720]   So here we'll talk about multi-head attention, where we're looking at a couple different lenses into the same sequence.
+[00:03:53.720 --> 00:03:58.240]   For multi-head attention, we have a tensor of shape K, the number of heads,
+[00:03:58.240 --> 00:04:05.040]   by sequence length by sequence length that represents the attention between the source sequence and the target sequence.
+[00:04:05.040 --> 00:04:07.040]   We'll have some nice visuals a little bit later.
+[00:04:07.040 --> 00:04:10.240]   But just for some quick back-of-the-envelope math,
+[00:04:10.960 --> 00:04:17.400]   we're going to have to store 12x512x512 floating point values, about 3 million floating point values for
+[00:04:17.400 --> 00:04:21.880]   vanilla BERT, or about 12 megabytes of activations.
+[00:04:21.880 --> 00:04:28.680]   When we scale up to longer context, this becomes 3 gigabytes or 800 million floats per layer.
+[00:04:28.680 --> 00:04:34.240]   So if we were to have 12 layers of these sample networks,
+[00:04:35.480 --> 00:04:41.800]   we would need about 144 megabytes per example for BERT. And for the longer context setting,
+[00:04:41.800 --> 00:04:47.400]   we need about 36 gigabytes per example. So already it's pretty clear why we have a problem. This
+[00:04:47.400 --> 00:04:55.360]   big-o KN squared value quickly explodes and we can't feasibly store 36 gigabytes worth of activations
+[00:04:55.360 --> 00:05:02.760]   in our model during training time to allow for back propagation. So let's start diving into some of the details
+[00:05:03.520 --> 00:05:05.520]   of how we might resolve this issue.
+[00:05:05.520 --> 00:05:09.480]   So first up, we have the cheap engineering solution, which is
+[00:05:09.480 --> 00:05:13.920]   instead of processing the full document at a time, let's break it up into smaller chunks.
+[00:05:13.920 --> 00:05:16.320]   This is kind of
+[00:05:16.320 --> 00:05:18.200]   good first go-to.
+[00:05:18.200 --> 00:05:23.320]   The problem is within each chunk, we have no way to use information from other chunks.
+[00:05:23.320 --> 00:05:30.360]   And if you're looking or you're interested in filling in the blanks for tokens on the edges of a given chunk,
+[00:05:31.400 --> 00:05:37.680]   you might not have the necessary context to perform that task well. So these edges are a problem.
+[00:05:37.680 --> 00:05:48.700]   One possible engineering solution to this problem is simply to compute overlapping chunks and redo some computation.
+[00:05:48.700 --> 00:05:55.880]   So this is twice as expensive because each chunk overlaps with half of the previous chunk, but it
+[00:05:56.600 --> 00:06:01.800]   helps to partially resolve the issue we had previously, which is we have some tokens on the edge
+[00:06:01.800 --> 00:06:10.240]   where we don't have a lot of relevant context. So in this setting, we're actually just using the predictions from the middle portion of the chunk
+[00:06:10.240 --> 00:06:13.160]   as the outputs for our entire sequence.
+[00:06:13.160 --> 00:06:19.720]   If you prefer a kind of a more
+[00:06:19.720 --> 00:06:26.200]   machine learning approach to solving this problem, I'm going to be talking over four different paper selections.
+[00:06:26.480 --> 00:06:31.760]   We're going to kind of fly through things, but hopefully there's some relevant ideas that you can apply to your own tasks.
+[00:06:31.760 --> 00:06:37.560]   So the sparse transformer, the compressive transformer, a model called the reformer, and the routing transformer.
+[00:06:37.560 --> 00:06:47.800]   First up, the sparse transformer. This is by a group of folks out of OpenAI, Rewind Child, et al.
+[00:06:52.240 --> 00:06:56.040]   This diagram is a visualization of which tokens a
+[00:06:56.040 --> 00:07:05.000]   given query token attends to in an input sequence. So our query tokens here are denoted by the dark blue values and
+[00:07:05.000 --> 00:07:09.160]   our target tokens, which we're attending to, are denoted by the light blue values.
+[00:07:09.160 --> 00:07:14.560]   So this is an example of causal attention like you might use in an autoregressive language model.
+[00:07:14.560 --> 00:07:17.840]   And this is kind of our baseline.
+[00:07:17.840 --> 00:07:21.240]   So the colored values represent the
+[00:07:22.240 --> 00:07:24.840]   roughly the number of floating-point operations to get done.
+[00:07:24.840 --> 00:07:37.200]   And this is an alternate view into solving the same problem that the OpenAI team calls sparse attention.
+[00:07:37.200 --> 00:07:44.440]   And there are many different kinds of sparsity, but in particular they call theirs block sparse attention.
+[00:07:44.440 --> 00:07:50.720]   And they've chosen to break up this dense attention operation into two factors.
+[00:07:50.960 --> 00:07:57.480]   So the first factor we have is this block local attention where each token only looks at a small local window
+[00:07:57.480 --> 00:08:00.200]   around it itself.
+[00:08:00.200 --> 00:08:09.480]   And secondly, we have long-term attention, which is looking at specific tokens throughout a much longer sequence. So we've introduced some
+[00:08:09.480 --> 00:08:11.960]   some dilation
+[00:08:11.960 --> 00:08:13.960]   into our attention.
+[00:08:13.960 --> 00:08:18.960]   And what you find is that the network can route information
+[00:08:20.280 --> 00:08:23.840]   to these aggregator tokens with the light blue squares.
+[00:08:23.840 --> 00:08:30.840]   And then in the next layer, the subsequent layer of this model, you can attend to these aggregator tokens to
+[00:08:30.840 --> 00:08:35.520]   use information from that aggregator tokens local block.
+[00:08:35.520 --> 00:08:42.640]   So the cool property of the sparse attention model is that in two layers you can hypothetically
+[00:08:42.640 --> 00:08:46.680]   route any information between two tokens.
+[00:08:48.080 --> 00:08:53.200]   So first by local aggregation and then by attending to these aggregator tokens.
+[00:08:53.200 --> 00:09:00.920]   And this actually has some empirical motivation.
+[00:09:00.920 --> 00:09:06.520]   If you have ever read the paper, "What does BERT look at? An analysis of BERT's attention,"
+[00:09:06.520 --> 00:09:12.800]   they dive into some of the patterns that BERT attention heads have learned. And one of the two trends that they find are
+[00:09:13.240 --> 00:09:18.720]   attending to separator tokens and attending to periods. So BERT has naturally learned that there exists
+[00:09:18.720 --> 00:09:21.440]   some aggregator tokens in a sequence
+[00:09:21.440 --> 00:09:26.160]   where information is kind of summarized. And by attending to those
+[00:09:26.160 --> 00:09:30.680]   summaries, you can route information over longer distances.
+[00:09:30.680 --> 00:09:34.680]   So there's some empirical grounding here for this approach.
+[00:09:34.680 --> 00:09:42.720]   They also had to overcome some computational challenges in order to make this approach practical.
+[00:09:43.000 --> 00:09:47.880]   One of the papers they look to is called "Training deep networks with sublinear memory cost"
+[00:09:47.880 --> 00:09:55.640]   by Chen et al. And the key idea of training deep networks with sublinear memory cost is that
+[00:09:55.640 --> 00:09:58.600]   on the backwards pass,
+[00:09:58.600 --> 00:10:01.200]   rather than storing every single one of our activations,
+[00:10:01.200 --> 00:10:09.760]   we can locally recompute a subset of the activations using checkpoints. So specific activations that we chose to store.
+[00:10:10.560 --> 00:10:16.520]   And we go from those checkpoints and we recompute a portion of the forward pass, the other intermediate activations,
+[00:10:16.520 --> 00:10:18.880]   so that we can apply back propagation.
+[00:10:18.880 --> 00:10:27.080]   So it's really just a strategy to avoid caching all of our activations to compute our backwards pass.
+[00:10:27.080 --> 00:10:34.400]   And we really need these large batches in order to efficiently use GPU and TPU hardware that
+[00:10:34.400 --> 00:10:37.760]   relies on being able to efficiently parallelize things.
+[00:10:38.760 --> 00:10:45.760]   And one thing you'll observe if you look at the particular activations, the Sparks attention paper chose to checkpoint.
+[00:10:45.760 --> 00:10:49.960]   It chose not to checkpoint this k by n by n attention matrix.
+[00:10:49.960 --> 00:10:54.760]   It was so problematic in kind of our initial back of the envelope calculations.
+[00:10:54.760 --> 00:11:01.760]   So it chose instead to checkpoint some of these smaller activations of the network.
+[00:11:05.760 --> 00:11:12.760]   If you want to do some quick math here, typical cost of a gradient update is one forward pass plus one backwards pass.
+[00:11:12.760 --> 00:11:22.760]   When we use gradient checkpointing, we have to do one forward pass plus one backward pass plus another partial forward pass to fill in the missing gaps.
+[00:11:22.760 --> 00:11:31.760]   So worst case, this is something like 50% slower for the same batch size, because worst case we'd be computing two forward passes and one backwards pass.
+[00:11:32.760 --> 00:11:40.760]   But oftentimes we can save more than double, we can more than have our memory cost.
+[00:11:40.760 --> 00:11:44.760]   And by more than having our memory costs, we can more than double our batch size.
+[00:11:44.760 --> 00:11:51.760]   And by increasing our batch sizes by more than a factor of two, we can sometimes actually see speed ups, even though we're doing more computation.
+[00:11:51.760 --> 00:11:54.760]   per update.
+[00:11:57.760 --> 00:12:08.760]   So the key ideas expressed in this paper are that we can factorize dense attention to two sparse operations that we run in series and still hypothetically allow for attention between any two tokens.
+[00:12:08.760 --> 00:12:18.760]   We get O(n) times square root n memory and runtime complexity. So we've gained a factor of square root n.
+[00:12:18.760 --> 00:12:24.760]   And if our n is something like 8096, this is pretty significant. This is something like a factor of 90.
+[00:12:26.760 --> 00:12:31.760]   And we can checkpoint activations to further improve our memory use and scale out to even longer sequences.
+[00:12:31.760 --> 00:12:36.760]   So memory use is very frequently the bottleneck when we're dealing with very long sequences.
+[00:12:36.760 --> 00:12:47.760]   Next up is a compressive transformer. So this is a paper by Ray et al. These are folks out of DeepMind.
+[00:12:51.760 --> 00:13:02.760]   The compressive transformer is largely an extension of transformer XL with one key addition. We're going to talk about transformer XL and then we're going to talk about the novel contribution of the compressive transformer.
+[00:13:02.760 --> 00:13:08.760]   But I think this gif is kind of useful in illustrating the three main components of the compressive transformer.
+[00:13:08.760 --> 00:13:13.760]   The first being the current chunk we're looking at, which is labeled sequence in this diagram.
+[00:13:13.760 --> 00:13:22.760]   The second being memory, which is simply the previous chunk that we processed that's gradually moved back in a queue.
+[00:13:22.760 --> 00:13:31.760]   And finally, we have compressed memory where multiple memory time steps are compressed into a single state.
+[00:13:31.760 --> 00:13:38.760]   So this is a lossy operation, but we want to learn to lose as little useful information as possible.
+[00:13:38.760 --> 00:13:44.760]   So we'll talk a little bit about how we optimize for losing as little useful information as possible.
+[00:13:44.760 --> 00:13:54.760]   First, let's talk about some of the contributions of transformer XL, attentive language models beyond a fixed length context.
+[00:13:54.760 --> 00:14:02.760]   So as we discussed previously, one of the easy solutions for dealing with long sequences is to chunk them up into smaller chunks.
+[00:14:02.760 --> 00:14:07.760]   The problem with this is that you have no attention in between segments.
+[00:14:08.760 --> 00:14:15.760]   Transformer XL proposes that we could cache these prior activations and attempt them,
+[00:14:15.760 --> 00:14:24.760]   but not actually compute the gradients through this operation to save some time, the training time.
+[00:14:24.760 --> 00:14:32.760]   And this cheap trick gives us a neat property that when we have a model that is n layers deep,
+[00:14:33.760 --> 00:14:37.760]   every layer, we can add some additional context to our model.
+[00:14:37.760 --> 00:14:45.760]   So you'll see this token, instead of having a context length of size four, has a context length of something like 10 here.
+[00:14:45.760 --> 00:14:53.760]   Because every prior layer can attend to tokens that might have occurred outside of its context in the prior layer.
+[00:14:58.760 --> 00:15:03.760]   Secondly, the transformer XL paper introduced this concept of relative positional encodings.
+[00:15:03.760 --> 00:15:11.760]   One of the problems with representing long documents in chunks is that when we're using absolute position indices,
+[00:15:11.760 --> 00:15:18.760]   so each position in a sequence is just labeled by its index, and we have an embedding for each index,
+[00:15:20.760 --> 00:15:23.760]   chunking resets the counter at zero.
+[00:15:23.760 --> 00:15:31.760]   Learning representations for the beginning of a chunk really isn't that meaningful for long sequences.
+[00:15:31.760 --> 00:15:36.760]   Ideally, we'd want position index zero to mean something like the start of a document,
+[00:15:36.760 --> 00:15:44.760]   or honestly anything that doesn't rely on taking an arbitrary modulo 512 or modulo chunk size.
+[00:15:44.760 --> 00:15:48.760]   So resetting to zero doesn't really make sense when we chunk up documents.
+[00:15:49.760 --> 00:15:53.760]   Relative position embedding instead looks at the difference between two different token indices
+[00:15:53.760 --> 00:15:56.760]   and learns a representation for each relative difference.
+[00:15:56.760 --> 00:16:02.760]   It also does some more weight sharing, but for the purposes of this talk, this is a key contribution.
+[00:16:02.760 --> 00:16:09.760]   And when we talk about relative positions, we have a more sensical interpretation for long sequences.
+[00:16:09.760 --> 00:16:16.760]   The key contribution of this paper is actually this compression network.
+[00:16:17.760 --> 00:16:20.760]   This compression network is a tiny little MLP.
+[00:16:20.760 --> 00:16:26.760]   It takes a few memory states and compresses them into a single compressed memory state.
+[00:16:26.760 --> 00:16:32.760]   So it has two parts. The first is this compression module, which is this tiny little MLP.
+[00:16:32.760 --> 00:16:40.760]   They tried some baselines like mean pooling, max pooling, the most commonly used memory states, for instance.
+[00:16:41.760 --> 00:16:47.760]   But they found that the best objective was actually to have a pretty much a secondary model
+[00:16:47.760 --> 00:16:56.760]   that tries to reconstruct the attention matrix over these memory states from the single compressed memory state.
+[00:16:56.760 --> 00:17:03.760]   So the objective here is we want to mimic the attention over what we compressed.
+[00:17:03.760 --> 00:17:10.760]   And this is more or less trained as a separate network, so the loss doesn't blend with that of the main network.
+[00:17:11.760 --> 00:17:20.760]   And this loss, this secondary loss, allows them to achieve better results than some naive heuristics like mean or max pooling over this sequence.
+[00:17:20.760 --> 00:17:27.760]   And we can theoretically attend to tokens compression rate times n layers times context size tokens away.
+[00:17:27.760 --> 00:17:34.760]   So we get a factor of compression rate out of this operation over transformer XL.
+[00:17:38.760 --> 00:17:43.760]   One often overlooked contribution is simply the fact that they also introduced a new data set for this task.
+[00:17:43.760 --> 00:17:54.760]   Oftentimes people benchmark on Wikitext 103, LM1B, and Wiki 8. These are some of the data sets people use for longer term sequence modeling.
+[00:17:54.760 --> 00:17:58.760]   But to a certain extent, we're kind of outgrowing those data sets.
+[00:17:59.760 --> 00:18:10.760]   And so DeepMind's team built up a new data set called PG19 based off of Project Gutenberg, which is an open repository of public domain books you can find at gutenberg.org.
+[00:18:10.760 --> 00:18:16.760]   On average, these documents are 20x longer than the LM1B benchmark, and it's about twice as large.
+[00:18:16.760 --> 00:18:26.760]   So data set contributions are hugely important to the field, and I'm really looking forward to the research that comes out of new papers that use this better benchmark.
+[00:18:27.760 --> 00:18:32.760]   So the key ideas here are this concept of using relative positional embeddings,
+[00:18:32.760 --> 00:18:42.760]   segment level recurrence mechanism, even if we don't backwards propagate, even though we don't back propagate the other chunks,
+[00:18:42.760 --> 00:18:49.760]   an idea of compressive memory, and the application of a better data set for more rigorous research.
+[00:18:53.760 --> 00:19:02.760]   Next up, we have the Reformer by Nikita Ketev et al. And I believe he's actually an undergrad, so this is extremely impressive work.
+[00:19:02.760 --> 00:19:08.760]   At a high level, the Reformer takes your input sequence.
+[00:19:08.760 --> 00:19:18.760]   It applies locality sensitive hashing to bucket the input sequence up into these different colors.
+[00:19:20.760 --> 00:19:23.760]   We sort by color.
+[00:19:23.760 --> 00:19:33.760]   We attend within each color here. So we chunk things up and we attend within elements of the same color. Chunking is kind of just an implementation detail here. So for the most part, you can ignore that.
+[00:19:33.760 --> 00:19:47.760]   First, they found that the idea of having a separate query and key isn't entirely necessary in order to attend over a sequence.
+[00:19:48.760 --> 00:19:52.760]   So if you actually tie the weights of the key in the query, you get similar performance.
+[00:19:52.760 --> 00:19:59.760]   And they use this as inspiration for their locality sensitive hashing operation.
+[00:19:59.760 --> 00:20:02.760]   If you're unfamiliar with locality sensitive hashing,
+[00:20:02.760 --> 00:20:09.760]   the idea is to, in this case, perform some random rotations,
+[00:20:09.760 --> 00:20:15.760]   determine which of several buckets your normalized vector ends up in,
+[00:20:16.760 --> 00:20:26.760]   and treat that bucket as a bucket for sorting. So there's different varieties of locality sensitive hashing. This one's based on angular rotations. There are others based on
+[00:20:26.760 --> 00:20:41.760]   simply identifying whether or not a given input vector has a positive or negative correlation with another vector. So it's essentially random projections that allow us to
+[00:20:42.760 --> 00:20:56.760]   have this property. We can go from a high dimensional space to a low dimensional space and still have similar vectors in the high dimensional space appear close together in the low dimensional space
+[00:20:56.760 --> 00:21:00.760]   or frequently occur in the same bucket.
+[00:21:00.760 --> 00:21:08.760]   The concept from their formula that I think is actually most important.
+[00:21:10.760 --> 00:21:18.760]   So personally, I don't think that the locality sensitive hashing approach will necessarily stick over time, but this is a beautiful idea
+[00:21:18.760 --> 00:21:29.760]   inspired by residual nets that really allows us to reduce our memory use during training. I think this is extremely valuable for training longer sequences.
+[00:21:29.760 --> 00:21:34.760]   So if you recall residual networks, we represent the output of a layer
+[00:21:35.760 --> 00:21:41.760]   as the sum or the normalized sum of your input plus some function of x.
+[00:21:41.760 --> 00:21:53.760]   There's a related concept called reversible neural networks where you have two separate equations. First one being y1 is equal to x1 plus some function of x2.
+[00:21:53.760 --> 00:21:58.760]   Second being y2 is equal to x2 plus some function of x1.
+[00:22:00.760 --> 00:22:05.760]   And it has the special property that we can reconstruct fully
+[00:22:05.760 --> 00:22:14.760]   the gradients with respect to our inputs from the gradients with respect to our outputs and some amount of recomputation.
+[00:22:14.760 --> 00:22:24.760]   So I won't dive into the math, but just take for granted that we don't need to store more than a single layers worth of activations at a time.
+[00:22:25.760 --> 00:22:35.760]   And this is absolutely awesome because it saves us a factor of model depth in memory use during training. And importantly, it doesn't seem to impact accuracy.
+[00:22:35.760 --> 00:22:44.760]   So this requires writing a custom backwards pass operation for your layers.
+[00:22:49.760 --> 00:22:58.760]   For the reformer, that structure looks like this. And these are just kind of arbitrary chunkings of your input vector x1 and x2.
+[00:22:58.760 --> 00:23:05.760]   So here x2, we apply the LSH attention block.
+[00:23:05.760 --> 00:23:07.760]   And that is equivalent to f1.
+[00:23:07.760 --> 00:23:12.760]   We then sum that with x1. This is kind of like a residual.
+[00:23:13.760 --> 00:23:20.760]   G in the prior slide is the same as our feed forward block. And when we apply that with x2.
+[00:23:20.760 --> 00:23:31.760]   We have another residual here to output y2 and y1. So the special structure is just allowing us to save memory use during training.
+[00:23:31.760 --> 00:23:37.760]   Key ideas here being the concept of reversible networks.
+[00:23:38.760 --> 00:23:47.760]   The fact that time keys and queries doesn't seem to negatively impact model performance all that much when you measure in terms of perplexity.
+[00:23:47.760 --> 00:23:50.760]   And this idea of LSH bucketing.
+[00:23:50.760 --> 00:23:54.760]   And the reason this LSH bucketing works is simply that
+[00:23:59.760 --> 00:24:08.760]   like I said before, we are preserving the property that things that end up in similar buckets have high attention activations.
+[00:24:08.760 --> 00:24:17.760]   And finally, we have the routing transformers. This is a paper by Roy et al.
+[00:24:17.760 --> 00:24:27.760]   And it's quite a similar idea to the reformer, except instead of locality sensitive hashing, they choose to apply a k-means update rule.
+[00:24:28.760 --> 00:24:39.760]   And they also take some inspiration from a paper we discussed earlier, which is the sparse attention paper from OpenAI, where they use this idea of local attention, you can think about it as being
+[00:24:39.760 --> 00:24:50.760]   attention convolved across your input sequence. So they find that this is a pretty good inductive bias for language modeling to capture local information.
+[00:24:50.760 --> 00:24:53.760]   And then based solely on the content
+[00:24:55.760 --> 00:24:56.760]   of each tokens.
+[00:24:56.760 --> 00:25:04.760]   Based solely on each tokens content, they also apply this routing attention operation.
+[00:25:04.760 --> 00:25:17.760]   There's this little gif of k-means updates. And one thing you'll notice is that the size of each k-means bucket isn't necessarily the same.
+[00:25:18.760 --> 00:25:31.760]   For the purposes of the paper, they just instead of applying k-means in a proper way, they select the k closest values or the, let's use a different variable, we'll say the m closest values for each cluster center.
+[00:25:31.760 --> 00:25:44.760]   And this is just to make sure that we have matrices that we can easily parallelize. So if we have matrices of varying widths, we can easily batch our operations.
+[00:25:44.760 --> 00:25:53.760]   So just like normal attention, we project our hidden state to queries and keys.
+[00:25:53.760 --> 00:25:59.760]   We randomly project our queries and keys with a fixed orthonormal matrix.
+[00:26:00.760 --> 00:26:15.760]   Alongside our gradient descent operation, we run a k-means clustering on the projected vectors. So this is separate from SGD, we're applying the k-means update rule on these projected vectors to get new cluster centers.
+[00:26:15.760 --> 00:26:24.760]   We attend only within each k-means cluster. So in practice, we're attending only to a fixed number of closest terms to each cluster center.
+[00:26:26.760 --> 00:26:43.760]   And this allows us to, instead of having an O(n^2) operation like dense attention, use an attention operation that is now O(n/n/k). And if you select optimal k, this becomes O(n^2)n, just like sparse attention.
+[00:26:43.760 --> 00:26:54.760]   So the intuition here is that you have a large dot product between two tokens. That probably means that those tokens are likely going to belong to the same cluster.
+[00:26:55.760 --> 00:27:05.760]   If your attention weights are dominated by a few key elements, this means that attending locally within these k-means clusters is a pretty good approximation of what dense attention is doing anyhow.
+[00:27:05.760 --> 00:27:17.760]   And typically, we do find that many of the attention matrices, empirically invert, are dominated by a few large terms when we inspect the attention weights.
+[00:27:20.760 --> 00:27:31.760]   So the key ideas here are again this application of local attention in combination with a global attention operation based on k-means clustering of the content of each token.
+[00:27:31.760 --> 00:27:48.760]   So in terms of takeaways, what I hope you got out of this talk, memory use matters and practical engineering tricks to reduce memory use can have pretty big impacts in the kinds of models that we can train.
+[00:27:49.760 --> 00:27:58.760]   Checkpointing gradients is kind of an underrated trick that you should probably be applying to your own models if you're not, to get larger batch sizes.
+[00:27:58.760 --> 00:28:06.760]   If you have expensive operations, see if you can factorize them into the composition of two smaller operations.
+[00:28:09.760 --> 00:28:25.760]   Another alternative is seeing whether you can compress large matrices into smaller matrices or cluster information together to use a kind of structured sparsity that approximates the full dense attention.
+[00:28:26.760 --> 00:28:44.760]   And finally, inductive bias matters. Flexible inductive biases aren't always beneficial and oftentimes taking advantage of our own human intuition for what is required to solve a given task can allow us to really make some big efficiency gains.
+[00:28:48.760 --> 00:28:56.760]   And although I didn't really have time to talk about these during the course of this talk, I would also really recommend taking a look at sparse synchorn attention by Yitei.
+[00:28:56.760 --> 00:29:12.760]   So sparse synchorn attention uses the idea of differentiable sorting to approximate dense attention. So if you're familiar with the idea of synchorn iterations or earth-mover assistance, they use those concepts for sparsity.
+[00:29:15.760 --> 00:29:30.760]   There's also a paper called large memory layers of product keys that uses another form of factorization to query large sequence independent memory matrices to recall the equivalent of world knowledge or facts that they can use in sequence modeling.
+[00:29:30.760 --> 00:29:39.760]   And finally, there is paper called adaptive span transformers that dynamically varies context size per head to see speed ups in terms of
+[00:29:39.760 --> 00:29:46.760]   how much computation is required, particularly on CPU, because it's harder to paralyze their method and apply it to GPU.
+[00:29:46.760 --> 00:30:01.760]   That's all I've got for you today, but hopefully it was interesting. Hopefully it provided some exposure to some concepts that you hadn't been exposed to before and gives you at the very least some key terms to search if you're interested.
+[00:30:04.760 --> 00:30:16.760]   That was amazing. I feel like that was such a calm and detailed explanation of these papers that I needed to explain all of the machine learning papers to me, you know, and I'm sure people feel the same way.
+[00:30:16.760 --> 00:30:30.760]   All right, so let's jump into some questions. I see a lot of people saying how much they love the talk and how much they love the slides and the gifs. I don't see questions yet.
+[00:30:32.760 --> 00:30:39.760]   Oh, I see one question. Someone was like, I'm surprised you left out the long former. Was there a reason behind it?
+[00:30:39.760 --> 00:30:47.760]   The initial reason was just that that particular paper was introduced after I wrote the blog post that this talk was based on.
+[00:30:47.760 --> 00:30:59.760]   But I do think it's a promising approach. The thing I really liked about the long former paper is that they modified an existing pre trained model
+[00:31:00.760 --> 00:31:08.760]   to accept longer context lengths. So if you're an industry researcher like me at a small startup where we don't have infinite compute budgets,
+[00:31:08.760 --> 00:31:23.760]   they lay out a practical approach to make modifications to existing models to solve a specific task, in this case, using longer term context. I thought that was super cool. And that's pretty atypical for papers in this space.
+[00:31:25.760 --> 00:31:30.760]   Are you going to do a follow up covering new things like every few months, maybe?
+[00:31:30.760 --> 00:31:38.760]   I'm hoping to update the blog post that I wrote a while back on pragmatic.ml to incorporate some of the newer concepts as those papers come out.
+[00:31:38.760 --> 00:31:45.760]   Ultimately, my goal is just to find papers that I can apply in my day job, working on document understanding.
+[00:31:45.760 --> 00:31:53.760]   Which actually ties nicely into my question, which is, would you like to tell people about your startup? Because I think your startup is pretty cool.
+[00:31:54.760 --> 00:32:02.760]   Yeah, so Indico Data Solutions is a company that builds software tools for non technical users to use.
+[00:32:02.760 --> 00:32:15.760]   In particular, we want to give subject matter experts the ability to interact with the machine learning model to automate painful and repetitive portions of their everyday tasks.
+[00:32:16.760 --> 00:32:31.760]   Everything from processing invoices to pulling structured information out of loans to one particularly interesting scenario is that we help folks judge whether or not dumpsters are overfull in their computer vision workflow.
+[00:32:31.760 --> 00:32:35.760]   Yeah, who's paying for that?
+[00:32:35.760 --> 00:32:39.760]   A garbage company.
+[00:32:41.760 --> 00:32:51.760]   Interesting. I see another question. Leonardo asked, do you have empirical results from the techniques that you're covering?
+[00:32:51.760 --> 00:32:54.760]   Yes, I wanted to include them.
+[00:32:54.760 --> 00:33:05.760]   It's a bit hard because some of the data sets that folks benchmarked on didn't overlap or are kind of unfortunately small to get reliable results.
+[00:33:06.760 --> 00:33:14.760]   I'd say the papers that had the most impressive empirical results were the compressive transformer, the sparse transformer, and the routing transformer.
+[00:33:14.760 --> 00:33:20.760]   I think the reformer paper was a little bit of an earlier work and I expect follow ups to do a little bit better.
+[00:33:26.760 --> 00:33:40.760]   I had a question. This is a little bit broader. I think this is super cool stuff and making models faster is something I'm not very good at and I'm glad there are people who are.
+[00:33:41.760 --> 00:33:59.760]   I wanted to ask a broader question. A lot of this attention stuff seemed to be about trying to make sure that the attention could hold as much of the document as possible in memory a lot of the time or computational tricks to be able to recreate that information later.
+[00:34:00.760 --> 00:34:14.760]   When I read something with tens of thousands of tokens in it, like a very long essay or a short book, if I need to remember something from the beginning, I notice that I don't have the information I need, then I search back through the text.
+[00:34:15.760 --> 00:34:36.760]   That's something that I think a recurrent network would be better at. I'm just curious if people have thought about multiple passes of attention or a more active attention mechanism more akin to an eye scanning something like is used in computer vision and less akin to these attention mechanisms that seem to be universal.
+[00:34:37.760 --> 00:34:56.760]   Yeah, I'm blanking on the name of the paper, but there was a recent paper that was actually for a knowledge plate question answering task that first attended over representations for full documents
+[00:34:57.760 --> 00:35:15.760]   and stored kind of like cast representations for each of those documents and then specifically queried for relevant documents and looked within those documents to gather facts and information that might be used to answer a given question. So I'll find the name of that paper at some other point, but people are certainly
+[00:35:15.760 --> 00:35:18.760]   messing around with ideas of
+[00:35:18.760 --> 00:35:23.760]   attention after the fact, I suppose.
+[00:35:24.760 --> 00:35:36.760]   Yeah, it also sounded, some of the stuff that you presented in the middle bit where you had like routing attention and things like that, those were somewhat akin to like a multi scale attention where you know that you have to attend to something in the past. So that's definitely
+[00:35:36.760 --> 00:35:45.760]   similar, but it also, it seems like something that's a little bit more in the like RL, RNN world than the sort of more CNN transformer world.
+[00:35:46.760 --> 00:35:55.760]   And some of these approaches even use something that's a little bit more heuristic as just like a nearest neighbor search to find relevant information to use later.
+[00:35:55.760 --> 00:36:04.760]   Yeah, I think one thing I didn't mention was this idea of hierarchy. Hierarchy is another way to approach problems like this. So,
+[00:36:05.760 --> 00:36:16.760]   for instance, BERT LSTM was mentioned earlier, that would be an approach where we fix higher level input features and have a secondary layer of modeling on top of fixed features.
+[00:36:16.760 --> 00:36:22.760]   Thank you, Madison. That was amazing. And thank you for staying up. I'm so sorry I did not realize.
+[00:36:22.760 --> 00:36:24.760]   Thanks for having me.
+

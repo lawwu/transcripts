@@ -1,0 +1,289 @@
+
+[00:00:00.000 --> 00:00:07.240]   Hello everyone, I'm Thomas Cappel, machine learning engineer at Weights & Biases.
+[00:00:07.240 --> 00:00:12.480]   And today, we will present you Diffusion on the Clouds, how to leverage diffusion models
+[00:00:12.480 --> 00:00:16.320]   to perform short-term solar energy forecasting.
+[00:00:16.320 --> 00:00:17.320]   Go for it Alexis!
+[00:00:17.320 --> 00:00:24.760]   Hi, I'm Alexis Saint-Jean-Chemez, I'm an R&D engineer here at Stedissen, and I'm going
+[00:00:24.760 --> 00:00:29.080]   to be presenting what motivated this study with Thomas.
+[00:00:29.080 --> 00:00:36.440]   So, we focused this study on solar forecasting for photovoltaic production.
+[00:00:36.440 --> 00:00:43.000]   As everyone may already know, solar energy has enormous potential, but it also has a
+[00:00:43.000 --> 00:00:46.280]   major drawback, and that's its instability.
+[00:00:46.280 --> 00:00:53.040]   A cloud passes over a power plant, and the power production can drop by up to 80% in
+[00:00:53.040 --> 00:00:54.560]   a matter of minutes.
+[00:00:54.560 --> 00:01:01.080]   So, this behavior heavily impacts the whole value chain, the global stability of the power
+[00:01:01.080 --> 00:01:02.240]   grid.
+[00:01:02.240 --> 00:01:09.640]   It affects in turn all the actors down the line, such as grid operators, power plant
+[00:01:09.640 --> 00:01:20.080]   managers, microgrid systems, such as insular systems, and energy trading actors as well.
+[00:01:20.080 --> 00:01:27.520]   Here at Stedissen, we provide these actors with accurate solar forecasts at various timescales
+[00:01:27.520 --> 00:01:36.060]   to help mitigate the risks and reduce the costs associated with production uncertainty.
+[00:01:36.060 --> 00:01:42.440]   To do that, we rely on different products, but for this study we focused on especially
+[00:01:42.440 --> 00:01:44.800]   on the satellite imagery one.
+[00:01:44.800 --> 00:01:50.480]   It enables short-term forecasts from a few minutes to several hours ahead.
+[00:01:50.480 --> 00:01:58.040]   In this solution, we rely on geostationary meteorological satellites that provide multispectral
+[00:01:58.040 --> 00:02:05.480]   images that allow a global coverage with a spatial resolution of 1 kilometer up to 500
+[00:02:05.480 --> 00:02:12.000]   meters and a temporal resolution of about 10 to 15 minutes.
+[00:02:12.000 --> 00:02:17.880]   Using these images to forecast solar irradiance is quite a challenging task.
+[00:02:17.880 --> 00:02:23.320]   Because of the size of the data, because of the variety of the bands that are used, the
+[00:02:23.320 --> 00:02:27.360]   algorithm is computationally intensive.
+[00:02:27.360 --> 00:02:34.000]   On the other hand, the algorithm has also to output its results quite fast for the forecast
+[00:02:34.000 --> 00:02:36.160]   to remain relevant.
+[00:02:36.160 --> 00:02:44.360]   Luckily for us, we have access to NVIDIA hardware through the incubator program.
+[00:02:44.360 --> 00:02:49.920]   Our existing workflow uses first a step of cloud detection to identify clouds in the
+[00:02:49.920 --> 00:02:56.040]   image and to estimate their optical properties, mainly their transparency.
+[00:02:56.040 --> 00:03:03.360]   Then the last six cloud masks are combined to infer the cloud movements.
+[00:03:03.360 --> 00:03:10.760]   Clouds are then propagated using optical flow to simulate the evolution of their movement
+[00:03:10.760 --> 00:03:12.680]   in the future.
+[00:03:12.680 --> 00:03:18.840]   Optical flow is a powerful tool that performs great in case of advection, when clouds are
+[00:03:18.840 --> 00:03:24.600]   keeping more or less the same shape and are simply moving across the sky.
+[00:03:24.600 --> 00:03:33.360]   But it reaches its limits in case of convection or local cloud formation or dissipation.
+[00:03:33.360 --> 00:03:39.920]   It also cannot predict what's outside of the image, resulting in problems at the boundaries
+[00:03:39.920 --> 00:03:44.200]   that spread out the more the forecast time passes.
+[00:03:44.200 --> 00:03:51.560]   Moreover, any imperfection in the forecasts results in a big uncertainty.
+[00:03:51.560 --> 00:03:57.480]   Because of the scale of the image, if a cloud is placed, let's say, one pixel off from its
+[00:03:57.480 --> 00:04:05.440]   ground truth position, it is equivalent to a kilometer or more offset in reality.
+[00:04:05.440 --> 00:04:12.840]   And consequently, a power plant can falsely be under a cloud or vice versa.
+[00:04:12.840 --> 00:04:15.420]   Thank you Alexis for the clear motivation.
+[00:04:15.420 --> 00:04:19.520]   So how do we leverage diffusion models to solve these problems?
+[00:04:19.520 --> 00:04:27.240]   What we're going to do now is formulating the problem as a next frame prediction task.
+[00:04:27.240 --> 00:04:30.720]   Given a context of frames, we're going to create a model that is capable of predicting
+[00:04:30.720 --> 00:04:32.240]   what happens next.
+[00:04:32.240 --> 00:04:35.460]   Let's consider three consecutive images from the satellite.
+[00:04:35.460 --> 00:04:36.760]   Let's play a game.
+[00:04:36.760 --> 00:04:41.360]   Can you guess what's going to happen next?
+[00:04:41.360 --> 00:04:43.240]   The cloud disappeared.
+[00:04:43.240 --> 00:04:46.000]   I was not expecting that.
+[00:04:46.000 --> 00:04:51.480]   Thinking that that's going to happen is not easy, even for the trained eye.
+[00:04:51.480 --> 00:04:56.560]   Our task will be to put together a model that is capable of representing all these complex
+[00:04:56.560 --> 00:04:58.640]   atmosphere behaviors.
+[00:04:58.640 --> 00:05:02.600]   I would say that we have succeeded if we are capable of building a model that can deal
+[00:05:02.600 --> 00:05:04.880]   with that.
+[00:05:04.880 --> 00:05:08.140]   Luckily for us, we have a new tool on the toolbox.
+[00:05:08.140 --> 00:05:12.920]   The Noising Diffusion Probabilistic Models, DDPM.
+[00:05:12.920 --> 00:05:17.160]   These type of models are extremely capable of generating high quality images that look
+[00:05:17.160 --> 00:05:18.800]   sharp and detailed.
+[00:05:18.800 --> 00:05:24.160]   Previously, if one wanted to generate high quality images, you will need to use something
+[00:05:24.160 --> 00:05:28.100]   called generative adversarial networks.
+[00:05:28.100 --> 00:05:32.380]   These neural networks were complex and hard to train.
+[00:05:32.380 --> 00:05:37.280]   So I would agree that the simple nature of diffusion models make them very useful for
+[00:05:37.280 --> 00:05:40.880]   train solving different new tasks.
+[00:05:40.880 --> 00:05:43.720]   So how do you train a diffusion model?
+[00:05:43.720 --> 00:05:46.460]   Let's deep dive and see what happens.
+[00:05:46.460 --> 00:05:51.760]   Diffusion models consist on training a neural network to iteratively learn how to remove
+[00:05:51.760 --> 00:05:53.980]   noise from an image.
+[00:05:53.980 --> 00:05:59.480]   You start with a data set of images and you noisify them using a scheduler.
+[00:05:59.480 --> 00:06:04.680]   Then you teach the model how to remove different amounts of noise at the image.
+[00:06:04.680 --> 00:06:09.440]   At the end, you will have a model capable of generating images from pure noise.
+[00:06:09.440 --> 00:06:13.120]   If you want to learn more about diffusion models, I encourage you to read the illustrated
+[00:06:13.120 --> 00:06:16.560]   stable diffusion article.
+[00:06:16.560 --> 00:06:21.760]   The neural network that we are going to use to train the diffusion model is the unit.
+[00:06:21.760 --> 00:06:27.280]   This architecture has been on the deep learning field since 2015 and has been used to solve
+[00:06:27.280 --> 00:06:29.880]   many image to image tasks.
+[00:06:29.880 --> 00:06:33.480]   We will train the unit to predict the amount of noise of the image.
+[00:06:33.480 --> 00:06:40.120]   We use a slightly modified unit that adds self-attention layers on the deep down convolutions.
+[00:06:40.120 --> 00:06:44.400]   But the diffusion process expects one input image, one output noise.
+[00:06:44.400 --> 00:06:50.840]   So how do we frame this next frame prediction as a diffusion problem?
+[00:06:50.840 --> 00:06:52.600]   I like to iterate fast.
+[00:06:52.600 --> 00:06:56.000]   So first we're going to work on a simpler problem.
+[00:06:56.000 --> 00:06:59.400]   We're going to work with the moving minced data set, but we're going to construct our
+[00:06:59.400 --> 00:07:01.520]   own version of it.
+[00:07:01.520 --> 00:07:03.460]   So what does it mean moving minced?
+[00:07:03.460 --> 00:07:07.800]   As the name says, it's just the moving digits of the minced data set.
+[00:07:07.800 --> 00:07:12.360]   Basically, we're going to apply affine transform iteratively, translate, scale, rotate, and
+[00:07:12.360 --> 00:07:15.760]   shear to the digits of the minced data set.
+[00:07:15.760 --> 00:07:21.320]   That way we will construct trajectories of moving digits on a canvas.
+[00:07:21.320 --> 00:07:27.180]   Luckily for us, Tord Vision has affine transforms, so we can leverage that and create a dynamic
+[00:07:27.180 --> 00:07:32.320]   data set that has as many data points as we want.
+[00:07:32.320 --> 00:07:37.260]   You can see that on Papers with Code, this data set already exists for video prediction.
+[00:07:37.260 --> 00:07:42.360]   But we are going to create a slightly more complex version that takes into account rotation,
+[00:07:42.360 --> 00:07:47.560]   translation, and scaling that normally are not taken into account when considering moving
+[00:07:47.560 --> 00:07:48.560]   minced.
+[00:07:48.560 --> 00:07:51.840]   This is because we are going to need that for the clouds afterwards.
+[00:07:51.840 --> 00:07:58.240]   I'm also pretty impressed that none of the top models on Papers with Code use diffusion.
+[00:07:58.240 --> 00:08:02.240]   How do you transform multiple frames into a single image?
+[00:08:02.240 --> 00:08:05.920]   One trick is to stack them together on the channel axis.
+[00:08:05.920 --> 00:08:12.040]   This way we are able to feed the unit a single image that contains the information of the
+[00:08:12.040 --> 00:08:13.880]   past frames.
+[00:08:13.880 --> 00:08:18.800]   To do so, we only need to modify the first convolution layer of the unit with the corresponding
+[00:08:18.800 --> 00:08:21.840]   image dimension.
+[00:08:21.840 --> 00:08:27.120]   Now that we have a model that's capable of ingesting of new type of data, we need to
+[00:08:27.120 --> 00:08:33.160]   modify the noising process so our neural network is capable of denoising only the last frame.
+[00:08:33.160 --> 00:08:37.560]   This simple conditioning technique enables us to train directly with the same unit that
+[00:08:37.560 --> 00:08:40.760]   was used for the original DDPM paper.
+[00:08:40.760 --> 00:08:43.760]   So now the training process looks like this.
+[00:08:43.760 --> 00:08:50.340]   We feed the unit this fat tensor that contains the past frames and the noisy last frame.
+[00:08:50.340 --> 00:08:54.720]   The output of the model is the predicted noise on the last frame.
+[00:08:54.720 --> 00:08:59.040]   We train this model with mean square error comparing the actual noise with the predicted
+[00:08:59.040 --> 00:09:01.200]   noise.
+[00:09:01.200 --> 00:09:05.040]   Units are expensive to train as they require high amounts of memory.
+[00:09:05.040 --> 00:09:08.560]   So this denoising process is trained using an A100.
+[00:09:08.560 --> 00:09:13.880]   Luckily for us, these GPUs are equipped with a lot of memory.
+[00:09:13.880 --> 00:09:20.360]   Having access to these high-end GPUs enables you to iterate fast and try different configurations,
+[00:09:20.360 --> 00:09:25.440]   making the process of developing these experimental models much easier.
+[00:09:25.440 --> 00:09:30.800]   The code was developed on PyTorch, and I encourage you to use the NVIDIA containers for PyTorch
+[00:09:30.800 --> 00:09:37.680]   as they provide the fastest possible implementation of PyTorch on NVIDIA hardware.
+[00:09:37.680 --> 00:09:41.880]   Another thing to note is when training this type of generative models, it's not enough
+[00:09:41.880 --> 00:09:44.160]   at looking at the loss value.
+[00:09:44.160 --> 00:09:50.040]   As you can see from this screenshot, the training loss flattens out pretty fast.
+[00:09:50.040 --> 00:09:55.680]   But if you scroll and look at the model predictions over time, you will realize that it takes
+[00:09:55.680 --> 00:09:59.680]   some time for the model to develop high-quality outputs.
+[00:09:59.680 --> 00:10:04.600]   So sampling the model regularly is very important to assess the model performance over time.
+[00:10:04.600 --> 00:10:09.200]   Here, we are monitoring the training process with weights and biases, and we are logging
+[00:10:09.200 --> 00:10:14.080]   images regularly to the dashboard, so we are able to explore and go back in time and see
+[00:10:14.080 --> 00:10:17.160]   how the model training went.
+[00:10:17.160 --> 00:10:22.400]   Let's not forget that we are going to use this model afterwards to create new frames.
+[00:10:22.400 --> 00:10:28.080]   So the denoising capabilities are great, but what we actually want is sampling from the
+[00:10:28.080 --> 00:10:33.280]   model from pure noise and generating a frame from scratch.
+[00:10:33.280 --> 00:10:37.920]   Another cool perk of setting up the training process like this is that we can sample the
+[00:10:37.920 --> 00:10:40.800]   model in an autoregressive way.
+[00:10:40.800 --> 00:10:46.880]   What this means is that we can take the model's output as input for our next generation.
+[00:10:46.880 --> 00:10:52.160]   This way, we are able of sampling the model as long as we want into the future.
+[00:10:52.160 --> 00:10:57.180]   As my training code was using weights and biases, I can go back to the workspace and
+[00:10:57.180 --> 00:11:01.600]   show you exactly what happened during training.
+[00:11:01.600 --> 00:11:04.080]   Let me show you the training run.
+[00:11:04.080 --> 00:11:07.500]   As you can see here, you have the relevant metrics during training, like the learning
+[00:11:07.500 --> 00:11:11.280]   rate value, the epochs, and the training loss going down.
+[00:11:11.280 --> 00:11:18.040]   Also, we have access to the logged images, sampled from the model during training.
+[00:11:18.040 --> 00:11:22.320]   As we move the slider to the right, we see that the sample image gets better.
+[00:11:22.320 --> 00:11:24.760]   Let's head to the overview tab of this run.
+[00:11:24.760 --> 00:11:30.320]   Here, we can see the git repository that was used for host the code, also that we use an
+[00:11:30.320 --> 00:11:32.680]   A100 with 40 gigs of VRAM.
+[00:11:32.680 --> 00:11:39.680]   If we scroll down, we see some of the hyperparameters, for instance, that batch size was 256.
+[00:11:39.680 --> 00:11:45.920]   We can also click on the system metrics and get information about how the GPU was used.
+[00:11:45.920 --> 00:11:50.120]   These peaks on the GPU utilization come from the sampling process.
+[00:11:50.120 --> 00:11:56.480]   Also, we see that the memory allocation was pretty heavy, almost hitting 100% all the
+[00:11:56.480 --> 00:11:59.040]   time.
+[00:11:59.040 --> 00:12:02.760]   Once you are happy with the results you see on the workspace, you can share them with
+[00:12:02.760 --> 00:12:06.840]   your team or with anyone on the internet through a report.
+[00:12:06.840 --> 00:12:12.880]   Here, I wrote an article explaining how we put together a dynamic moving means dataset
+[00:12:12.880 --> 00:12:16.520]   and we train a diffusion model for the next frame prediction.
+[00:12:16.520 --> 00:12:22.880]   This way, I am organized and I don't lose any more results from my deep learning journey.
+[00:12:22.880 --> 00:12:26.840]   Okay, let's go back to our original problem.
+[00:12:26.840 --> 00:12:30.640]   We have trained a model on the moving means dataset.
+[00:12:30.640 --> 00:12:36.520]   But now we need to train it on the more complex cloud dataset and see if our diffusion pipeline
+[00:12:36.520 --> 00:12:43.080]   works to generate clouds.
+[00:12:43.080 --> 00:12:46.040]   Let me show you the data from the satellite first.
+[00:12:46.040 --> 00:12:51.360]   Here, each square represents one day of data for each band.
+[00:12:51.360 --> 00:12:56.320]   The leftmost bands are the visible bands and you can see that they start at night and they
+[00:12:56.320 --> 00:12:57.320]   end at night.
+[00:12:57.320 --> 00:13:01.320]   So, you have a lot of information that gets lost here.
+[00:13:01.320 --> 00:13:03.400]   You move to the right, you have the infrared bands.
+[00:13:03.400 --> 00:13:07.880]   So, they have an infrared camera that takes the temperature of the surface.
+[00:13:07.880 --> 00:13:14.440]   So, with these bands, we get more information during the day and night.
+[00:13:14.440 --> 00:13:18.520]   We're going to use some sort of combination of these bands to train our neural network
+[00:13:18.520 --> 00:13:21.120]   to predict the next frame of cloud movement.
+[00:13:21.120 --> 00:13:26.280]   If we go to the workspace, for a research project like this one, it's not rare to have
+[00:13:26.280 --> 00:13:30.120]   more than 100 runs like this.
+[00:13:30.120 --> 00:13:34.200]   Let's switch to table view and take a look at the different experiments that were performed
+[00:13:34.200 --> 00:13:36.160]   during this project.
+[00:13:36.160 --> 00:13:41.600]   You can see that we have tagged the projects correctly, so we can identify the runs.
+[00:13:41.600 --> 00:13:46.440]   Here we have a small model that trained in under 40 minutes, a UV model that trained
+[00:13:46.440 --> 00:13:51.600]   in one hour, and the bigger model took more than 13 hours to train.
+[00:13:51.600 --> 00:13:57.800]   We can also see the relevant parameters like image size and epochs at a glance.
+[00:13:57.800 --> 00:14:05.200]   Let's open VitalJazz, the training run that trained the small model, and explore the results.
+[00:14:05.200 --> 00:14:11.420]   Here we get the same sampling over training images that we saw before from MovingMinst.
+[00:14:11.420 --> 00:14:16.280]   We can scroll on the slider and see how the model generation gets better over time.
+[00:14:16.280 --> 00:14:20.120]   We can also inspect the resources used for training.
+[00:14:20.120 --> 00:14:27.040]   We can see that the GPU was used with good memory allocation.
+[00:14:27.040 --> 00:14:30.920]   To keep everything organized, I have exported some of the results into our eport.
+[00:14:30.920 --> 00:14:35.960]   For instance, we added a batch of data with the previous frames and the noisy last frame
+[00:14:35.960 --> 00:14:39.280]   for reference.
+[00:14:39.280 --> 00:14:44.720]   If we scroll down, we have the results from our first model training.
+[00:14:44.720 --> 00:14:50.840]   Here we have a summary where we can see that the model was trained on images by 64x64 for
+[00:14:50.840 --> 00:14:54.760]   100 epochs, using 50% of the full dataset.
+[00:14:54.760 --> 00:15:01.480]   On the left, we have a table with generations comparing to ground truth.
+[00:15:01.480 --> 00:15:10.320]   This model is generating from 3 frames, generating 10 future frames.
+[00:15:10.320 --> 00:15:13.280]   Let's click and open one of those generations.
+[00:15:13.280 --> 00:15:19.520]   Here we can see that the model is successfully making the cloud disappear in the future frames.
+[00:15:19.520 --> 00:15:25.120]   This is something that we were not able to do with Optical Flow.
+[00:15:25.120 --> 00:15:31.920]   If we scroll down, we have the same training metrics that we show on the workspace.
+[00:15:31.920 --> 00:15:39.120]   We also have the same sample over time slider.
+[00:15:39.120 --> 00:15:44.440]   Another nice aspect of these type of models is their non-deterministic nature.
+[00:15:44.440 --> 00:15:49.480]   What does it mean is that we are generating future from noise, so we can use different
+[00:15:49.480 --> 00:15:53.360]   noise to generate different futures.
+[00:15:53.360 --> 00:15:58.320]   This could be seen as a drawback, but depending on how strong the past frame conditioning
+[00:15:58.320 --> 00:16:03.800]   is, we will get different future predictions.
+[00:16:03.800 --> 00:16:07.000]   Let me show you with more detail what does this mean.
+[00:16:07.000 --> 00:16:13.280]   If we take a look at a sequence of images, if we condition on 3 frames and generate 10
+[00:16:13.280 --> 00:16:18.880]   frames on the future, we get slightly different predictions.
+[00:16:18.880 --> 00:16:25.440]   As we move further into the future, for instance at t+8, we can see that the model produces
+[00:16:25.440 --> 00:16:28.520]   different outputs.
+[00:16:28.520 --> 00:16:33.360]   As you can see here, the cloud is slightly different with different shapes and different
+[00:16:33.360 --> 00:16:34.760]   forms.
+[00:16:34.760 --> 00:16:38.920]   Let me show you the results of the bigger model's training.
+[00:16:38.920 --> 00:16:43.040]   This is the same DDPM model but trained on twice the image size.
+[00:16:43.040 --> 00:16:49.440]   It's still not using any fancy trick like exponential movie average or fancy scheduling.
+[00:16:49.440 --> 00:16:55.320]   So you can see here if we open the table, we are generating 3 possible futures for every
+[00:16:55.320 --> 00:16:59.560]   single input sequence.
+[00:16:59.560 --> 00:17:02.000]   Let's scroll and open one.
+[00:17:02.000 --> 00:17:06.120]   Here we have a cloud moving to the top.
+[00:17:06.120 --> 00:17:11.360]   I like opening them like this where you have the sequences on top of each other.
+[00:17:11.360 --> 00:17:16.080]   So you can see the last frames look similar.
+[00:17:16.080 --> 00:17:21.600]   As we want to produce high resolution images from these models, we have multiple options.
+[00:17:21.600 --> 00:17:26.600]   What I'm showing you now on the screen are the encoded images through the stable diffusion
+[00:17:26.600 --> 00:17:27.600]   VAE.
+[00:17:27.600 --> 00:17:34.240]   This is one trick you can use that downsamples the images up to 64 times in size so then
+[00:17:34.240 --> 00:17:39.480]   you can use your diffusion pipeline with these small size latent images.
+[00:17:39.480 --> 00:17:44.360]   This is called latent diffusion and it's what stable diffusion use to sample high quality
+[00:17:44.360 --> 00:17:45.360]   images.
+[00:17:45.360 --> 00:17:51.260]   I'm pretty impressed that the stable diffusion pre-trained VAE works very well on these types
+[00:17:51.260 --> 00:17:52.260]   of satellite imagery.
+[00:17:52.260 --> 00:17:57.000]   I'm pretty sure there is none on the dataset that was used for training.
+[00:17:57.000 --> 00:18:00.600]   Let's scroll to the bottom and let me show you the last model I trained.
+[00:18:00.600 --> 00:18:08.200]   This is called simple diffusion and replaces the unit with a full transformer architecture.
+[00:18:08.200 --> 00:18:15.920]   This model takes as input full size images so no more 64 by 64 images.
+[00:18:15.920 --> 00:18:21.200]   The results are extremely good and it's also very fast to train because the A100 GPU is
+[00:18:21.200 --> 00:18:28.360]   very efficient on multi-head attention.
+[00:18:28.360 --> 00:18:29.840]   Here we can take a look at some generations.
+[00:18:29.840 --> 00:18:35.080]   This is a tough one.
+[00:18:35.080 --> 00:18:38.320]   I'm extremely pleased with the results of this later model.
+[00:18:38.320 --> 00:18:43.720]   They look smooth and it's great working on full resolution images.
+[00:18:43.720 --> 00:18:48.960]   Going back to the slides, Alexis will explain why it's so important to get a non-deterministic
+[00:18:48.960 --> 00:18:52.020]   forecast.
+[00:18:52.020 --> 00:18:57.360]   Having a set of non-deterministic forecasts is actually quite useful in the context of
+[00:18:57.360 --> 00:18:59.040]   solar energy forecasting.
+[00:18:59.040 --> 00:19:06.960]   Indeed, it enables calculating confidence intervals for each forecast by computing statistics
+[00:19:06.960 --> 00:19:09.440]   on the ensemble.
+[00:19:09.440 --> 00:19:16.400]   These intervals account for the chaotic nature of the atmosphere and the associated forecast
+[00:19:16.400 --> 00:19:17.880]   uncertainty.
+[00:19:17.880 --> 00:19:23.560]   In a sense, they represent the best and worst cases scenario.
+[00:19:23.560 --> 00:19:29.280]   Generally speaking, grid managers and power plant operators prefer these kinds of probabilistic
+[00:19:29.280 --> 00:19:35.760]   forecasts because they enable anticipating corrective actions to be made.
+[00:19:35.760 --> 00:19:40.360]   In the end, cloud forecasts are only a part of the problem.
+[00:19:40.360 --> 00:19:45.880]   As we already explained, a small cloud position error has a great impact on the precision
+[00:19:45.880 --> 00:19:47.640]   of our final results.
+[00:19:47.640 --> 00:19:53.160]   Even more so when we integrate our work in the whole chain where other steps are already
+[00:19:53.160 --> 00:19:55.920]   produced some uncertainty.
+[00:19:55.920 --> 00:20:01.280]   That's why we are also looking at other AI or deep learning end-to-end models.
+[00:20:01.280 --> 00:20:08.760]   They will take in some satellite imagery along with maybe other data and provide us directly
+[00:20:08.760 --> 00:20:11.760]   the irradiance results.
+[00:20:11.760 --> 00:20:14.280]   Hello again, let's wrap it up.
+[00:20:14.280 --> 00:20:19.160]   We are still on the early days of generative modeling and we are seeing models out every
+[00:20:19.160 --> 00:20:20.160]   day.
+[00:20:20.160 --> 00:20:23.880]   I am pretty excited with all the new technology that has been coming out.
+[00:20:23.880 --> 00:20:28.560]   I am following closely what's happening with video and all these startups are working with
+[00:20:28.560 --> 00:20:31.400]   generative AI for video production.
+[00:20:31.400 --> 00:20:36.960]   There is a ton of overlap on what we are doing here and what is being applied to video.
+[00:20:36.960 --> 00:20:41.880]   All this would have been possible with the access to NVIDIA A100 GPUs.
+[00:20:41.880 --> 00:20:45.880]   I am really grateful that we have access to these types of GPUs that let you iterate really
+[00:20:45.880 --> 00:20:47.920]   fast on this huge dataset.
+[00:20:47.920 --> 00:20:53.240]   This is still a proof of concept, we are far away from deploying one of those models, but
+[00:20:53.240 --> 00:20:56.280]   the results look promising.
+[00:20:56.280 --> 00:21:01.840]   This work has been shown that even simple diffusion model pipelines are capable of leveraging
+[00:21:01.840 --> 00:21:07.640]   the high quality, high resolution to apply to future frame prediction.
+[00:21:07.640 --> 00:21:12.540]   For me, the most impressive results come from dissipation and formation of clouds, something
+[00:21:12.540 --> 00:21:18.660]   that is not possible to do with optical flow or traditional advection models.
+[00:21:18.660 --> 00:21:23.360]   Also to note there are narrow border issues as we are not moving pixels from the border.
+[00:21:23.360 --> 00:21:29.920]   I have done some testing about VAE out encoding and you can actually encode these high resolution
+[00:21:29.920 --> 00:21:34.640]   images with a VAE like the one from stable diffusion, but recent work like the simple
+[00:21:34.640 --> 00:21:39.320]   diffusion paper proves that you can work directly on the high resolution space without need
+[00:21:39.320 --> 00:21:43.600]   to pass through latent space.
+[00:21:43.600 --> 00:21:48.600]   The cloud diffusion part is just one block of the pipeline, we have yet to couple this
+[00:21:48.600 --> 00:21:54.400]   with the projection on the ground and then the computations of irradiances.
+[00:21:54.400 --> 00:21:59.200]   Another area that could be explored is training an end-to-end pipeline that produces directly
+[00:21:59.200 --> 00:22:03.400]   the time series forecast from the input images.
+[00:22:03.400 --> 00:22:09.200]   Another aspect that could be explored is augmenting the data with other sources like NWP models
+[00:22:09.200 --> 00:22:13.640]   and in-situ observations.
+[00:22:13.640 --> 00:22:15.720]   Thank you again for your time.
+[00:22:15.720 --> 00:22:24.120]   If you want to learn more and find the code to train your own diffusion model, go to 1db.me/GTC2023.
+[00:22:24.120 --> 00:22:34.120]   [BLANK_AUDIO]
+
