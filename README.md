@@ -113,6 +113,7 @@ Others
 - [x] create all transcript page
 - [x] create other transcript page
 - [ ] order by date
+- [ ] add more metadata like views, likes, ratio
 - [ ] check transcript is good, sometimes whisper generates transcripts that have invalid utf-8
 
 ```python
