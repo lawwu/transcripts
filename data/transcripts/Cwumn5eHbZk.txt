@@ -1,0 +1,1137 @@
+
+[00:00:00.000 --> 00:00:04.080]   Just before I start, this work has been done with a lot of people.
+[00:00:04.080 --> 00:00:08.400]   So Peter, AJ, Aaron, Chen,
+[00:00:08.400 --> 00:00:12.960]   Suh and Philip are at Google and Philip and Yonglong are at MIT.
+[00:00:12.960 --> 00:00:15.520]   And this has been a joint effort with them.
+[00:00:15.520 --> 00:00:21.360]   And yeah, we have submitted this to NeurIPS
+[00:00:21.360 --> 00:00:26.240]   and we have an archived version available, which we will be updating as well.
+[00:00:26.720 --> 00:00:32.560]   So the results in this talk are going to be from other contrastive learning work,
+[00:00:32.560 --> 00:00:35.840]   supervised contrastive and some results which are not exactly published yet,
+[00:00:35.840 --> 00:00:38.400]   but we'll get there in a few days.
+[00:00:38.400 --> 00:00:41.760]   So yeah, if you have any questions about those results,
+[00:00:41.760 --> 00:00:43.440]   you should definitely ask them.
+[00:00:43.440 --> 00:00:45.200]   Right.
+[00:00:45.200 --> 00:00:54.080]   So basically, contrastive learning is this study where people have
+[00:00:54.880 --> 00:01:00.000]   used representation learning in a context which is separate from the downstream task.
+[00:01:00.000 --> 00:01:06.320]   And the basic idea which came out of theoretical work that was done by Sanjeev Arora
+[00:01:06.320 --> 00:01:14.160]   at Princeton a few years ago was basically that you can pull samples which share class information
+[00:01:14.160 --> 00:01:17.280]   or they are different augmentations of each other.
+[00:01:17.280 --> 00:01:20.320]   And hence, you know that they are more similar than others together
+[00:01:20.320 --> 00:01:25.040]   and push samples which you expect to be different apart.
+[00:01:25.040 --> 00:01:29.200]   And these could be various kinds of transforms that you could come up with,
+[00:01:29.200 --> 00:01:35.760]   such as, you know, color transforms, crops, warping, Gaussian blurs, and so on.
+[00:01:35.760 --> 00:01:40.960]   And all kinds of meaningful semantic information retaining transformations are useful.
+[00:01:40.960 --> 00:01:45.760]   It also depends on your downstream task sometimes, but we can get into that later.
+[00:01:45.760 --> 00:01:48.320]   So that's basically the idea of contrastive learning.
+[00:01:48.320 --> 00:01:53.600]   So our goal was to understand why these work so well,
+[00:01:53.600 --> 00:01:58.640]   and what's the basic principles which we can extract from that,
+[00:01:58.640 --> 00:02:03.680]   and what are the use cases where this, what are the kind of downstream tasks where this works well.
+[00:02:03.680 --> 00:02:11.360]   So this is kind of the work that came out in the last 12 months, which gained a lot of fame.
+[00:02:11.360 --> 00:02:12.960]   Basically, there were these two papers.
+[00:02:12.960 --> 00:02:17.040]   One was contrastive multi-view coding by people over at MIT.
+[00:02:17.440 --> 00:02:23.520]   And the other was the paper from Hinton's group, which is simpler.
+[00:02:23.520 --> 00:02:27.040]   Both of them work in very similar ways.
+[00:02:27.040 --> 00:02:32.640]   So what you have on the left is that you take different color transformations,
+[00:02:32.640 --> 00:02:35.840]   and you actually reduce into various color spaces,
+[00:02:35.840 --> 00:02:43.440]   just let us luminance and maybe prominence of maybe various semantic segmentations.
+[00:02:43.440 --> 00:02:49.360]   And then you embed them using separate encoder networks,
+[00:02:49.360 --> 00:02:51.680]   but into the same representation space.
+[00:02:51.680 --> 00:02:55.200]   The representation space is shared while encoder networks will be different.
+[00:02:55.200 --> 00:02:58.960]   And you do this for a single image.
+[00:02:58.960 --> 00:03:02.320]   So you have, let's say, four representations corresponding to one image,
+[00:03:02.320 --> 00:03:04.160]   and then you try to push them together,
+[00:03:04.160 --> 00:03:10.320]   while you try to push representations from any of these networks for a different sample apart.
+[00:03:10.320 --> 00:03:14.320]   And so this is a completely unsupervised way of running representations
+[00:03:14.320 --> 00:03:15.760]   in a contrastive learning setting.
+[00:03:15.760 --> 00:03:20.080]   SimClear had a slightly different view,
+[00:03:20.080 --> 00:03:24.400]   where they took random data augmented versions of a sample,
+[00:03:24.400 --> 00:03:28.640]   which was basically random crop and then color transforms, color jitters, Gaussian blurs,
+[00:03:28.640 --> 00:03:35.520]   and they encoded them and basically pushed the representations of the two dogs together,
+[00:03:35.520 --> 00:03:40.080]   and the representation corresponding to different data augmentations of the chair together.
+[00:03:40.080 --> 00:03:42.960]   But push the representation of the dog and chair apart.
+[00:03:42.960 --> 00:03:45.440]   But this was not done using label information.
+[00:03:45.440 --> 00:03:51.840]   Hence, they could have very similar looking dogs being pushed apart in the representation space.
+[00:03:51.840 --> 00:03:57.040]   So before we go into more details,
+[00:03:57.040 --> 00:04:01.200]   I just want to talk about how these techniques usually work.
+[00:04:01.200 --> 00:04:08.080]   So the aim here is that the downstream task that you evaluate on is still top one accuracy
+[00:04:08.080 --> 00:04:10.480]   and labeling samples.
+[00:04:10.480 --> 00:04:12.960]   So the way you do it is that you have a first stage,
+[00:04:12.960 --> 00:04:15.280]   where you actually do contrastive learning,
+[00:04:15.280 --> 00:04:20.880]   and contrastive learning losses are actually applied in a small 128 dimensional space.
+[00:04:20.880 --> 00:04:25.280]   So you have your encoded network, which actually gives us an output of 2k.
+[00:04:25.280 --> 00:04:30.560]   And then you actually project it down to something like 128 dimensions or 256 dimensions,
+[00:04:30.560 --> 00:04:32.400]   depending on what your use case is.
+[00:04:32.400 --> 00:04:35.760]   Apply contrastive losses in that space, train your network,
+[00:04:35.760 --> 00:04:40.160]   and then you drop out the projection networks and use the 2k embeddings.
+[00:04:40.160 --> 00:04:42.800]   That is the last layer of the ResNet in most cases,
+[00:04:42.800 --> 00:04:45.520]   or efficient net, whatever is your encoder network.
+[00:04:45.520 --> 00:04:50.640]   And you apply a linear classifier on top of that and try to do cross entropy training.
+[00:04:50.640 --> 00:04:53.200]   So there's a first stage where you're doing contrastive learning,
+[00:04:53.200 --> 00:04:55.600]   and the second stage when you're doing cross entropy learning.
+[00:04:55.600 --> 00:04:59.760]   This is in contrast with standard cross entropy where you train end to end.
+[00:04:59.760 --> 00:05:04.640]   And the benefit here is that these representations are independent of the label information.
+[00:05:04.640 --> 00:05:07.680]   So you never use label information during contrastive learning.
+[00:05:07.680 --> 00:05:11.680]   So the idea is that you should be able to use it for transfer learning and other downstream tasks
+[00:05:11.680 --> 00:05:17.920]   without actually biasing your training procedures with using labels.
+[00:05:17.920 --> 00:05:18.880]   Right.
+[00:05:18.880 --> 00:05:28.240]   So the form of the loss that is used in such contrastive learning setups
+[00:05:28.240 --> 00:05:30.000]   is something that looks like this.
+[00:05:30.000 --> 00:05:33.520]   So you have the total loss over the entire batch.
+[00:05:33.520 --> 00:05:39.520]   And for every sample in the batch, you have a likelihood term inside the log.
+[00:05:39.520 --> 00:05:47.520]   This likelihood term comes from the exponent of the similarity between the embeddings.
+[00:05:47.520 --> 00:05:50.720]   So zi is the embedding corresponding to sample i,
+[00:05:50.720 --> 00:05:56.560]   and zj of i is a data augmented version of a given sample in the batch.
+[00:05:56.560 --> 00:06:00.800]   And you have the similarity between them as zi dot zji.
+[00:06:00.800 --> 00:06:03.840]   This can be generalized to arbitrary kernels if you want to,
+[00:06:03.840 --> 00:06:06.720]   but in most cases, since you already have a projection network,
+[00:06:06.720 --> 00:06:11.920]   you can assume that a kernel is being learned by that projection network.
+[00:06:11.920 --> 00:06:18.240]   So basically, you exponentiate and you come up with this likelihood term.
+[00:06:18.240 --> 00:06:22.080]   So what this term is, it basically says that given the batch,
+[00:06:22.080 --> 00:06:28.800]   what is the probability that j of i is the most similar sample to sample i
+[00:06:29.840 --> 00:06:32.880]   among all the samples in the batch.
+[00:06:32.880 --> 00:06:34.960]   And so this is not over the entire training dataset,
+[00:06:34.960 --> 00:06:36.640]   but for large batches, you can say that,
+[00:06:36.640 --> 00:06:41.120]   "Okay, this is an unbiased estimate of the likelihood in the entire dataset."
+[00:06:41.120 --> 00:06:45.600]   And maybe not unbiased. It's going to be biased, yeah.
+[00:06:45.600 --> 00:06:51.920]   But right. So you have this log likelihood term, which you are minimizing.
+[00:06:51.920 --> 00:06:56.480]   So you're maximizing the likelihood.
+[00:06:56.480 --> 00:07:00.480]   And this is what you use to train the entire network end-to-end.
+[00:07:00.480 --> 00:07:03.920]   And you use all the other samples as negatives.
+[00:07:03.920 --> 00:07:07.360]   So negative is any sample that is not supposed to be similar to the anchor.
+[00:07:07.360 --> 00:07:12.160]   And a positive is a sample which is supposed to be similar to the anchor.
+[00:07:12.160 --> 00:07:13.760]   And in self-supervised losses,
+[00:07:13.760 --> 00:07:18.160]   that's just the single data augmentation of the given anchor.
+[00:07:18.160 --> 00:07:22.560]   So why should that work?
+[00:07:23.120 --> 00:07:27.680]   And there are various papers which were doing similar things.
+[00:07:27.680 --> 00:07:29.680]   And what is different about contrastive learning?
+[00:07:29.680 --> 00:07:31.360]   Like triplet losses have been known,
+[00:07:31.360 --> 00:07:33.200]   and time-wise networks have been known,
+[00:07:33.200 --> 00:07:34.960]   and a bunch of other things have been known.
+[00:07:34.960 --> 00:07:38.240]   Like energy-based models have been famous for a very long time.
+[00:07:38.240 --> 00:07:39.200]   So the question is that,
+[00:07:39.200 --> 00:07:44.240]   what is amazing about this contrastive learning framework?
+[00:07:44.240 --> 00:07:50.080]   And the answer is that contrastive losses are a lower bound
+[00:07:50.080 --> 00:07:53.360]   on the mutual information between the views of the data.
+[00:07:53.360 --> 00:07:57.280]   So given a sample, you have two data augmentations of it.
+[00:07:57.280 --> 00:07:59.440]   One of them is being called the anchor,
+[00:07:59.440 --> 00:08:01.360]   and the other is going to be called the positive.
+[00:08:01.360 --> 00:08:05.440]   And contrastive losses actually are lower bound
+[00:08:05.440 --> 00:08:08.160]   on the mutual information between these two samples.
+[00:08:08.160 --> 00:08:13.760]   So what you're technically doing in this entire training procedure
+[00:08:13.760 --> 00:08:15.360]   is using this likelihood estimate
+[00:08:15.360 --> 00:08:18.400]   to actually maximize the amount of mutual information
+[00:08:18.400 --> 00:08:20.000]   between the two views of the data.
+[00:08:20.000 --> 00:08:24.000]   And note that these two views are actually created arbitrarily by you.
+[00:08:24.000 --> 00:08:26.960]   You are either doing color transforms,
+[00:08:26.960 --> 00:08:30.000]   or you're doing data augmentation or something like that.
+[00:08:30.000 --> 00:08:32.320]   And you can do a lot of other things.
+[00:08:32.320 --> 00:08:33.680]   Like for example, in videos,
+[00:08:33.680 --> 00:08:35.440]   you could actually take different frames.
+[00:08:35.440 --> 00:08:38.320]   So just having two views on the data,
+[00:08:38.320 --> 00:08:42.400]   and actually maximizing the mutual information between them,
+[00:08:42.400 --> 00:08:44.080]   and you have a lower bound for that.
+[00:08:44.080 --> 00:08:47.840]   So you have the contrastive loss that can be optimized.
+[00:08:48.320 --> 00:08:48.820]   Right?
+[00:08:48.820 --> 00:08:55.840]   And the byproduct of that is that you can show
+[00:08:55.840 --> 00:08:59.040]   that the self-supervised loss, when minimized,
+[00:08:59.040 --> 00:09:03.040]   actually also minimizes some version of the downstream classification loss.
+[00:09:03.040 --> 00:09:05.200]   So under some regularity assumptions,
+[00:09:05.200 --> 00:09:07.520]   like your downstream loss is going to be a classification loss,
+[00:09:07.520 --> 00:09:09.120]   and it's probably going to be a binary loss,
+[00:09:09.120 --> 00:09:10.960]   or a categorical loss, and so on.
+[00:09:10.960 --> 00:09:13.200]   You can come up with a bound on that.
+[00:09:13.200 --> 00:09:15.680]   If you actually minimize the self-supervised loss,
+[00:09:15.680 --> 00:09:18.160]   you're going to get some multiplicative,
+[00:09:18.160 --> 00:09:19.280]   it's not an additive bound,
+[00:09:19.280 --> 00:09:23.040]   but a multiplicative bound on your downstream task.
+[00:09:23.040 --> 00:09:24.880]   So which is a good thing,
+[00:09:24.880 --> 00:09:26.960]   because it means that what you're optimizing
+[00:09:26.960 --> 00:09:29.520]   inherently optimizes what you care about downstream as well,
+[00:09:29.520 --> 00:09:31.760]   which is not the case usually.
+[00:09:31.760 --> 00:09:32.260]   Right?
+[00:09:32.260 --> 00:09:34.480]   So this is why it works.
+[00:09:34.480 --> 00:09:38.800]   And you can look into the details of some of the work that has been done,
+[00:09:38.800 --> 00:09:41.920]   such as the work by Bachman and the work by Aurora.
+[00:09:41.920 --> 00:09:44.880]   And these are great reads in themselves.
+[00:09:44.880 --> 00:09:45.360]   Right?
+[00:09:45.360 --> 00:09:48.720]   So, but all of that's fine.
+[00:09:48.720 --> 00:09:48.960]   Right?
+[00:09:48.960 --> 00:09:52.480]   The question is that, we tried this before,
+[00:09:52.480 --> 00:09:54.560]   and a lot of formulations came out before,
+[00:09:54.560 --> 00:09:55.760]   does this work now?
+[00:09:55.760 --> 00:09:57.200]   And the answer seems to be yes.
+[00:09:57.200 --> 00:10:04.000]   Sinclair basically made the claim that with a 4x ResNet-50,
+[00:10:04.000 --> 00:10:06.640]   they are able to get as much as supervised performance,
+[00:10:06.640 --> 00:10:08.240]   which is a great result.
+[00:10:08.240 --> 00:10:11.040]   And there are arguments about,
+[00:10:11.040 --> 00:10:12.960]   okay, why didn't deeper networks work?
+[00:10:12.960 --> 00:10:14.480]   And why did wider networks work?
+[00:10:14.480 --> 00:10:18.000]   But it is inarguable that self-supervised learning
+[00:10:18.000 --> 00:10:20.480]   is getting very close to fully supervised learning.
+[00:10:20.480 --> 00:10:25.920]   And the question is that, can we push it further?
+[00:10:25.920 --> 00:10:29.360]   Can we actually make contrastive learning work
+[00:10:29.360 --> 00:10:31.360]   better than cross-entropy learning?
+[00:10:31.360 --> 00:10:31.920]   Right?
+[00:10:31.920 --> 00:10:36.480]   Because in the end, you're still only using label information
+[00:10:36.480 --> 00:10:37.680]   in the self-supervised settings,
+[00:10:37.680 --> 00:10:40.000]   when you're doing actual cross-entropy training
+[00:10:40.000 --> 00:10:42.960]   of the linear classifier that is trained on the embedding.
+[00:10:42.960 --> 00:10:44.080]   So you freeze the embedding,
+[00:10:44.080 --> 00:10:45.520]   then now you're doing linear classifier,
+[00:10:45.520 --> 00:10:46.960]   but still being trained with cross-entropy.
+[00:10:46.960 --> 00:10:47.440]   Right?
+[00:10:47.440 --> 00:10:50.160]   So you did actually use your label information
+[00:10:50.160 --> 00:10:51.120]   very meaningfully.
+[00:10:51.120 --> 00:10:53.760]   You just use unsupervised part of your data.
+[00:10:53.760 --> 00:10:56.560]   So that is where our work comes from.
+[00:10:56.560 --> 00:10:57.760]   The motivation is that,
+[00:10:57.760 --> 00:10:59.600]   could you basically take this entire line
+[00:10:59.600 --> 00:11:00.800]   and just push it up?
+[00:11:00.800 --> 00:11:01.520]   Right?
+[00:11:01.520 --> 00:11:04.240]   And the formulation we came up with
+[00:11:04.240 --> 00:11:07.760]   was just going along with the way of thinking
+[00:11:07.760 --> 00:11:10.160]   that we have in standard contrastive learning,
+[00:11:10.160 --> 00:11:12.080]   that you have an anchor,
+[00:11:12.080 --> 00:11:13.840]   which is let's say this cute dog,
+[00:11:13.840 --> 00:11:18.240]   and then you have an augmented version of the same sample,
+[00:11:18.240 --> 00:11:19.120]   which is a positive.
+[00:11:19.120 --> 00:11:20.720]   And maybe you have this other cute dog,
+[00:11:20.720 --> 00:11:24.000]   which is also a positive for this same sample.
+[00:11:24.000 --> 00:11:24.560]   Right?
+[00:11:24.560 --> 00:11:26.640]   So, and you push away all the other samples,
+[00:11:26.640 --> 00:11:28.320]   such as elephants and cats and so on,
+[00:11:28.320 --> 00:11:30.320]   which is not something
+[00:11:30.320 --> 00:11:31.920]   that self-supervised contrastive does.
+[00:11:31.920 --> 00:11:33.440]   Basically self-supervised contrastive
+[00:11:33.440 --> 00:11:36.480]   will also push away this specific dog
+[00:11:36.480 --> 00:11:38.880]   from the anchor dog,
+[00:11:38.880 --> 00:11:40.560]   which is not a good thing
+[00:11:40.560 --> 00:11:45.280]   because you actually want this to be a smooth falloff
+[00:11:45.280 --> 00:11:46.880]   instead of a very extreme falloff
+[00:11:46.880 --> 00:11:49.680]   that, okay, the moment you move away from a single sample,
+[00:11:49.680 --> 00:11:51.520]   nothing has a very high likelihood
+[00:11:51.520 --> 00:11:54.560]   in this 2K dimensional, high dimensional space.
+[00:11:54.560 --> 00:11:55.520]   You don't want that.
+[00:11:55.520 --> 00:11:57.200]   What you want is that it's a smooth falloff
+[00:11:57.200 --> 00:11:58.400]   and the falloff corresponds
+[00:11:58.400 --> 00:12:00.640]   to the actual semantic similarity.
+[00:12:00.640 --> 00:12:02.800]   And label information in some sense
+[00:12:02.800 --> 00:12:04.960]   is a good measure of semantic similarity.
+[00:12:04.960 --> 00:12:06.000]   There are better ones
+[00:12:06.000 --> 00:12:08.720]   and more diverse labels also help,
+[00:12:08.720 --> 00:12:11.600]   but given what we have,
+[00:12:11.600 --> 00:12:13.440]   label is definitely something that we should use
+[00:12:13.440 --> 00:12:14.640]   and this is how we're using it.
+[00:12:14.640 --> 00:12:20.160]   It's still not clear how to do this perfectly
+[00:12:20.160 --> 00:12:21.840]   because we have this likelihood
+[00:12:21.840 --> 00:12:24.080]   and mutual information kind of interpretation before
+[00:12:24.080 --> 00:12:25.280]   and we want to keep all of those
+[00:12:25.280 --> 00:12:27.120]   without making things more difficult for ourselves.
+[00:12:27.120 --> 00:12:30.320]   So what we realized was
+[00:12:30.320 --> 00:12:32.000]   that there are multiple possibilities.
+[00:12:32.000 --> 00:12:35.280]   One clear possibility is that just take out samples
+[00:12:35.280 --> 00:12:39.120]   which correspond to samples from the same class
+[00:12:39.120 --> 00:12:40.320]   being used as negatives.
+[00:12:40.320 --> 00:12:42.720]   So do not push against them basically.
+[00:12:42.720 --> 00:12:44.480]   And does that work well?
+[00:12:44.480 --> 00:12:45.520]   The answer is no.
+[00:12:45.520 --> 00:12:49.760]   It does not lead to great boost in performance
+[00:12:49.760 --> 00:12:51.760]   and our running hypothesis
+[00:12:51.760 --> 00:12:55.200]   that you actually do need to pull samples
+[00:12:55.200 --> 00:12:56.640]   which belong to the same class together.
+[00:12:56.640 --> 00:12:58.160]   And there has been recent work
+[00:12:58.160 --> 00:13:01.680]   which shows that there are other ways to get around this,
+[00:13:01.680 --> 00:13:05.200]   but our way was that you actually use them as positives
+[00:13:05.200 --> 00:13:07.200]   in the sense that samples from the same class,
+[00:13:07.200 --> 00:13:09.840]   but which are not data augmented versions of the anchor,
+[00:13:09.840 --> 00:13:11.680]   you pull them closer to the anchor
+[00:13:11.680 --> 00:13:14.320]   instead of just not pushing them away,
+[00:13:14.320 --> 00:13:15.920]   if that's clear.
+[00:13:15.920 --> 00:13:21.120]   And the other contribution that we felt
+[00:13:21.120 --> 00:13:23.600]   was very important in making this work
+[00:13:23.600 --> 00:13:25.840]   was using stronger data augmentation
+[00:13:25.840 --> 00:13:28.000]   to make sure that you don't now
+[00:13:28.000 --> 00:13:29.680]   learn spurious correlation to labels
+[00:13:29.680 --> 00:13:31.600]   because that was one of the good parts
+[00:13:31.600 --> 00:13:32.560]   about contrasted learning
+[00:13:32.560 --> 00:13:34.400]   that since you weren't using label information,
+[00:13:34.400 --> 00:13:36.800]   you weren't picking up spurious correlations
+[00:13:36.800 --> 00:13:38.800]   between your image data
+[00:13:38.800 --> 00:13:40.480]   and the labels associated with them.
+[00:13:40.480 --> 00:13:44.640]   So the idea was to have a very strong data augmentation
+[00:13:44.640 --> 00:13:45.520]   which gets around that.
+[00:13:45.520 --> 00:13:51.040]   Right, so I'd just like to introduce
+[00:13:51.040 --> 00:13:52.800]   what the loss function looks like.
+[00:13:52.800 --> 00:13:58.000]   So the expression might be slightly hard to work with,
+[00:13:58.000 --> 00:14:00.880]   but here's what it looks like.
+[00:14:00.880 --> 00:14:05.920]   For a given anchor i in the batch,
+[00:14:05.920 --> 00:14:08.880]   you have a set of samples which are positives,
+[00:14:08.880 --> 00:14:10.560]   which are denoted by P of i.
+[00:14:10.560 --> 00:14:12.720]   So you normalize for the number of positives
+[00:14:12.720 --> 00:14:14.240]   you have for a given sample.
+[00:14:14.240 --> 00:14:17.360]   So you don't want that some losses are higher or lower
+[00:14:17.360 --> 00:14:19.040]   because they just have more samples
+[00:14:19.040 --> 00:14:20.960]   and more positives in the batch
+[00:14:20.960 --> 00:14:24.480]   because we're still sampling our batches randomly
+[00:14:24.480 --> 00:14:28.800]   and we don't want that it ends up
+[00:14:28.800 --> 00:14:32.240]   that a large amount of the gradient
+[00:14:32.240 --> 00:14:33.360]   comes from a few samples.
+[00:14:33.360 --> 00:14:37.760]   Right, the next part is that basically
+[00:14:37.760 --> 00:14:39.680]   we again have a likelihood term,
+[00:14:39.680 --> 00:14:42.160]   but this likelihood term is computed
+[00:14:42.160 --> 00:14:47.040]   for every positive and every...
+[00:14:47.040 --> 00:14:49.920]   So for a given anchor,
+[00:14:49.920 --> 00:14:51.680]   for every positive that exists,
+[00:14:51.680 --> 00:14:53.680]   you compute this likelihood term
+[00:14:53.680 --> 00:14:55.520]   very similar to self-supervised
+[00:14:55.520 --> 00:14:56.640]   where you have this dot product,
+[00:14:56.640 --> 00:14:59.840]   which is supposed to be a measure of similarity
+[00:14:59.840 --> 00:15:02.320]   and then you exponentiate to get this likelihood term.
+[00:15:02.320 --> 00:15:04.160]   And what we are basically saying
+[00:15:04.160 --> 00:15:08.400]   is that we are minimizing the negative log likelihood
+[00:15:08.400 --> 00:15:10.960]   of the sum of these likelihoods, right?
+[00:15:10.960 --> 00:15:14.720]   And that's equivalent to saying
+[00:15:14.720 --> 00:15:19.920]   that you are actually maximizing the joint likelihood
+[00:15:21.360 --> 00:15:24.800]   of all the positives given a specific anchor.
+[00:15:24.800 --> 00:15:27.840]   So that's the distribution that we're working with, right?
+[00:15:27.840 --> 00:15:30.560]   The other possibility is
+[00:15:30.560 --> 00:15:34.880]   that you actually take these likelihoods,
+[00:15:34.880 --> 00:15:36.160]   you add them up,
+[00:15:36.160 --> 00:15:37.360]   which is basically saying that,
+[00:15:37.360 --> 00:15:39.520]   okay, you just have this conditional distribution
+[00:15:39.520 --> 00:15:42.240]   and you're just adding all these likelihoods together
+[00:15:42.240 --> 00:15:47.280]   and you are going to maximize this likelihood together, right?
+[00:15:47.280 --> 00:15:49.600]   And so basically you compute this likelihood
+[00:15:49.600 --> 00:15:50.720]   and you keep the log outside.
+[00:15:50.720 --> 00:15:51.840]   There's a big difference
+[00:15:51.840 --> 00:15:53.040]   when you look at the expression
+[00:15:53.040 --> 00:15:57.600]   is that if the summation one by P of I
+[00:15:57.600 --> 00:15:59.360]   is inside the log,
+[00:15:59.360 --> 00:16:02.080]   which is this case and outside the log.
+[00:16:02.080 --> 00:16:05.040]   And what the results suggest
+[00:16:05.040 --> 00:16:08.800]   is that outside is better by a very big margin.
+[00:16:08.800 --> 00:16:13.120]   And the insight there basically is something like this,
+[00:16:13.120 --> 00:16:15.360]   that when you have it outside,
+[00:16:15.360 --> 00:16:18.160]   a given positive,
+[00:16:20.240 --> 00:16:22.800]   which is very far away from the anchor,
+[00:16:22.800 --> 00:16:25.040]   has an equal contribution in the gradient
+[00:16:25.040 --> 00:16:29.120]   as a positive, which is very close to the anchor, right?
+[00:16:29.120 --> 00:16:32.960]   But that is not true
+[00:16:32.960 --> 00:16:35.600]   for when the summation is inside the log.
+[00:16:35.600 --> 00:16:37.200]   And you can see this from the expression
+[00:16:37.200 --> 00:16:40.560]   because you have these probabilities getting added up
+[00:16:40.560 --> 00:16:45.120]   and you have a temperature parameter here.
+[00:16:45.120 --> 00:16:47.520]   So when this temperature parameter is actually low,
+[00:16:47.520 --> 00:16:49.200]   which is generally the setting that we have,
+[00:16:49.920 --> 00:16:53.520]   then a large amount of the likelihood
+[00:16:53.520 --> 00:16:55.840]   is actually concentrated on a few samples.
+[00:16:55.840 --> 00:16:59.440]   So it will turn out that most of the magnitude
+[00:16:59.440 --> 00:17:01.680]   of the gradient will actually come from a few samples
+[00:17:01.680 --> 00:17:02.800]   in the second case,
+[00:17:02.800 --> 00:17:04.400]   which is not optimal for training
+[00:17:04.400 --> 00:17:05.680]   because then you're not using
+[00:17:05.680 --> 00:17:09.040]   your label information meaningfully, right?
+[00:17:09.040 --> 00:17:12.160]   So this is the last function we ended up working with.
+[00:17:12.160 --> 00:17:16.960]   All the terms except the self-similarity
+[00:17:16.960 --> 00:17:18.480]   are in the denominator
+[00:17:18.480 --> 00:17:20.400]   and the numerator has the single term
+[00:17:20.400 --> 00:17:21.680]   corresponding to the similarity
+[00:17:21.680 --> 00:17:23.600]   between an anchor and its positive.
+[00:17:23.600 --> 00:17:25.280]   And then you sum over all the positives.
+[00:17:25.280 --> 00:17:31.280]   Just talking a little more about the loss function
+[00:17:31.280 --> 00:17:34.720]   because some people have this notion
+[00:17:34.720 --> 00:17:37.040]   that there's something unique about this loss function.
+[00:17:37.040 --> 00:17:39.040]   And our perspective is that
+[00:17:39.040 --> 00:17:42.000]   while the interpretation of the loss function
+[00:17:42.000 --> 00:17:46.800]   as a mutual information minimizer or maximizer
+[00:17:46.800 --> 00:17:49.280]   is interesting,
+[00:17:49.280 --> 00:17:51.600]   that is not what is training the model.
+[00:17:51.600 --> 00:17:53.760]   What is training the model is the gradients
+[00:17:53.760 --> 00:17:56.080]   and we should be able to look at the gradient
+[00:17:56.080 --> 00:17:59.040]   and make interesting observations.
+[00:17:59.040 --> 00:18:02.320]   So one of the interesting observations
+[00:18:02.320 --> 00:18:04.400]   that we have been able to make
+[00:18:04.400 --> 00:18:09.440]   is that the gradient looks something like this,
+[00:18:09.440 --> 00:18:14.640]   where the gradient of the loss
+[00:18:14.640 --> 00:18:16.240]   with respect to the embedding
+[00:18:16.240 --> 00:18:17.360]   is something like,
+[00:18:17.360 --> 00:18:18.720]   so we have one by tau term,
+[00:18:18.720 --> 00:18:22.000]   which is basically weighing the representation
+[00:18:22.000 --> 00:18:23.760]   which is coming from other samples.
+[00:18:23.760 --> 00:18:26.000]   So it's weighing Z of P,
+[00:18:26.000 --> 00:18:26.960]   which is the representation
+[00:18:26.960 --> 00:18:28.000]   corresponding to the positive
+[00:18:28.000 --> 00:18:29.440]   or Z of N,
+[00:18:29.440 --> 00:18:30.960]   which is the representation
+[00:18:30.960 --> 00:18:32.160]   coming from the negative.
+[00:18:32.160 --> 00:18:37.360]   And there is a weight associated with it.
+[00:18:37.360 --> 00:18:40.880]   The weight is proportional to P of IP.
+[00:18:40.880 --> 00:18:46.000]   P of IP is nothing but the term we had here.
+[00:18:46.320 --> 00:18:48.800]   So this term inside the log,
+[00:18:48.800 --> 00:18:50.560]   that is what we call P of IP,
+[00:18:50.560 --> 00:18:51.840]   is basically saying
+[00:18:51.840 --> 00:18:54.240]   what is the likelihood of the positive
+[00:18:54.240 --> 00:18:57.520]   coming from the same class as the anchor I.
+[00:18:57.520 --> 00:19:00.960]   So basically,
+[00:19:00.960 --> 00:19:04.080]   what we get down to is that
+[00:19:04.080 --> 00:19:06.080]   the gradient looks something like
+[00:19:06.080 --> 00:19:08.160]   the embedding multiplied by the probability
+[00:19:08.160 --> 00:19:10.240]   and then a correction term.
+[00:19:10.240 --> 00:19:12.240]   This correction term for the loss
+[00:19:12.240 --> 00:19:13.440]   that we actually end up using
+[00:19:13.440 --> 00:19:14.640]   is one of P of I,
+[00:19:14.640 --> 00:19:16.160]   which says that I will correct
+[00:19:16.160 --> 00:19:18.400]   for all of those terms equally
+[00:19:18.400 --> 00:19:20.160]   and the amount by which I will correct
+[00:19:20.160 --> 00:19:23.440]   is one by the number of positives
+[00:19:23.440 --> 00:19:24.240]   I have in the batch.
+[00:19:24.240 --> 00:19:28.320]   In the case when the summation
+[00:19:28.320 --> 00:19:29.600]   is inside the log,
+[00:19:29.600 --> 00:19:32.160]   it turns out that this correction term
+[00:19:32.160 --> 00:19:35.440]   is a likelihood among all positives.
+[00:19:35.440 --> 00:19:37.360]   So for all the positives,
+[00:19:37.360 --> 00:19:39.120]   you have a correction term,
+[00:19:39.120 --> 00:19:41.520]   which is larger for the ones
+[00:19:41.520 --> 00:19:44.320]   that are closer to the anchor.
+[00:19:44.640 --> 00:19:46.160]   And smaller for the ones
+[00:19:46.160 --> 00:19:48.000]   which are far away from the anchor.
+[00:19:48.000 --> 00:19:49.760]   This can get into weird issues
+[00:19:49.760 --> 00:19:51.040]   and this is why we believe
+[00:19:51.040 --> 00:19:52.000]   that the performance
+[00:19:52.000 --> 00:19:53.760]   is not actually very good
+[00:19:53.760 --> 00:19:55.920]   for the summation inside the log.
+[00:19:55.920 --> 00:19:57.460]   Right.
+[00:19:57.460 --> 00:20:00.080]   So what do the gradients look?
+[00:20:00.080 --> 00:20:02.080]   We haven't trained any models yet.
+[00:20:02.080 --> 00:20:04.880]   We have just looked at
+[00:20:04.880 --> 00:20:06.480]   what the loss function should look like.
+[00:20:06.480 --> 00:20:07.680]   We have done some few experiments.
+[00:20:07.680 --> 00:20:09.600]   What do the gradients already tell us?
+[00:20:09.600 --> 00:20:10.720]   This tells us definitely
+[00:20:10.720 --> 00:20:12.480]   that hard negative and positive mining
+[00:20:12.480 --> 00:20:14.000]   is already being done by the model
+[00:20:14.000 --> 00:20:15.520]   you don't have to do it manually,
+[00:20:15.520 --> 00:20:16.640]   which is a very good thing
+[00:20:16.640 --> 00:20:19.040]   if you are interested in implementing
+[00:20:19.040 --> 00:20:20.960]   and productizing these models.
+[00:20:20.960 --> 00:20:23.360]   The second is that
+[00:20:23.360 --> 00:20:24.320]   everybody talks about
+[00:20:24.320 --> 00:20:25.520]   that larger batch sizes help.
+[00:20:25.520 --> 00:20:26.560]   Well, larger batch sizes
+[00:20:26.560 --> 00:20:27.600]   have always helped deep learning
+[00:20:27.600 --> 00:20:29.040]   because of the stabilizer gradients.
+[00:20:29.040 --> 00:20:30.800]   But why do they help contrasted learning
+[00:20:30.800 --> 00:20:32.480]   more than cross entropy?
+[00:20:32.480 --> 00:20:33.840]   And the answer is that
+[00:20:33.840 --> 00:20:36.000]   since a large amount of the gradient
+[00:20:36.000 --> 00:20:36.960]   is determined by
+[00:20:36.960 --> 00:20:39.440]   what is this probability P of IP,
+[00:20:39.440 --> 00:20:40.480]   if you actually end up
+[00:20:40.480 --> 00:20:41.600]   getting a hard negative,
+[00:20:42.480 --> 00:20:45.360]   or a hard positive,
+[00:20:45.360 --> 00:20:46.560]   that is going to have
+[00:20:46.560 --> 00:20:48.000]   a very large amount of
+[00:20:48.000 --> 00:20:49.680]   contribution in the gradient.
+[00:20:49.680 --> 00:20:51.520]   So larger batch sizes
+[00:20:51.520 --> 00:20:54.080]   also increase the probability
+[00:20:54.080 --> 00:20:55.520]   that you end up hitting
+[00:20:55.520 --> 00:20:58.080]   a strong positive
+[00:20:58.080 --> 00:20:59.120]   or a strong negative
+[00:20:59.120 --> 00:21:00.480]   for your given answer.
+[00:21:00.480 --> 00:21:03.840]   And we don't know of any work
+[00:21:03.840 --> 00:21:05.680]   that is actually trying to argue it this way.
+[00:21:05.680 --> 00:21:07.840]   And we have an analysis in the paper
+[00:21:07.840 --> 00:21:09.120]   which actually goes with
+[00:21:09.120 --> 00:21:10.480]   the procedures of these results
+[00:21:10.720 --> 00:21:13.040]   and shows how you come down to this.
+[00:21:13.040 --> 00:21:14.560]   I would encourage people
+[00:21:14.560 --> 00:21:16.400]   who are interested to read that
+[00:21:16.400 --> 00:21:19.920]   and maybe expand on those ideas.
+[00:21:19.920 --> 00:21:21.760]   Right.
+[00:21:21.760 --> 00:21:24.320]   So the most interesting part
+[00:21:24.320 --> 00:21:25.600]   for a lot of people
+[00:21:25.600 --> 00:21:26.320]   is the results.
+[00:21:26.320 --> 00:21:29.040]   Not for me, I like the theory more.
+[00:21:29.040 --> 00:21:34.160]   So we have amazing numbers,
+[00:21:34.160 --> 00:21:34.720]   I would say.
+[00:21:34.720 --> 00:21:37.280]   Firstly, we were able to get
+[00:21:37.280 --> 00:21:38.880]   state of the art numbers
+[00:21:38.880 --> 00:21:40.080]   on ResNet 200.
+[00:21:40.480 --> 00:21:42.800]   With both cross entropy
+[00:21:42.800 --> 00:21:44.560]   trained with auto-augment
+[00:21:44.560 --> 00:21:47.680]   and stacked Rand augment.
+[00:21:47.680 --> 00:21:48.720]   And we were able to get
+[00:21:48.720 --> 00:21:49.680]   state of the art numbers
+[00:21:49.680 --> 00:21:51.840]   on ResNet 50, 101, and 200
+[00:21:51.840 --> 00:21:53.280]   using supervised contrastive
+[00:21:53.280 --> 00:21:55.840]   trained with various augmentations.
+[00:21:55.840 --> 00:21:57.920]   And I'll go into details of that
+[00:21:57.920 --> 00:21:59.360]   if anybody's interested.
+[00:21:59.360 --> 00:22:02.720]   But overall, the picture looks like this.
+[00:22:02.720 --> 00:22:04.160]   Irrespective of augmentation
+[00:22:04.160 --> 00:22:08.000]   and more complicated techniques,
+[00:22:08.000 --> 00:22:09.520]   supervised contrastive
+[00:22:09.520 --> 00:22:10.560]   gets you better performance.
+[00:22:10.560 --> 00:22:12.880]   Cut mix here is not exactly
+[00:22:12.880 --> 00:22:14.080]   a standard augmentation
+[00:22:14.080 --> 00:22:14.720]   in the sense that
+[00:22:14.720 --> 00:22:16.240]   it actually mixes samples.
+[00:22:16.240 --> 00:22:17.360]   So it has some,
+[00:22:17.360 --> 00:22:18.720]   it uses label information
+[00:22:18.720 --> 00:22:19.600]   more meaningfully,
+[00:22:19.600 --> 00:22:21.920]   but contrastive learning
+[00:22:21.920 --> 00:22:23.120]   actually does better than that.
+[00:22:23.120 --> 00:22:26.080]   So that was interesting to me
+[00:22:26.080 --> 00:22:27.680]   because I was surprised by that result.
+[00:22:27.680 --> 00:22:32.160]   We see consistent improvement
+[00:22:32.160 --> 00:22:35.680]   across models and across data sets
+[00:22:35.680 --> 00:22:37.040]   so we're better than SimClear
+[00:22:37.040 --> 00:22:38.000]   which is unsupervised,
+[00:22:38.000 --> 00:22:39.440]   cross entropy which is supervised,
+[00:22:39.440 --> 00:22:41.600]   max-marking which is also supervised,
+[00:22:41.600 --> 00:22:42.880]   and then supervised contrastive.
+[00:22:42.880 --> 00:22:44.960]   It's better than all of them,
+[00:22:44.960 --> 00:22:46.560]   CIFAR-10, 100, and ResNet.
+[00:22:46.560 --> 00:22:52.800]   Then this is a more detailed version
+[00:22:52.800 --> 00:22:54.160]   of the results that we have.
+[00:22:54.160 --> 00:22:55.760]   And so on top five,
+[00:22:55.760 --> 00:22:58.000]   we have a state of the art number
+[00:22:58.000 --> 00:23:00.000]   on ResNet 200
+[00:23:00.000 --> 00:23:00.880]   that the augmentation
+[00:23:00.880 --> 00:23:02.320]   stacked Rand augment.
+[00:23:02.320 --> 00:23:04.640]   And I can go into details
+[00:23:04.640 --> 00:23:06.160]   of what this augmentation
+[00:23:06.160 --> 00:23:06.880]   really is later.
+[00:23:06.880 --> 00:23:09.280]   But basically it's just a more
+[00:23:09.280 --> 00:23:10.560]   stronger augmentation
+[00:23:10.560 --> 00:23:11.520]   than Rand augment
+[00:23:11.520 --> 00:23:13.600]   with color jittering and blurs.
+[00:23:13.600 --> 00:23:17.760]   And we also have similar numbers
+[00:23:17.760 --> 00:23:19.520]   using auto augment on ResNet-50.
+[00:23:19.520 --> 00:23:23.280]   And the key takeaway here
+[00:23:23.280 --> 00:23:26.240]   is that if you have a larger architecture
+[00:23:26.240 --> 00:23:28.000]   that helps supervise contrastive,
+[00:23:28.000 --> 00:23:30.320]   if you have more stronger augmentation
+[00:23:30.320 --> 00:23:31.840]   for those larger architectures,
+[00:23:31.840 --> 00:23:32.720]   even then it helps
+[00:23:32.720 --> 00:23:34.000]   supervise contrastive.
+[00:23:34.000 --> 00:23:36.320]   Smaller architectures can get into trouble
+[00:23:36.320 --> 00:23:37.840]   with stronger augmentations,
+[00:23:37.840 --> 00:23:41.520]   but supervise contrastive
+[00:23:41.520 --> 00:23:45.280]   helps against cross entropy anyway.
+[00:23:45.280 --> 00:23:48.000]   Right.
+[00:23:48.000 --> 00:23:51.040]   So this is all of this is on ImageNet.
+[00:23:51.040 --> 00:23:52.160]   The question is that
+[00:23:52.160 --> 00:23:54.000]   the entire point of doing all of this
+[00:23:54.000 --> 00:23:56.160]   is that can you actually generalize?
+[00:23:56.160 --> 00:23:58.320]   So, and by generalize,
+[00:23:58.320 --> 00:24:01.200]   I mean, generalize on different data sets.
+[00:24:01.200 --> 00:24:03.360]   So we have this transfer learning benchmark,
+[00:24:03.360 --> 00:24:05.120]   which is the VTAP benchmark.
+[00:24:05.120 --> 00:24:07.680]   We choose a small number of tasks.
+[00:24:07.680 --> 00:24:10.720]   So what we have here is a model
+[00:24:10.720 --> 00:24:12.000]   that is trained on ImageNet
+[00:24:12.000 --> 00:24:12.960]   and then is fine tuned
+[00:24:12.960 --> 00:24:14.480]   on these specific data sets,
+[00:24:14.480 --> 00:24:18.720]   such as CIFAR, 10, 100, 4, Sun 397, VLC.
+[00:24:18.720 --> 00:24:20.240]   And you can look at details of that
+[00:24:20.240 --> 00:24:23.360]   in our paper as well.
+[00:24:23.360 --> 00:24:26.720]   And the key idea here is that
+[00:24:26.720 --> 00:24:28.800]   first that we are competitive
+[00:24:28.800 --> 00:24:32.480]   with most of the state of the art models,
+[00:24:32.480 --> 00:24:36.400]   which are cross entropy and Sinclear
+[00:24:36.400 --> 00:24:38.560]   on both ResNet-50 and ResNet-200.
+[00:24:38.560 --> 00:24:40.000]   But the interesting part is that
+[00:24:40.000 --> 00:24:44.000]   permutation significance does not exist
+[00:24:44.000 --> 00:24:47.600]   between cross entropy and supervise contrastive.
+[00:24:47.600 --> 00:24:49.600]   And our running hypothesis there
+[00:24:49.600 --> 00:24:52.240]   is that for classification task,
+[00:24:52.240 --> 00:24:53.520]   if you're training on ImageNet,
+[00:24:53.520 --> 00:24:57.120]   the architecture is actually more important
+[00:24:57.120 --> 00:24:59.280]   than the technique with which you're learning,
+[00:24:59.280 --> 00:25:01.120]   but we could be wrong about this.
+[00:25:01.120 --> 00:25:04.320]   And yeah, we haven't seen any interesting results
+[00:25:04.320 --> 00:25:08.320]   which suggests that this is entirely untrue.
+[00:25:08.320 --> 00:25:12.560]   And that's opportunity, right?
+[00:25:12.560 --> 00:25:14.160]   Without tuning, you could see differences.
+[00:25:14.160 --> 00:25:22.000]   But we did see differences on the COCO dataset.
+[00:25:22.000 --> 00:25:24.080]   And we do see that supervised contrastive
+[00:25:24.080 --> 00:25:25.040]   does much better.
+[00:25:25.040 --> 00:25:27.520]   And this is like a very recent set of results
+[00:25:27.520 --> 00:25:29.360]   that Yonglong has come up with.
+[00:25:29.360 --> 00:25:33.120]   And basically we see that
+[00:25:33.120 --> 00:25:36.240]   compared to other tasks.
+[00:25:36.240 --> 00:25:39.280]   So this number is not state of the art on COCO
+[00:25:39.280 --> 00:25:40.080]   with like larger,
+[00:25:40.080 --> 00:25:42.000]   maybe like other training techniques
+[00:25:42.000 --> 00:25:44.000]   actually might get much better numbers on COCO.
+[00:25:44.000 --> 00:25:46.800]   But this is specifically comparing
+[00:25:46.800 --> 00:25:48.800]   to other supervised techniques.
+[00:25:48.800 --> 00:25:50.960]   And we do see that supervised contrastive does better.
+[00:25:50.960 --> 00:25:53.620]   Right.
+[00:25:53.620 --> 00:25:58.880]   We also see that we are actually much more robust
+[00:25:58.880 --> 00:26:00.640]   to corruptions in the dataset.
+[00:26:00.640 --> 00:26:02.240]   So if you take the ImageNet test set
+[00:26:02.240 --> 00:26:04.880]   and you actually corrupted at various severity levels,
+[00:26:04.880 --> 00:26:08.560]   as has been suggested by work done by Dan Hendricks,
+[00:26:08.560 --> 00:26:10.480]   you can construct this ImageNet-C dataset
+[00:26:10.480 --> 00:26:12.720]   and we actually measure performance on that.
+[00:26:12.720 --> 00:26:15.120]   So in the most important metric,
+[00:26:15.120 --> 00:26:16.800]   in my opinion, is relative MCE,
+[00:26:16.800 --> 00:26:19.520]   which measures the relative drop in performance
+[00:26:19.520 --> 00:26:21.920]   with higher corruptions and severity levels.
+[00:26:21.920 --> 00:26:24.640]   And we have state of the art results
+[00:26:24.640 --> 00:26:26.400]   for ResNet-200 and ResNet-50.
+[00:26:26.400 --> 00:26:28.240]   You can also see this curve,
+[00:26:28.240 --> 00:26:31.440]   which clearly shows that we are better
+[00:26:31.440 --> 00:26:32.320]   than cross-entropy.
+[00:26:32.320 --> 00:26:34.880]   So the purple curve is ours in both of these cases.
+[00:26:34.880 --> 00:26:37.440]   The dotted ResNet-200, of course.
+[00:26:37.440 --> 00:26:42.160]   We also do see that we are much more stable
+[00:26:42.160 --> 00:26:43.360]   to hyperparameters.
+[00:26:43.360 --> 00:26:46.320]   One of the most important hyperparameters
+[00:26:46.320 --> 00:26:47.680]   in contrastive learning is temperature,
+[00:26:47.680 --> 00:26:48.800]   which we show here.
+[00:26:48.800 --> 00:26:50.640]   But we do see that any temperature choice
+[00:26:50.640 --> 00:26:55.040]   between 0.04 to 0.11
+[00:26:55.040 --> 00:26:58.320]   is mostly getting us near state of the art performance.
+[00:26:59.440 --> 00:27:01.360]   And we are working on trying to make sure
+[00:27:01.360 --> 00:27:03.200]   that you don't have to deal with that temperature so much.
+[00:27:03.200 --> 00:27:07.120]   Of course, we also see that even a smaller batch size
+[00:27:07.120 --> 00:27:09.040]   supervise contrastive continues to do better
+[00:27:09.040 --> 00:27:10.160]   than cross-entropy.
+[00:27:10.160 --> 00:27:11.520]   And this was a question that was raised
+[00:27:11.520 --> 00:27:12.800]   by a few people that,
+[00:27:12.800 --> 00:27:16.480]   "Do you think that lower batch sizes is important?"
+[00:27:16.480 --> 00:27:18.320]   No, the answer is that even a lower batch size
+[00:27:18.320 --> 00:27:19.440]   will be better than,
+[00:27:19.440 --> 00:27:20.960]   this is like a 256 batch size,
+[00:27:20.960 --> 00:27:23.280]   5.2 batch size,
+[00:27:23.280 --> 00:27:27.600]   which you don't need TPUs or anything to do with that.
+[00:27:28.160 --> 00:27:33.680]   And we also experimented with various augmentation schemes.
+[00:27:33.680 --> 00:27:37.120]   So we have much lesser variation in performance
+[00:27:37.120 --> 00:27:38.400]   with augmentation.
+[00:27:38.400 --> 00:27:39.920]   You can change all sorts of augmentations.
+[00:27:39.920 --> 00:27:42.080]   The augmentation used during pre-training,
+[00:27:42.080 --> 00:27:43.120]   in the contrastive state,
+[00:27:43.120 --> 00:27:44.640]   you can change the augmentation used
+[00:27:44.640 --> 00:27:46.000]   for training the linear classifier
+[00:27:46.000 --> 00:27:47.280]   and so on and so forth.
+[00:27:47.280 --> 00:27:49.360]   But we do see that the performance
+[00:27:49.360 --> 00:27:52.080]   doesn't change a lot.
+[00:27:52.080 --> 00:27:54.640]   And same thing holds for optimizers.
+[00:27:54.640 --> 00:27:57.040]   On learning rate, I would say the jury is out.
+[00:27:57.760 --> 00:28:00.960]   Right, so learning rate changes,
+[00:28:00.960 --> 00:28:04.320]   we are susceptible to especially learning rate changes
+[00:28:04.320 --> 00:28:06.960]   for pre-training.
+[00:28:06.960 --> 00:28:09.600]   So you do need to train your learning rates
+[00:28:09.600 --> 00:28:10.880]   for contrastive learning scale.
+[00:28:10.880 --> 00:28:13.840]   But the hope is that one day you won't have to.
+[00:28:13.840 --> 00:28:20.400]   Right, and another set of interesting results
+[00:28:20.400 --> 00:28:22.080]   is that a small percentage of data,
+[00:28:22.080 --> 00:28:24.400]   when you actually, let's say,
+[00:28:24.400 --> 00:28:28.080]   take only 1% of your ImageNet training set,
+[00:28:28.080 --> 00:28:30.160]   but evaluate on the full test set,
+[00:28:30.160 --> 00:28:31.440]   what is your performance?
+[00:28:31.440 --> 00:28:33.280]   And we realized that supervised contrastive
+[00:28:33.280 --> 00:28:34.240]   does much better.
+[00:28:34.240 --> 00:28:35.680]   So this is top five performance.
+[00:28:35.680 --> 00:28:38.080]   And we get 57%,
+[00:28:38.080 --> 00:28:41.040]   which is compared to the 38% of cross-entropy
+[00:28:41.040 --> 00:28:42.000]   is just much better.
+[00:28:42.000 --> 00:28:43.840]   And that falls throughout the 100.
+[00:28:43.840 --> 00:28:46.880]   So it's a log chart on the x-axis
+[00:28:46.880 --> 00:28:49.120]   for percentage of data.
+[00:28:49.120 --> 00:28:52.080]   And we just think that we do better
+[00:28:52.080 --> 00:28:55.920]   because we're learning more meaningful representations.
+[00:28:55.920 --> 00:29:01.440]   Right, there are a few downsides
+[00:29:01.440 --> 00:29:02.400]   to contrastive learning,
+[00:29:02.400 --> 00:29:06.240]   specifically for people who productize models
+[00:29:06.240 --> 00:29:08.560]   that it has a long training time.
+[00:29:08.560 --> 00:29:09.680]   You need to train for like,
+[00:29:09.680 --> 00:29:12.560]   350 epochs, we've often trained for 1000 epochs as well
+[00:29:12.560 --> 00:29:13.360]   to push performance,
+[00:29:13.360 --> 00:29:15.120]   even though it doesn't lead to great results.
+[00:29:15.120 --> 00:29:16.560]   But you have to do that.
+[00:29:16.560 --> 00:29:18.640]   You can mostly get good results with cross-entropy,
+[00:29:18.640 --> 00:29:20.160]   which is state of the art
+[00:29:20.160 --> 00:29:21.440]   if you have the right parameters
+[00:29:21.440 --> 00:29:23.120]   and 100 to 200 epochs.
+[00:29:23.120 --> 00:29:26.240]   So we are much longer than that.
+[00:29:26.240 --> 00:29:27.680]   Larger batch sizes help us a lot.
+[00:29:27.680 --> 00:29:29.520]   So if you want to get state of the art performance,
+[00:29:29.520 --> 00:29:31.440]   you want to use large batch sizes.
+[00:29:31.440 --> 00:29:34.240]   And that gets problematic
+[00:29:34.240 --> 00:29:35.600]   from not just computational reasons,
+[00:29:35.600 --> 00:29:38.240]   but sometimes the network size is just too large
+[00:29:38.240 --> 00:29:41.600]   because you are working at very high resolution images.
+[00:29:41.600 --> 00:29:43.680]   So that's another problem.
+[00:29:43.680 --> 00:29:45.680]   And then there is multi-stage training
+[00:29:45.680 --> 00:29:47.040]   and you need to decide
+[00:29:47.040 --> 00:29:49.040]   if you want to update your batch number of parameters or not.
+[00:29:49.040 --> 00:29:51.120]   And what's the momentum that you want to use?
+[00:29:51.120 --> 00:29:53.520]   And it's just another set of parameters that you introduce.
+[00:29:53.520 --> 00:29:56.400]   So that's definitely a very big downside
+[00:29:56.400 --> 00:29:57.760]   of contrastive learning.
+[00:29:57.760 --> 00:30:00.000]   And just very quickly,
+[00:30:00.000 --> 00:30:01.520]   kind of things you're still working on,
+[00:30:01.520 --> 00:30:03.120]   bunch of things,
+[00:30:03.120 --> 00:30:04.960]   and other people should also try these things.
+[00:30:04.960 --> 00:30:06.960]   That's generalized,
+[00:30:06.960 --> 00:30:09.040]   the supervision for contrastive learning,
+[00:30:09.040 --> 00:30:11.040]   no reason to just use image net labels.
+[00:30:11.040 --> 00:30:14.880]   You can also do out of distribution detection
+[00:30:14.880 --> 00:30:16.880]   and maybe even classification free
+[00:30:16.880 --> 00:30:18.080]   out of distribution detection,
+[00:30:18.080 --> 00:30:19.440]   if that makes sense.
+[00:30:19.440 --> 00:30:22.560]   And building stability to small perturbations
+[00:30:22.560 --> 00:30:23.200]   and input data,
+[00:30:23.200 --> 00:30:24.800]   that's something we are working on.
+[00:30:24.800 --> 00:30:28.560]   And learning representations from multi-modal data,
+[00:30:28.560 --> 00:30:31.120]   which is learning similarity
+[00:30:31.120 --> 00:30:32.880]   between text representations and images,
+[00:30:32.880 --> 00:30:33.600]   text and videos,
+[00:30:33.600 --> 00:30:34.480]   video and speech,
+[00:30:34.480 --> 00:30:36.240]   all sorts of combination exist.
+[00:30:36.240 --> 00:30:37.760]   And people have already started doing this.
+[00:30:37.760 --> 00:30:40.160]   I saw a few papers around,
+[00:30:40.160 --> 00:30:44.080]   which are coming up since this went up on archive.
+[00:30:44.080 --> 00:30:47.680]   So yeah, I think very interesting.
+[00:30:47.680 --> 00:30:49.280]   And yeah, of course,
+[00:30:49.280 --> 00:30:51.200]   there are other contrastive learning techniques,
+[00:30:51.200 --> 00:30:52.800]   which have worked really well.
+[00:30:52.800 --> 00:30:55.840]   And that is the MoCo paper.
+[00:30:55.840 --> 00:30:58.800]   And then there's the DeepMind paper as well,
+[00:30:58.800 --> 00:31:01.200]   and BYOL and so on.
+[00:31:01.200 --> 00:31:02.240]   And they have shown that
+[00:31:02.240 --> 00:31:04.400]   if you use momentum encoders and memory,
+[00:31:04.400 --> 00:31:04.960]   interestingly,
+[00:31:04.960 --> 00:31:06.960]   then you can work with very small batch sizes
+[00:31:06.960 --> 00:31:08.160]   and you can make things work.
+[00:31:08.160 --> 00:31:10.480]   And by some of that work
+[00:31:10.480 --> 00:31:12.000]   has been increasingly focused
+[00:31:12.000 --> 00:31:14.480]   at unsupervised or self-supervised.
+[00:31:14.480 --> 00:31:17.120]   We do believe that using label information
+[00:31:17.120 --> 00:31:18.560]   would give you state-of-the-art performance
+[00:31:18.560 --> 00:31:19.760]   when combined with those techniques.
+[00:31:19.760 --> 00:31:22.160]   So we are trying a bunch of those things,
+[00:31:22.160 --> 00:31:24.960]   but yeah, the people who are definitely
+[00:31:24.960 --> 00:31:26.400]   productizing their models,
+[00:31:26.400 --> 00:31:27.360]   they should look at it
+[00:31:27.360 --> 00:31:29.680]   if they wanna try things like that.
+[00:31:29.680 --> 00:31:34.640]   Right, so I think I'll stop here.
+[00:31:34.640 --> 00:31:38.640]   And I'll just take a bunch of questions.
+[00:31:38.640 --> 00:31:42.640]   - Thanks, that was really good.
+[00:31:42.640 --> 00:31:43.140]   Thank you.
+[00:31:43.140 --> 00:31:46.640]   I have a question to get us started.
+[00:31:46.640 --> 00:31:48.960]   And I'm sure Charles has a bunch too.
+[00:31:48.960 --> 00:31:53.360]   So you talked about how your technique
+[00:31:53.360 --> 00:31:56.080]   does better with larger batch sizes,
+[00:31:56.080 --> 00:31:58.000]   but also most people
+[00:31:58.000 --> 00:31:59.680]   don't have the compute resources
+[00:31:59.680 --> 00:32:01.200]   if they have a big model
+[00:32:01.200 --> 00:32:02.640]   to use large batch sizes.
+[00:32:02.640 --> 00:32:05.120]   What's your advice for people
+[00:32:05.120 --> 00:32:07.200]   to use self-supervised,
+[00:32:07.200 --> 00:32:10.240]   like supervised contrasted learning in that sense?
+[00:32:10.240 --> 00:32:14.800]   - Yeah, I think memory is definitely a trend.
+[00:32:14.800 --> 00:32:16.400]   So if you can actually keep,
+[00:32:16.400 --> 00:32:18.720]   so the way memory works
+[00:32:18.720 --> 00:32:20.640]   is it keeps a few scale representations.
+[00:32:20.640 --> 00:32:24.400]   - Sorry, I think your audio is being a little...
+[00:32:24.400 --> 00:32:27.840]   - Okay, can you hear me now?
+[00:32:27.840 --> 00:32:30.320]   - It's like breaking like that.
+[00:32:30.320 --> 00:32:34.160]   Kayla, do you have any advice on how to fix it?
+[00:32:34.160 --> 00:32:37.520]   - I don't, maybe just pause your video for a second.
+[00:32:37.520 --> 00:32:38.880]   It might just be a bandwidth issue.
+[00:32:38.880 --> 00:32:41.920]   - Yes, we'll just stop the video.
+[00:32:41.920 --> 00:32:43.520]   - Sorry about that.
+[00:32:43.520 --> 00:32:44.960]   - No, it's okay.
+[00:32:44.960 --> 00:32:46.720]   Can you hear me better?
+[00:32:46.720 --> 00:32:48.800]   - Better, yes.
+[00:32:48.800 --> 00:32:52.960]   - Okay, let's just try this for a couple of minutes.
+[00:32:52.960 --> 00:32:57.760]   Okay, so basically what I was saying
+[00:32:57.760 --> 00:33:00.160]   was that memory is your friend there
+[00:33:00.160 --> 00:33:01.680]   because what memory allows you to do
+[00:33:01.680 --> 00:33:03.920]   is keep a few scale representations around
+[00:33:03.920 --> 00:33:05.520]   and you can contrast against them.
+[00:33:05.520 --> 00:33:08.800]   So that's like a pseudo larger batch.
+[00:33:08.800 --> 00:33:10.320]   The main problem with that
+[00:33:10.320 --> 00:33:13.120]   is that since your representations are still,
+[00:33:13.440 --> 00:33:15.440]   when you're in the early stages of training
+[00:33:15.440 --> 00:33:16.640]   with large learning rates,
+[00:33:16.640 --> 00:33:18.640]   you can be really out of sync,
+[00:33:18.640 --> 00:33:20.400]   but there are traders that you can come up with.
+[00:33:20.400 --> 00:33:21.840]   So memory is definitely a friend.
+[00:33:21.840 --> 00:33:32.000]   And I would say that people have even tried
+[00:33:32.000 --> 00:33:35.120]   keeping the entire data sets representations in memory
+[00:33:35.120 --> 00:33:37.200]   and that is doable for,
+[00:33:37.200 --> 00:33:39.040]   because and that's the reason
+[00:33:39.040 --> 00:33:40.960]   why the representation over which you apply
+[00:33:40.960 --> 00:33:43.680]   the contrastive loss is like 1.8 or 2.6.
+[00:33:43.680 --> 00:33:45.120]   So that optimizes your memory.
+[00:33:45.120 --> 00:33:47.360]   So that's one good reason to actually keep so small.
+[00:33:47.360 --> 00:33:51.920]   - Cool, and if people can start dropping
+[00:33:51.920 --> 00:33:53.120]   their questions in the chat
+[00:33:53.120 --> 00:33:56.160]   and also the folks on YouTube,
+[00:33:56.160 --> 00:33:58.960]   I know you're like 30 seconds to a minute behind.
+[00:33:58.960 --> 00:34:01.440]   So just if I wasn't here,
+[00:34:01.440 --> 00:34:03.600]   please start dropping your questions in the chat.
+[00:34:03.600 --> 00:34:05.760]   Charles, you had a question.
+[00:34:05.760 --> 00:34:09.920]   - Yeah, so really cool talk,
+[00:34:09.920 --> 00:34:11.120]   really interesting stuff.
+[00:34:11.120 --> 00:34:12.720]   The contrastive learning approach
+[00:34:12.720 --> 00:34:14.320]   is one that I'm really excited by.
+[00:34:14.320 --> 00:34:15.760]   And it's cool to see them,
+[00:34:15.760 --> 00:34:18.560]   like people continuing to push the envelope there.
+[00:34:18.560 --> 00:34:21.440]   So first you mentioned that
+[00:34:21.440 --> 00:34:23.200]   just for general contrastive learning,
+[00:34:23.200 --> 00:34:27.040]   there's this interpretation of maximizing mutual information
+[00:34:27.040 --> 00:34:28.480]   between views of the data.
+[00:34:28.480 --> 00:34:30.480]   So just to make sure that I understood that right,
+[00:34:30.480 --> 00:34:32.800]   you mean maximizing the mutual information
+[00:34:32.800 --> 00:34:36.000]   between your latent representations, right?
+[00:34:36.000 --> 00:34:36.500]   - Yeah.
+[00:34:36.500 --> 00:34:38.960]   - And you achieve that basically
+[00:34:38.960 --> 00:34:40.480]   by pushing those together
+[00:34:40.480 --> 00:34:43.360]   and then pushing the other ones apart.
+[00:34:43.360 --> 00:34:44.480]   - Yeah.
+[00:34:44.480 --> 00:34:47.680]   - And it is like whatever your negative examples are.
+[00:34:47.680 --> 00:34:47.680]   - Right.
+[00:34:47.680 --> 00:34:50.720]   - So there's like, in my mind,
+[00:34:50.720 --> 00:34:52.240]   that immediately brings up
+[00:34:52.240 --> 00:34:57.040]   these like positive negative sample algorithms
+[00:34:57.040 --> 00:35:00.960]   that people use for like wake sleep algorithms, right?
+[00:35:00.960 --> 00:35:05.600]   The way people train maximum likelihood models
+[00:35:05.600 --> 00:35:08.720]   like Boltzmann machines.
+[00:35:08.720 --> 00:35:09.520]   And things like that.
+[00:35:09.520 --> 00:35:09.840]   - Yeah.
+[00:35:09.840 --> 00:35:12.160]   - So is that more than an analogy?
+[00:35:12.160 --> 00:35:13.920]   Is there a direct connection there?
+[00:35:13.920 --> 00:35:15.120]   I wasn't able to figure that out.
+[00:35:15.120 --> 00:35:20.720]   - Yeah, we haven't figured that out as well.
+[00:35:20.720 --> 00:35:23.520]   Like I wouldn't say that there is a direct system there,
+[00:35:23.520 --> 00:35:24.320]   but yes.
+[00:35:24.320 --> 00:35:29.120]   So more intelligently sampling your positive and negative
+[00:35:29.120 --> 00:35:30.880]   and actually making sure that
+[00:35:30.880 --> 00:35:35.040]   your data views are constructed intelligently.
+[00:35:36.720 --> 00:35:38.560]   By that I mean that you make sure
+[00:35:38.560 --> 00:35:40.720]   that there is not a very large amount
+[00:35:40.720 --> 00:35:42.480]   of mutual information between those views.
+[00:35:42.480 --> 00:35:45.680]   So that when you actually maximize
+[00:35:45.680 --> 00:35:47.360]   the mutual information between those views,
+[00:35:47.360 --> 00:35:49.840]   you actually end up retaining
+[00:35:49.840 --> 00:35:51.680]   only the semantic information.
+[00:35:51.680 --> 00:35:54.400]   That is definitely a very strong part
+[00:35:54.400 --> 00:35:55.760]   of contrasted learning.
+[00:35:55.760 --> 00:35:58.640]   And we do think that pushing on that helps.
+[00:35:58.640 --> 00:36:01.360]   Even though random data augmentation
+[00:36:01.360 --> 00:36:03.040]   is like a closed proxy for that,
+[00:36:03.040 --> 00:36:06.400]   there is more work to be done on that front, I believe.
+[00:36:06.400 --> 00:36:13.600]   - The other question that I wanted to ask was,
+[00:36:13.600 --> 00:36:19.440]   outside of the image setting,
+[00:36:19.440 --> 00:36:21.840]   do you expect this contrast?
+[00:36:21.840 --> 00:36:23.280]   Like how well do you expect these kinds
+[00:36:23.280 --> 00:36:24.880]   of contrastive learning approaches to work?
+[00:36:24.880 --> 00:36:26.320]   For two reasons.
+[00:36:26.320 --> 00:36:31.120]   One is a lot of image classification tasks
+[00:36:31.120 --> 00:36:32.880]   basically involve these kinds of like texture
+[00:36:32.880 --> 00:36:34.560]   and pattern matching things
+[00:36:34.560 --> 00:36:36.480]   that maybe don't transfer super well
+[00:36:36.480 --> 00:36:38.800]   when it comes time to do segmentation
+[00:36:38.800 --> 00:36:41.840]   or depth mapping or something else with images.
+[00:36:41.840 --> 00:36:45.440]   And then second, outside of like using images
+[00:36:45.440 --> 00:36:46.720]   for your task at all,
+[00:36:46.720 --> 00:36:47.920]   we're relatively limited
+[00:36:47.920 --> 00:36:49.920]   in the kinds of augmentations we can apply
+[00:36:49.920 --> 00:36:52.240]   to something like natural language processing,
+[00:36:52.240 --> 00:36:53.840]   where it's somewhat difficult to come up
+[00:36:53.840 --> 00:36:55.360]   with a reasonable data augmentation
+[00:36:55.360 --> 00:36:57.440]   that maintains semantic meaning.
+[00:36:57.440 --> 00:37:01.360]   So like I don't know the literature very well on this.
+[00:37:01.360 --> 00:37:03.280]   So like, do you know examples
+[00:37:03.280 --> 00:37:04.720]   where people have done this before?
+[00:37:04.720 --> 00:37:07.360]   And do you think, is your intuition
+[00:37:07.360 --> 00:37:09.040]   that this will spread really nicely
+[00:37:09.040 --> 00:37:09.840]   to these other domains?
+[00:37:09.840 --> 00:37:14.800]   - Yeah, so segmentation is definitely something
+[00:37:14.800 --> 00:37:16.640]   that the same backbone
+[00:37:16.640 --> 00:37:18.480]   that it can be used for classification
+[00:37:18.480 --> 00:37:19.680]   can be used for segmentation.
+[00:37:19.680 --> 00:37:22.000]   So segmentation is something that can be handled.
+[00:37:22.000 --> 00:37:24.000]   Other ones, it's not so clear.
+[00:37:24.000 --> 00:37:26.080]   People haven't done these things.
+[00:37:26.080 --> 00:37:29.120]   But moving to non-image data,
+[00:37:29.120 --> 00:37:30.320]   text is definitely hard
+[00:37:30.320 --> 00:37:32.240]   because data augmentations are difficult.
+[00:37:32.240 --> 00:37:34.880]   But you can come up with sampling procedures
+[00:37:34.880 --> 00:37:36.720]   which construct your batch interestingly.
+[00:37:36.720 --> 00:37:38.480]   So you don't have to do any data augmentation
+[00:37:38.480 --> 00:37:40.240]   because technically, see,
+[00:37:40.240 --> 00:37:42.160]   if you don't have any data augmentation,
+[00:37:42.160 --> 00:37:44.160]   even then contrastive learning does work
+[00:37:44.160 --> 00:37:45.760]   because it is still pushing samples
+[00:37:45.760 --> 00:37:48.560]   from the same class together
+[00:37:48.560 --> 00:37:49.520]   and other class apart.
+[00:37:49.520 --> 00:37:55.680]   And so for text, intelligence sampling helps.
+[00:37:55.680 --> 00:37:59.120]   Audio is a signal.
+[00:37:59.120 --> 00:38:01.520]   You can perform very interesting data augmentations
+[00:38:01.520 --> 00:38:02.320]   on audio signals.
+[00:38:02.320 --> 00:38:04.720]   So I'm not that worried about audio.
+[00:38:04.720 --> 00:38:07.040]   There has been work which actually is like
+[00:38:07.040 --> 00:38:09.280]   basically the equivalent of image work,
+[00:38:09.280 --> 00:38:12.240]   which shows that you can actually learn similarities
+[00:38:12.240 --> 00:38:13.440]   between text and images.
+[00:38:13.440 --> 00:38:17.280]   And there they do use image augmentations.
+[00:38:17.280 --> 00:38:20.960]   So I do think that contrastive learning
+[00:38:20.960 --> 00:38:23.440]   would be able to extend to such settings.
+[00:38:23.440 --> 00:38:26.880]   - Yeah, so you mentioned, yeah,
+[00:38:26.880 --> 00:38:28.320]   so text classification,
+[00:38:28.320 --> 00:38:31.040]   you still have this nice class label
+[00:38:31.040 --> 00:38:32.160]   that helps you figure out
+[00:38:32.160 --> 00:38:33.760]   which things are similar
+[00:38:33.760 --> 00:38:34.800]   and which things are not.
+[00:38:34.800 --> 00:38:37.760]   But maybe something like machine translation,
+[00:38:37.760 --> 00:38:38.720]   it might be difficult
+[00:38:38.720 --> 00:38:40.160]   unless you have access to say
+[00:38:40.160 --> 00:38:44.320]   multiple translations of the same sentence
+[00:38:44.320 --> 00:38:46.000]   that would allow you to maybe do
+[00:38:46.000 --> 00:38:48.560]   data augmentation that way.
+[00:38:48.560 --> 00:38:50.720]   - Yeah, no, for sure, yeah.
+[00:38:50.720 --> 00:38:52.640]   For machine translation,
+[00:38:52.640 --> 00:38:54.960]   it's not very clear how to make that work
+[00:38:54.960 --> 00:38:56.560]   because, but yeah, I mean,
+[00:38:56.560 --> 00:38:58.800]   some people have the perspective that why do it
+[00:38:58.800 --> 00:39:00.720]   because basically already what we have
+[00:39:00.720 --> 00:39:02.000]   the transformer is already worked.
+[00:39:02.000 --> 00:39:03.040]   So, but yeah, I mean,
+[00:39:03.040 --> 00:39:06.160]   I don't have a very good answer for that.
+[00:39:06.160 --> 00:39:11.280]   - Someone in the comments,
+[00:39:11.280 --> 00:39:12.560]   oh, Charles, are you done?
+[00:39:12.560 --> 00:39:13.840]   - Yeah, yeah.
+[00:39:13.840 --> 00:39:16.480]   - You can keep going.
+[00:39:16.480 --> 00:39:19.920]   Someone in the comments asked,
+[00:39:19.920 --> 00:39:22.800]   can you apply this to deepfakes
+[00:39:22.800 --> 00:39:24.320]   'cause they're working on deepfakes
+[00:39:24.320 --> 00:39:26.800]   and excited about trying this technique?
+[00:39:29.040 --> 00:39:31.280]   - I do think that it was a try,
+[00:39:31.280 --> 00:39:32.080]   but we haven't done it.
+[00:39:32.080 --> 00:39:33.040]   So I won't say yes
+[00:39:33.040 --> 00:39:36.240]   because I don't want to be held liable for that.
+[00:39:36.240 --> 00:39:38.900]   Right.
+[00:39:38.900 --> 00:39:43.840]   Statistical regularities and irregularities
+[00:39:43.840 --> 00:39:45.520]   is not something that I expect
+[00:39:45.520 --> 00:39:47.920]   contrasted learning models to be very good at
+[00:39:47.920 --> 00:39:49.680]   because strong data augmentation
+[00:39:49.680 --> 00:39:51.120]   actually normalized for that.
+[00:39:51.120 --> 00:39:52.800]   So I would actually expect that
+[00:39:52.800 --> 00:39:54.960]   they would just learn to ignore
+[00:39:54.960 --> 00:39:57.280]   a lot of statistical irregularities.
+[00:39:57.280 --> 00:40:00.000]   And if deepfakes are actually
+[00:40:00.000 --> 00:40:03.520]   using those statistical irregularities,
+[00:40:03.520 --> 00:40:05.120]   then it's possible that
+[00:40:05.120 --> 00:40:07.760]   you're not able to handle that.
+[00:40:07.760 --> 00:40:11.200]   And yeah, so I wouldn't,
+[00:40:11.200 --> 00:40:13.920]   I won't say for sure that it would work.
+[00:40:13.920 --> 00:40:17.360]   - All right, someone else.
+[00:40:17.360 --> 00:40:20.000]   - I did have actually another question.
+[00:40:20.000 --> 00:40:20.800]   - Yes.
+[00:40:20.800 --> 00:40:23.680]   - Yeah, so are you familiar
+[00:40:23.680 --> 00:40:25.600]   with slow feature learning?
+[00:40:25.600 --> 00:40:28.640]   It's like a pre, it's sort of a pre-deep learning approach.
+[00:40:28.640 --> 00:40:35.200]   The idea is if you have like video data
+[00:40:35.200 --> 00:40:36.160]   and you want to learn,
+[00:40:36.160 --> 00:40:39.200]   and you want to learn,
+[00:40:39.200 --> 00:40:42.240]   like basically do image pre-training,
+[00:40:42.240 --> 00:40:43.920]   what you do is you learn,
+[00:40:43.920 --> 00:40:48.080]   you learn representations such that
+[00:40:48.080 --> 00:40:51.680]   the features don't change from frame to frame
+[00:40:51.680 --> 00:40:53.840]   or they change as slowly as possible from frame to frame.
+[00:40:53.840 --> 00:40:57.520]   So you try, you have a term to keep the entropy non-zero,
+[00:40:57.520 --> 00:40:58.160]   right?
+[00:40:58.160 --> 00:41:02.080]   But then you also have a term to keep the covariance high.
+[00:41:02.080 --> 00:41:04.160]   So this slow feature analysis idea
+[00:41:04.160 --> 00:41:09.360]   has been used by a couple of deep learning type approaches.
+[00:41:09.360 --> 00:41:10.800]   But it seems like a version of
+[00:41:10.800 --> 00:41:13.760]   like contrastive learning without the contrast, right?
+[00:41:13.760 --> 00:41:16.800]   It's basically just positive samples.
+[00:41:16.800 --> 00:41:20.960]   But it's, yeah, there might be some interesting ideas
+[00:41:20.960 --> 00:41:22.880]   in that slow feature analysis.
+[00:41:23.760 --> 00:41:24.260]   Yeah.
+[00:41:24.260 --> 00:41:26.560]   World for contrastive learning.
+[00:41:26.560 --> 00:41:28.720]   Yeah, I think I agree with that.
+[00:41:28.720 --> 00:41:30.800]   I do think that there is a very big space
+[00:41:30.800 --> 00:41:33.920]   for contrastive learning where what you do
+[00:41:33.920 --> 00:41:36.320]   is you take video data
+[00:41:36.320 --> 00:41:38.480]   and you have this creative notion of labels.
+[00:41:38.480 --> 00:41:40.400]   You have a creative notion of the similarity
+[00:41:40.400 --> 00:41:43.200]   and then you try to optimize for that.
+[00:41:43.200 --> 00:41:44.880]   So you can basically have a weighted form
+[00:41:44.880 --> 00:41:45.840]   of the contrastive learning.
+[00:41:45.840 --> 00:41:48.880]   And I think people are trying this.
+[00:41:48.880 --> 00:41:51.600]   I know of a few teams who are trying this.
+[00:41:51.600 --> 00:41:55.760]   So, and the hope would be to see some slow moving
+[00:41:55.760 --> 00:41:57.040]   and some fast moving features
+[00:41:57.040 --> 00:41:58.320]   which automatically come up
+[00:41:58.320 --> 00:42:00.320]   because of the structure of the loss.
+[00:42:00.320 --> 00:42:05.360]   Ah, cool.
+[00:42:05.360 --> 00:42:07.360]   Someone else in the comments asked,
+[00:42:07.360 --> 00:42:10.400]   could you talk more about the augmentation techniques
+[00:42:10.400 --> 00:42:11.120]   that you tried
+[00:42:11.120 --> 00:42:14.080]   and what makes supervised contrastive learning
+[00:42:14.080 --> 00:42:15.760]   stable to these augmentations?
+[00:42:15.760 --> 00:42:18.160]   More so than other ones.
+[00:42:18.160 --> 00:42:18.720]   Right.
+[00:42:18.720 --> 00:42:20.560]   Yeah, let me try and pull out.
+[00:42:21.520 --> 00:42:22.320]   Something.
+[00:42:22.320 --> 00:42:22.800]   Okay.
+[00:42:22.800 --> 00:42:27.040]   So basically the broadly the augmentations
+[00:42:27.040 --> 00:42:30.160]   we cared about was auto augment,
+[00:42:30.160 --> 00:42:31.680]   RAND augment,
+[00:42:31.680 --> 00:42:36.320]   stack RAND augment and SIM augment.
+[00:42:36.320 --> 00:42:38.000]   So going through them,
+[00:42:38.000 --> 00:42:39.840]   auto augment is basically the strategy,
+[00:42:39.840 --> 00:42:40.480]   which is trained.
+[00:42:40.480 --> 00:42:43.360]   So you have to apply two augmentations
+[00:42:43.360 --> 00:42:45.520]   and you decide the magnitude of the augmentation
+[00:42:45.520 --> 00:42:47.120]   and the order of that augmentation
+[00:42:47.120 --> 00:42:49.200]   using a policy-dependent learning algorithm
+[00:42:49.200 --> 00:42:51.440]   which optimizes for the top one accuracy of image type.
+[00:42:51.440 --> 00:42:56.240]   RAND augment works slightly differently.
+[00:42:56.240 --> 00:42:57.920]   You have a controllable parameter
+[00:42:57.920 --> 00:43:01.040]   and then you sample your pair of augmentations
+[00:43:01.040 --> 00:43:02.800]   that you want to apply randomly.
+[00:43:02.800 --> 00:43:06.960]   And the idea is that if you tune this parameter,
+[00:43:06.960 --> 00:43:09.280]   which is like the magnitude of the augmentation correctly,
+[00:43:09.280 --> 00:43:11.040]   you actually will get auto augment.
+[00:43:11.040 --> 00:43:12.640]   So basically the idea is that
+[00:43:12.640 --> 00:43:15.040]   even if you learn a policy,
+[00:43:15.040 --> 00:43:16.400]   you can just actually randomize it
+[00:43:16.400 --> 00:43:17.120]   and get the same thing.
+[00:43:17.120 --> 00:43:18.160]   So if you don't have compute,
+[00:43:18.160 --> 00:43:19.440]   you should just use RAND augment.
+[00:43:19.440 --> 00:43:24.240]   Then what we did with stack RAND augment
+[00:43:24.240 --> 00:43:25.840]   was that we actually,
+[00:43:25.840 --> 00:43:29.040]   and this was Donglong's contribution,
+[00:43:29.040 --> 00:43:31.280]   that he basically figured out
+[00:43:31.280 --> 00:43:36.160]   that if you take Gaussian blur and color jitters
+[00:43:36.160 --> 00:43:39.360]   and after applying color jittering,
+[00:43:39.360 --> 00:43:40.560]   before applying color jittering,
+[00:43:40.560 --> 00:43:41.920]   you actually do a RAND augment.
+[00:43:41.920 --> 00:43:43.760]   So before you actually apply the color jitter,
+[00:43:43.760 --> 00:43:44.800]   you actually do RAND augment,
+[00:43:44.800 --> 00:43:45.760]   then you do a color jitter
+[00:43:45.760 --> 00:43:46.960]   and then you do a Gaussian blur.
+[00:43:47.680 --> 00:43:51.440]   But this RAND augment is applied
+[00:43:51.440 --> 00:43:52.320]   after doing the cropping.
+[00:43:52.320 --> 00:43:54.080]   So the order basically goes cropping,
+[00:43:54.080 --> 00:43:56.960]   RAND augment, color jitter, Gaussian blur.
+[00:43:56.960 --> 00:43:58.960]   Then this is a much stronger augmentation
+[00:43:58.960 --> 00:44:01.040]   and much more useful for contrastal learning.
+[00:44:01.040 --> 00:44:03.840]   So that's basically what the stack RAND augment is.
+[00:44:03.840 --> 00:44:05.920]   And SIM augment is basically something
+[00:44:05.920 --> 00:44:08.640]   that the Hinton paper introduced.
+[00:44:08.640 --> 00:44:13.440]   And what they did was color jittering, Gaussian blur,
+[00:44:13.440 --> 00:44:16.080]   random cropping flips
+[00:44:16.080 --> 00:44:19.440]   and we had added something else on top,
+[00:44:19.440 --> 00:44:20.400]   which was warping,
+[00:44:20.400 --> 00:44:23.600]   which actually just shows four points
+[00:44:23.600 --> 00:44:26.240]   and actually just warped the image.
+[00:44:26.240 --> 00:44:28.400]   So the second part of the question was that,
+[00:44:28.400 --> 00:44:30.720]   I don't know if I got this correctly,
+[00:44:30.720 --> 00:44:33.280]   that why do these augmentations work well
+[00:44:33.280 --> 00:44:34.240]   for contrastal learning?
+[00:44:34.240 --> 00:44:37.120]   - Yeah, yeah, essentially.
+[00:44:37.120 --> 00:44:38.160]   - Yeah, yeah.
+[00:44:38.160 --> 00:44:41.920]   So the idea basically there is that
+[00:44:45.280 --> 00:44:47.120]   augmentations are supposed to spread
+[00:44:47.120 --> 00:44:49.440]   a single data point in the representation space.
+[00:44:49.440 --> 00:44:51.600]   So what that allows you to do is like,
+[00:44:51.600 --> 00:44:54.640]   you have now have like a denser epsilon ball
+[00:44:54.640 --> 00:44:57.200]   in a high dimensional space for every point.
+[00:44:57.200 --> 00:45:00.000]   So now this contrastal learning setup,
+[00:45:00.000 --> 00:45:00.880]   what it allows you to do
+[00:45:00.880 --> 00:45:02.960]   is not just that you're pushing away a single point,
+[00:45:02.960 --> 00:45:05.840]   you're actually pushing away this density
+[00:45:05.840 --> 00:45:09.200]   and that is more meaningful.
+[00:45:09.200 --> 00:45:12.480]   So that's one good reason to use augmentations.
+[00:45:12.480 --> 00:45:13.600]   The question is that,
+[00:45:13.600 --> 00:45:16.480]   why would one augmentation work better than the other?
+[00:45:16.480 --> 00:45:20.080]   The answer is not clear.
+[00:45:20.080 --> 00:45:22.560]   We do think that denser is better.
+[00:45:22.560 --> 00:45:25.200]   So basically it's like this in this 2K space,
+[00:45:25.200 --> 00:45:27.360]   how much can you explore using your augmentations?
+[00:45:27.360 --> 00:45:29.920]   So the more orthogonal systems
+[00:45:29.920 --> 00:45:30.960]   you have in your augmentations,
+[00:45:30.960 --> 00:45:34.080]   the more the denser this epsilon ball is.
+[00:45:34.080 --> 00:45:38.640]   But this is basically an analysis
+[00:45:38.640 --> 00:45:41.280]   and it's not very grounded.
+[00:45:41.280 --> 00:45:43.200]   We don't have a lot of experiments to back this up,
+[00:45:43.200 --> 00:45:47.840]   but this is more intuitive in the geometrical space.
+[00:45:47.840 --> 00:45:49.760]   - Gotcha.
+[00:45:49.760 --> 00:45:52.880]   And is this also related to why
+[00:45:52.880 --> 00:45:56.880]   supervised contrast learning is stable to corruptions
+[00:45:56.880 --> 00:45:58.240]   in the ImageNet dataset
+[00:45:58.240 --> 00:46:00.800]   and to hyperparameters like temperature and stuff?
+[00:46:00.800 --> 00:46:02.320]   - Right, yeah.
+[00:46:02.320 --> 00:46:03.680]   So we do believe that yes,
+[00:46:03.680 --> 00:46:06.560]   since we're doing a much more meaningful
+[00:46:06.560 --> 00:46:08.320]   representation learning system.
+[00:46:08.320 --> 00:46:09.440]   So like, okay.
+[00:46:09.440 --> 00:46:12.000]   So the point is that you will use the same augmentation
+[00:46:12.000 --> 00:46:13.600]   for cross entropy and supervised contrast
+[00:46:13.600 --> 00:46:15.200]   and supervised contrast are still better.
+[00:46:15.200 --> 00:46:17.200]   So that means that it's not just the augmentation,
+[00:46:17.200 --> 00:46:19.840]   but it is the fact that you're never able to pick up
+[00:46:19.840 --> 00:46:23.760]   on spurious correlations between your labels
+[00:46:23.760 --> 00:46:25.680]   and your representations.
+[00:46:25.680 --> 00:46:27.360]   And that's just like a property
+[00:46:27.360 --> 00:46:28.480]   of the cross entropy function,
+[00:46:28.480 --> 00:46:30.000]   that the cross entropy function is gonna try
+[00:46:30.000 --> 00:46:31.680]   and best to minimize the loss, right?
+[00:46:31.680 --> 00:46:34.480]   So it will try to pick up spurious correlations,
+[00:46:34.480 --> 00:46:36.160]   but since you have this dense ball
+[00:46:36.160 --> 00:46:37.680]   and you're pushing these dense balls around,
+[00:46:37.680 --> 00:46:39.200]   there's no notion of why you should pick up
+[00:46:39.200 --> 00:46:40.560]   any spurious correlations.
+[00:46:40.560 --> 00:46:45.600]   Because it's not just about projecting this ball
+[00:46:45.600 --> 00:46:48.080]   using a linear plane into the right class.
+[00:46:48.080 --> 00:46:50.400]   Now it's about actually pushing away
+[00:46:50.400 --> 00:46:53.760]   this dense ball and the two case space.
+[00:46:53.760 --> 00:46:56.080]   - Interesting, cool.
+[00:46:56.080 --> 00:47:00.400]   I think those are all the questions that I saw.
+[00:47:00.400 --> 00:47:02.800]   Charles, do you have, oh wait, there's more.
+[00:47:02.800 --> 00:47:05.840]   Interesting.
+[00:47:07.840 --> 00:47:12.080]   Someone said they wanna start with AI and machine learning.
+[00:47:12.080 --> 00:47:14.960]   They have a strong background in Python.
+[00:47:14.960 --> 00:47:19.680]   At what stage should they be taking interest in subjects
+[00:47:19.680 --> 00:47:21.280]   like contrastive learning?
+[00:47:21.280 --> 00:47:22.800]   What should be their path?
+[00:47:22.800 --> 00:47:24.560]   This is an important question I feel like,
+[00:47:24.560 --> 00:47:28.880]   'cause all these Coursera and Udacity courses
+[00:47:28.880 --> 00:47:32.000]   do such a good job of teaching you the fundamentals.
+[00:47:32.000 --> 00:47:36.400]   So how do you go from there to picking up interest
+[00:47:36.400 --> 00:47:37.680]   in something specifically?
+[00:47:37.680 --> 00:47:42.720]   - Yeah, okay, I can describe the way I did things.
+[00:47:42.720 --> 00:47:49.120]   So Ian Goodfellow's book is I think a very good place.
+[00:47:49.120 --> 00:47:53.920]   His book, it's available online and you can just read
+[00:47:53.920 --> 00:47:56.080]   that book and build your intuition
+[00:47:56.080 --> 00:47:58.480]   and then just start reading papers.
+[00:47:58.480 --> 00:48:02.240]   But yeah, you need to re-implement things on your own.
+[00:48:02.240 --> 00:48:05.040]   So you need to have a goal in mind that,
+[00:48:05.040 --> 00:48:07.200]   okay, you want to maybe re-implement
+[00:48:07.200 --> 00:48:09.600]   very difficult gap paper or contrastive learning paper
+[00:48:09.600 --> 00:48:11.840]   or something and then read through both papers
+[00:48:11.840 --> 00:48:14.880]   to get to a stage where you have the end-to-end understanding
+[00:48:14.880 --> 00:48:17.760]   of each step and why you're doing it.
+[00:48:17.760 --> 00:48:20.880]   - Gotcha, that makes sense.
+[00:48:20.880 --> 00:48:27.040]   Cool, I feel like we've gotten a lot more over time
+[00:48:27.040 --> 00:48:29.840]   but the questions are amazing, so I kept going.
+[00:48:29.840 --> 00:48:32.320]   Thank you so much, Rene, for coming.
+[00:48:32.320 --> 00:48:34.960]   If you want, you should totally do an AMA
+[00:48:34.960 --> 00:48:36.960]   in our Slack community and you'll get
+[00:48:36.960 --> 00:48:38.160]   a lot more questions there.
+[00:48:38.160 --> 00:48:44.960]   Thank you so much for, oh wait, someone has another question
+[00:48:44.960 --> 00:48:46.240]   but we'll get to them later, yeah.
+[00:48:46.240 --> 00:48:48.400]   Thank you so much for coming.
+

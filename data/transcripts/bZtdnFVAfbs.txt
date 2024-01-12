@@ -1,0 +1,406 @@
+
+[00:00:00.000 --> 00:00:05.000]   All right, so shameless plug, I'm on the job market.
+[00:00:05.000 --> 00:00:07.200]   This is how you can find me.
+[00:00:07.200 --> 00:00:09.440]   So we're gonna talk about DriftRML today,
+[00:00:09.440 --> 00:00:14.100]   which is a model, as Loni said, for productionizing
+[00:00:14.100 --> 00:00:15.500]   and then testing your machine learning models
+[00:00:15.500 --> 00:00:16.980]   once they've gone into production.
+[00:00:16.980 --> 00:00:19.900]   So it's extensible, it's open source,
+[00:00:19.900 --> 00:00:21.340]   and we follow the scikit-learn API.
+[00:00:21.340 --> 00:00:23.500]   So as long as your model has a fit and predict,
+[00:00:23.500 --> 00:00:24.900]   you can use this framework.
+[00:00:24.900 --> 00:00:26.620]   So why?
+[00:00:27.980 --> 00:00:30.080]   Basically, in the real world,
+[00:00:30.080 --> 00:00:32.940]   you're not always gonna have the same data
+[00:00:32.940 --> 00:00:34.700]   that you trained your model on.
+[00:00:34.700 --> 00:00:37.780]   So retraining is very expensive.
+[00:00:37.780 --> 00:00:40.260]   Like if you're dealing with a model,
+[00:00:40.260 --> 00:00:41.860]   like Jonathan was talking about,
+[00:00:41.860 --> 00:00:46.660]   it can take a long time to train such a model.
+[00:00:46.660 --> 00:00:51.080]   And so being able to retrain at the right moment
+[00:00:51.080 --> 00:00:52.020]   is super important.
+[00:00:52.020 --> 00:00:54.300]   And so you wanna know when your model
+[00:00:54.300 --> 00:00:57.580]   has kind of drifted away from what your expectations were,
+[00:00:57.580 --> 00:00:58.420]   your assumptions.
+[00:00:58.420 --> 00:01:00.620]   It's also a great way to do sort of like prototyping.
+[00:01:00.620 --> 00:01:03.380]   So if you have like a test set,
+[00:01:03.380 --> 00:01:06.100]   and then you have like a training set,
+[00:01:06.100 --> 00:01:07.980]   and then you send it to production,
+[00:01:07.980 --> 00:01:12.500]   and maybe you label some of the production results by hand,
+[00:01:12.500 --> 00:01:15.220]   or however you created that first labeling set,
+[00:01:15.220 --> 00:01:17.060]   you can then validate your assumptions
+[00:01:17.060 --> 00:01:19.420]   in the production context.
+[00:01:19.420 --> 00:01:23.940]   So yeah, there's some things
+[00:01:23.940 --> 00:01:25.660]   that I'm trying to sort of model here,
+[00:01:25.660 --> 00:01:27.780]   the performance, how fast it runs,
+[00:01:27.780 --> 00:01:29.980]   how accurate the model is,
+[00:01:29.980 --> 00:01:31.220]   whether it's fair and equitable
+[00:01:31.220 --> 00:01:34.140]   and having a minimal memory footprint.
+[00:01:34.140 --> 00:01:37.420]   So I've been able to cover these three cases so far.
+[00:01:37.420 --> 00:01:39.580]   I actually just added this fourth one today,
+[00:01:39.580 --> 00:01:40.580]   fair and equitable thing.
+[00:01:40.580 --> 00:01:42.620]   I think I have a good beat on how to do that,
+[00:01:42.620 --> 00:01:45.180]   but I haven't done that yet.
+[00:01:45.180 --> 00:01:48.900]   Okay, so now that I've kind of given you
+[00:01:48.900 --> 00:01:49.860]   the high level idea,
+[00:01:49.860 --> 00:01:52.640]   let's talk about how I did this
+[00:01:52.640 --> 00:01:56.520]   and kind of like how I think about model drifts
+[00:01:56.520 --> 00:01:57.520]   in a production context.
+[00:01:57.520 --> 00:01:59.480]   So the first thing to really think about
+[00:01:59.480 --> 00:02:01.840]   is what is a model?
+[00:02:01.840 --> 00:02:03.560]   A model is a representation of your data,
+[00:02:03.560 --> 00:02:05.120]   much like a descriptive statistic.
+[00:02:05.120 --> 00:02:06.080]   And it was this key,
+[00:02:06.080 --> 00:02:08.480]   this central insight that was really important
+[00:02:08.480 --> 00:02:12.040]   when I was thinking about how to create this framework
+[00:02:12.040 --> 00:02:14.040]   and thus how to test your model
+[00:02:14.040 --> 00:02:15.880]   once it goes into production.
+[00:02:15.880 --> 00:02:18.760]   So let's consider maximum likelihood estimation,
+[00:02:18.760 --> 00:02:19.600]   first and foremost.
+[00:02:19.600 --> 00:02:21.840]   For those of you not familiar,
+[00:02:21.840 --> 00:02:25.200]   basically what you can do is you can take some data
+[00:02:25.200 --> 00:02:27.480]   and then you can actually use MLEs.
+[00:02:27.480 --> 00:02:29.720]   This is maximum likelihood estimation here,
+[00:02:29.720 --> 00:02:31.880]   and then fit that data to figure out
+[00:02:31.880 --> 00:02:33.720]   what the center and spread should be.
+[00:02:33.720 --> 00:02:37.040]   So these are the parameters of the distribution.
+[00:02:37.040 --> 00:02:38.640]   So this is the one dimensional case.
+[00:02:38.640 --> 00:02:39.840]   So this is the original data.
+[00:02:39.840 --> 00:02:43.440]   And then this is the simulated data here.
+[00:02:43.440 --> 00:02:45.320]   I don't know why it came out purple instead of blue,
+[00:02:45.320 --> 00:02:46.160]   but whatever.
+[00:02:46.160 --> 00:02:49.040]   So in any event,
+[00:02:49.040 --> 00:02:50.840]   you can see that these distributions are pretty close
+[00:02:50.840 --> 00:02:54.280]   because the model in this case,
+[00:02:54.280 --> 00:02:56.760]   this maximum likelihood estimation
+[00:02:56.760 --> 00:02:58.840]   with the normal distribution
+[00:02:58.840 --> 00:03:01.040]   was like a good representation
+[00:03:01.040 --> 00:03:03.800]   of your actual population data.
+[00:03:03.800 --> 00:03:07.440]   So this is maximum likelihood estimation
+[00:03:07.440 --> 00:03:09.120]   in the two dimensional case,
+[00:03:09.120 --> 00:03:12.600]   also lovingly referred to as linear regression
+[00:03:12.600 --> 00:03:13.440]   by some folks.
+[00:03:13.440 --> 00:03:16.080]   So basically we can think of this model
+[00:03:16.080 --> 00:03:17.480]   as kind of like recovering
+[00:03:19.920 --> 00:03:21.480]   the parameters of your distribution
+[00:03:21.480 --> 00:03:22.960]   in a higher dimensional case.
+[00:03:22.960 --> 00:03:24.080]   And that's really, I mean,
+[00:03:24.080 --> 00:03:25.720]   it's not completely what's going on with the model,
+[00:03:25.720 --> 00:03:28.600]   but you can think of it as a description of your data.
+[00:03:28.600 --> 00:03:31.880]   Okay, so now let's go ahead
+[00:03:31.880 --> 00:03:35.400]   and look at like sort of a work example.
+[00:03:35.400 --> 00:03:37.960]   So I put together this little Jupyter notebook
+[00:03:37.960 --> 00:03:39.560]   to kind of show you the two circumstances.
+[00:03:39.560 --> 00:03:42.000]   So really what we're doing at the end of the day,
+[00:03:42.000 --> 00:03:42.840]   when we model,
+[00:03:42.840 --> 00:03:44.160]   when we were trying to figure out model drift
+[00:03:44.160 --> 00:03:46.960]   is we're asking, is the data different
+[00:03:48.360 --> 00:03:50.960]   from my training data to my production data?
+[00:03:50.960 --> 00:03:52.360]   If it's the same, my model's doing great,
+[00:03:52.360 --> 00:03:54.600]   it's gonna hopefully do a good job fitting.
+[00:03:54.600 --> 00:03:56.800]   So let's look at the case where it's different first.
+[00:03:56.800 --> 00:03:59.640]   So this is like our training data or testing data.
+[00:03:59.640 --> 00:04:02.520]   This is like our production environment.
+[00:04:02.520 --> 00:04:04.560]   Then we split it up into a bunch of stuff.
+[00:04:04.560 --> 00:04:07.160]   We run some model, in this case, logistic regression,
+[00:04:07.160 --> 00:04:10.360]   and we can see this is the training data.
+[00:04:10.360 --> 00:04:14.520]   And then this is the model once it's gone into production.
+[00:04:14.520 --> 00:04:17.640]   Now there's some really important subsets
+[00:04:17.640 --> 00:04:19.480]   of concerns here.
+[00:04:19.480 --> 00:04:20.880]   The first one is what happens
+[00:04:20.880 --> 00:04:22.120]   when you don't have true labels?
+[00:04:22.120 --> 00:04:25.680]   Well, the way that we sort of do this is
+[00:04:25.680 --> 00:04:28.160]   we start by training a model
+[00:04:28.160 --> 00:04:30.520]   and then training a surrogate model,
+[00:04:30.520 --> 00:04:32.280]   which is basically means you take the parameters
+[00:04:32.280 --> 00:04:33.440]   of your original model
+[00:04:33.440 --> 00:04:36.520]   and then use those to retrain on the production data.
+[00:04:36.520 --> 00:04:40.120]   So this is only using the data that we saw as input
+[00:04:40.120 --> 00:04:43.200]   and the predictions from the model that we,
+[00:04:43.200 --> 00:04:44.640]   that the model, sorry,
+[00:04:44.640 --> 00:04:48.120]   the predictions from the model once it's gone
+[00:04:48.120 --> 00:04:49.120]   into reality.
+[00:04:49.120 --> 00:04:51.960]   So we call this original CF fit to get our Y.
+[00:04:51.960 --> 00:04:54.320]   So it's X and then Y prediction
+[00:04:54.320 --> 00:04:56.840]   that we're training our surrogate model on.
+[00:04:56.840 --> 00:04:59.720]   Now you can see here,
+[00:04:59.720 --> 00:05:03.360]   we're able to recover the descriptive statistics
+[00:05:03.360 --> 00:05:05.320]   about our classifier.
+[00:05:05.320 --> 00:05:08.640]   And it turns out that they're way off.
+[00:05:08.640 --> 00:05:11.480]   So this is like the foundational insight.
+[00:05:12.160 --> 00:05:17.160]   Now we never needed this second Y,
+[00:05:17.160 --> 00:05:21.800]   this, sorry, this second Y2.
+[00:05:21.800 --> 00:05:25.440]   We never really need it except, yeah, like at all.
+[00:05:25.440 --> 00:05:28.160]   And so you never need true production labels
+[00:05:28.160 --> 00:05:31.400]   in order to figure out if your model has changed
+[00:05:31.400 --> 00:05:33.440]   from your testing and training environment
+[00:05:33.440 --> 00:05:34.400]   to your production environment.
+[00:05:34.400 --> 00:05:36.360]   And that's the key insight behind DrifterML
+[00:05:36.360 --> 00:05:38.080]   and all the work that came after it.
+[00:05:38.080 --> 00:05:40.440]   So just to validate that this like,
+[00:05:40.440 --> 00:05:41.320]   I'm not just pulling your leg
+[00:05:41.320 --> 00:05:42.360]   and this is actually true.
+[00:05:42.360 --> 00:05:44.400]   If we have similar data, right?
+[00:05:44.400 --> 00:05:45.840]   So both are similar.
+[00:05:45.840 --> 00:05:48.280]   Then we can look at the precision and recall for the model
+[00:05:48.280 --> 00:05:49.640]   and we can look at the precision and recall
+[00:05:49.640 --> 00:05:50.520]   for the surrogate.
+[00:05:50.520 --> 00:05:51.760]   And they're not exactly the same
+[00:05:51.760 --> 00:05:54.000]   because these are random simulated data points,
+[00:05:54.000 --> 00:05:55.880]   but they're pretty close, right?
+[00:05:55.880 --> 00:06:00.440]   Like, so like precision for class one is 45.
+[00:06:00.440 --> 00:06:05.040]   Here it's 43, 68 and 70.
+[00:06:05.040 --> 00:06:07.760]   And so, we have like a pretty good sense
+[00:06:07.760 --> 00:06:10.920]   that this is sort of gonna hold in general.
+[00:06:10.920 --> 00:06:12.960]   And the reason for this really is because
+[00:06:12.960 --> 00:06:15.160]   a model is just a representation of your data.
+[00:06:15.160 --> 00:06:17.240]   It's just like a descriptive statistic.
+[00:06:17.240 --> 00:06:20.480]   And so, if your descriptive statistic changes,
+[00:06:20.480 --> 00:06:22.280]   then you can be sure that your data has changed.
+[00:06:22.280 --> 00:06:24.280]   And that's really what's sort of at work here.
+[00:06:24.280 --> 00:06:27.960]   Okay, so that's like all the intuition behind it.
+[00:06:27.960 --> 00:06:29.720]   Let me go back to the presentation.
+[00:06:29.720 --> 00:06:34.560]   Okay, so I'm gonna outline those steps one more time
+[00:06:34.560 --> 00:06:37.120]   just because I'm sure I lost some people in that.
+[00:06:37.120 --> 00:06:40.200]   Step one, you do your exploratory analysis like always.
+[00:06:40.200 --> 00:06:43.800]   Step two, you split into train, test and validation.
+[00:06:43.800 --> 00:06:46.920]   Step three, you use your training data to train your model.
+[00:06:46.920 --> 00:06:50.120]   Step four, you validate your model with your test data.
+[00:06:50.120 --> 00:06:52.960]   So, you basically check your test data again.
+[00:06:52.960 --> 00:06:54.640]   You store your validation data,
+[00:06:54.640 --> 00:06:56.280]   which is your like third partition.
+[00:06:56.280 --> 00:06:59.040]   So, just to make that super clear,
+[00:06:59.040 --> 00:07:05.040]   here we had X test, X val, X train, X test.
+[00:07:05.040 --> 00:07:06.520]   So, those are the three sets.
+[00:07:06.520 --> 00:07:10.440]   And then we just split it into 50% and then 25 and 25,
+[00:07:10.440 --> 00:07:12.680]   which is like not always possible,
+[00:07:12.680 --> 00:07:15.040]   but like if you can do it, that's super great.
+[00:07:15.040 --> 00:07:17.840]   Okay, so then you put your model to production.
+[00:07:17.840 --> 00:07:20.480]   You capture all the data that goes in your model
+[00:07:20.480 --> 00:07:22.080]   once it's in production,
+[00:07:22.080 --> 00:07:24.680]   as well as the predicted values, that's super important.
+[00:07:24.680 --> 00:07:26.080]   Then you train your surrogate model
+[00:07:26.080 --> 00:07:28.960]   with the same hyperparameters, that's also super important,
+[00:07:28.960 --> 00:07:31.000]   as your model currently in production
+[00:07:31.000 --> 00:07:33.000]   on the captured data in step seven.
+[00:07:33.000 --> 00:07:36.920]   So, the way you do that is just by, come here,
+[00:07:36.920 --> 00:07:43.400]   is just by, let me scroll up to it.
+[00:07:43.400 --> 00:07:46.440]   Yeah, it's just by using star, the classifier,
+[00:07:46.440 --> 00:07:47.280]   and then get param.
+[00:07:47.280 --> 00:07:49.480]   So, scikit-learn is super great.
+[00:07:49.480 --> 00:07:50.720]   It makes training a surrogate model
+[00:07:50.720 --> 00:07:52.520]   really, really, really simple.
+[00:07:52.520 --> 00:07:53.640]   It's easy to do.
+[00:07:53.640 --> 00:07:57.240]   Okay, going back into this.
+[00:07:57.240 --> 00:08:00.680]   And then step nine, you test your model.
+[00:08:00.680 --> 00:08:02.880]   So, that's what we're gonna cover next.
+[00:08:02.880 --> 00:08:05.040]   All right, so why would you do this?
+[00:08:05.040 --> 00:08:06.440]   I gave a couple examples,
+[00:08:06.440 --> 00:08:08.800]   but basically, making sure your assumptions
+[00:08:08.800 --> 00:08:11.960]   are really accurate, you can test this with this model.
+[00:08:11.960 --> 00:08:17.000]   You can make sure that your production environment
+[00:08:17.000 --> 00:08:18.160]   is essentially similar.
+[00:08:18.160 --> 00:08:20.520]   That's really the central ethos here.
+[00:08:20.520 --> 00:08:21.400]   But you can also make sure
+[00:08:21.400 --> 00:08:22.600]   that you're retraining appropriately,
+[00:08:22.600 --> 00:08:24.080]   because if things do change,
+[00:08:24.080 --> 00:08:26.600]   then you can retrain on more labeled data.
+[00:08:26.600 --> 00:08:29.800]   All right, so let's see how DriftML works.
+[00:08:29.800 --> 00:08:30.640]   Look at the API.
+[00:08:30.640 --> 00:08:32.440]   So, this is the documentation.
+[00:08:32.440 --> 00:08:33.720]   I tried really hard to make this clear.
+[00:08:33.720 --> 00:08:34.560]   I hope it is.
+[00:08:34.560 --> 00:08:36.320]   If you have any questions about this, please let me know.
+[00:08:36.320 --> 00:08:38.080]   So, this is another example.
+[00:08:38.080 --> 00:08:40.920]   We're training a model again, right?
+[00:08:40.920 --> 00:08:42.760]   Then we're doing our,
+[00:08:42.760 --> 00:08:45.600]   you can test against your model
+[00:08:45.600 --> 00:08:47.720]   before you put it into production,
+[00:08:47.720 --> 00:08:49.560]   like you would normally.
+[00:08:49.560 --> 00:08:53.680]   All right, so once you've productionized things, right?
+[00:08:53.680 --> 00:08:56.200]   We just sort of like, we have our data,
+[00:08:56.200 --> 00:08:57.640]   we've got our model,
+[00:08:57.640 --> 00:08:59.760]   we've got our train test splits,
+[00:08:59.760 --> 00:09:00.920]   whatever, whatever.
+[00:09:00.920 --> 00:09:02.760]   We knew our classification report.
+[00:09:02.760 --> 00:09:05.240]   Okay, so now we're gonna do some tests.
+[00:09:05.240 --> 00:09:08.120]   So, here we're gonna sort of read things in, right?
+[00:09:08.120 --> 00:09:09.920]   We've got our prod CLF.
+[00:09:09.920 --> 00:09:13.720]   We get our surrogates model here.
+[00:09:13.720 --> 00:09:15.640]   This is our test CLF.
+[00:09:15.640 --> 00:09:19.800]   And then this classification test
+[00:09:19.800 --> 00:09:23.640]   is where we're getting our tests from.
+[00:09:23.640 --> 00:09:28.640]   So, we kind of pass in our test CLF,
+[00:09:29.320 --> 00:09:31.680]   our test data, our target name and our columns.
+[00:09:31.680 --> 00:09:33.360]   And then we're able to run a test
+[00:09:33.360 --> 00:09:34.720]   just like we normally would.
+[00:09:34.720 --> 00:09:36.400]   So, this is like, you know,
+[00:09:36.400 --> 00:09:37.760]   just how you would do testing normally.
+[00:09:37.760 --> 00:09:39.600]   So, it's not like anything fancy.
+[00:09:39.600 --> 00:09:42.480]   It can fit in a PyTest pipeline.
+[00:09:42.480 --> 00:09:44.400]   You can use it kind of however you want.
+[00:09:44.400 --> 00:09:45.760]   This is just a really naive,
+[00:09:45.760 --> 00:09:47.400]   kind of like you set a lower threshold
+[00:09:47.400 --> 00:09:52.200]   for like your precision not being below a certain level.
+[00:09:52.200 --> 00:09:53.480]   But you know, you can make this thing
+[00:09:53.480 --> 00:09:55.000]   as complicated as you want.
+[00:09:55.000 --> 00:09:57.240]   Yeah, so I won't go through,
+[00:09:57.240 --> 00:09:58.960]   I won't belabor that too much.
+[00:09:58.960 --> 00:10:02.920]   But yeah, so that's like an example of a test.
+[00:10:02.920 --> 00:10:04.040]   Can I go back to my PowerPoint?
+[00:10:04.040 --> 00:10:05.000]   Yes, I can.
+[00:10:05.000 --> 00:10:09.520]   Okay, so that's like pretty much the whole thing.
+[00:10:09.520 --> 00:10:11.200]   Oh, wait, no, there should be, oh yeah.
+[00:10:11.200 --> 00:10:12.800]   Sorry, I almost forgot.
+[00:10:12.800 --> 00:10:13.640]   One more example.
+[00:10:13.640 --> 00:10:17.200]   So, just to make it like super crystal clear,
+[00:10:17.200 --> 00:10:21.640]   there's like an example you can run on your own.
+[00:10:21.640 --> 00:10:23.640]   This is like the web URL.
+[00:10:23.640 --> 00:10:25.040]   So, here are a bunch of tests,
+[00:10:25.040 --> 00:10:26.480]   or one test, sorry.
+[00:10:26.480 --> 00:10:28.880]   So, we looked at the classification example already.
+[00:10:28.880 --> 00:10:31.000]   If you wanna understand regression,
+[00:10:31.000 --> 00:10:33.640]   you can also look at the mean squared error.
+[00:10:33.640 --> 00:10:35.560]   For this case, you would look at the upper bound
+[00:10:35.560 --> 00:10:36.920]   instead of a lower bound.
+[00:10:36.920 --> 00:10:39.920]   And yeah, that's kind of it.
+[00:10:39.920 --> 00:10:42.000]   All right, I am done.
+[00:10:42.000 --> 00:10:43.560]   So, I'll take questions now.
+[00:10:43.560 --> 00:10:49.560]   - So, we have a question from money
+[00:10:49.560 --> 00:10:51.480]   if you wanna look in the chat.
+[00:10:51.480 --> 00:10:54.160]   - Oh, okay, let's do it.
+[00:10:54.160 --> 00:10:56.520]   - If people have more questions, drop them in.
+[00:10:56.520 --> 00:11:05.400]   - Okay, so, awesome tool.
+[00:11:05.400 --> 00:11:06.960]   Thanks very much.
+[00:11:06.960 --> 00:11:10.200]   How do you know or find out the target labels
+[00:11:10.200 --> 00:11:11.080]   on the production data?
+[00:11:11.080 --> 00:11:13.840]   So, you don't ever need the labels on the production data.
+[00:11:13.840 --> 00:11:15.880]   That's the whole point of this,
+[00:11:15.880 --> 00:11:19.360]   is that all you need is the validation labels,
+[00:11:19.360 --> 00:11:24.360]   and then you get the labels from production
+[00:11:24.360 --> 00:11:28.040]   just by like getting the simulated ones
+[00:11:28.040 --> 00:11:28.920]   from the production model.
+[00:11:28.920 --> 00:11:32.320]   But you never actually need the true production labels.
+[00:11:32.320 --> 00:11:39.560]   It's the stats, okay.
+[00:11:39.560 --> 00:11:41.720]   It's the stats of the prod data.
+[00:11:41.720 --> 00:11:43.360]   Yes, it's the stats of the prod data.
+[00:11:43.360 --> 00:11:44.840]   Yeah, so, yeah, basically.
+[00:11:44.840 --> 00:11:47.920]   So, you can use a neural network.
+[00:11:47.920 --> 00:11:49.320]   So, there's another question.
+[00:11:49.320 --> 00:11:51.240]   How about using this for a neural network?
+[00:11:51.240 --> 00:11:52.080]   Is there support already?
+[00:11:52.080 --> 00:11:55.720]   Yeah, so, there is already support for neural networks.
+[00:11:55.720 --> 00:12:00.720]   All you have to do is use the Keras wrapper
+[00:12:00.720 --> 00:12:02.280]   for the Scikit-learn Keras wrapper,
+[00:12:02.280 --> 00:12:05.120]   and then you can use a deep neural net
+[00:12:05.120 --> 00:12:07.920]   just like you would for any of the Scikit-learn models.
+[00:12:07.920 --> 00:12:11.120]   So, yes, this does work with neural networks out of the box.
+[00:12:11.120 --> 00:12:13.520]   So, you can use TensorFlow too.
+[00:12:13.520 --> 00:12:16.920]   Yeah, or you can use Scorch if you wanna use PyTorch.
+[00:12:16.920 --> 00:12:19.160]   Yeah, anything that conforms to the Scikit-learn API
+[00:12:19.160 --> 00:12:21.720]   of fit and predict will work.
+[00:12:21.720 --> 00:12:26.720]   And I think I only use the Keras-like interface
+[00:12:26.720 --> 00:12:30.280]   with Scikit-learn, but I think there's a fit and predict
+[00:12:30.280 --> 00:12:31.440]   on just the regular Keras interface.
+[00:12:31.440 --> 00:12:33.440]   So, this should actually work either way.
+[00:12:33.440 --> 00:12:35.640]   Thank you.
+[00:12:35.640 --> 00:12:36.840]   Please do play around with it.
+[00:12:36.840 --> 00:12:38.080]   It's open source.
+[00:12:38.080 --> 00:12:38.920]   It's available.
+[00:12:38.920 --> 00:12:41.240]   I'll just show you real quick.
+[00:12:41.240 --> 00:12:43.040]   Let me go back and share.
+[00:12:43.040 --> 00:12:45.200]   So, if you wanna play around with it,
+[00:12:45.200 --> 00:12:47.440]   there's two ways you can get to it.
+[00:12:47.440 --> 00:12:49.080]   You can download the source.
+[00:12:49.080 --> 00:12:51.480]   If you're interested from right here.
+[00:12:51.480 --> 00:12:53.400]   So, this is one way.
+[00:12:53.400 --> 00:12:56.680]   And then the other way is it is on PyPy.
+[00:12:56.680 --> 00:13:01.400]   So, you can just do a pip install
+[00:13:01.400 --> 00:13:02.920]   and then you're good to go.
+[00:13:02.920 --> 00:13:05.440]   So, yeah, you can start running this in production tomorrow
+[00:13:05.440 --> 00:13:06.400]   if you want to.
+[00:13:06.400 --> 00:13:09.520]   It's pretty easy to set up.
+[00:13:09.520 --> 00:13:11.560]   Just pip install and then set up your tests
+[00:13:11.560 --> 00:13:14.880]   like you would anything else and you're good.
+[00:13:14.880 --> 00:13:15.720]   And inquire.
+[00:13:15.720 --> 00:13:18.600]   See if there are any other questions.
+[00:13:19.560 --> 00:13:22.320]   (humming)
+[00:13:22.320 --> 00:13:23.160]   All right.
+[00:13:23.160 --> 00:13:25.640]   Is there any way to proceed when a privacy reasons
+[00:13:25.640 --> 00:13:27.760]   it's impossible to capture data in production?
+[00:13:27.760 --> 00:13:31.120]   Oh, that is a fascinating notion.
+[00:13:31.120 --> 00:13:35.160]   So, you do need access to the production data.
+[00:13:35.160 --> 00:13:41.600]   But that said, you can use things like PySift
+[00:13:41.600 --> 00:13:46.360]   to get like, or there's like differential privacy
+[00:13:46.360 --> 00:13:48.920]   sort of like simulated data.
+[00:13:48.920 --> 00:13:53.200]   So, you could capture like the anonymized
+[00:13:53.200 --> 00:13:55.320]   or the simulated data.
+[00:13:55.320 --> 00:13:58.920]   And then you could, yeah, exactly.
+[00:13:58.920 --> 00:14:02.000]   You could use the anonymized or simulated data.
+[00:14:02.000 --> 00:14:05.400]   And that would allow you the opportunity
+[00:14:05.400 --> 00:14:07.640]   to still use this in a production setting.
+[00:14:07.640 --> 00:14:09.560]   You might get a little bit of fuzziness
+[00:14:09.560 --> 00:14:14.240]   just because like any encryption or encoding of your data
+[00:14:14.240 --> 00:14:15.760]   is gonna be a little bit fuzzy.
+[00:14:16.520 --> 00:14:18.520]   But, this should by and large work.
+[00:14:18.520 --> 00:14:20.880]   So, you would look for larger deviations
+[00:14:20.880 --> 00:14:23.200]   from your precision recall F1 score,
+[00:14:23.200 --> 00:14:24.720]   whatever metric you're using,
+[00:14:24.720 --> 00:14:28.040]   rather than just looking at sort of like tight bounds.
+[00:14:28.040 --> 00:14:30.760]   So, as long as you're a little bit more amenable
+[00:14:30.760 --> 00:14:33.560]   to things getting a little wider, then you should be okay.
+[00:14:33.560 --> 00:14:36.920]   But yeah, you basically can use this in a privacy context
+[00:14:36.920 --> 00:14:37.880]   out of the box.
+[00:14:37.880 --> 00:14:41.360]   Yeah, assuming you can get production data
+[00:14:41.360 --> 00:14:45.480]   that's anonymized or in some way.
+[00:14:45.480 --> 00:14:47.680]   - All right, thank you, Eric.
+[00:14:47.680 --> 00:14:50.280]   We're gonna give you back 30 seconds
+[00:14:50.280 --> 00:14:51.920]   if you can drop in a question.
+[00:14:51.920 --> 00:14:55.320]   If not, I will post Eric's.
+[00:14:55.320 --> 00:14:58.600]   I posted a link to Drifter ML in the chat already.
+[00:14:58.600 --> 00:15:00.840]   And then I'll link to Eric's Twitter
+[00:15:00.840 --> 00:15:03.440]   and all that jazz in the show notes
+[00:15:03.440 --> 00:15:04.720]   and in the Slack community.
+[00:15:04.720 --> 00:15:05.840]   Eric, I think we have one more question.
+[00:15:05.840 --> 00:15:08.600]   - Yes, so can you use, how is this used with NLP?
+[00:15:08.600 --> 00:15:11.040]   So, natural language processing,
+[00:15:11.040 --> 00:15:13.480]   as long as it's a prediction task,
+[00:15:13.480 --> 00:15:15.920]   it should be exactly the same setup.
+[00:15:15.920 --> 00:15:20.400]   Because the data that you're sort of like feeding in
+[00:15:20.400 --> 00:15:22.920]   is natural language, is no big deal.
+[00:15:22.920 --> 00:15:27.360]   So, for time series, I don't think this works
+[00:15:27.360 --> 00:15:30.280]   because you're not doing a prediction task.
+[00:15:30.280 --> 00:15:35.280]   However, I am going to add separate model drift things
+[00:15:35.280 --> 00:15:37.000]   for time series.
+[00:15:37.000 --> 00:15:40.320]   You can also use scikit-multiflow for time series.
+[00:15:40.320 --> 00:15:42.880]   It's really well set up for time series data.
+[00:15:43.720 --> 00:15:44.720]   But yeah.
+[00:15:44.720 --> 00:15:50.240]   Yeah, so if it's a classification or regression problem,
+[00:15:50.240 --> 00:15:51.880]   Drifter ML works perfectly.
+[00:15:51.880 --> 00:15:55.160]   It will capture everything.
+[00:15:55.160 --> 00:15:59.160]   If it's a time series forecasting thing,
+[00:15:59.160 --> 00:16:02.560]   then I don't think it works well.
+[00:16:02.560 --> 00:16:04.800]   But maybe it does.
+[00:16:04.800 --> 00:16:07.360]   I've not tried it really on a time series problem.
+[00:16:07.360 --> 00:16:09.480]   I think scikit-multiflow is like definitely the way to go,
+[00:16:09.480 --> 00:16:12.520]   but I could even try it like on a time series problem
+[00:16:12.520 --> 00:16:13.800]   to see if it works.
+[00:16:13.800 --> 00:16:16.400]   But yeah, cool.
+[00:16:16.400 --> 00:16:19.120]   - And then there's one more question about it by Ryan.
+[00:16:19.120 --> 00:16:20.600]   - Oh, really?
+[00:16:20.600 --> 00:16:23.880]   Related to NLP, what if the corpus changes for prod?
+[00:16:23.880 --> 00:16:26.000]   Does that not change anything?
+[00:16:26.000 --> 00:16:31.400]   Ooh, good question, Ryan.
+[00:16:31.400 --> 00:16:35.560]   I have to think about it.
+[00:16:35.560 --> 00:16:37.200]   I know Ryan, so I'll get back to him.
+[00:16:37.200 --> 00:16:41.520]   But I suspect it's,
+[00:16:42.360 --> 00:16:45.040]   I suspect if the corpus changes for prod,
+[00:16:45.040 --> 00:16:48.840]   then that would adjust things like quite a bit,
+[00:16:48.840 --> 00:16:50.840]   and then you would just get model drift.
+[00:16:50.840 --> 00:16:52.840]   But we can talk about this.
+[00:16:52.840 --> 00:16:54.920]   This is a further discussion to be had.
+[00:16:54.920 --> 00:16:59.600]   All right, well, I guess I'll call that right now.
+[00:16:59.600 --> 00:17:01.000]   But yeah, thank you all.
+[00:17:01.000 --> 00:17:01.920]   This was super fun.
+[00:17:01.920 --> 00:17:04.520]   And yeah, and good luck to the rest of the speakers.
+

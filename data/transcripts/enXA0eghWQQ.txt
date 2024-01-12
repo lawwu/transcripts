@@ -1,0 +1,514 @@
+
+[00:00:00.000 --> 00:00:08.640]   So, yeah, so this is about anti-patterns and it's targeted at open sourced ML research
+[00:00:08.640 --> 00:00:09.640]   code.
+[00:00:09.640 --> 00:00:13.840]   And I know that's very, it's a very narrow view at it.
+[00:00:13.840 --> 00:00:17.840]   A lot of these things that I'm going to talk about are actually anti-patterns in other
+[00:00:17.840 --> 00:00:18.920]   pieces of code as well.
+[00:00:18.920 --> 00:00:23.760]   If you just look at open source code or just in general, if you work at a programming company,
+[00:00:23.760 --> 00:00:27.320]   you're probably going to see, you're probably going to see a lot of these, a lot of this
+[00:00:27.320 --> 00:00:28.860]   stuff pop up.
+[00:00:28.860 --> 00:00:34.680]   But in my experience, it shows up sort of with an increased frequency in code that's
+[00:00:34.680 --> 00:00:38.920]   open sourced by researchers, particularly PhD students.
+[00:00:38.920 --> 00:00:46.560]   And I want to start this with a very big, very important disclaimer is that no matter
+[00:00:46.560 --> 00:00:51.560]   how sort of quote unquote ugly somebody's code might be, it is still worth releasing.
+[00:00:51.560 --> 00:00:56.520]   And this is a worry that came up a lot when I first sort of presented these anti-patterns
+[00:00:56.520 --> 00:01:00.740]   in the Reddit thread that Lavanya mentioned, is a lot of people were like, well, you know,
+[00:01:00.740 --> 00:01:03.480]   we don't want to create a situation where somebody would feel like their code would
+[00:01:03.480 --> 00:01:06.760]   be judged or they might not release their code because they want to take the time to
+[00:01:06.760 --> 00:01:07.760]   clean it up.
+[00:01:07.760 --> 00:01:12.040]   And so I want to make a big disclaimer here, like released code, no matter how janky, no
+[00:01:12.040 --> 00:01:16.260]   matter how unclean is always, always, always better than unreleased code.
+[00:01:16.260 --> 00:01:22.680]   Having said that, there's a number of things that can be done to make the code better without
+[00:01:22.680 --> 00:01:24.580]   additional effort.
+[00:01:24.580 --> 00:01:28.320]   And one of the arguments that I'm going to try to make that I fear this presentation
+[00:01:28.320 --> 00:01:34.120]   might not support as well as I could in the future is that trying to avoid some of these
+[00:01:34.120 --> 00:01:38.720]   anti-patterns would also make your research life a little bit easier and the life of those
+[00:01:38.720 --> 00:01:43.580]   that come after you and maybe inherit your code base and go from there.
+[00:01:43.580 --> 00:01:48.800]   This presentation is a bit like this drawing because I sort of ran out of time.
+[00:01:48.800 --> 00:01:50.380]   I got slammed with work.
+[00:01:50.380 --> 00:01:52.060]   So bear with me here.
+[00:01:52.060 --> 00:01:53.740]   A little bit about myself.
+[00:01:53.740 --> 00:01:55.620]   I work at Symbi Robotics.
+[00:01:55.620 --> 00:01:59.040]   I do computer vision for them, a lot of deep learning work.
+[00:01:59.040 --> 00:02:04.800]   And a lot of the stuff that I'm going to talk about today is sort of coming from adapting
+[00:02:04.800 --> 00:02:11.080]   open source code bases for use in Symbi Robotics and sort of seeing these patterns repeatedly.
+[00:02:11.080 --> 00:02:13.720]   As mentioned before, I also run a YouTube channel.
+[00:02:13.720 --> 00:02:17.120]   It's mostly about things like Python and deep learning.
+[00:02:17.120 --> 00:02:20.960]   And most recently I've been doing a series of streams on reinforcement learning.
+[00:02:20.960 --> 00:02:25.860]   And if you want, you can follow me on Twitter and I'll combine TensorFlow compilation woes
+[00:02:25.860 --> 00:02:28.740]   with memes on there.
+[00:02:28.740 --> 00:02:31.940]   So I'm going to try to cover four anti-patterns.
+[00:02:31.940 --> 00:02:34.900]   This was supposed to be five anti-patterns and I ran out of time.
+[00:02:34.900 --> 00:02:36.400]   So it's four now.
+[00:02:36.400 --> 00:02:41.580]   And in order, these are monolithic configuration objects and we'll sort of discuss what exactly
+[00:02:41.580 --> 00:02:43.260]   that means in a second.
+[00:02:43.260 --> 00:02:47.420]   But not just having monolithic configuration objects but also nesting them deep inside
+[00:02:47.420 --> 00:02:48.420]   your code.
+[00:02:48.420 --> 00:02:49.420]   This is the actual anti-pattern.
+[00:02:49.420 --> 00:02:50.940]   Not just having configuration objects.
+[00:02:50.940 --> 00:02:51.940]   That's fine.
+[00:02:51.940 --> 00:02:54.260]   But nesting it deep inside your code is the anti-pattern.
+[00:02:54.260 --> 00:02:59.580]   I've also seen people use arc parse for configuration management in lieu of a configuration file.
+[00:02:59.580 --> 00:03:02.140]   And so that's also something that I'm going to discuss.
+[00:03:02.140 --> 00:03:05.840]   And what are some of the alternatives and what's wrong with that?
+[00:03:05.840 --> 00:03:10.860]   There's also this notion that because, you know, ultimately you're trying to run your
+[00:03:10.860 --> 00:03:13.140]   code or give somebody to run your code.
+[00:03:13.140 --> 00:03:15.820]   So you make a command line interface to make it easy.
+[00:03:15.820 --> 00:03:18.900]   But then the code is only really accessible from that command line interface.
+[00:03:18.900 --> 00:03:21.100]   So that's another anti-pattern that I see a lot.
+[00:03:21.100 --> 00:03:22.580]   And I'm going to discuss that.
+[00:03:22.580 --> 00:03:29.560]   And then sometimes people will write a function that is that takes in file names as inputs
+[00:03:29.560 --> 00:03:34.500]   and then outputs some data in some output file and that's it.
+[00:03:34.500 --> 00:03:36.540]   It doesn't actually return anything.
+[00:03:36.540 --> 00:03:39.700]   And then people adapt that code and they start using it that way.
+[00:03:39.700 --> 00:03:42.020]   So they just sort of look for the file that should be created.
+[00:03:42.020 --> 00:03:46.220]   And so that's another anti-pattern that I'm going to discuss.
+[00:03:46.220 --> 00:03:50.540]   As discussed, there was a fairly robust discussion on Reddit about these anti-patterns.
+[00:03:50.540 --> 00:03:54.700]   So if anybody's interested, just sort of search this in Reddit and you'll find the thread.
+[00:03:54.700 --> 00:03:57.420]   There's a lot of opinions there.
+[00:03:57.420 --> 00:04:00.320]   And the very first anti-pattern that I'm going to talk about, the monolithic configuration
+[00:04:00.320 --> 00:04:04.020]   object, also seemed to be the most contentious.
+[00:04:04.020 --> 00:04:12.100]   So overall, it's generally a good idea to encapsulate the various parameters of your
+[00:04:12.100 --> 00:04:15.940]   machine learning model or your simulation or whatever you're doing into a configuration
+[00:04:15.940 --> 00:04:16.940]   file.
+[00:04:16.940 --> 00:04:19.380]   Configuration files themselves are really, really good.
+[00:04:19.380 --> 00:04:21.420]   YAML makes them also very readable.
+[00:04:21.420 --> 00:04:26.380]   I'm not a huge fan of YAML in general, but for this purpose, I think YAML is a very good
+[00:04:26.380 --> 00:04:28.740]   fit because they sort of read off.
+[00:04:28.740 --> 00:04:34.020]   You can sort of just look at them and go, okay, I understand what these things mean
+[00:04:34.020 --> 00:04:35.020]   and what they're supposed to be.
+[00:04:35.020 --> 00:04:36.900]   And then you can parse them really easily.
+[00:04:36.900 --> 00:04:40.860]   So having a configuration file, even if it's a very large configuration file, is a great
+[00:04:40.860 --> 00:04:45.820]   idea and it also makes it very easy for somebody who's reading your code to sort of look at
+[00:04:45.820 --> 00:04:51.660]   the file and go, hey, hello?
+[00:04:51.660 --> 00:04:53.660]   I heard somebody said something.
+[00:04:53.660 --> 00:04:56.660]   >> We can hear you.
+[00:04:56.660 --> 00:04:57.660]   >> Okay.
+[00:04:57.660 --> 00:05:00.160]   Somebody -- it's fine.
+[00:05:00.160 --> 00:05:03.700]   So as I was saying, having a configuration file is a great idea.
+[00:05:03.700 --> 00:05:07.960]   However, and actually there's not a however yet.
+[00:05:07.960 --> 00:05:12.460]   Basically what people will do then after that, sort of the lowest common denominator way
+[00:05:12.460 --> 00:05:16.860]   of using them is that you can just say, hey, open this file and pass it through a YAML
+[00:05:16.860 --> 00:05:18.420]   parser.
+[00:05:18.420 --> 00:05:23.140]   And then you can access it like you access a field from a dictionary.
+[00:05:23.140 --> 00:05:25.840]   So the pros here are this is very easy.
+[00:05:25.840 --> 00:05:29.020]   And that's why you also see this usually most often.
+[00:05:29.020 --> 00:05:31.460]   The cons are there's no validation here.
+[00:05:31.460 --> 00:05:38.200]   So if your configuration needs to be some minimum set of fields and parameters, nothing
+[00:05:38.200 --> 00:05:41.600]   in your code here is able to verify that.
+[00:05:41.600 --> 00:05:45.980]   And because of that, if somebody's trying to adapt your code or maybe you made a new
+[00:05:45.980 --> 00:05:50.920]   configuration and you forgot a field, you won't find out about it until you try to use
+[00:05:50.920 --> 00:05:54.160]   it which potentially can be much later in the run.
+[00:05:54.160 --> 00:05:56.500]   And so that can be very painful.
+[00:05:56.500 --> 00:05:58.020]   This is also immutable.
+[00:05:58.020 --> 00:05:59.840]   May accidentally be changing the code.
+[00:05:59.840 --> 00:06:03.420]   And accidental mutation is unfortunate.
+[00:06:03.420 --> 00:06:10.060]   And then there's intentional mutation where people will change the parameters or the fields
+[00:06:10.060 --> 00:06:14.480]   of this dictionary or add or subtract fields from it in the code.
+[00:06:14.480 --> 00:06:15.640]   That's just devious.
+[00:06:15.640 --> 00:06:20.220]   And I would say, like, I know that feels easy sometimes to just pass a dictionary to a function
+[00:06:20.220 --> 00:06:25.180]   and have it get a new field when it comes back.
+[00:06:25.180 --> 00:06:26.180]   But please don't do it.
+[00:06:26.180 --> 00:06:30.080]   Because tracking that can be very, very difficult, especially as your code base becomes more
+[00:06:30.080 --> 00:06:33.120]   bigger.
+[00:06:33.120 --> 00:06:34.600]   It's also a bit clunky to reference.
+[00:06:34.600 --> 00:06:37.780]   This is really a personal taste thing.
+[00:06:37.780 --> 00:06:43.680]   But in a dictionary in Python, you have to, like, write it in as bracket access with,
+[00:06:43.680 --> 00:06:46.720]   you know, passing the field as the field name as a string.
+[00:06:46.720 --> 00:06:49.000]   And it's a little bit tiresome.
+[00:06:49.000 --> 00:06:52.760]   And then if you're working in Jupyter or if you're working in a text editor, usually you
+[00:06:52.760 --> 00:06:57.280]   don't get or at least immediately you don't get auto completion for these.
+[00:06:57.280 --> 00:06:59.640]   Because it has no way of knowing what's in the dictionary.
+[00:06:59.640 --> 00:07:03.420]   So those are some of the cons for this.
+[00:07:03.420 --> 00:07:07.880]   In practice, the way I see this used is and I apologize for these slides.
+[00:07:07.880 --> 00:07:08.880]   They're a little bit busy.
+[00:07:08.880 --> 00:07:11.360]   But I'll try to go over them in detail.
+[00:07:11.360 --> 00:07:13.200]   In practice, I usually see them used like this.
+[00:07:13.200 --> 00:07:16.080]   Where you have somebody has a main function.
+[00:07:16.080 --> 00:07:18.660]   They're opening the configuration YAML.
+[00:07:18.660 --> 00:07:19.660]   They're getting the object.
+[00:07:19.660 --> 00:07:23.780]   And they're just passing it straight through to a bunch of functions.
+[00:07:23.780 --> 00:07:26.740]   So in this case, the configuration is being passed to make model.
+[00:07:26.740 --> 00:07:28.400]   Make model uses a field from that.
+[00:07:28.400 --> 00:07:32.360]   But then also calls make model base and passes the configuration there.
+[00:07:32.360 --> 00:07:33.860]   Here there's also a mutation.
+[00:07:33.860 --> 00:07:39.860]   Instead of having some way of setting a default for this, the default is just none.
+[00:07:39.860 --> 00:07:41.900]   And the default is set in the code.
+[00:07:41.900 --> 00:07:44.480]   And then, you know, there's a bunch more code here.
+[00:07:44.480 --> 00:07:49.760]   And we have no idea how it uses configuration just by reading this function.
+[00:07:49.760 --> 00:07:52.360]   And anyways, so then this returns a model.
+[00:07:52.360 --> 00:07:54.120]   And then yet again, we do the same thing.
+[00:07:54.120 --> 00:07:56.400]   Pass it to train model and so on and so forth.
+[00:07:56.400 --> 00:08:01.640]   So, you know, these functions make optimizer, construct loss function.
+[00:08:01.640 --> 00:08:06.960]   There's not a lot that we can learn about what they're doing or what fields they're
+[00:08:06.960 --> 00:08:08.440]   using by just looking at this.
+[00:08:08.440 --> 00:08:10.520]   We kind of have to dig into the code.
+[00:08:10.520 --> 00:08:16.880]   I really dig into the code to figure out what are the dependencies of make optimizer?
+[00:08:16.880 --> 00:08:19.720]   What are the dependencies of construct loss function?
+[00:08:19.720 --> 00:08:24.520]   Even this function train epic is, you know, you can kind of see, oh, train epic is supposed
+[00:08:24.520 --> 00:08:26.000]   to train for one epic.
+[00:08:26.000 --> 00:08:28.720]   And it takes in the model and the optimizer and the loss function.
+[00:08:28.720 --> 00:08:31.660]   But then all of a sudden there's this configuration.
+[00:08:31.660 --> 00:08:33.620]   What is it using from here?
+[00:08:33.620 --> 00:08:38.680]   Is there, like, something to do with loss function or learning rate decay that's in
+[00:08:38.680 --> 00:08:39.680]   there?
+[00:08:39.680 --> 00:08:40.680]   Or what's going on?
+[00:08:40.680 --> 00:08:42.000]   Probably it's using the learning rate.
+[00:08:42.000 --> 00:08:43.880]   But it's not clear.
+[00:08:43.880 --> 00:08:48.680]   So that's one of the biggest cons that I would say of this approach is what parameters are
+[00:08:48.680 --> 00:08:53.360]   important to any of these functions?
+[00:08:53.360 --> 00:08:58.220]   And also any function can silently change this configuration and we'd never know.
+[00:08:58.220 --> 00:09:02.360]   And that can potentially become problematic if you have if that introduces a silent bug
+[00:09:02.360 --> 00:09:06.660]   and you kind of don't know where it's coming from.
+[00:09:06.660 --> 00:09:08.000]   It is very easy to adapt.
+[00:09:08.000 --> 00:09:12.560]   And in the Reddit thread and in other conversations that I had with people, this was the biggest
+[00:09:12.560 --> 00:09:14.800]   pro that everybody presented for this.
+[00:09:14.800 --> 00:09:19.200]   Big enough to where all of these other problems were worth it.
+[00:09:19.200 --> 00:09:26.280]   Which is that if make optimizer needed two or three additional parameters, now you can
+[00:09:26.280 --> 00:09:30.200]   just add them to the configuration file and you don't have to change the function call
+[00:09:30.200 --> 00:09:31.240]   at all.
+[00:09:31.240 --> 00:09:35.000]   You don't have to change train model, you don't have to change make optimizer, et cetera.
+[00:09:35.000 --> 00:09:38.280]   And I think that's a valid argument for research code.
+[00:09:38.280 --> 00:09:44.000]   But at the same time, like I said, at some point, one of these problems, especially the
+[00:09:44.000 --> 00:09:47.680]   one where silent bugs can introduce, is going to outweigh this.
+[00:09:47.680 --> 00:09:51.840]   And I'll talk in a second about how some of the pain of refactoring can be made easier
+[00:09:51.840 --> 00:09:54.680]   with modern tools.
+[00:09:54.680 --> 00:09:56.760]   So three main problems.
+[00:09:56.760 --> 00:09:58.600]   In summary, there's three main problems.
+[00:09:58.600 --> 00:10:02.200]   There's clunky access to the configuration fields.
+[00:10:02.200 --> 00:10:04.080]   There is mutability.
+[00:10:04.080 --> 00:10:07.440]   And then function dependencies become very unclear.
+[00:10:07.440 --> 00:10:11.180]   So how can we make it better?
+[00:10:11.180 --> 00:10:16.360]   So as said before, I think a more reasonable usage for any kind of configuration is to
+[00:10:16.360 --> 00:10:19.800]   not pass the entire configuration object wherever possible.
+[00:10:19.800 --> 00:10:26.200]   So in this case, you know, train model now takes the model as an input and from configuration
+[00:10:26.200 --> 00:10:27.200]   it takes learning rate.
+[00:10:27.200 --> 00:10:31.120]   So now it's incredibly clear what's important to train model.
+[00:10:31.120 --> 00:10:35.000]   And if somebody's trying to adapt this code or just understand what it's doing before,
+[00:10:35.000 --> 00:10:39.920]   you know, they use it in their paper, it's a lot more straightforward for them to understand
+[00:10:39.920 --> 00:10:46.800]   what each of these models or what each of these functions actually hold as importance.
+[00:10:46.800 --> 00:10:48.960]   This dictionary itself is still mutable.
+[00:10:48.960 --> 00:10:52.480]   But at the very least, it's not mutable by these nested functions.
+[00:10:52.480 --> 00:10:54.080]   At least in this example.
+[00:10:54.080 --> 00:10:56.960]   It's also clear what the functions take as parameters.
+[00:10:56.960 --> 00:10:59.760]   But as I said before, this may not scale to more parameters.
+[00:10:59.760 --> 00:11:05.840]   Like if save model now takes two or three additional parameters for whatever reason,
+[00:11:05.840 --> 00:11:12.920]   this is not going to necessarily it gets a little bit more difficult to do that.
+[00:11:12.920 --> 00:11:15.920]   So let's talk about the refactoring then.
+[00:11:15.920 --> 00:11:20.440]   That argument that, you know, if make model base is going to change, I don't want to have
+[00:11:20.440 --> 00:11:22.440]   to change this line.
+[00:11:22.440 --> 00:11:26.160]   And yes, the left side that I'm showing here is definitely easier to change than the right
+[00:11:26.160 --> 00:11:30.680]   side when you introduce new parameters that the function needs to depend on.
+[00:11:30.680 --> 00:11:32.360]   This is strictly true.
+[00:11:32.360 --> 00:11:37.240]   But the latter is only slightly more work if you become best friends with your editor.
+[00:11:37.240 --> 00:11:45.120]   So here I'm showing an example of PyCharm, which is a fairly popular IDE for Python.
+[00:11:45.120 --> 00:11:51.140]   And the example here, the GIF, what it's showing is that you had a function that had one argument.
+[00:11:51.140 --> 00:11:56.460]   And then the IDE sort of helps you figure out where the function is being used.
+[00:11:56.460 --> 00:12:00.140]   And then you can add more fields to it and maybe give them default values or not, however
+[00:12:00.140 --> 00:12:01.140]   you want to do it.
+[00:12:01.140 --> 00:12:05.420]   And it changes the usage of it all throughout your code.
+[00:12:05.420 --> 00:12:07.100]   Here it's only in one file.
+[00:12:07.100 --> 00:12:10.980]   But in PyCharm, this will happen throughout your code base for that, like semantically
+[00:12:10.980 --> 00:12:13.120]   for that specific function.
+[00:12:13.120 --> 00:12:15.140]   And so this is a very powerful tool.
+[00:12:15.140 --> 00:12:19.540]   So anybody that uses PyCharm, you know, you already have access to this.
+[00:12:19.540 --> 00:12:26.140]   And so if we make best friends with our editors, then this argument becomes a lot less weighty.
+[00:12:26.140 --> 00:12:28.100]   I don't personally use PyCharm.
+[00:12:28.100 --> 00:12:30.860]   I use sometimes VS Code and sometimes Emacs.
+[00:12:30.860 --> 00:12:36.360]   And pretty much all text editors have some facility for you where you can search for
+[00:12:36.360 --> 00:12:42.020]   a particular pattern throughout a code base and then make changes to that pattern.
+[00:12:42.020 --> 00:12:47.540]   And so with varying degrees of finesse, you can do this in pretty much any text editor
+[00:12:47.540 --> 00:12:48.940]   as well.
+[00:12:48.940 --> 00:12:53.100]   And if you wanted to, you can do this from Bash as well if you're really interested in
+[00:12:53.100 --> 00:12:55.380]   that.
+[00:12:55.380 --> 00:13:04.260]   So that to me, like if you make your functions so that they accept only their dependencies
+[00:13:04.260 --> 00:13:08.500]   as different arguments, then this .3 gets solved.
+[00:13:08.500 --> 00:13:13.660]   And I'm sure a lot of people are still going to be very resistant to this and may not see
+[00:13:13.660 --> 00:13:14.660]   the benefit of it.
+[00:13:14.660 --> 00:13:21.540]   But at the very least, I've shown a potential way out where the burden of maintaining a
+[00:13:21.540 --> 00:13:26.140]   good API is not as much as it seemed to be.
+[00:13:26.140 --> 00:13:32.140]   So moving on, before I tackle these other two points, I kind of have to move on to .2.
+[00:13:32.140 --> 00:13:35.180]   Some of these kind of get muddled and bleed into one another.
+[00:13:35.180 --> 00:13:36.660]   And there's good reason for that.
+[00:13:36.660 --> 00:13:43.260]   So the second one is about using ArcParse as configuration management.
+[00:13:43.260 --> 00:13:48.860]   And so to set the stage, this is actually from an actual repo.
+[00:13:48.860 --> 00:13:51.580]   And I've tried to hide the identity of the person who wrote this.
+[00:13:51.580 --> 00:13:55.380]   But he's a well-respected AI researcher anyway.
+[00:13:55.380 --> 00:13:56.740]   So it's fine.
+[00:13:56.740 --> 00:13:59.140]   Even if somebody recognizes who this is from.
+[00:13:59.140 --> 00:14:03.100]   ArcParse, I've seen this pattern a fair amount where ArcParse is used as a configuration
+[00:14:03.100 --> 00:14:04.100]   management system.
+[00:14:04.100 --> 00:14:08.820]   And what that ultimately means is that people will have in the best cases, they'll have
+[00:14:08.820 --> 00:14:12.860]   some sort of a function that parses all these arguments for you.
+[00:14:12.860 --> 00:14:17.540]   In the worst case, this would just be straight up out in the main script.
+[00:14:17.540 --> 00:14:24.580]   And what they're doing is they're using this add argument as a way to define the parameters
+[00:14:24.580 --> 00:14:27.700]   by using the default value.
+[00:14:27.700 --> 00:14:31.460]   And the nice thing here is that, first of all, this gives you dot access.
+[00:14:31.460 --> 00:14:36.980]   So as soon as you have the parsed args, you can use them with the dot operator.
+[00:14:36.980 --> 00:14:40.060]   So you get args.seed, and et cetera.
+[00:14:40.060 --> 00:14:44.500]   And then the way you've put it together, you might actually also get autocomplete here.
+[00:14:44.500 --> 00:14:49.860]   Because your editor can now figure out what the arguments are supposed to be by following
+[00:14:49.860 --> 00:14:53.420]   the, you know, argument parser object.
+[00:14:53.420 --> 00:14:55.220]   And so you get dot access.
+[00:14:55.220 --> 00:14:57.100]   You probably get autocomplete.
+[00:14:57.100 --> 00:14:59.540]   And you get an obvious command line interface from this.
+[00:14:59.540 --> 00:15:03.980]   You know, as soon as you've implemented this, you get a command line interface for free.
+[00:15:03.980 --> 00:15:05.660]   So what are the problems?
+[00:15:05.660 --> 00:15:08.140]   Well, imagine this get args function.
+[00:15:08.140 --> 00:15:12.180]   The repo that I took this from, this was like 300 lines.
+[00:15:12.180 --> 00:15:19.060]   And those 300 lines are just encoding something that could be as simple as like a 1520 line
+[00:15:19.060 --> 00:15:20.760]   YAML file.
+[00:15:20.760 --> 00:15:22.740]   Because they're just encoding the configuration.
+[00:15:22.740 --> 00:15:27.420]   So the configuration becomes very difficult to understand at a single glance.
+[00:15:27.420 --> 00:15:33.500]   The second problem here is all changes that you would make to how you're running this
+[00:15:33.500 --> 00:15:37.340]   particular file or how you're running this particular script, they only happen through
+[00:15:37.340 --> 00:15:39.300]   the command line interface now.
+[00:15:39.300 --> 00:15:44.300]   So if you're using a tool like Weights and Biases, I know there's other ways to log this
+[00:15:44.300 --> 00:15:47.540]   configuration in Weights and Biases.
+[00:15:47.540 --> 00:15:54.980]   But you know, if having a configuration file that maybe gets committed with your code or,
+[00:15:54.980 --> 00:16:00.060]   you know, you can sort of make copies of, that helps a lot with reproducibility of what
+[00:16:00.060 --> 00:16:01.060]   you're doing.
+[00:16:01.060 --> 00:16:07.620]   But having to use this and then, you know, combining that with command line sort of just
+[00:16:07.620 --> 00:16:12.100]   a call to this file isn't necessarily very reproducible because you might forget what
+[00:16:12.100 --> 00:16:13.100]   command you used.
+[00:16:13.100 --> 00:16:15.800]   You have to sort of go through your bash history and whatnot.
+[00:16:15.800 --> 00:16:19.300]   On top of that, I'm reasonably sure I didn't quite confirm this, but I'm pretty sure this
+[00:16:19.300 --> 00:16:20.980]   is still mutable.
+[00:16:20.980 --> 00:16:24.380]   So those are some of the cons of doing this.
+[00:16:24.380 --> 00:16:26.020]   I am going to just assert this.
+[00:16:26.020 --> 00:16:29.020]   I think I've shown enough reason to do this.
+[00:16:29.020 --> 00:16:33.140]   But I think that when choosing between arg parse and configuration files, you should
+[00:16:33.140 --> 00:16:34.460]   prefer configuration files.
+[00:16:34.460 --> 00:16:38.500]   And I'll show some alternatives where you can get some of the same kind of benefits
+[00:16:38.500 --> 00:16:42.180]   of arg parse, but with configuration files.
+[00:16:42.180 --> 00:16:48.500]   So one of the ways that you can gain dot access back for your arbitrary configuration dictionaries
+[00:16:48.500 --> 00:16:50.900]   is by just using Weights and Biases.
+[00:16:50.900 --> 00:16:57.540]   So when you run the init in Weights and Biases, you can actually pass it -- oh, the code here
+[00:16:57.540 --> 00:16:58.540]   is wrong.
+[00:16:58.540 --> 00:17:00.220]   But you can pass it the configuration dictionary.
+[00:17:00.220 --> 00:17:04.100]   You can also pass it the arguments from arg parse.
+[00:17:04.100 --> 00:17:09.600]   And then once you've done this, you can take the return value of the init and either look
+[00:17:09.600 --> 00:17:13.260]   at the config field or the config static field.
+[00:17:13.260 --> 00:17:16.780]   The only difference here is that if you get config, it will be mutable.
+[00:17:16.780 --> 00:17:19.180]   But if you get config static, it will be immutable.
+[00:17:19.180 --> 00:17:20.780]   And there's a disclaimer here.
+[00:17:20.780 --> 00:17:22.340]   Determine programmers in Python.
+[00:17:22.340 --> 00:17:26.540]   Always find a way to make something that is immutable mutable.
+[00:17:26.540 --> 00:17:31.740]   So if somebody like that is using your code, then you don't have a prayer.
+[00:17:31.740 --> 00:17:34.860]   But most of the times, that's not going to be the case.
+[00:17:34.860 --> 00:17:35.860]   So yeah.
+[00:17:35.860 --> 00:17:38.540]   So you can then set config equals to this config static.
+[00:17:38.540 --> 00:17:43.020]   And now you'll have something that has dot access to all your fields.
+[00:17:43.020 --> 00:17:45.100]   And you also have optional immutability.
+[00:17:45.100 --> 00:17:48.500]   I don't think that you get autocomplete in your editor.
+[00:17:48.500 --> 00:17:50.180]   But I'm not entirely sure.
+[00:17:50.180 --> 00:17:54.020]   I doubt you would.
+[00:17:54.020 --> 00:18:00.940]   The other potential way that you can get dot access back is my personal favorite.
+[00:18:00.940 --> 00:18:02.620]   This is what I like to do.
+[00:18:02.620 --> 00:18:07.740]   And that's maybe, you know, I can see this being potentially more work.
+[00:18:07.740 --> 00:18:09.900]   But you also get data validation for free.
+[00:18:09.900 --> 00:18:12.780]   Which is which can save a lot of time and headache.
+[00:18:12.780 --> 00:18:14.620]   And then you also get optional immutability.
+[00:18:14.620 --> 00:18:18.100]   And you definitely get autocomplete and everything.
+[00:18:18.100 --> 00:18:21.060]   So there's this library called Pydantic.
+[00:18:21.060 --> 00:18:25.980]   And what Pydantic does is you can take this base model class from them.
+[00:18:25.980 --> 00:18:32.620]   And then if you subclass that, you can write your configuration very, very easily in this
+[00:18:32.620 --> 00:18:36.660]   sort of data class like fashion in Python.
+[00:18:36.660 --> 00:18:41.300]   And you can specify what the types of these are supposed to be.
+[00:18:41.300 --> 00:18:49.340]   And then if you add this config class underneath it, you can set this parameter for allowing
+[00:18:49.340 --> 00:18:50.740]   mutation.
+[00:18:50.740 --> 00:18:55.700]   And so now I'm showing on the right, you can just take your configuration dictionary and
+[00:18:55.700 --> 00:19:02.860]   pass it to the initializer of this configuration object by just using this double star operator.
+[00:19:02.860 --> 00:19:08.060]   Which is a standard Python way of mapping a dictionary to a bunch of arguments.
+[00:19:08.060 --> 00:19:13.900]   And when you do this, it will validate both the fields inside your configuration.
+[00:19:13.900 --> 00:19:15.380]   Make sure they all exist.
+[00:19:15.380 --> 00:19:21.820]   And then it will also validate their types up to a point.
+[00:19:21.820 --> 00:19:25.780]   And so you get pretty much all the benefits with an approach like this.
+[00:19:25.780 --> 00:19:28.500]   And then on top of that, you get free autocomplete.
+[00:19:28.500 --> 00:19:34.460]   So if somebody's interested in sort of cleaning out their configurations a little bit, give
+[00:19:34.460 --> 00:19:36.220]   a look to Pydantic.
+[00:19:36.220 --> 00:19:40.500]   One of the cool things also is that you can create an empty object.
+[00:19:40.500 --> 00:19:43.660]   Once you've written out your configuration, you can create an empty version of this.
+[00:19:43.660 --> 00:19:50.100]   And then you can actually dump it out to a dictionary or dump it out to a YAML from this
+[00:19:50.100 --> 00:19:51.100]   object directly.
+[00:19:51.100 --> 00:19:55.700]   So that way you can create your empty configuration and then fill it out and go from there.
+[00:19:55.700 --> 00:19:56.700]   Okay.
+[00:19:56.700 --> 00:20:02.600]   So going back to the issues that we talked about for the first point, now we've sort
+[00:20:02.600 --> 00:20:06.580]   of presented alternatives to all of these and what are some of the ways that you can
+[00:20:06.580 --> 00:20:09.300]   get around it.
+[00:20:09.300 --> 00:20:15.220]   So moving forward, let's talk about the anti-pattern that I mentioned where code when you have
+[00:20:15.220 --> 00:20:19.580]   a situation where code is only accessible through a command line interface.
+[00:20:19.580 --> 00:20:24.980]   So what I mean by that is and I don't know, maybe nobody here actually does this, but
+[00:20:24.980 --> 00:20:31.740]   I have definitely seen this in a number of repos where you have some entry point script,
+[00:20:31.740 --> 00:20:32.740]   right?
+[00:20:32.740 --> 00:20:36.400]   So in this case, this is the file.py or just main.py.
+[00:20:36.400 --> 00:20:42.020]   And somebody will be parsing the arguments up top and maybe loading some configuration.
+[00:20:42.020 --> 00:20:44.120]   Same as the first any pattern.
+[00:20:44.120 --> 00:20:46.360]   And then you just sort of start doing all the work.
+[00:20:46.360 --> 00:20:51.160]   So you take the input file name from the configuration, do a bunch of different steps, and then take
+[00:20:51.160 --> 00:20:56.600]   the result file name from the configuration and save it out.
+[00:20:56.600 --> 00:21:02.340]   So the only pro here is that you're now set up to be called from a command line.
+[00:21:02.340 --> 00:21:06.300]   And there's a lot of cons.
+[00:21:06.300 --> 00:21:10.880]   So first off, it's very hard to tell in this file what is going on.
+[00:21:10.880 --> 00:21:14.740]   It's very hard to tell what the dependencies of these functions are or various functions
+[00:21:14.740 --> 00:21:15.740]   are.
+[00:21:15.740 --> 00:21:22.700]   And then your main entry point just sort of does like is all of your main code.
+[00:21:22.700 --> 00:21:23.920]   There's no abstraction.
+[00:21:23.920 --> 00:21:30.460]   So this is sort of the only way that you can go through and use these functions.
+[00:21:30.460 --> 00:21:31.940]   And then inputs and outputs are files.
+[00:21:31.940 --> 00:21:35.040]   I'll talk in a second about why that's a problem.
+[00:21:35.040 --> 00:21:38.620]   This becomes very difficult to adapt into some other code.
+[00:21:38.620 --> 00:21:42.460]   Some of it is just because all of the cons that I mentioned with the configuration being
+[00:21:42.460 --> 00:21:44.620]   passed everywhere.
+[00:21:44.620 --> 00:21:48.660]   And then some of it is with the fact that, you know, especially when these kind of files
+[00:21:48.660 --> 00:21:53.700]   get like really complicated, it's very hard to tell when something starts and when something
+[00:21:53.700 --> 00:21:54.980]   ends.
+[00:21:54.980 --> 00:21:59.980]   This might have multiple sub steps that make that a little bit more confusing or sometimes
+[00:21:59.980 --> 00:22:01.620]   if else statements.
+[00:22:01.620 --> 00:22:07.020]   And so a lot of these make, you know, sort of create more mental burden on the person
+[00:22:07.020 --> 00:22:10.780]   that's reading or adapting the code.
+[00:22:10.780 --> 00:22:15.000]   So a slightly better version of this is you start introducing some functions.
+[00:22:15.000 --> 00:22:18.720]   So now I can say, hey, I'm going to separate it out into a function.
+[00:22:18.720 --> 00:22:24.180]   And that function takes in an input file name, a result file name and the configuration.
+[00:22:24.180 --> 00:22:26.340]   And then it's sort of doing the same kind of things.
+[00:22:26.340 --> 00:22:29.540]   But now it's a separate function on its own.
+[00:22:29.540 --> 00:22:31.440]   And it makes a little bit more sense now.
+[00:22:31.440 --> 00:22:35.500]   You can see where the business logic is and you can see where the argument parsing is.
+[00:22:35.500 --> 00:22:37.360]   And then finally where the function is being called.
+[00:22:37.360 --> 00:22:42.760]   So it's a little bit less hard to understand what's going on here.
+[00:22:42.760 --> 00:22:47.240]   We can make this the whole thing a little bit more usable by changing and refactoring
+[00:22:47.240 --> 00:22:48.660]   the code a little bit.
+[00:22:48.660 --> 00:22:50.460]   So that now the first step.
+[00:22:50.460 --> 00:22:55.340]   So in the past two examples, this first step function was accepting an input file name.
+[00:22:55.340 --> 00:23:01.360]   So it wasn't clear what the ultimate use here was.
+[00:23:01.360 --> 00:23:06.580]   But now what we can do is we can make it so that it accepts an image rather than the file
+[00:23:06.580 --> 00:23:07.900]   name of an image.
+[00:23:07.900 --> 00:23:11.820]   And then abstract this whole thing out into a separate function that takes in an image
+[00:23:11.820 --> 00:23:15.740]   as an input and then outputs the whatever the output of this is.
+[00:23:15.740 --> 00:23:17.220]   Which presumably is text.
+[00:23:17.220 --> 00:23:19.820]   I just sort of made it up on the fly.
+[00:23:19.820 --> 00:23:22.060]   So let's say it's text.
+[00:23:22.060 --> 00:23:26.660]   And then we can create a second function which is specifically for exposing your command
+[00:23:26.660 --> 00:23:27.860]   line interface.
+[00:23:27.860 --> 00:23:30.060]   And in that function, you can accept a file name.
+[00:23:30.060 --> 00:23:32.920]   Because from a command line, that's an easier thing to pass.
+[00:23:32.920 --> 00:23:35.380]   And then as well as an output file name.
+[00:23:35.380 --> 00:23:36.540]   And now it's incredibly clear.
+[00:23:36.540 --> 00:23:40.600]   You can see, okay, the only thing that this function needed was the image.
+[00:23:40.600 --> 00:23:42.180]   So you can read the image.
+[00:23:42.180 --> 00:23:46.740]   And then you can open, you know, the output file name as a normal text file and write
+[00:23:46.740 --> 00:23:47.900]   to it.
+[00:23:47.900 --> 00:23:50.220]   And so the whole thing is a little bit more straightforward now.
+[00:23:50.220 --> 00:23:55.980]   And if now somebody wants to use this function, the do the thing function, it's easier for
+[00:23:55.980 --> 00:23:56.980]   them.
+[00:23:56.980 --> 00:24:00.900]   They don't necessarily have to rely on whatever library you were using in first step to load
+[00:24:00.900 --> 00:24:01.900]   the image.
+[00:24:01.900 --> 00:24:04.580]   They don't have to rely on the fact that you would be saving this.
+[00:24:04.580 --> 00:24:10.700]   Maybe they just wanted to commit it to, you know, some cloud bucket or something like
+[00:24:10.700 --> 00:24:11.700]   that.
+[00:24:11.700 --> 00:24:14.340]   But it's somewhat more clear.
+[00:24:14.340 --> 00:24:16.540]   And now you have a library function.
+[00:24:16.540 --> 00:24:19.860]   And so it's a lot easier to adapt to somebody else's code.
+[00:24:19.860 --> 00:24:29.740]   And it was a very small change in the grand scheme of things.
+[00:24:29.740 --> 00:24:39.700]   This was supposed to have an image that it does not currently have.
+[00:24:39.700 --> 00:24:43.260]   >> It's the day of technical difficulties.
+[00:24:43.260 --> 00:24:44.260]   >> It's okay.
+[00:24:44.260 --> 00:24:46.300]   I've messed up this slide.
+[00:24:46.300 --> 00:24:51.220]   So we'll just pretend that this slide never happened.
+[00:24:51.220 --> 00:24:52.220]   And we'll go to the next one.
+[00:24:52.220 --> 00:24:54.620]   So removing inputs and outputs from the configuration.
+[00:24:54.620 --> 00:25:00.140]   The last thing, and this is sort of me putting my own personal sort of touch on this.
+[00:25:00.140 --> 00:25:04.460]   But if I were writing this, then I would not put the image file name and the output file
+[00:25:04.460 --> 00:25:06.900]   name in the configuration.
+[00:25:06.900 --> 00:25:15.500]   And this goes back to, you know, like, the actual meat of your run, its own configuration,
+[00:25:15.500 --> 00:25:18.380]   should not really include what data you are fitting.
+[00:25:18.380 --> 00:25:22.260]   You know, if you're because most of the times this is usually given for inference or something
+[00:25:22.260 --> 00:25:23.260]   like that.
+[00:25:23.260 --> 00:25:27.380]   Where you're just trying to get the output for some image.
+[00:25:27.380 --> 00:25:30.460]   The input there should not really depend on your configuration.
+[00:25:30.460 --> 00:25:33.500]   The configuration, it makes more sense for it to be separate.
+[00:25:33.500 --> 00:25:38.220]   And then your command line interface can expose what the input image is supposed to be and
+[00:25:38.220 --> 00:25:40.260]   where the output is supposed to be saved.
+[00:25:40.260 --> 00:25:46.300]   So this is not so much, you know, like, I think it's fine if people prefer putting the
+[00:25:46.300 --> 00:25:51.140]   input sort of folder in the output folder or something like that in the configuration.
+[00:25:51.140 --> 00:25:56.900]   But if I were approaching making this, I would make those separate command line parameters.
+[00:25:56.900 --> 00:25:58.340]   It just makes it a little bit easier.
+[00:25:58.340 --> 00:26:03.620]   And then for processing different files or different, you know, different sets of data
+[00:26:03.620 --> 00:26:08.140]   from the command line, you don't have to keep changing the configuration.
+[00:26:08.140 --> 00:26:09.740]   So that's the only change here.
+[00:26:09.740 --> 00:26:14.300]   And it's easier with a boldface now to adapt to somebody else's code.
+[00:26:14.300 --> 00:26:18.460]   The actual command line call, if you see on the bottom, becomes a little bit longer.
+[00:26:18.460 --> 00:26:23.940]   But I think that's to the benefit, not necessarily to the detriment.
+[00:26:23.940 --> 00:26:31.180]   A final bit of advice here is I really don't like ArcParse in general.
+[00:26:31.180 --> 00:26:35.460]   And the reason for that is, you know, ArcParse is a great, great bit of a great module.
+[00:26:35.460 --> 00:26:39.860]   It's very it was very helpful, very useful in my in my early career.
+[00:26:39.860 --> 00:26:42.700]   But I started seeing these patterns with ArcParse.
+[00:26:42.700 --> 00:26:50.420]   And sometimes the unintentionally the way a library is put together becomes its own worst
+[00:26:50.420 --> 00:26:51.420]   enemy.
+[00:26:51.420 --> 00:26:57.300]   And in the case of ArcParse, it kind of encourages even without intending this, it kind of encourages
+[00:26:57.300 --> 00:27:03.380]   behavior like this, where you just have ArcParse in the global scope of a file and people use
+[00:27:03.380 --> 00:27:07.280]   the resulting object in weird ways.
+[00:27:07.280 --> 00:27:12.620]   So instead, I prefer, you know, any time all of my engineers, as well as people that I
+[00:27:12.620 --> 00:27:17.820]   ever advise, I always tell them to use something like Arc or there's a number of other libraries
+[00:27:17.820 --> 00:27:19.220]   like that.
+[00:27:19.220 --> 00:27:26.060]   And what what Arc does is it doesn't it basically makes it so that you can take any function
+[00:27:26.060 --> 00:27:30.980]   and you can expose it directly to the command line so long as it's using input types that
+[00:27:30.980 --> 00:27:32.840]   can be represented in the command line.
+[00:27:32.840 --> 00:27:37.040]   So in this case, we just took the do the thing CLI function.
+[00:27:37.040 --> 00:27:42.980]   And if you pass it through this function called dispatch command, it just immediately turns
+[00:27:42.980 --> 00:27:47.500]   this file into something that you can access from the command line in the same way that
+[00:27:47.500 --> 00:27:48.500]   you were doing it before.
+[00:27:48.500 --> 00:27:50.980]   So it's usually a lot less code to do this.
+[00:27:50.980 --> 00:27:53.180]   It's a lot cleaner.
+[00:27:53.180 --> 00:27:56.300]   And there's there's a few more things that you can do with it.
+[00:27:56.300 --> 00:27:59.700]   If you want to give more help messages, you can add a decorator here.
+[00:27:59.700 --> 00:28:03.740]   But the best thing that in my opinion, Arc does is that it forces people to write their
+[00:28:03.740 --> 00:28:05.660]   codes as functions.
+[00:28:05.660 --> 00:28:09.700]   And I think that has sort of a hidden benefit that goes a long way.
+[00:28:09.700 --> 00:28:11.500]   Okay.
+[00:28:11.500 --> 00:28:16.540]   So the fourth anti pattern is implicit intra process communication via files.
+[00:28:16.540 --> 00:28:19.380]   Now, there was some confusion about this in the Reddit thread.
+[00:28:19.380 --> 00:28:23.860]   I don't mean this as saying, like, hey, caching to a file is bad.
+[00:28:23.860 --> 00:28:25.300]   Caching is a different story.
+[00:28:25.300 --> 00:28:29.660]   What I'm referring to specifically is if we go back to that intermediate form when we
+[00:28:29.660 --> 00:28:34.700]   were sort of working through this code and making it better, we had this function called
+[00:28:34.700 --> 00:28:35.700]   do the thing.
+[00:28:35.700 --> 00:28:39.580]   And it takes as an input file name, as an output, a result file name.
+[00:28:39.580 --> 00:28:41.620]   It doesn't return anything.
+[00:28:41.620 --> 00:28:47.140]   If this is your function, if you ship code like this, and this is the function that you
+[00:28:47.140 --> 00:28:52.940]   had as sort of the main entry point, and it's not calling some, like, sub function like
+[00:28:52.940 --> 00:28:59.520]   we set up later, what's going to happen is that some poor downstream researcher is going
+[00:28:59.520 --> 00:29:01.060]   to use it like this.
+[00:29:01.060 --> 00:29:03.180]   Where they're going to write their own function.
+[00:29:03.180 --> 00:29:07.520]   Then they're going to call this function with their input file name, which they may have
+[00:29:07.520 --> 00:29:11.420]   actually saved in their own function prior to to this file name.
+[00:29:11.420 --> 00:29:14.020]   And then they're going to take whatever this output file name was supposed to be, they're
+[00:29:14.020 --> 00:29:18.300]   going to open it, read it, and then do the rest of the thing they were trying to do.
+[00:29:18.300 --> 00:29:20.860]   And I've seen this multiple times.
+[00:29:20.860 --> 00:29:25.220]   And, you know, nest this kind of approach two or three times as more and more people
+[00:29:25.220 --> 00:29:32.260]   adapt that code, and you get into such a hairy mess where it becomes very hard to tell what
+[00:29:32.260 --> 00:29:36.740]   function is doing what and what file it's touching, where it's saving them.
+[00:29:36.740 --> 00:29:41.980]   And, yeah, so just please don't do this.
+[00:29:41.980 --> 00:29:46.140]   It's very easy to take a function like this and just separate it out into a sub function
+[00:29:46.140 --> 00:29:48.660]   that is not relying on file names at all.
+[00:29:48.660 --> 00:29:53.260]   It's just sort of taking in something from memory and returning something in memory.
+[00:29:53.260 --> 00:29:58.540]   Anything like that becomes a lot cleaner to use and a lot more easier to adapt.
+[00:29:58.540 --> 00:30:01.740]   And just like the Sopranos, this presentation is going to come to an abrupt ending because
+[00:30:01.740 --> 00:30:06.180]   I kind of ran out of time.
+[00:30:06.180 --> 00:30:08.500]   So that's what I got.
+[00:30:08.500 --> 00:30:13.300]   What if you use a config.py and put all the config variables there and access them from
+[00:30:13.300 --> 00:30:14.940]   that file?
+[00:30:14.940 --> 00:30:16.500]   And something like import config.
+[00:30:16.500 --> 00:30:21.580]   I think if you have a really, really good reason for it, like I said, in my production
+[00:30:21.580 --> 00:30:26.100]   stack, I do have a really good reason for it, which is that my configuration is dynamically
+[00:30:26.100 --> 00:30:31.380]   constructed based on some other parameters that come from environment variables that
+[00:30:31.380 --> 00:30:32.980]   I don't have any control over.
+[00:30:32.980 --> 00:30:35.340]   So in that case, I think it makes a lot of sense.
+[00:30:35.340 --> 00:30:41.500]   But in the examples that I was giving in open source code or in situations where your configuration
+[00:30:41.500 --> 00:30:45.540]   represents things like learning rates and stuff like that, that people might want to
+[00:30:45.540 --> 00:30:49.740]   change to iterate over, I think it's better to have a configuration file.
+[00:30:49.740 --> 00:30:55.220]   Because you can always copy and paste a configuration file somewhere else and make a new one and
+[00:30:55.220 --> 00:30:57.380]   track those in version control.
+[00:30:57.380 --> 00:31:01.220]   Whereas with the config.py, the burden of doing that becomes a lot more.
+[00:31:01.220 --> 00:31:10.180]   Subscribe to our channel for more videos!
+

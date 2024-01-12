@@ -1,0 +1,969 @@
+
+[00:00:00.000 --> 00:00:09.920]   There was a paper published by Argonne National Labs, and it compared us to a 2,000-node
+[00:00:09.920 --> 00:00:12.200]   A100 cluster called Polaris.
+[00:00:12.200 --> 00:00:18.320]   It was to use a large NLP network to predict mutations in the COVID virus.
+[00:00:18.320 --> 00:00:24.760]   What they did is they put the entire genome, 30,000 base pairs, in the attention window,
+[00:00:24.760 --> 00:00:26.560]   in the long sequence window.
+[00:00:26.560 --> 00:00:33.060]   And they ran GPT-style networks at 250 million, at 2.5 billion, and at 25 billion parameters.
+[00:00:33.060 --> 00:00:38.200]   On this network, we were 832 times faster than a GPU.
+[00:00:38.200 --> 00:00:43.620]   So there was an example where four, eight, and 16 of our machines could do things that
+[00:00:43.620 --> 00:00:45.840]   thousands of GPUs couldn't do.
+[00:00:45.840 --> 00:00:50.200]   You're listening to Gradient Dissent, a show about machine learning in the real world,
+[00:00:50.200 --> 00:00:52.320]   and I'm your host, Lukas Biewald.
+[00:00:52.320 --> 00:00:57.240]   Andrew Feldman is co-founder and the CEO of Cerebre Systems, where he builds giant
+[00:00:57.240 --> 00:01:01.620]   computers dedicated to training large machine learning models.
+[00:01:01.620 --> 00:01:04.880]   We really get into how his computers work, and I hope you learn as much from this as
+[00:01:04.880 --> 00:01:05.880]   I did.
+[00:01:05.880 --> 00:01:06.880]   All right.
+[00:01:06.880 --> 00:01:11.000]   Well, I guess before I get into it, for people that don't know, maybe you could introduce
+[00:01:11.000 --> 00:01:14.680]   your company and tell us how you started it.
+[00:01:14.680 --> 00:01:17.360]   First, Lukas, thanks for inviting me to chat.
+[00:01:17.360 --> 00:01:18.360]   We appreciate it.
+[00:01:18.360 --> 00:01:19.360]   My name's Andrew Feldman.
+[00:01:19.360 --> 00:01:24.360]   I'm one of the founders, and I'm the CEO at Cerebre Systems.
+[00:01:24.360 --> 00:01:30.280]   Cerebre builds big, fast computers, big, fast accelerators for AI work.
+[00:01:30.280 --> 00:01:35.640]   We founded in early 2016 a very unusual approach.
+[00:01:35.640 --> 00:01:41.140]   We chose to build a very, very big chip, in fact, the largest chip in the history of chip
+[00:01:41.140 --> 00:01:42.140]   building.
+[00:01:42.140 --> 00:01:46.640]   It's about the size of a dinner plate when most people build chips, the size of postage
+[00:01:46.640 --> 00:01:47.960]   stamps.
+[00:01:47.960 --> 00:01:52.720]   The results were that we were able to put this chip into a system and write software
+[00:01:52.720 --> 00:02:01.720]   for it that takes customers' TensorFlow or PyTorch and runs it blisteringly fast.
+[00:02:01.720 --> 00:02:07.120]   We now have customers in the US and in Asia and in Europe, and recently announced that
+[00:02:07.120 --> 00:02:13.000]   we put a collection of these machines together to build a giant AI supercomputer that's being
+[00:02:13.000 --> 00:02:17.640]   used by multiple different customers.
+[00:02:17.640 --> 00:02:24.080]   What we do is we try to make AI compute extraordinarily fast.
+[00:02:24.080 --> 00:02:27.560]   What's the advantages of having one gigantic chip?
+[00:02:27.560 --> 00:02:34.360]   First, as you remember, all little chips began as big chips.
+[00:02:34.360 --> 00:02:39.360]   The chips are made by dicing a wafer.
+[00:02:39.360 --> 00:02:46.160]   The wafer is, or for most of the chips you and I deal with, begin at 300 millimeter in
+[00:02:46.160 --> 00:02:51.640]   diameter and the chips are sort of punched out like your mother would punch out cookies
+[00:02:51.640 --> 00:02:53.200]   from cookie dough.
+[00:02:53.200 --> 00:02:58.880]   What's interesting is then for large AI work, we have to try and stitch them back together
+[00:02:58.880 --> 00:02:59.880]   again.
+[00:02:59.880 --> 00:03:05.880]   One chip isn't enough, and so we then expend tremendous effort trying to tie these chips
+[00:03:05.880 --> 00:03:10.840]   that earlier in the manufacturing process we cut up in discrete elements.
+[00:03:10.840 --> 00:03:13.960]   We try to reassemble them in the form of a cluster.
+[00:03:13.960 --> 00:03:21.120]   It turns out that that's rather bad strategy, that on a chip, on a processor, one communicates
+[00:03:21.120 --> 00:03:25.640]   very, very quickly and for very, very little power, fem to joules per bit.
+[00:03:25.640 --> 00:03:32.640]   When you have to leave a chip's boundary, you have to do all this work, this encoding,
+[00:03:32.640 --> 00:03:38.260]   and you have to push it out either with a SERTES or over some other technology.
+[00:03:38.260 --> 00:03:43.440]   It travels sometimes over an interposer, over copper wire that's embedded in a motherboard
+[00:03:43.440 --> 00:03:45.920]   or sometimes out an optical switch.
+[00:03:45.920 --> 00:03:48.400]   That's really slow, thousands of times slower.
+[00:03:48.400 --> 00:03:54.400]   So if you can keep the traffic on your chip, you're thousands of times faster at a thousandth
+[00:03:54.400 --> 00:03:55.680]   the power draw.
+[00:03:55.680 --> 00:04:00.620]   And so by building a big chip, we were able to keep a huge amount of the work that usually
+[00:04:00.620 --> 00:04:04.360]   leaves chip boundaries and slows down training.
+[00:04:04.360 --> 00:04:10.880]   We're able to keep it on the chip and do work much faster at much lower power.
+[00:04:10.880 --> 00:04:16.520]   And I guess I have so many questions on that topic, but before we get into it, what are
+[00:04:16.520 --> 00:04:20.920]   maybe the downsides of having one gigantic chip?
+[00:04:20.920 --> 00:04:24.000]   Why doesn't everyone do it that way?
+[00:04:24.000 --> 00:04:31.040]   Well, ironically, lots of people have tried and everybody had failed previously.
+[00:04:31.040 --> 00:04:32.380]   It's hard.
+[00:04:32.380 --> 00:04:40.900]   In the chip making process, there are naturally occurring flaws in the wafer.
+[00:04:40.900 --> 00:04:48.380]   And these flaws were like your mother rolled out cookie dough into a round circle that
+[00:04:48.380 --> 00:04:51.820]   was 300 millimeters in diameter and threw up a handful of M&Ms.
+[00:04:51.820 --> 00:04:54.540]   They landed in your cookie dough.
+[00:04:54.540 --> 00:04:59.580]   Imagine you're allergic to chocolate and you couldn't eat any of the cookies that had an
+[00:04:59.580 --> 00:05:00.940]   M&M in them.
+[00:05:00.940 --> 00:05:07.140]   Now, historically, the answer to that was to say, "We're going to bake the cookie.
+[00:05:07.140 --> 00:05:11.060]   We're going to dice in the cookies and we're going to throw out the ones with M&Ms.
+[00:05:11.060 --> 00:05:15.020]   We're going to throw out the ones with flaws or sell them for less."
+[00:05:15.020 --> 00:05:25.460]   And for most people, this meant in their mind that as your chip got bigger, the yield dropped.
+[00:05:25.460 --> 00:05:32.700]   And that means as the cookie your mother cut out got bigger, the probability that it hit
+[00:05:32.700 --> 00:05:34.340]   an M&M was larger.
+[00:05:34.340 --> 00:05:38.500]   And if you had to throw out the cookie, you had to throw out more cookie dough.
+[00:05:38.500 --> 00:05:41.200]   That was really bad.
+[00:05:41.200 --> 00:05:49.420]   We invented a technique that rather than relying on perfect cookies, cookie dough without any
+[00:05:49.420 --> 00:05:54.900]   M&Ms, we invented a technique to withstand the flaws.
+[00:05:54.900 --> 00:05:57.060]   And that hadn't been done before.
+[00:05:57.060 --> 00:06:01.780]   And the result was we didn't need perfect.
+[00:06:01.780 --> 00:06:07.420]   We didn't need this thing that nobody could ever could get.
+[00:06:07.420 --> 00:06:10.260]   And so we used a different type of thinking.
+[00:06:10.260 --> 00:06:17.220]   And ironically, it's the same thinking that Google put to work years ago.
+[00:06:17.220 --> 00:06:22.900]   They looked at servers and said, "People are building these extremely expensive servers
+[00:06:22.900 --> 00:06:26.020]   that are highly reliable in there.
+[00:06:26.020 --> 00:06:30.220]   What if instead we use lots of cheap servers and when we fail, can we just route it around
+[00:06:30.220 --> 00:06:33.980]   them?"
+[00:06:33.980 --> 00:06:39.940]   We could build this at vastly lower cost and achieve better reliability.
+[00:06:39.940 --> 00:06:46.980]   And so that same approach of recognizing there are going to be failures, they're unavoidable,
+[00:06:46.980 --> 00:06:55.460]   and inventing techniques to withstand or that are robust to those failures.
+[00:06:55.460 --> 00:06:59.700]   Ours was to route around, to have some redundancy.
+[00:06:59.700 --> 00:07:05.780]   That enabled us to be the first company ever to yield a chip this large.
+[00:07:05.780 --> 00:07:07.060]   And it's not just a little bit large.
+[00:07:07.060 --> 00:07:10.660]   I mean, it's 56 times larger than the largest other chip I've ever built.
+[00:07:10.660 --> 00:07:19.340]   I mean, to give you an idea, we have about 2.6 trillion transistors and the largest GPU
+[00:07:19.340 --> 00:07:22.140]   has 50 billion.
+[00:07:22.140 --> 00:07:25.900]   So we're 2.5 trillion transistors large.
+[00:07:25.900 --> 00:07:26.900]   Okay.
+[00:07:26.900 --> 00:07:32.300]   So Andrew, I'm curious what parts of this you had in mind when you started the company.
+[00:07:32.300 --> 00:07:34.380]   And that was back in 2016, right?
+[00:07:34.380 --> 00:07:39.660]   Was it with this, "I just want to make a gigantic chip," or was it like, "I want to make something
+[00:07:39.660 --> 00:07:42.340]   for machine learning workloads," or what?
+[00:07:42.340 --> 00:07:43.340]   What was it?
+[00:07:43.340 --> 00:07:51.100]   I think we saw the rise of AI and we got it wrong a hundred ways.
+[00:07:51.100 --> 00:07:57.580]   But what we got right was that in 2016, AI was utterly unimportant in the economy and
+[00:07:57.580 --> 00:08:01.540]   that it would be enormously important going forward.
+[00:08:01.540 --> 00:08:03.000]   And we saw that.
+[00:08:03.000 --> 00:08:10.080]   And we saw that deep learning in particular is constructed in a way founded on sparse
+[00:08:10.080 --> 00:08:16.660]   linear algebra and that the GPU wasn't the perfect machine for that.
+[00:08:16.660 --> 00:08:20.660]   That the GPU was a machine that was built for a different type of workload.
+[00:08:20.660 --> 00:08:26.280]   And what we saw was an opportunity to build a machine that was better suited, that was
+[00:08:26.280 --> 00:08:34.440]   optimized in every way for this one thing, this deep learning workload.
+[00:08:34.440 --> 00:08:38.440]   And ironically, that was the history of the GPU when they started.
+[00:08:38.440 --> 00:08:44.580]   They saw an opportunity to build a machine optimized for graphics, right?
+[00:08:44.580 --> 00:08:48.580]   And that was exactly the strategy 25 years ago.
+[00:08:48.580 --> 00:08:52.780]   And over those 25 years, they tuned and they optimized and they optimized, but the graphics
+[00:08:52.780 --> 00:08:56.820]   market stalls and it isn't growing like it was.
+[00:08:56.820 --> 00:08:59.420]   So then they looked around for other things.
+[00:08:59.420 --> 00:09:07.040]   We saw this new work that was not particularly well suited for the GPU, was very poorly suited
+[00:09:07.040 --> 00:09:08.580]   for a CPU.
+[00:09:08.580 --> 00:09:13.540]   And we thought that we could build a machine that was perfect for it.
+[00:09:13.540 --> 00:09:19.580]   And we knew, we didn't know that we would go too way for scale, but we knew that what
+[00:09:19.580 --> 00:09:26.220]   is hard about this work from a computer architecture perspective, isn't the calculations.
+[00:09:26.220 --> 00:09:28.300]   It's the moving of information.
+[00:09:28.300 --> 00:09:31.020]   And that's really what computers do.
+[00:09:31.020 --> 00:09:34.660]   They calculate, they store and they move information.
+[00:09:34.660 --> 00:09:36.220]   That's it.
+[00:09:36.220 --> 00:09:42.220]   And what's hard for this problem isn't the calculation.
+[00:09:42.220 --> 00:09:45.060]   Mostly we do multiplies and accumulates, right?
+[00:09:45.060 --> 00:09:49.980]   Most of this work is matrix, linear algebra.
+[00:09:49.980 --> 00:09:51.900]   That's not hard for a machine.
+[00:09:51.900 --> 00:09:57.780]   What's hard for most existing machines is you got to move those results in and out of
+[00:09:57.780 --> 00:10:04.940]   memory to other processors that are in another rack or in another row.
+[00:10:04.940 --> 00:10:10.460]   And that movement we knew was a problem that had to be solved in optimizing the architecture.
+[00:10:10.460 --> 00:10:16.940]   That that's what we worked on and that's why our special sauce is around the moving of
+[00:10:16.940 --> 00:10:21.700]   data and keeping it in one location on the way.
+[00:10:21.700 --> 00:10:23.900]   And you mentioned the word sparse.
+[00:10:23.900 --> 00:10:26.700]   Is there something about the sparsity that you also handle?
+[00:10:26.700 --> 00:10:32.940]   Because my understanding of a GPU is it wouldn't really handle sparse data in any special way.
+[00:10:32.940 --> 00:10:35.620]   It would just leave all the zeros in place.
+[00:10:35.620 --> 00:10:36.620]   Right.
+[00:10:36.780 --> 00:10:41.380]   So there are trade-offs we all make in the design of hardware.
+[00:10:41.380 --> 00:10:46.940]   One of the trade-offs the GPU makes is it has relatively little memory bandwidth.
+[00:10:46.940 --> 00:10:53.060]   So what it wants to do is move a fair bit of data in, work on it and move the results
+[00:10:53.060 --> 00:10:54.060]   out.
+[00:10:54.060 --> 00:10:56.820]   What it doesn't want to do is move things back and forth a lot.
+[00:10:56.820 --> 00:11:04.540]   To do that, what they do is they sort of are founded on something called blast-free computations.
+[00:11:04.540 --> 00:11:07.700]   They move data in and do a giant matrix multiply.
+[00:11:07.700 --> 00:11:12.820]   And they do that as a technique to overcome the weakness of limited memory bandwidth.
+[00:11:12.820 --> 00:11:18.580]   We have tens of thousands of times more memory bandwidth and we don't have to move in huge
+[00:11:18.580 --> 00:11:21.260]   blocks of data at a time.
+[00:11:21.260 --> 00:11:28.620]   So we can do not just matrix by matrix, but matrix by vector or even scalar times vector,
+[00:11:28.620 --> 00:11:29.820]   AX plus Y.
+[00:11:29.820 --> 00:11:35.060]   And if you can have such fine-grained control, you never need to multiply by zero.
+[00:11:35.060 --> 00:11:36.860]   You can block them out.
+[00:11:36.860 --> 00:11:43.500]   And so a way to think about that is if you only move pallets of boxes, and sometimes
+[00:11:43.500 --> 00:11:46.180]   a box is empty, you're still going to put it on the pallet.
+[00:11:46.180 --> 00:11:48.240]   You're still going to drive it across the country.
+[00:11:48.240 --> 00:11:53.740]   But if you have the ability to weigh every single box before you do anything with it,
+[00:11:53.740 --> 00:11:56.780]   before you ship it, then you would never ship empty boxes.
+[00:11:56.780 --> 00:11:57.780]   Right.
+[00:11:57.780 --> 00:12:03.820]   So that's why we have the advantage in that ability to get to the fine-grained control
+[00:12:03.820 --> 00:12:05.940]   that says this is a zero.
+[00:12:05.940 --> 00:12:08.060]   Multiplying by zero is boneheaded.
+[00:12:08.060 --> 00:12:10.860]   It's about as boneheaded a thing as you can do in compute.
+[00:12:10.860 --> 00:12:12.340]   It takes time and power.
+[00:12:12.340 --> 00:12:14.540]   It gives you no new information.
+[00:12:14.540 --> 00:12:21.300]   Because we can have this massive memory bandwidth, it allows us to have this fine-grained control
+[00:12:21.300 --> 00:12:25.300]   that says we're going to knock out zero, not multiply by it.
+[00:12:25.300 --> 00:12:33.420]   Whereas GP brings all the data in, zero is included, multiplies it, takes it all out.
+[00:12:33.420 --> 00:12:42.180]   So is your natural representation then sparse matrices or sparse tensors typically?
+[00:12:42.180 --> 00:12:51.540]   We can run sparse or dense, but when provided with sparse, we harvest the sparsity by meaning
+[00:12:51.540 --> 00:12:57.140]   we get a performance boost because we're not wasting time multiplying by zero.
+[00:12:57.140 --> 00:13:02.980]   It's on our published a series of blogs at NeurIPS showing that we could train models
+[00:13:02.980 --> 00:13:08.420]   that were 90% sparse to stay in the accuracy, including GPT models.
+[00:13:08.420 --> 00:13:10.580]   And they took far fewer flops to do it.
+[00:13:10.580 --> 00:13:12.300]   It could be done in much less time.
+[00:13:12.300 --> 00:13:17.620]   So even at 90% sparsity, the sparse math is faster.
+[00:13:17.620 --> 00:13:18.620]   Oh yeah.
+[00:13:18.620 --> 00:13:19.620]   Wow.
+[00:13:19.620 --> 00:13:20.620]   I mean, that's still pretty dense.
+[00:13:20.620 --> 00:13:26.260]   90% sparse means 90% of the weights are zeros.
+[00:13:26.260 --> 00:13:32.340]   So what you're left with is 10% of the weights.
+[00:13:32.340 --> 00:13:33.340]   It is much faster.
+[00:13:33.340 --> 00:13:38.540]   So I guess, how should I think about the chip that you're making?
+[00:13:38.540 --> 00:13:45.460]   Is it sort of like you've printed a whole bunch of smaller chips all in a grid and they
+[00:13:45.460 --> 00:13:46.580]   all talk to each other?
+[00:13:46.580 --> 00:13:50.060]   What's the best way to think about what you make?
+[00:13:50.060 --> 00:13:51.060]   Yes.
+[00:13:51.060 --> 00:13:56.020]   This is the chip.
+[00:13:56.020 --> 00:14:00.060]   So it's, in a sense, just how big it is.
+[00:14:00.060 --> 00:14:05.340]   My wife says I'm like a kid with his dirt bike that he got for Christmas and he rides
+[00:14:05.340 --> 00:14:06.780]   it into his room at night.
+[00:14:06.780 --> 00:14:09.520]   He's always got one nearby him.
+[00:14:09.520 --> 00:14:11.820]   As you should be.
+[00:14:11.820 --> 00:14:15.700]   It only costs $250 million to make the first one.
+[00:14:15.700 --> 00:14:24.220]   Yes, it is constructed of smaller flashes of steps.
+[00:14:24.220 --> 00:14:32.140]   And that's because the equipment at the fab, and that equipment's made by ASML and our
+[00:14:32.140 --> 00:14:41.260]   fab's TSMC, but the steppers can only do about 830, 840 square millimeters.
+[00:14:41.260 --> 00:14:48.020]   And so what we invented were techniques to overlap the stepping.
+[00:14:48.020 --> 00:14:57.020]   And so when you were done, even though you're using an 850 square millimeter plus or minus
+[00:14:57.020 --> 00:15:05.980]   stamper, what you've got is the behavior of sort of one giant chip, not a bunch of little
+[00:15:05.980 --> 00:15:06.980]   chips.
+[00:15:06.980 --> 00:15:10.860]   And I guess, what did the instructions even look like for this?
+[00:15:10.860 --> 00:15:16.340]   I mean, I guess you have a whole bunch of things running in parallel.
+[00:15:16.340 --> 00:15:18.700]   Are they all in the same timer?
+[00:15:18.700 --> 00:15:20.460]   They are.
+[00:15:20.460 --> 00:15:25.940]   There's one clock in any one clock distribution.
+[00:15:25.940 --> 00:15:30.820]   And does the clock, is it able to actually, because these are all, you're getting on the
+[00:15:30.820 --> 00:15:34.100]   order of, so it's the speed of light is what?
+[00:15:34.100 --> 00:15:35.100]   It's like a-
+[00:15:35.100 --> 00:15:36.100]   Fast.
+[00:15:37.100 --> 00:15:41.900]   In one clock cycle, can you go from one edge of your chip to the other?
+[00:15:41.900 --> 00:15:42.900]   No.
+[00:15:42.900 --> 00:15:46.060]   So how do you even keep the clock synchronized?
+[00:15:46.060 --> 00:15:49.020]   What does that even mean to be synchronized?
+[00:15:49.020 --> 00:15:51.420]   That's actually a really interesting question.
+[00:15:51.420 --> 00:15:57.060]   And there are certainly people on our team who are, Sean and Gary and Michael, JP and
+[00:15:57.060 --> 00:16:00.300]   Michael Morrison, who are far more knowledgeable than I am.
+[00:16:00.300 --> 00:16:01.300]   Sure.
+[00:16:01.300 --> 00:16:02.940]   And I wouldn't say I'm an expert, so feel free to-
+[00:16:02.940 --> 00:16:10.540]   Machine has 850,000 independent processors, independent cores on it.
+[00:16:10.540 --> 00:16:16.140]   Each core has its own memory and we call that a tile or a programmable element.
+[00:16:16.140 --> 00:16:23.380]   Each core has links to its neighbors, east, south and west, as well as redundant links
+[00:16:23.380 --> 00:16:28.020]   that skip a neighbor to northeast, southeast, northwest, southwest.
+[00:16:28.020 --> 00:16:36.140]   It is going to take a few clock cycles to move across the chip.
+[00:16:36.140 --> 00:16:38.500]   There is skew, right?
+[00:16:38.500 --> 00:16:44.260]   So everybody gets the same clock, but there is a delay in its propagation.
+[00:16:44.260 --> 00:16:46.940]   But it's known because we know where everything is.
+[00:16:46.940 --> 00:16:55.660]   And so that information can be used, corrected for, and taken advantage of.
+[00:16:55.660 --> 00:16:58.140]   So all, it's a synchronous design.
+[00:16:58.140 --> 00:17:01.660]   And so there's only one clock domain.
+[00:17:01.660 --> 00:17:05.340]   And did you have to come up with your own instruction set for this?
+[00:17:05.340 --> 00:17:08.300]   We did, yeah, come up with our own instruction set.
+[00:17:08.300 --> 00:17:14.860]   We wanted an instruction set that didn't have a bunch of stuff that you don't need, right?
+[00:17:14.860 --> 00:17:18.900]   In computer architecture, one of the first steps to decide what you're going to be bad
+[00:17:18.900 --> 00:17:22.500]   at, which you're not going to do.
+[00:17:22.500 --> 00:17:23.860]   We're not going to be a database machine.
+[00:17:23.860 --> 00:17:28.260]   We're not going to, this is work that we're not going to do.
+[00:17:28.260 --> 00:17:35.420]   Instructions that make that type of thing faster or better, we don't want to carry with
+[00:17:35.420 --> 00:17:36.420]   us.
+[00:17:36.420 --> 00:17:40.700]   And so by just putting a line around what you're not going to be good at, really forces
+[00:17:40.700 --> 00:17:42.620]   you to focus on what you are going to be good at.
+[00:17:42.620 --> 00:17:47.300]   And how can you focus your energy on those things you're going to be really, really good
+[00:17:47.300 --> 00:17:48.300]   at?
+[00:17:48.300 --> 00:17:51.340]   So how do you treat tensors as first-class citizens?
+[00:17:51.340 --> 00:17:56.660]   How do you have a technique to add randomness in hardware?
+[00:17:56.660 --> 00:18:06.380]   How do you, what are the things that can help this workload and bring nothing else forward?
+[00:18:06.380 --> 00:18:12.240]   And that's how you're efficient, is when you are using your instructions for exactly the
+[00:18:12.240 --> 00:18:16.460]   type of work that you're asking the machine to do.
+[00:18:16.460 --> 00:18:22.980]   And I guess what are the workloads where you really, where your machine really shines?
+[00:18:22.980 --> 00:18:28.180]   I don't know, feel free to brag a little bit, but what's the, what am I doing where I'm
+[00:18:28.180 --> 00:18:31.300]   like, wow, this is just so much better than anything else I could do?
+[00:18:31.300 --> 00:18:35.380]   There was a paper published at the Supercompute Show.
+[00:18:35.380 --> 00:18:42.660]   It was published by Argonne National Labs, and it compared us to a 2000 node A100 cluster
+[00:18:42.660 --> 00:18:43.940]   called Polaris.
+[00:18:43.940 --> 00:18:45.820]   And the problem was really interesting.
+[00:18:45.820 --> 00:18:52.780]   It was to use a large NLP network, a GPT-J style network, to predict mutations in the
+[00:18:52.780 --> 00:18:53.860]   COVID virus.
+[00:18:53.860 --> 00:18:55.060]   How cool is that?
+[00:18:55.060 --> 00:19:01.260]   What they did is they put the entire genome, 30,000 base pairs, and when encoded, it was
+[00:19:01.260 --> 00:19:07.580]   a sequence length of 10,240 in the attention window, in the long sequence window.
+[00:19:07.580 --> 00:19:14.540]   Then they ran GPT style networks at 250 million, at 2.5 billion, and 25 billion parameters.
+[00:19:14.540 --> 00:19:22.780]   And on this network, we were 832 times faster than a GPU for the 250 million parameter version.
+[00:19:22.780 --> 00:19:29.580]   The 2000 node cluster couldn't do big parameter size and long attention sequences.
+[00:19:29.580 --> 00:19:30.580]   It barfed.
+[00:19:30.580 --> 00:19:31.580]   It ran out of memory.
+[00:19:31.580 --> 00:19:35.620]   And we ran it at 2.5 billion and at 25 billion.
+[00:19:35.620 --> 00:19:42.340]   Now this paper won the most prestigious award in academic computing, the Gordon Bell Prize.
+[00:19:42.340 --> 00:19:47.740]   So there was an example where four, eight, and 16 of our machines could do things that
+[00:19:47.740 --> 00:19:49.740]   thousands of GPUs couldn't do.
+[00:19:49.740 --> 00:19:52.660]   >>COREY: And so I guess what was unusual about this situation, right?
+[00:19:52.660 --> 00:19:58.620]   Because I think these networks, GPT-J is typically trained on these A100s.
+[00:19:58.620 --> 00:19:59.620]   And then typically-
+[00:19:59.620 --> 00:20:00.620]   >>JAMES: Long sequence.
+[00:20:00.620 --> 00:20:01.620]   >>COREY: The sequence-
+[00:20:01.620 --> 00:20:02.620]   >>JAMES: MSN.
+[00:20:02.620 --> 00:20:03.620]   >>COREY: MSN, right.
+[00:20:03.620 --> 00:20:10.180]   And what happens is that puts pressure on the calculation done in the attention head,
+[00:20:10.180 --> 00:20:11.180]   right?
+[00:20:11.180 --> 00:20:17.620]   So you're doing an analysis that you're understanding each gene in this case within the context
+[00:20:17.620 --> 00:20:19.180]   of the entire genome.
+[00:20:19.180 --> 00:20:23.740]   If you were doing it in a more traditional language sense, you'd be analyzing this word
+[00:20:23.740 --> 00:20:33.140]   within the context of a page or a chapter or an entire play, entire book.
+[00:20:33.140 --> 00:20:39.940]   And so that combination of very long sequence lines, which is the relevance window, the
+[00:20:39.940 --> 00:20:48.860]   attention window, plus big parameters was brutally memory intensive and caused the GPUs
+[00:20:48.860 --> 00:20:49.860]   to barf.
+[00:20:49.860 --> 00:20:50.860]   >>DAMON: Okay.
+[00:20:50.860 --> 00:20:54.420]   This is a dumb question, so I feel a little bit ashamed to just sort of say it.
+[00:20:54.420 --> 00:21:01.220]   But I'm an occasional dabbler in training machine learning models.
+[00:21:01.220 --> 00:21:05.580]   And you haven't sent me one of your systems, but if you did, I would happily use it and
+[00:21:05.580 --> 00:21:06.580]   endorse it.
+[00:21:06.580 --> 00:21:09.540]   I can be bought with a lot of compute.
+[00:21:09.540 --> 00:21:14.380]   I appreciate people who are honest about their sale ability.
+[00:21:14.380 --> 00:21:17.260]   >>TED: I would be so puffed if you wanted to give me one.
+[00:21:17.260 --> 00:21:20.900]   But I have used TPUs and I've used a lot of GPUs.
+[00:21:20.900 --> 00:21:27.180]   And my experience with TPUs is they do seem like they're faster in some cases, but I feel
+[00:21:27.180 --> 00:21:29.060]   like every detail is just painful.
+[00:21:29.060 --> 00:21:35.340]   When I try to use them, the error messages are kind of weird and I'm not a real hardware
+[00:21:35.340 --> 00:21:36.340]   guy.
+[00:21:36.340 --> 00:21:40.780]   So it always just feels like it's just frustrating when I deal with them.
+[00:21:40.780 --> 00:21:45.860]   And also it feels like there's kind of this lag between when I start my training and then
+[00:21:45.860 --> 00:21:49.180]   there's this kind of long pause and then I get a weird error message that I don't understand.
+[00:21:49.180 --> 00:21:51.500]   And then I have to kind of go back through that loop.
+[00:21:51.500 --> 00:21:58.060]   I guess, I would imagine I might worry with your system if you sent me one.
+[00:21:58.060 --> 00:22:03.980]   If I wasn't on your payroll, it would be that it's going to be even more like that, where
+[00:22:03.980 --> 00:22:07.780]   it's just really hard to experiment and mess around with it.
+[00:22:07.780 --> 00:22:10.500]   But tell me, what do you think about that?
+[00:22:10.500 --> 00:22:15.180]   >>JASON: That's a real challenge with TPUs.
+[00:22:15.180 --> 00:22:21.300]   I think we've worked really hard to make it painless.
+[00:22:21.300 --> 00:22:26.460]   I think in all honesty, we probably have not succeeded completely.
+[00:22:26.460 --> 00:22:29.940]   There's going to be some things that are a little bit different.
+[00:22:29.940 --> 00:22:38.140]   But I think you shouldn't have some sort of periods of concern once you hit compile, whether
+[00:22:38.140 --> 00:22:41.700]   it's A, compile, there'd be crashed and you're not quite sure yet.
+[00:22:41.700 --> 00:22:45.440]   And I know people have complained to me about that on the TPUs.
+[00:22:45.440 --> 00:22:47.940]   We worked really hard to make the error messages reasonable.
+[00:22:47.940 --> 00:22:54.100]   We've worked really hard to make the documentation sort of thoughtful and to comply with PyTorch
+[00:22:54.100 --> 00:22:56.940]   semantics.
+[00:22:56.940 --> 00:23:05.740]   And you should be able to take PyTorch and compile in a straightforward manner.
+[00:23:05.740 --> 00:23:08.500]   Is that true for every network you can think of?
+[00:23:08.500 --> 00:23:09.500]   No.
+[00:23:09.500 --> 00:23:19.740]   But for the large NLP networks, GPT-2, GPT-3, and starting at 1.3, 6.7, 13, 20 billion,
+[00:23:19.740 --> 00:23:29.820]   T5, for the big NLP networks you care about, it should be pretty darn close to pushback.
+[00:23:29.820 --> 00:23:36.140]   Now, again, I'm not the world's expert on this stuff, but I feel like one of the trade-offs
+[00:23:36.140 --> 00:23:42.900]   PyTorch made was to sort of allow you to execute even arbitrary Python in the middle of a training
+[00:23:42.900 --> 00:23:43.900]   run, which I love.
+[00:23:43.900 --> 00:23:45.700]   I wish they would take that away.
+[00:23:45.700 --> 00:23:51.660]   I was going to ask, do you sort of subset what you can do in PyTorch to make sure the
+[00:23:51.660 --> 00:23:52.660]   cause of some problems?
+[00:23:52.660 --> 00:23:58.300]   We're going to kick that out to a host processor for sure.
+[00:23:58.300 --> 00:24:01.180]   That was a terrible decision.
+[00:24:01.180 --> 00:24:09.140]   And for everybody in AI, that was a terrible decision to let you sort of put in arbitrary
+[00:24:09.140 --> 00:24:11.940]   Python code.
+[00:24:11.940 --> 00:24:12.940]   That's problematic.
+[00:24:13.180 --> 00:24:18.260]   We spoke to the leadership at Facebook.
+[00:24:18.260 --> 00:24:23.980]   They'd been trying to find a way to allow quick and easy compilation of that.
+[00:24:23.980 --> 00:24:30.020]   It's a known challenge for everybody who's building accelerators.
+[00:24:30.020 --> 00:24:35.100]   We have a methodology where we kick that out and run it on a host processor and then bring
+[00:24:35.100 --> 00:24:36.100]   the work back.
+[00:24:36.100 --> 00:24:39.580]   But it's unpleasant, and we wish there were a solution for that.
+[00:24:39.580 --> 00:24:42.620]   We thank you for bringing that up.
+[00:24:42.620 --> 00:24:48.540]   Because one of the problems with early TensorFlow and even early PyTorch, didn't really think
+[00:24:48.540 --> 00:24:51.020]   hard about compilation.
+[00:24:51.020 --> 00:24:59.500]   And the people who love Python love it in fact, because it abstracts so nicely away
+[00:24:59.500 --> 00:25:01.540]   from anything hardware.
+[00:25:01.540 --> 00:25:05.860]   That's exactly why it's so difficult to compile.
+[00:25:05.860 --> 00:25:11.500]   And whereas sort of C or lower level languages are more straightforward to compile because
+[00:25:11.500 --> 00:25:18.740]   they force the author to contemplate data structures and where your memory is.
+[00:25:18.740 --> 00:25:21.420]   These things are really important.
+[00:25:21.420 --> 00:25:28.620]   So a trade-off was made in sort of favor of more users writing more code on Python and
+[00:25:28.620 --> 00:25:33.260]   PyTorch and TensorFlow, which are Pythonic.
+[00:25:33.260 --> 00:25:40.900]   But they are by nature and because of the fact that they didn't really think hard early
+[00:25:40.900 --> 00:25:47.540]   on about lowering, how you'd lower it, how you would sort of deliver it to an intermediate
+[00:25:47.540 --> 00:25:50.260]   representation that we'd all agree on.
+[00:25:50.260 --> 00:25:52.860]   I mean, MLIR is a good step forward.
+[00:25:52.860 --> 00:25:57.500]   And Chris Latimer's work there is really important to the industry.
+[00:25:57.500 --> 00:26:04.100]   And there's others behind that, but allowing us to lower a framework and keep all the information
+[00:26:04.100 --> 00:26:08.540]   that's important, that's what you want.
+[00:26:08.540 --> 00:26:10.860]   And sometimes it's hard.
+[00:26:10.860 --> 00:26:12.100]   Challenging or hard, Luke?
+[00:26:12.100 --> 00:26:14.940]   Because you were smart not to build it.
+[00:26:14.940 --> 00:26:18.340]   It's not an easy thing.
+[00:26:18.340 --> 00:26:19.980]   No, it's a very impressive thing.
+[00:26:19.980 --> 00:26:25.500]   I mean, it's funny from where I sit, I think I really see the trade-off, right?
+[00:26:25.500 --> 00:26:31.780]   Because I think TensorFlow is probably a little bit more designed by people thinking about
+[00:26:31.780 --> 00:26:36.940]   the hardware maybe than PyTorch because I feel like PyTorch kind of made it simple for
+[00:26:36.940 --> 00:26:40.020]   an idiot like me to just put printouts in the code.
+[00:26:40.020 --> 00:26:47.500]   And that's probably part of why I think PyTorch got so much popularity, but it certainly came
+[00:26:47.500 --> 00:26:48.500]   at a cost.
+[00:26:48.500 --> 00:26:55.820]   But I'm kind of curious, when I look at our own user data, and I think you have more advanced
+[00:26:55.820 --> 00:26:57.980]   users than us, but we have pretty advanced users.
+[00:26:57.980 --> 00:27:05.180]   I see all kinds of really simple to fix issues with the hardware they're using that even
+[00:27:05.180 --> 00:27:06.180]   I could fix.
+[00:27:06.180 --> 00:27:14.620]   I see lots of our users not even saturating the simple, expensive video resources that
+[00:27:14.620 --> 00:27:15.620]   they have.
+[00:27:15.620 --> 00:27:19.540]   And I guess by the time someone comes to you and buys your chips, maybe they're experts
+[00:27:19.540 --> 00:27:23.900]   at doing it, but I would imagine that people probably still have trouble really getting
+[00:27:23.900 --> 00:27:30.300]   all the performance or even just using the entire chip that you offer.
+[00:27:30.300 --> 00:27:32.580]   >>COREY: Lucas, I think a couple of things.
+[00:27:32.580 --> 00:27:41.180]   I think one of the things that big neural networks brought was they added a dimension
+[00:27:41.180 --> 00:27:44.700]   of distributed computing to AI.
+[00:27:44.700 --> 00:27:51.380]   When you could sit on a single processor, there wasn't a distributed compute element.
+[00:27:51.380 --> 00:27:55.020]   But today, if you want to take, I don't know, a 20 billion parameter network and put it
+[00:27:55.020 --> 00:28:05.180]   on 256 GPUs, you are going to spend months with Horovod, with other tools, thinking about
+[00:28:05.180 --> 00:28:08.740]   how to distribute work and measuring latencies.
+[00:28:08.740 --> 00:28:11.740]   I mean, it's painful.
+[00:28:11.740 --> 00:28:14.500]   We take away all of that.
+[00:28:14.500 --> 00:28:22.380]   Whether you run on one machine or 16 machines or more or less, you do no distributed computing
+[00:28:22.380 --> 00:28:23.380]   work.
+[00:28:23.380 --> 00:28:28.620]   But one of the things our compiler does is it allocates work onto the wafer.
+[00:28:28.620 --> 00:28:35.540]   And so that was something we automated and as a result have very high utilization.
+[00:28:35.540 --> 00:28:41.620]   And so that's something, our compile stack has elements that look like EDA tools, it
+[00:28:41.620 --> 00:28:42.620]   looks like CAD tools, right?
+[00:28:42.620 --> 00:28:51.700]   We're going to place work fully onto the wafer layer by layer so that it achieves very high
+[00:28:51.700 --> 00:28:55.380]   utilization and you don't have to think about it.
+[00:28:55.380 --> 00:29:06.260]   But the complexity involved in running a large network on a cluster of GPUs is really significant.
+[00:29:06.260 --> 00:29:10.620]   I mean, you're going to begin doing some data parallel stuff and then you're going to run
+[00:29:10.620 --> 00:29:11.620]   out of that.
+[00:29:11.620 --> 00:29:17.100]   Then you're going to go to model parallel, tensor model parallel, and then maybe you're
+[00:29:17.100 --> 00:29:19.100]   going to go to pipeline model parallel.
+[00:29:19.100 --> 00:29:27.900]   But now you've got a three dimensional problem of parallelization and it is, it's what's
+[00:29:27.900 --> 00:29:30.700]   hard about doing big networks.
+[00:29:30.700 --> 00:29:37.300]   It's not the design of the networks, it's the distributed computing that is mind numbingly
+[00:29:37.300 --> 00:29:38.300]   difficult.
+[00:29:38.300 --> 00:29:43.180]   And that's something that we've been able to take to zero.
+[00:29:43.180 --> 00:29:44.780]   We've eliminated it completely.
+[00:29:44.780 --> 00:29:54.980]   I guess, I feel like in this last year, we've seen a number of ML focused chip companies
+[00:29:54.980 --> 00:29:57.060]   go out of business.
+[00:29:57.060 --> 00:29:59.060]   What are your thoughts on like-
+[00:29:59.060 --> 00:30:02.580]   Thank you for bringing up good times, Luke Snowy.
+[00:30:02.580 --> 00:30:04.460]   Well, it's a little funny, right?
+[00:30:04.460 --> 00:30:10.660]   Because we're in the middle of an ML boom and you look at, I think everyone sort of
+[00:30:10.660 --> 00:30:15.820]   marvels at the hold that Nvidia has on the market.
+[00:30:15.820 --> 00:30:19.700]   It also seems incredibly challenging to me to make chips right, because you sort of have
+[00:30:19.700 --> 00:30:23.260]   to predict what the market's going to do years in advance.
+[00:30:23.260 --> 00:30:26.540]   But I feel like everyone making ML chips at least got something really right, which is
+[00:30:26.540 --> 00:30:30.980]   that there's going to be incredible demand for compute.
+[00:30:30.980 --> 00:30:35.780]   So I guess I'm teeing up a real softball here for you, but what do you feel like you got
+[00:30:35.780 --> 00:30:38.820]   right that other people were missing?
+[00:30:38.820 --> 00:30:43.140]   Other people had that same insight as you in the sense of like ML being important.
+[00:30:43.140 --> 00:30:44.140]   They did.
+[00:30:44.140 --> 00:30:45.460]   I think there've been some real challenges.
+[00:30:45.460 --> 00:30:51.980]   I think there are two reasons that some chip companies have really struggled.
+[00:30:51.980 --> 00:30:57.260]   The first is what they built wasn't sufficiently better.
+[00:30:57.260 --> 00:31:04.620]   And I think as a startup, being a little bit better or a little bit cheaper is a terrible
+[00:31:04.620 --> 00:31:07.620]   place to be, especially for hardware.
+[00:31:07.620 --> 00:31:10.980]   Because Nvidia pays less to have their chips made, right?
+[00:31:10.980 --> 00:31:15.300]   They're one of the largest buyers of silicon in the world.
+[00:31:15.300 --> 00:31:18.620]   They have huge partnerships with TSMC and with Samsung.
+[00:31:18.620 --> 00:31:24.740]   So they're paying less per square millimeter of silicon.
+[00:31:24.740 --> 00:31:32.340]   They get access to new geometries, new steps in fabrication first.
+[00:31:32.340 --> 00:31:37.900]   And you've done something that is a little better than a GPU and it's mostly a GPU.
+[00:31:37.900 --> 00:31:41.020]   And you get to market and it's a little better.
+[00:31:41.020 --> 00:31:46.140]   And they just cut their price a little bit and everyone scratches their head and says,
+[00:31:46.140 --> 00:31:48.940]   why move for a little bit of gain?
+[00:31:48.940 --> 00:31:54.340]   And that's one of the reasons some of the companies have struggled is they're just not
+[00:31:54.340 --> 00:31:56.260]   better enough.
+[00:31:56.260 --> 00:32:01.840]   And we chose a very different approach and the approach had more risk in engineering.
+[00:32:01.840 --> 00:32:06.780]   Every company that had ever tried to build a chip this big had failed, including Gene
+[00:32:06.780 --> 00:32:07.780]   O.M.
+[00:32:07.780 --> 00:32:10.260]   Dahl's company, a company called Trilogy.
+[00:32:10.260 --> 00:32:16.020]   But we knew that if we built it, we were profoundly differentiated.
+[00:32:16.020 --> 00:32:21.660]   And it's a real question for the entrepreneurs in your audience, where do you want to fall?
+[00:32:21.660 --> 00:32:25.660]   You want to do a project that's a little easier, but that's a little less differentiated?
+[00:32:25.660 --> 00:32:30.460]   Or you want to do a project that's got much more technical risk, but if you can get through
+[00:32:30.460 --> 00:32:34.780]   the technical risk, you have a product that is profoundly differentiated.
+[00:32:34.780 --> 00:32:39.580]   And so I think those were some of the things that we thought about.
+[00:32:39.580 --> 00:32:40.980]   And we have a clear opinion.
+[00:32:40.980 --> 00:32:42.380]   We believe we want the risk.
+[00:32:42.380 --> 00:32:43.920]   We talk about it in the building.
+[00:32:43.920 --> 00:32:50.580]   We want our engineers to hold the invention risk and we want them to do something extraordinary.
+[00:32:50.580 --> 00:32:52.500]   We're not afraid of failing.
+[00:32:52.500 --> 00:32:56.340]   We're afraid of succeeding at ordinary stuff, at the mediocre.
+[00:32:56.340 --> 00:32:58.460]   And so we didn't want to build a slightly better GPU.
+[00:32:58.460 --> 00:33:01.860]   We wanted to build something different that crushed AI work.
+[00:33:01.860 --> 00:33:04.140]   And so that's what sort of fires us.
+[00:33:04.140 --> 00:33:07.180]   And so we chose a much harder strategy.
+[00:33:07.180 --> 00:33:14.140]   We chose an approach that required us to raise more money, an approach that at long periods
+[00:33:14.140 --> 00:33:17.540]   of time when we were unsure if we could solve the problem.
+[00:33:17.540 --> 00:33:24.060]   But when we did solve it, we had a solution that was clearly differentiated and empirically
+[00:33:24.060 --> 00:33:25.060]   better.
+[00:33:25.060 --> 00:33:30.820]   >>COREY: And I guess you've been doing this long enough that chip manufacturing has improved,
+[00:33:30.820 --> 00:33:32.900]   like ML has changed a lot.
+[00:33:32.900 --> 00:33:38.340]   How many versions of your hardware have you actually created?
+[00:33:38.340 --> 00:33:42.060]   >>JAMES: We began with a test wafer.
+[00:33:42.060 --> 00:33:46.060]   And that allowed us to test some of our ideas.
+[00:33:46.060 --> 00:33:51.340]   And from there we did our first chip and that was at 16 nanometers.
+[00:33:51.340 --> 00:33:57.180]   And then we did a seven nanometer version and that's what we're selling.
+[00:33:57.180 --> 00:34:01.780]   You got to run down next, we five and three, and that's sort of the path.
+[00:34:01.780 --> 00:34:05.980]   So we're pretty good at making chips.
+[00:34:05.980 --> 00:34:08.740]   So it's something we're pretty good at.
+[00:34:08.740 --> 00:34:15.580]   >>COREY: I mean, one thing I kind of marvel at with NVIDIA, I'm sorry to bring up a competitor
+[00:34:15.580 --> 00:34:20.460]   so many times, but one thing that always amazes me is I feel like new versions of could and
+[00:34:20.460 --> 00:34:21.460]   then come out.
+[00:34:21.460 --> 00:34:26.380]   And I'm just baffled by the performance gains that they're able to get on the same hardware.
+[00:34:26.380 --> 00:34:31.220]   And it would make me think that if I was in your shoes, I would need a huge, it'd be a
+[00:34:31.220 --> 00:34:36.700]   huge undertaking, not just in the chip, but in the, and I guess not even just in the compiler,
+[00:34:36.700 --> 00:34:39.860]   but I don't even know what layer you call it, could and then, the sort of like, kind
+[00:34:39.860 --> 00:34:40.860]   of making the kernel.
+[00:34:40.860 --> 00:34:41.860]   >>JAMES: Kernel.
+[00:34:41.860 --> 00:34:42.860]   >>COREY: Yeah.
+[00:34:42.860 --> 00:34:43.860]   >>JAMES: A microcode.
+[00:34:43.860 --> 00:34:44.860]   >>COREY: Yeah.
+[00:34:44.860 --> 00:34:48.460]   I mean, so how do you think about even allocating resources among those undertakings?
+[00:34:48.460 --> 00:34:53.300]   >>JAMES: Well, first, you know, NVIDIA has most of the market share.
+[00:34:53.300 --> 00:34:55.260]   So I think it's perfectly reasonable.
+[00:34:55.260 --> 00:35:00.980]   We talk about them and it's true that when they bring out new hardware, it takes months
+[00:35:00.980 --> 00:35:07.980]   and sometimes years for them to drive up the utilization as they write new microcode.
+[00:35:07.980 --> 00:35:13.620]   That's the software, that's the machine language that runs right on the actual hardware.
+[00:35:13.620 --> 00:35:18.540]   I'm a professional David in the wars with Goliath in the chip industry.
+[00:35:18.540 --> 00:35:21.180]   I mean, we, this isn't unique to them.
+[00:35:21.180 --> 00:35:22.820]   This is true.
+[00:35:22.820 --> 00:35:24.620]   You have to know that going in, right?
+[00:35:24.620 --> 00:35:28.580]   That they're going to come out, they're going to do predatory pre-announcements.
+[00:35:28.580 --> 00:35:31.900]   They're going to BS and say their chip got seven times faster.
+[00:35:31.900 --> 00:35:37.980]   When, you know, if you don't get seven times more IO, it'll never get seven times faster.
+[00:35:37.980 --> 00:35:41.940]   And they're going to do a whole bunch of stuff and they're going to throw stones and they're
+[00:35:41.940 --> 00:35:46.820]   going to, and underneath all the marketing BS, they're actually going to make their product
+[00:35:46.820 --> 00:35:49.180]   better step after step.
+[00:35:49.180 --> 00:35:52.500]   If they're a well-executing company, it is a well-executing company.
+[00:35:52.500 --> 00:35:53.820]   And so you have to know that going in.
+[00:35:53.820 --> 00:35:57.420]   And so you have to have an architecture that's much better.
+[00:35:57.420 --> 00:35:58.780]   You have to be ready for it.
+[00:35:58.780 --> 00:36:01.820]   That's nothing you described as a surprise.
+[00:36:01.820 --> 00:36:09.020]   It's the way the computer industry has run from processing chips for 40 years.
+[00:36:09.020 --> 00:36:13.780]   Is that the hardware is the engine and the software is the brains.
+[00:36:13.780 --> 00:36:19.740]   And as you get better at using the engine, the brains can run faster.
+[00:36:19.740 --> 00:36:27.340]   And over time, the same engine performs better because you've been able to wring out all
+[00:36:27.340 --> 00:36:29.300]   the optimizations.
+[00:36:29.300 --> 00:36:31.420]   And so that's known.
+[00:36:31.420 --> 00:36:36.020]   You know, we knew what Hopper would be a year and a half ago.
+[00:36:36.020 --> 00:36:42.920]   A chip that in most workloads is one and a half to two times faster than they want to.
+[00:36:42.920 --> 00:36:45.660]   We knew what they would say, "Oh, it's seven times faster."
+[00:36:45.660 --> 00:36:50.100]   We knew everybody who knows about chips would roll their eyes and yawn.
+[00:36:50.100 --> 00:36:54.860]   And the people who use it would get between one and a half and two times faster unless
+[00:36:54.860 --> 00:36:58.380]   they were memory constrained, in which they get zero.
+[00:36:58.380 --> 00:37:06.180]   And so I think these are the battlefield, the landscape that one competes on and one
+[00:37:06.180 --> 00:37:09.700]   knows about going in when chooses to build processor.
+[00:37:09.700 --> 00:37:17.900]   I guess like one extra risk with what you're doing is you're walking into kind of like
+[00:37:17.900 --> 00:37:20.580]   a sort of like a nascent market.
+[00:37:20.580 --> 00:37:24.740]   Like I would imagine building sort of custom hardware for like an existing application
+[00:37:24.740 --> 00:37:28.540]   to be kind of quite clear what the market size is and what you can get if you really
+[00:37:28.540 --> 00:37:29.540]   want it.
+[00:37:29.540 --> 00:37:32.620]   Did you, like how did you think about the market?
+[00:37:32.620 --> 00:37:35.620]   Did you look at like inference and training separately?
+[00:37:35.620 --> 00:37:39.860]   Were there kind of other ways that you sort of like segmented exactly what you were?
+[00:37:39.860 --> 00:37:46.860]   You know, there are two ways to view the first part of your question.
+[00:37:46.860 --> 00:37:52.820]   One is to say that it's harder when the market is emerging, when there's a dislocation.
+[00:37:52.820 --> 00:37:57.100]   Even the customers don't know exactly what they're going to be doing in six or nine months.
+[00:37:57.100 --> 00:38:02.040]   And if instead you went into a mature market, nobody's changed in a long time, you know
+[00:38:02.040 --> 00:38:04.300]   exactly what to build.
+[00:38:04.300 --> 00:38:07.580]   Historically mature markets favor incumbents, all right?
+[00:38:07.580 --> 00:38:14.980]   They also know exactly what to build and they make fewer mistakes in mature markets.
+[00:38:14.980 --> 00:38:22.100]   The dislocation created by AI in compute, the new challenges that have left AMD with
+[00:38:22.100 --> 00:38:27.780]   zero share and a toe zero share and gave us the opportunity.
+[00:38:27.780 --> 00:38:30.540]   Those are challenging for Nvidia too.
+[00:38:30.540 --> 00:38:33.220]   And in some sense, they level the playing field.
+[00:38:33.220 --> 00:38:38.940]   It's never really level, it's always in their favor, but they give historically speaking,
+[00:38:38.940 --> 00:38:43.420]   that sort of dislocation creates opportunities for new vendors.
+[00:38:43.420 --> 00:38:45.380]   And so we look for them.
+[00:38:45.380 --> 00:38:50.140]   We look for the rise of new types of work.
+[00:38:50.140 --> 00:38:54.780]   In the mid nineties, there was the rise of a new type of work and that was being able
+[00:38:54.780 --> 00:39:00.540]   to do in hardware, a memory lookup, an address lookup.
+[00:39:00.540 --> 00:39:04.460]   And because we could do that in hardware, we began building switches and routers in
+[00:39:04.460 --> 00:39:10.700]   hardware and it created sort of what we think of today as data network.
+[00:39:10.700 --> 00:39:17.900]   In sort of the mid aughts, there was a change in work where people for the first time in
+[00:39:17.900 --> 00:39:25.460]   general compute said, what if we gave up performance in favor of battery life?
+[00:39:25.460 --> 00:39:27.740]   And that produced new company.
+[00:39:27.740 --> 00:39:30.300]   That's the cell phone, that's our, right?
+[00:39:30.300 --> 00:39:34.860]   How come Intel and AMD, they knew how to make processors.
+[00:39:34.860 --> 00:39:36.780]   Why did they have zero shares?
+[00:39:36.780 --> 00:39:42.700]   Because the landscape changed and the dislocation was what they used to value performance is
+[00:39:42.700 --> 00:39:44.240]   no longer relevant.
+[00:39:44.240 --> 00:39:47.820]   Long battery life was really relevant.
+[00:39:47.820 --> 00:39:49.940]   Whereas all the other compute, you could always just plug it in.
+[00:39:49.940 --> 00:39:55.500]   And so these dislocations are the places where great companies emerged.
+[00:39:55.500 --> 00:40:01.380]   And that's where Nvidia emerged, the initial dislocation that created a second chip off
+[00:40:01.380 --> 00:40:06.740]   the processor that would do graphics and continue to leave graphics so important that it couldn't
+[00:40:06.740 --> 00:40:08.860]   be sucked onto the processor.
+[00:40:08.860 --> 00:40:16.420]   That dislocation created about 20 companies of which the last two are Nvidia and ATI that
+[00:40:16.420 --> 00:40:17.860]   was acquired by AMD.
+[00:40:17.860 --> 00:40:20.660]   Well, look, I totally agree.
+[00:40:20.660 --> 00:40:26.740]   I mean, you're really preaching the choir that sort of change favors the small company.
+[00:40:26.740 --> 00:40:31.060]   That's what I also look for as an entrepreneur, even within machine learning.
+[00:40:31.060 --> 00:40:33.700]   I love it when everyone switches to something.
+[00:40:33.700 --> 00:40:40.020]   I feel like surely we can move faster than some of the cloud providers.
+[00:40:40.020 --> 00:40:41.020]   That's right.
+[00:40:41.020 --> 00:40:44.140]   If we can't move faster than them, then we've got...
+[00:40:44.140 --> 00:40:47.540]   And as my old software coach used to say, "Andrew, we're small, but we're slow."
+[00:40:47.540 --> 00:40:50.220]   That's a bad place to be.
+[00:40:50.220 --> 00:40:52.400]   But Andrew, so I put myself in your shoes though.
+[00:40:52.400 --> 00:40:56.460]   And it's like, I mean, what even is the lead time?
+[00:40:56.460 --> 00:41:00.500]   If you kind of realize something's changing that you could take advantage of with a new
+[00:41:00.500 --> 00:41:06.700]   way of setting up your chip, I guess I imagine that it's years before that even...
+[00:41:06.700 --> 00:41:14.740]   And also, I imagine that it's hundreds of millions of dollars that you need to convince
+[00:41:14.740 --> 00:41:16.500]   someone to kind of give it, even try it.
+[00:41:16.500 --> 00:41:19.820]   So I would think that you would really need to have...
+[00:41:19.820 --> 00:41:24.740]   You need to be very convincing about the market opportunity in a way that we don't need to
+[00:41:24.740 --> 00:41:26.700]   be at Weights and Biases.
+[00:41:26.700 --> 00:41:33.140]   Look, I think Weights and Biases and other software companies, the dynamic is very different
+[00:41:33.140 --> 00:41:38.420]   in software is vastly more modifiables.
+[00:41:38.420 --> 00:41:45.340]   I think one of the fundamental challenges in hardware architecture, given and knowing
+[00:41:45.340 --> 00:41:50.860]   that your chip will be delivered two and a half years down the road, if you're lucky,
+[00:41:50.860 --> 00:41:59.420]   and that it's often unknowable what customers will do, is deciding what part of it is general
+[00:41:59.420 --> 00:42:02.500]   and programmable and which part is fixed.
+[00:42:02.500 --> 00:42:08.060]   And getting that right is the essence, one of the essences of being a good computer architect.
+[00:42:08.060 --> 00:42:14.980]   Is we, when we built this architecture, we had never heard of nor had it been invented
+[00:42:14.980 --> 00:42:17.460]   that a transformer had been invented.
+[00:42:17.460 --> 00:42:21.600]   And yet we're the fastest in the industry at it by more than an order of magnitude.
+[00:42:21.600 --> 00:42:27.140]   And that's because what we got right was not that there would be a transformer, but that
+[00:42:27.140 --> 00:42:32.620]   it would rely on sparse linear algebra as an underpinning, and that we could build up
+[00:42:32.620 --> 00:42:38.500]   from sparse linear algebra to solve what the AI community calls a transformer.
+[00:42:38.500 --> 00:42:47.460]   And that is a fundamental part of computer architecture, is at a different type of mass,
+[00:42:47.460 --> 00:42:54.260]   had everybody gone to single shot learning based on a Bayesian approach using something
+[00:42:54.260 --> 00:42:57.480]   else, we would have had a dead wrong architecture.
+[00:42:57.480 --> 00:43:04.020]   But what happened was everybody stayed within a foundation that we predicted correctly.
+[00:43:04.020 --> 00:43:10.780]   And that's that these problems could be broken down into linear algebraic elements, and in
+[00:43:10.780 --> 00:43:14.860]   particular sparse linear algebraic elements.
+[00:43:14.860 --> 00:43:20.580]   We've been on that for a number of reasons, including there wouldn't really be a compute
+[00:43:20.580 --> 00:43:26.020]   platform if they went a different direction, because we knew the GPU also required matrix
+[00:43:26.020 --> 00:43:28.500]   by matrix multiplication.
+[00:43:28.500 --> 00:43:34.540]   And so we used our knowledge of the landscape, our understanding of the history of compute,
+[00:43:34.540 --> 00:43:40.040]   what was available out there to make some bets that we would be able to resolve a class
+[00:43:40.040 --> 00:43:43.980]   of problems with this basis, this foundation.
+[00:43:43.980 --> 00:43:45.040]   That's what you have to do.
+[00:43:45.040 --> 00:43:49.480]   And then, I mean, it's a tough question, but how do you know how many of these things to
+[00:43:49.480 --> 00:43:50.480]   build?
+[00:43:50.480 --> 00:43:52.840]   How do you manage that?
+[00:43:52.840 --> 00:43:53.840]   Yeah.
+[00:43:53.840 --> 00:44:00.660]   I dream of having zero cost of goods and no inventory challenges, Lucas, and yet I do
+[00:44:00.660 --> 00:44:02.400]   my fifth hardware company.
+[00:44:02.400 --> 00:44:07.720]   It'd be so nice to, "Oh, look, I just send them one.
+[00:44:07.720 --> 00:44:09.760]   Oh, look, another customer on the SANS.
+[00:44:09.760 --> 00:44:12.080]   How nice is that?"
+[00:44:12.080 --> 00:44:13.740]   You have to enjoy the challenge.
+[00:44:13.740 --> 00:44:15.780]   You have to enjoy the complexity.
+[00:44:15.780 --> 00:44:19.340]   We have hundreds of components.
+[00:44:19.340 --> 00:44:23.800]   We have vendors around the world.
+[00:44:23.800 --> 00:44:25.080]   You have to get your forecast right.
+[00:44:25.080 --> 00:44:31.080]   You have to have a reasonable estimate early on.
+[00:44:31.080 --> 00:44:35.760]   You can build the largest, fastest chip on earth.
+[00:44:35.760 --> 00:44:41.800]   You can get your forecast right for the unit, and a single power supply vendor can cause
+[00:44:41.800 --> 00:44:44.560]   you not to be able to ship for months and months to end.
+[00:44:44.560 --> 00:44:47.100]   I mean, how cool is that?
+[00:44:47.100 --> 00:44:51.520]   You have to, you got to get that right.
+[00:44:51.520 --> 00:44:59.400]   That's why historically, hardware companies are worth a ton, is because they are really
+[00:44:59.400 --> 00:45:00.840]   challenging to get right.
+[00:45:00.840 --> 00:45:04.480]   Are there parts outside of the chip that are big technical problems?
+[00:45:04.480 --> 00:45:12.480]   I would imagine just keeping the chip cool is an issue, is powering an issue.
+[00:45:12.480 --> 00:45:17.280]   Does it even fit in a normal data center rack?
+[00:45:17.280 --> 00:45:22.000]   It's in a normal data center rack, so your audience knows our solution.
+[00:45:22.000 --> 00:45:27.960]   It's 15 rack units, so that's what, 26 inches, 26 and a half inches tall.
+[00:45:27.960 --> 00:45:30.840]   It's in a standard by two inch rack.
+[00:45:30.840 --> 00:45:33.680]   It's about a meter deep.
+[00:45:33.680 --> 00:45:34.680]   It comes in two flavors.
+[00:45:34.680 --> 00:45:42.200]   It can be air cooled or it can be cooled with water, and it can go in a standard data center.
+[00:45:42.200 --> 00:45:51.720]   But yeah, the delivering power to and the cooling was a real challenge.
+[00:45:51.720 --> 00:45:54.960]   I mean, it's a challenge for everybody.
+[00:45:54.960 --> 00:46:02.600]   I mean, Nvidia wanted on a DGX, they wanted a cool front bezel, only the one they made,
+[00:46:02.600 --> 00:46:05.440]   you can't run the machine with it because it blocks airflow.
+[00:46:05.440 --> 00:46:13.840]   So that gold bezel is only for photographs.
+[00:46:13.840 --> 00:46:20.360]   We had to invent some interesting techniques to deliver power to a chip this big, how to
+[00:46:20.360 --> 00:46:23.480]   cool it.
+[00:46:23.480 --> 00:46:27.800]   Is a liquid cooled one so I can put it under my desk and it's not loud?
+[00:46:27.800 --> 00:46:30.120]   Why do you even have a liquid cooled version?
+[00:46:30.120 --> 00:46:35.880]   All of our versions use water to move heat off the wafer.
+[00:46:35.880 --> 00:46:41.160]   In the air cooled version, we have in the machine, something that looks like a radiator,
+[00:46:41.160 --> 00:46:46.240]   that they don't like it when I say this, but it's 110 year old technology.
+[00:46:46.240 --> 00:46:50.400]   Basically it spreads the surface area of the water and then the fans blow cold air across
+[00:46:50.400 --> 00:46:52.540]   it so the exhaust is warm air.
+[00:46:52.540 --> 00:46:58.000]   In the water cooled version, we use water to move heat off the wafer and the water is
+[00:46:58.000 --> 00:47:02.000]   then cooled with facility water in a water to water exchanger.
+[00:47:02.000 --> 00:47:06.920]   And so for those facilities that have water, you run their copper pipes right next to your
+[00:47:06.920 --> 00:47:07.920]   copper pipes.
+[00:47:07.920 --> 00:47:10.920]   And so the exhaust there is warm water.
+[00:47:10.920 --> 00:47:14.480]   Well, does a typical data center have water to-
+[00:47:14.480 --> 00:47:16.080]   More and more of them do.
+[00:47:16.080 --> 00:47:17.080]   Yeah.
+[00:47:17.080 --> 00:47:18.080]   Wow.
+[00:47:18.080 --> 00:47:19.080]   More and more of them do.
+[00:47:19.080 --> 00:47:20.080]   Yeah.
+[00:47:20.080 --> 00:47:24.000]   It turns out water is a vastly more efficient way to cool than air.
+[00:47:24.000 --> 00:47:25.000]   Cool.
+[00:47:25.000 --> 00:47:26.000]   Yeah.
+[00:47:26.000 --> 00:47:31.320]   So I didn't, I mean, the number of hard problems we had to solve, Lucas, in this project was
+[00:47:31.320 --> 00:47:33.360]   extraordinary.
+[00:47:33.360 --> 00:47:39.240]   And it's been an amazing journey.
+[00:47:39.240 --> 00:47:42.680]   We were sort of fearless engineers.
+[00:47:42.680 --> 00:47:51.400]   We think that really smart guys and smart people can confront a problem that they haven't
+[00:47:51.400 --> 00:47:58.520]   confronted before using good engineering discipline and methodology and learning from mistakes
+[00:47:58.520 --> 00:48:01.640]   and get better and better and better.
+[00:48:01.640 --> 00:48:07.520]   And can do so without ego, can read the papers that have been written, can talk to people
+[00:48:07.520 --> 00:48:17.360]   at events in the industry and learn and can produce exceptional results in multiple elements.
+[00:48:17.360 --> 00:48:20.800]   You know, we see no reason why that can't be.
+[00:48:20.800 --> 00:48:24.920]   And so we, that's the way we attack these problems.
+[00:48:24.920 --> 00:48:31.000]   What did you, what do you feel like you got wrong back in like 2016, 2017?
+[00:48:31.000 --> 00:48:34.520]   Like it seems amazing, you know, like what you got right.
+[00:48:34.520 --> 00:48:41.000]   But if you could send a message like back in time, what would be the top bullet points?
+[00:48:41.000 --> 00:48:53.040]   You know, when we, by 2017, everybody was talking about ResNet-50 and Envision and we
+[00:48:53.040 --> 00:48:56.920]   spent way too much time there.
+[00:48:56.920 --> 00:49:01.360]   The GPUs for little networks were okay at it.
+[00:49:01.360 --> 00:49:05.600]   We made a bet to go big on NLP.
+[00:49:05.600 --> 00:49:10.960]   That was a great bet if I'd have done it a year earlier, it would have paid way better.
+[00:49:10.960 --> 00:49:15.280]   One of my board members said, you need to build a facility in Toronto.
+[00:49:15.280 --> 00:49:19.640]   And I was like, that dude, man, he's always telling me to do that, I don't know how to
+[00:49:19.640 --> 00:49:20.640]   do.
+[00:49:20.640 --> 00:49:23.960]   And a year later I started building a group in Toronto.
+[00:49:23.960 --> 00:49:27.760]   We have nearly a hundred people and I wish I had started a year earlier.
+[00:49:27.760 --> 00:49:28.760]   I wish.
+[00:49:28.760 --> 00:49:34.200]   I mean, Toronto is an exceptional place for entrepreneurs to build out organizations.
+[00:49:34.200 --> 00:49:36.560]   The University of Toronto has exceptional people.
+[00:49:36.560 --> 00:49:39.000]   Waterloo has exceptional people.
+[00:49:39.000 --> 00:49:40.880]   The engineering culture is first rate.
+[00:49:40.880 --> 00:49:47.200]   I should have listened and I hesitated because I didn't know and hadn't done it before.
+[00:49:47.200 --> 00:49:51.300]   You know, the number of mistakes, and you know this, when you make a hundred decisions
+[00:49:51.300 --> 00:49:58.520]   a day as a CEO, the number of mistakes you can accumulate in a week is large.
+[00:49:58.520 --> 00:50:01.880]   You get four or five things wrong a day and you're doing great.
+[00:50:01.880 --> 00:50:06.720]   At the end of the week, it's like, I made 20 how many bad decisions this week?
+[00:50:06.720 --> 00:50:08.080]   How many mistakes did I make?
+[00:50:08.080 --> 00:50:12.760]   Well, I think especially in your case though, you know, the feedback cycles are a lot slower
+[00:50:12.760 --> 00:50:15.080]   and the decisions seem harder.
+[00:50:15.080 --> 00:50:20.360]   And like when I think about what I was thinking in 2016, I mean, that was a long time ago
+[00:50:20.360 --> 00:50:21.360]   for ML.
+[00:50:21.360 --> 00:50:24.000]   I mean, TensorFlow had just launched, I think.
+[00:50:24.000 --> 00:50:25.000]   TensorFlow had just launched.
+[00:50:25.000 --> 00:50:30.640]   I mean, the things we were thinking about, you know, CAFE2, should we support CAFE?
+[00:50:30.640 --> 00:50:37.520]   Should we bet on, you know, there was even something, some other framework that I've
+[00:50:37.520 --> 00:50:39.520]   forgotten about.
+[00:50:39.520 --> 00:50:40.520]   Yeah.
+[00:50:40.520 --> 00:50:46.280]   I mean, this community has moved unbelievably quickly.
+[00:50:46.280 --> 00:50:50.240]   And yeah, I mean, it's extraordinary.
+[00:50:50.240 --> 00:50:51.760]   And I guess like, what are you seeing now?
+[00:50:51.760 --> 00:50:58.320]   What are you trying to support given that it's like two or three years before?
+[00:50:58.320 --> 00:51:00.600]   Are you working on like a new and more version?
+[00:51:00.600 --> 00:51:02.720]   And like, you always have to be.
+[00:51:02.720 --> 00:51:03.720]   What can you never stop?
+[00:51:03.720 --> 00:51:04.840]   You're on the treadmill.
+[00:51:04.840 --> 00:51:06.880]   You commit to that treadmill.
+[00:51:06.880 --> 00:51:07.880]   You are on it.
+[00:51:07.880 --> 00:51:12.240]   So I don't know if this is like a top, top secret, but I'm just curious, like, well,
+[00:51:12.240 --> 00:51:17.880]   what kinds of stuff, like what, what are like the new requirements that you like, you know,
+[00:51:17.880 --> 00:51:20.360]   want to support in two, three years?
+[00:51:20.360 --> 00:51:23.960]   You're always looking at which customers' workloads are.
+[00:51:23.960 --> 00:51:27.840]   You're engaged in conversations with them about what they want to do.
+[00:51:27.840 --> 00:51:36.240]   You're looking at things that surprised you, you know, we bet big on NLP, standard diffusion
+[00:51:36.240 --> 00:51:41.640]   at DALI, those were more surprising, sort of this interaction between vision models
+[00:51:41.640 --> 00:51:46.000]   and large NLP networks.
+[00:51:46.000 --> 00:51:55.200]   The models that are going text to video, and you're trying to unpack them to understand
+[00:51:55.200 --> 00:51:58.480]   what are they doing the same, what are they doing different?
+[00:51:58.480 --> 00:52:07.000]   And what part of your, your architecture that is fixed, maybe ought to be flexible and what
+[00:52:07.000 --> 00:52:11.600]   part of your architecture that you thought needed to be flexible, everybody's agreed
+[00:52:11.600 --> 00:52:14.040]   on that and we can now be fixed.
+[00:52:14.040 --> 00:52:23.040]   And so, you know, we'll give you an example from a competitor in the A100, NVIDIA included
+[00:52:23.040 --> 00:52:29.240]   circuitry or a three by three convolution, because everybody was talking about sort of
+[00:52:29.240 --> 00:52:30.240]   ResNets.
+[00:52:30.240 --> 00:52:39.480]   Now, when you run transformers, that ensures your utilization is abysmal across those circuits.
+[00:52:39.480 --> 00:52:48.240]   There's an example of they went to fixed and they got a raw.
+[00:52:48.240 --> 00:52:59.040]   And I think we try and understand, make bets, not at the application level, but at their
+[00:52:59.040 --> 00:53:00.800]   underpinnings.
+[00:53:00.800 --> 00:53:04.440]   Also you have this list of things that you wish you'd have done last time, but couldn't
+[00:53:04.440 --> 00:53:05.760]   get in in time.
+[00:53:05.760 --> 00:53:12.600]   You've got issues that had to be resolved, you had to work around, and that's the nature
+[00:53:12.600 --> 00:53:14.500]   of chip building.
+[00:53:14.500 --> 00:53:19.840]   Do you feel concerned that, or I guess this is like an opportunity, like I talked to some
+[00:53:19.840 --> 00:53:23.440]   of our bigger customers and it seems like they're really essentially starting to build
+[00:53:23.440 --> 00:53:27.480]   their own data centers around A100s.
+[00:53:27.480 --> 00:53:33.040]   Would you deliver, do you typically deliver like a whole bunch of your chips, like networked
+[00:53:33.040 --> 00:53:34.040]   together?
+[00:53:34.040 --> 00:53:35.040]   We do.
+[00:53:35.040 --> 00:53:36.040]   Right.
+[00:53:36.040 --> 00:53:42.240]   More and more we're delivering clusters with millions and millions, of course.
+[00:53:42.240 --> 00:53:46.540]   Yeah, I think that's a good sign for us.
+[00:53:46.540 --> 00:53:53.400]   I think when is it really hard for a startup to, a hardware company, when you've got to
+[00:53:53.400 --> 00:54:00.200]   go to many different enterprises and they want to buy one, and you need a sales guy
+[00:54:00.200 --> 00:54:05.040]   in North Carolina, and you need a sales guy in upstate New York, and sort of the enterprise
+[00:54:05.040 --> 00:54:08.840]   sales model, that's not really what we're seeing.
+[00:54:08.840 --> 00:54:16.800]   We're seeing those who are in AI buying big, and they're looking to deploy thousands or
+[00:54:16.800 --> 00:54:19.360]   tens of thousands on GPUs.
+[00:54:19.360 --> 00:54:25.320]   If you can show them competitive advantage, balls out there, you got to go win it.
+[00:54:25.320 --> 00:54:29.280]   I guess, where are you seeing the biggest pull from the market?
+[00:54:29.280 --> 00:54:33.360]   This would be a useful thing for me to know as well, because I see it with someone spending
+[00:54:33.360 --> 00:54:35.600]   as much as they need to spend on your stuff.
+[00:54:35.600 --> 00:54:38.680]   They should probably spend a little bit on monitoring it and wait until launch is-
+[00:54:38.680 --> 00:54:42.680]   We have lots of customers in common.
+[00:54:42.680 --> 00:54:46.760]   You guys have done well in the big pharma spaces and with some oil and gas guys that
+[00:54:46.760 --> 00:54:48.600]   we have in common.
+[00:54:48.600 --> 00:54:55.520]   I think that the surprise for me of late has been this rocket ship that was Jasper and
+[00:54:55.520 --> 00:54:58.960]   stability and adept.
+[00:54:58.960 --> 00:55:08.880]   You can keep naming them coherent, anthropic, and the evaluations, the businesses.
+[00:55:08.880 --> 00:55:13.880]   We announced Jasper was a customer of ours, got to know Dave a little bit and his team
+[00:55:13.880 --> 00:55:19.720]   over there, and they're doing unbelievably big numbers up from nothing.
+[00:55:19.720 --> 00:55:25.680]   They may be one of the fastest growing software companies in memory.
+[00:55:25.680 --> 00:55:29.320]   I think that was all unforecast a year and a half ago.
+[00:55:29.320 --> 00:55:34.640]   It was like open AI and everybody's looking there and this, these guys, many of them are
+[00:55:34.640 --> 00:55:39.960]   going to drop nine figures in training next year.
+[00:55:39.960 --> 00:55:46.640]   All of those are new and interesting opportunities that nobody was talking about nine months
+[00:55:46.640 --> 00:55:47.640]   ago.
+[00:55:47.640 --> 00:55:48.640]   It's funny.
+[00:55:48.640 --> 00:55:53.400]   I guess another thing, I feel like almost everyone, almost everyone, many, many, many
+[00:55:53.400 --> 00:55:56.920]   people do this stuff in the cloud.
+[00:55:56.920 --> 00:56:00.880]   Do you feel like it's important that you offer a way to rent your hardware?
+[00:56:00.880 --> 00:56:02.000]   We do.
+[00:56:02.000 --> 00:56:03.000]   We do.
+[00:56:03.000 --> 00:56:07.200]   I think for the big models, it's really hard to do in the cloud because you need dedicated
+[00:56:07.200 --> 00:56:08.200]   clusters.
+[00:56:08.200 --> 00:56:10.880]   You need guaranteed latency between your nodes.
+[00:56:10.880 --> 00:56:16.240]   The largest node you can buy from AWS is eight GPUs.
+[00:56:16.240 --> 00:56:22.560]   If you want 160, you're going to get 28 node instances.
+[00:56:22.560 --> 00:56:27.080]   Those instances, you've got no guarantees or latencies between them.
+[00:56:27.080 --> 00:56:28.080]   What a mess.
+[00:56:28.080 --> 00:56:29.480]   Oh, am I seeing cloud?
+[00:56:29.480 --> 00:56:30.480]   Yeah.
+[00:56:30.480 --> 00:56:31.480]   This is important.
+[00:56:31.480 --> 00:56:37.280]   What we're seeing is those guys who want lots go to people and ask them to do dedicated
+[00:56:37.280 --> 00:56:38.680]   clusters at least.
+[00:56:38.680 --> 00:56:45.800]   I think for most people under 30 in our industry, they don't spend a lot of time thinking about
+[00:56:45.800 --> 00:56:46.800]   the hardware.
+[00:56:46.800 --> 00:56:51.720]   The hardware isn't a thing like I think about it.
+[00:56:51.720 --> 00:56:56.040]   It's something you put software on.
+[00:56:56.040 --> 00:57:00.520]   We have to change and adapt with the times.
+[00:57:00.520 --> 00:57:05.160]   If they want to rent instances, if they want to rent cluster time, if they want to rent
+[00:57:05.160 --> 00:57:09.560]   by the model, we announced last week an approach where you can pay by the model.
+[00:57:09.560 --> 00:57:17.000]   You want to trade GPT-J to Chinchilla accuracy, it's $45,000, this many tokens, bring your
+[00:57:17.000 --> 00:57:18.000]   data, let's go.
+[00:57:18.000 --> 00:57:21.800]   You want to train GPT 70 billion, great.
+[00:57:21.800 --> 00:57:25.000]   It's this many tokens, bring your data, we tell you how long it's going to take and let's
+[00:57:25.000 --> 00:57:26.120]   go.
+[00:57:26.120 --> 00:57:29.280]   That's a different way to consume.
+[00:57:29.280 --> 00:57:33.740]   We do think that providing, it's not skin off our teeth.
+[00:57:33.740 --> 00:57:35.400]   We can provide, if you want to buy it, buy it.
+[00:57:35.400 --> 00:57:36.440]   If you want to rent it, rent it.
+[00:57:36.440 --> 00:57:38.360]   If you want to buy the hour, buy the hour.
+[00:57:38.360 --> 00:57:39.360]   It's the same.
+[00:57:39.360 --> 00:57:45.720]   I think that's not a small undertaking just on the software side to make it reliable and
+[00:57:45.720 --> 00:57:47.160]   consumable and all that.
+[00:57:47.160 --> 00:57:48.160]   Yeah.
+[00:57:48.160 --> 00:57:53.240]   I think once you've compiled PyTorch, man, making it cloud available is not the hard
+[00:57:53.240 --> 00:57:55.080]   problem.
+[00:57:55.080 --> 00:57:56.080]   It's a messy problem.
+[00:57:56.080 --> 00:57:57.760]   It's not a hard problem.
+[00:57:57.760 --> 00:58:00.480]   I think it takes some thinking.
+[00:58:00.480 --> 00:58:01.480]   It's funny.
+[00:58:01.480 --> 00:58:07.440]   We've obviously partnered with some hardware companies.
+[00:58:07.440 --> 00:58:13.320]   I think I never, I mean, I'm over 40, so I'm not so young, but I never really understood
+[00:58:13.320 --> 00:58:16.000]   what waterfall development was.
+[00:58:16.000 --> 00:58:20.080]   I think Agile sort of in response to this thing that I actually never witnessed until
+[00:58:20.080 --> 00:58:23.200]   we started engaging with some hardware companies.
+[00:58:23.200 --> 00:58:29.000]   It was just kind of shocking to sort of see their engineering mindset, which on one hand,
+[00:58:29.000 --> 00:58:30.880]   I really, really respect it.
+[00:58:30.880 --> 00:58:37.080]   But I think it would be, it seems like it might be hard for a company that's so geared
+[00:58:37.080 --> 00:58:41.640]   up to do these things with these long lead times where you really need to get it right
+[00:58:41.640 --> 00:58:46.360]   to sort of build these things where you're really iterating daily with customers.
+[00:58:46.360 --> 00:58:47.360]   Yeah.
+[00:58:47.360 --> 00:58:53.120]   If chip design takes two and a half years, weak sprints are probably the wrong thing
+[00:58:53.120 --> 00:58:55.640]   to be engaging with.
+[00:58:55.640 --> 00:59:00.780]   That's why there are very few individual engineering leaders who successfully lead both.
+[00:59:00.780 --> 00:59:05.840]   We have a leader in hardware and we have a leader in software because they have different
+[00:59:05.840 --> 00:59:06.840]   cultures.
+[00:59:06.840 --> 00:59:15.560]   And even in software, I mean, if you're solving algorithmic problems or you're a PhD in optimization
+[00:59:15.560 --> 00:59:23.240]   theory, right, you also likely are doing sprints every few days.
+[00:59:23.240 --> 00:59:28.520]   On the other hand, other parts of the software organization are.
+[00:59:28.520 --> 00:59:31.020]   And so I think there's the one size fits all.
+[00:59:31.020 --> 00:59:36.980]   I think thoughtful engineering leadership relates or brings together a methodology with
+[00:59:36.980 --> 00:59:38.780]   the characteristic of the problem.
+[00:59:38.780 --> 00:59:40.460]   Yeah, that makes sense.
+[00:59:40.460 --> 00:59:46.660]   You know, software, upper layer software is sprints, chips are marathons.
+[00:59:46.660 --> 00:59:47.740]   They're marathons.
+[00:59:47.740 --> 00:59:55.140]   And the guys who do them, what they're extremely good at is their marathon pace.
+[00:59:55.140 --> 00:59:59.900]   You watch those East African guys who were the world's best at it and they're doing what?
+[00:59:59.900 --> 01:00:04.740]   They're doing 26 and a half miles at four something, 450.
+[01:00:04.740 --> 01:00:07.320]   Yeah, it feels like a sprint to me.
+[01:00:07.320 --> 01:00:10.420]   That pace is mind boggling, right?
+[01:00:10.420 --> 01:00:13.100]   The best in the world.
+[01:00:13.100 --> 01:00:16.080]   That pace is profoundly different.
+[01:00:16.080 --> 01:00:20.560]   The way they train is profoundly different from the people who are at 100 or 200s.
+[01:00:20.560 --> 01:00:25.400]   And I think thinking carefully about what is the characteristic of the problem, what
+[01:00:25.400 --> 01:00:31.000]   are the norms, how are you going to organize your engineering leadership team, how are
+[01:00:31.000 --> 01:00:36.280]   you going to organize your processes, ought to relate to the problem you're trying to
+[01:00:36.280 --> 01:00:37.280]   solve.
+[01:00:37.280 --> 01:00:40.320]   Well, look, we always end with two questions and I think we might need to slightly reinterpret
+[01:00:40.320 --> 01:00:44.400]   them to make sense for me, but I'd love to get your vantage point on this.
+[01:00:44.400 --> 01:00:50.760]   We usually ask what's an under investigated part of machine learning or what's something
+[01:00:50.760 --> 01:00:53.240]   that warrants more study.
+[01:00:53.240 --> 01:00:58.160]   I'm wondering if from your vantage point you have a perspective on that.
+[01:00:58.160 --> 01:01:05.360]   So, Lukas, when I was working on my PhD, I would spend all this time in class working
+[01:01:05.360 --> 01:01:09.280]   on the mathematics and statistics and all this time when I was doing research, cleaning
+[01:01:09.280 --> 01:01:10.280]   data.
+[01:01:10.280 --> 01:01:11.280]   Right.
+[01:01:11.280 --> 01:01:19.960]   And I believe the gap between what you studied and what you did was so unbelievably large.
+[01:01:19.960 --> 01:01:26.640]   I think an underappreciated area is the data pipeline, the managing of these interesting
+[01:01:26.640 --> 01:01:27.640]   data sets.
+[01:01:27.640 --> 01:01:31.560]   And I think sometimes it's kicked off by IT groups.
+[01:01:31.560 --> 01:01:37.040]   I think having a strategic vision around what data is going to be collected.
+[01:01:37.040 --> 01:01:40.160]   I mean, if you collect it all, it has negative value too.
+[01:01:40.160 --> 01:01:43.280]   You got so much, you can't work through.
+[01:01:43.280 --> 01:01:52.280]   Really, this area that's upstream of us a step or two, which is the strategy, the management,
+[01:01:52.280 --> 01:02:02.000]   the cleaning, the storing, the data husbandry, I think is profoundly under discussed.
+[01:02:02.000 --> 01:02:03.000]   The tools are nasty.
+[01:02:03.000 --> 01:02:06.000]   A lot of opportunity there.
+[01:02:06.000 --> 01:02:07.320]   I totally agree.
+[01:02:07.320 --> 01:02:08.320]   All right.
+[01:02:08.320 --> 01:02:15.600]   And final question is, when you look at the full life cycle of an ML model from someone
+[01:02:15.600 --> 01:02:22.320]   kind of thinking of it to building it, but then to also in production, doing something
+[01:02:22.320 --> 01:02:28.280]   useful for someone, where do you see the surprising bottlenecks or what's kind of the hardest
+[01:02:28.280 --> 01:02:30.680]   part of that full journey?
+[01:02:30.680 --> 01:02:32.640]   That's really a good question.
+[01:02:32.640 --> 01:02:41.760]   I think when that model starts being deployed, and I think you just saw this with the new,
+[01:02:41.760 --> 01:02:51.860]   with OpenAI's chat bot or with Meta's, I think data scientists sometimes and AI practitioners
+[01:02:51.860 --> 01:02:56.800]   approach development of a model differently than we would in software.
+[01:02:56.800 --> 01:03:02.040]   We mean thoughtful QA matrices, right?
+[01:03:02.040 --> 01:03:06.240]   With an understanding of what has been tested and what hasn't been tested.
+[01:03:06.240 --> 01:03:08.120]   Those are really hard.
+[01:03:08.120 --> 01:03:15.120]   And so you got your model, you've tried it, you did the distributed computing, painful,
+[01:03:15.120 --> 01:03:16.160]   you've tossed your hair out.
+[01:03:16.160 --> 01:03:22.200]   It meets a ton of data at first, and you're not sure how long that debug process is going
+[01:03:22.200 --> 01:03:23.200]   to take.
+[01:03:23.200 --> 01:03:29.120]   And when I was a young engineering leader and I'd ask my guys, "When the hell, when
+[01:03:29.120 --> 01:03:30.440]   are we going to finish debugging?"
+[01:03:30.440 --> 01:03:33.240]   He'd say, "Hadn't plummeted the depths."
+[01:03:33.240 --> 01:03:34.240]   You don't know.
+[01:03:34.240 --> 01:03:36.280]   And it would make me so uncomfortable.
+[01:03:36.280 --> 01:03:40.440]   I mean, there'd be physical uncomfort when you're peeling the onion and there's just
+[01:03:40.440 --> 01:03:41.440]   more onion.
+[01:03:41.440 --> 01:03:44.560]   You keep peeling it, all you could see is onion and onion and onion.
+[01:03:44.560 --> 01:03:54.440]   I think that stage takes people vastly longer than they anticipate.
+[01:03:54.440 --> 01:04:00.720]   And could even too, could benefit from some methodological improvements as well.
+[01:04:00.720 --> 01:04:02.280]   Yeah, I totally hear that as well.
+[01:04:02.280 --> 01:04:03.280]   Yeah, we hear that.
+[01:04:03.280 --> 01:04:04.280]   Yeah.
+[01:04:04.280 --> 01:04:06.080]   I think that's what we see anyway.
+[01:04:06.080 --> 01:04:07.800]   No, that makes sense.
+[01:04:07.800 --> 01:04:09.200]   And it's a frustrating time.
+[01:04:09.200 --> 01:04:16.320]   You know, we always tell our guys that last 10% isn't 10%.
+[01:04:16.320 --> 01:04:22.160]   That last bit turns out not to be only 10%.
+[01:04:22.160 --> 01:04:29.200]   It's a lot longer because you're not actually at the 90% mark when you think you are.
+[01:04:29.200 --> 01:04:30.960]   You're at the 65 or 70% mark.
+[01:04:30.960 --> 01:04:36.040]   Well, I feel like in software that's bad, but in ML, you may never get there.
+[01:04:36.040 --> 01:04:41.320]   It's not even clear that what's actually possible.
+[01:04:41.320 --> 01:04:47.160]   I mean, we've been studying things we don't know if there are answers to, studying theory,
+[01:04:47.160 --> 01:04:49.560]   we've been doing science for years.
+[01:04:49.560 --> 01:04:54.600]   There is a research methodology that's put there, even when you're not sure there is
+[01:04:54.600 --> 01:04:58.080]   an answer.
+[01:04:58.080 --> 01:05:03.680]   So I think the community is learning and improving, but I think there are joint pressures.
+[01:05:03.680 --> 01:05:07.360]   There's a drive to get your cool new model out and get that big publication and have
+[01:05:07.360 --> 01:05:12.960]   your stable diffusion moment where everybody goes, "Whoa," like that, where a whole industry
+[01:05:12.960 --> 01:05:19.760]   takes a gas and said, "Holy cow," and you can run it on your laptop, right?
+[01:05:19.760 --> 01:05:24.440]   And you push that out and you want that so badly.
+[01:05:24.440 --> 01:05:25.440]   These are complicated things.
+[01:05:25.440 --> 01:05:31.400]   It's going to take a while before we roll them out so that they know exactly that they're
+[01:05:31.400 --> 01:05:33.720]   fully QA'd and ready for the world.
+[01:05:33.720 --> 01:05:34.720]   All right.
+[01:05:34.720 --> 01:05:35.720]   One final curveball question.
+[01:05:35.720 --> 01:05:36.720]   I'm just curious what your thought on this.
+[01:05:36.720 --> 01:05:43.200]   I feel like a lot of people have been noticing that the M1, the MacBook chips are pretty
+[01:05:43.200 --> 01:05:48.320]   fast for ML workloads.
+[01:05:48.320 --> 01:05:52.760]   Do you feel like Apple might enter this market in a bigger way?
+[01:05:52.760 --> 01:05:54.240]   Is that something you think about?
+[01:05:54.240 --> 01:05:55.240]   Okay.
+[01:05:55.240 --> 01:05:58.360]   Apple's the greatest company in the last 50 years, right?
+[01:05:58.360 --> 01:06:05.640]   I mean, if you think of market cap and you think of where they are in the economy, we
+[01:06:05.640 --> 01:06:09.000]   moved from, "Would you rather have your keys or your phone?"
+[01:06:09.000 --> 01:06:11.600]   I'd rather have my phone.
+[01:06:11.600 --> 01:06:13.560]   My phone's got a credit card in there.
+[01:06:13.560 --> 01:06:15.400]   I can get wherever I want with Uber.
+[01:06:15.400 --> 01:06:18.680]   They're better than your wallets.
+[01:06:18.680 --> 01:06:19.680]   They passed your wallet.
+[01:06:19.680 --> 01:06:20.680]   They passed your keys.
+[01:06:20.680 --> 01:06:28.280]   They passed ... I mean, think of the things that they're better than.
+[01:06:28.280 --> 01:06:36.240]   They have tried on several occasions to do B2B and B enterprise, and it's been harder
+[01:06:36.240 --> 01:06:37.320]   for them.
+[01:06:37.320 --> 01:06:38.800]   That's a DNA shift for them.
+[01:06:38.800 --> 01:06:41.920]   Yeah, that makes sense.
+[01:06:41.920 --> 01:06:48.280]   My guess is if they did it, they'd do it for internal use first rather than a third party
+[01:06:48.280 --> 01:06:49.280]   service.
+[01:06:49.280 --> 01:06:59.080]   But things that they do know, they were among the first to realize that really, your laptop,
+[01:06:59.080 --> 01:07:06.600]   faster processors, good, but better resolution monitor tip is really good, right?
+[01:07:06.600 --> 01:07:12.400]   And so, they have done a lot of thinking about joint optimization of hardware and software,
+[01:07:12.400 --> 01:07:14.680]   in particular, in display.
+[01:07:14.680 --> 01:07:19.040]   If they wanted to, I'm sure they had the skills and expertise to build a part that could run
+[01:07:19.040 --> 01:07:20.040]   that well too.
+[01:07:20.040 --> 01:07:21.040]   Well, thanks so much for your time.
+[01:07:21.040 --> 01:07:22.280]   This was really fun.
+[01:07:22.280 --> 01:07:26.680]   If you're enjoying these interviews and you want to learn more, please click on the link
+[01:07:26.680 --> 01:07:31.400]   to the show notes in the description where you can find links to all the papers that
+[01:07:31.400 --> 01:07:35.800]   are mentioned, supplemental material, and a transcription that we work really hard to
+[01:07:35.800 --> 01:07:36.800]   produce.
+[01:07:36.800 --> 01:07:40.800]   So, check it out.
+

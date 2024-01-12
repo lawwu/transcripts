@@ -1,0 +1,530 @@
+
+[00:00:00.000 --> 00:00:05.360]   So this is a joint work that I did with great collaborators at Google,
+[00:00:05.360 --> 00:00:08.360]   Aitor, Ethan, Joshua, and Gaia Garari.
+[00:00:08.360 --> 00:00:11.800]   The topic that I want to talk about today is,
+[00:00:11.800 --> 00:00:15.360]   kind of has two different maybe components to it.
+[00:00:15.360 --> 00:00:23.000]   One is to kind of take more of a scientific view towards deep learning and kind of understand,
+[00:00:23.000 --> 00:00:27.360]   well, we have this large class of space of models that we're dealing with,
+[00:00:27.360 --> 00:00:32.000]   large space of hyperparameters that we choose, can we be a bit more concrete,
+[00:00:32.000 --> 00:00:35.680]   or be able to say something about different sorts of regimes,
+[00:00:35.680 --> 00:00:40.800]   like distinguishing different sorts of regimes depending on our choice of hyperparameters.
+[00:00:40.800 --> 00:00:44.880]   And the hyperparameter that we're going to focus on in this talk is really,
+[00:00:44.880 --> 00:00:50.080]   is learning rate in gradient descent or in stochastic gradient descent.
+[00:00:50.080 --> 00:00:53.200]   I won't really distinguish between those two.
+[00:00:53.200 --> 00:01:00.640]   So one kind of takeaway I hope to kind of give from this talk is that,
+[00:01:00.640 --> 00:01:05.840]   this sort of kind of analysis is maybe helps inform how to choose hyperparameters
+[00:01:05.840 --> 00:01:10.400]   and figuring out what neural networks are doing in very different hyperparameter regimes.
+[00:01:10.400 --> 00:01:15.680]   There's maybe a second aspect to it, which is that a lot of,
+[00:01:15.680 --> 00:01:20.960]   I hope to give you maybe a taste of some of the kind of scientific progress that's been made,
+[00:01:20.960 --> 00:01:24.240]   at kind of like a basic research level in deep learning recently.
+[00:01:24.240 --> 00:01:30.640]   And a lot of that has been surrounding neural networks that are very overparameterized.
+[00:01:30.640 --> 00:01:34.080]   So we, as you probably heard in the GPT-3 talk,
+[00:01:34.080 --> 00:01:37.760]   we keep making neural networks bigger and bigger,
+[00:01:37.760 --> 00:01:41.040]   and we continue to get performance gains from them.
+[00:01:41.040 --> 00:01:44.480]   And so, you know, a lot of the theoretical,
+[00:01:44.480 --> 00:01:49.680]   that led people to kind of think a lot about what would happen if you took,
+[00:01:50.560 --> 00:01:53.440]   kind of limiting cases of extremely large neural networks,
+[00:01:53.440 --> 00:01:55.760]   say neural networks that were infinitely wide.
+[00:01:55.760 --> 00:02:02.400]   And when I talk about width, I mean that imagine you have some deep neural network,
+[00:02:02.400 --> 00:02:04.160]   it has a fixed depth to it,
+[00:02:04.160 --> 00:02:07.920]   but each of the hidden layers has a certain number of hidden nodes
+[00:02:07.920 --> 00:02:09.360]   in a fully connected network,
+[00:02:09.360 --> 00:02:13.040]   or in a convolutional network, this could be the number of channels,
+[00:02:13.040 --> 00:02:16.000]   and we just take that number to be infinite.
+[00:02:16.960 --> 00:02:21.200]   It turns out that you can say a lot of theoretical things about this particular limit.
+[00:02:21.200 --> 00:02:26.080]   And that's a lot of the focus in recent,
+[00:02:26.080 --> 00:02:29.360]   in kind of the past two years, has been on studying such networks.
+[00:02:29.360 --> 00:02:34.160]   There's kind of very cool connections between such networks,
+[00:02:34.160 --> 00:02:39.200]   kernel Gaussian processes, and kernel methods.
+[00:02:39.200 --> 00:02:41.920]   And kernel methods and neural networks seem like very two different
+[00:02:41.920 --> 00:02:45.600]   approaches to machine learning.
+[00:02:45.600 --> 00:02:48.480]   And it's interesting that there's a connection between them
+[00:02:48.480 --> 00:02:53.280]   when you kind of think about the dynamics of neural networks in a particular region.
+[00:02:53.280 --> 00:02:58.800]   So I hope to give you kind of a taste of that in this talk.
+[00:02:58.800 --> 00:03:01.600]   And I hope this is not too technical,
+[00:03:01.600 --> 00:03:08.000]   but please jump in with questions during it if something is unclear.
+[00:03:08.000 --> 00:03:10.560]   So kind of the setting for this talk is,
+[00:03:10.560 --> 00:03:13.600]   we want to think about gradient descent in networks that are very wide,
+[00:03:14.240 --> 00:03:16.480]   as a function of the learning rate that we choose.
+[00:03:16.480 --> 00:03:19.760]   And let's think about like constant learning rate, SGB,
+[00:03:19.760 --> 00:03:24.640]   but oftentimes, and all of these experiments that I'll show,
+[00:03:24.640 --> 00:03:27.440]   we also can decay the learning rate.
+[00:03:27.440 --> 00:03:31.280]   So really I want to talk about how does the initial choice of learning rate
+[00:03:31.280 --> 00:03:34.240]   kind of determine what kind of dynamics you get.
+[00:03:34.240 --> 00:03:40.240]   The results I want to show you are very particular to mean squared error,
+[00:03:40.240 --> 00:03:41.680]   so just quadratic loss.
+[00:03:42.960 --> 00:03:46.640]   In practice, a lot of people train with cross-entropy.
+[00:03:46.640 --> 00:03:52.880]   There's kind of a back and forth now about can we get MSC models to perform as well with,
+[00:03:52.880 --> 00:03:55.280]   as cross-entropy models.
+[00:03:55.280 --> 00:03:59.200]   And I think that's an interesting kind of question by itself.
+[00:03:59.200 --> 00:04:04.000]   This talk is focused on MSC, but we're currently extending it to other loss functions.
+[00:04:04.000 --> 00:04:10.480]   And kind of what I want to say as a summary of what's known theoretically
+[00:04:10.480 --> 00:04:14.960]   about what happens with deep neural networks when they're infinitely wide.
+[00:04:14.960 --> 00:04:17.200]   So it turns out that, as I mentioned,
+[00:04:17.200 --> 00:04:22.000]   if you do gradient descent in an infinitely wide neural network,
+[00:04:22.000 --> 00:04:24.160]   you're essentially just doing kernel regression.
+[00:04:24.160 --> 00:04:27.840]   So kernel kind of is like a similarity map,
+[00:04:27.840 --> 00:04:33.440]   using features that are already fixed, chosen by you.
+[00:04:33.440 --> 00:04:35.200]   They're not kind of learned from the data.
+[00:04:36.960 --> 00:04:42.000]   And so in this limit, there are very interesting results that I've referenced here
+[00:04:42.000 --> 00:04:45.360]   that tell us that neural networks just behave like a kernel method
+[00:04:45.360 --> 00:04:47.200]   with a very particular choice of kernel.
+[00:04:47.200 --> 00:04:52.080]   There's another way of looking at it, which is that in that limit,
+[00:04:52.080 --> 00:04:57.600]   neural networks behave like some sort of linear model.
+[00:04:57.600 --> 00:05:01.680]   Like the thing that you train is just linear in the parameters.
+[00:05:02.960 --> 00:05:07.520]   And this particular linear model is really just a first order Taylor expansion
+[00:05:07.520 --> 00:05:10.000]   of the neural network about its initialization.
+[00:05:10.000 --> 00:05:16.960]   So, you know, when you think of kind of back to like Taylor series in math,
+[00:05:16.960 --> 00:05:21.760]   imagine that you took your neural network function and some function f of x,
+[00:05:21.760 --> 00:05:23.920]   it depends on the parameters theta,
+[00:05:23.920 --> 00:05:27.920]   and you just expanded it about your initial point.
+[00:05:27.920 --> 00:05:31.680]   You expanded this function about its initial point.
+[00:05:31.680 --> 00:05:35.440]   So you get kind of a first order term, second order term, and so on.
+[00:05:35.440 --> 00:05:38.720]   It turns out that all those other terms don't matter.
+[00:05:38.720 --> 00:05:47.200]   And the neural network just behaves as if you had kept that first order linear term,
+[00:05:47.200 --> 00:05:48.320]   linear in parameters.
+[00:05:48.320 --> 00:05:51.680]   But what we're trying to emphasize in this paper
+[00:05:51.680 --> 00:05:56.000]   is that this kind of relationship only holds at smaller learning rates.
+[00:05:56.000 --> 00:05:59.520]   And in practice, if you go and train a network that's a finite width,
+[00:05:59.520 --> 00:06:04.320]   it's not infinitely wide, you can train at much larger learning rates.
+[00:06:04.320 --> 00:06:08.480]   And so there's a sharp distinction between what happens at small learning rates
+[00:06:08.480 --> 00:06:10.320]   and large learning rates that I want to talk about.
+[00:06:10.320 --> 00:06:18.320]   So very briefly, I hope this isn't too much math in one slide,
+[00:06:18.320 --> 00:06:21.760]   but I want to, there's going to be an object that I'm going to refer to
+[00:06:21.760 --> 00:06:24.880]   throughout this talk, which I kind of referenced before.
+[00:06:24.880 --> 00:06:28.240]   It's a particular kernel, the neural, what I call the,
+[00:06:28.240 --> 00:06:30.480]   what I'm going to refer to as the neural tangent kernel.
+[00:06:30.480 --> 00:06:36.000]   And I kind of want to give a sense of why it just comes about at all.
+[00:06:36.000 --> 00:06:42.080]   So the reason it comes about, which was kind of made up evident
+[00:06:42.080 --> 00:06:46.560]   in this earlier work that I mentioned, is that if you, you know,
+[00:06:46.560 --> 00:06:49.040]   we always think about when we train neural networks,
+[00:06:49.040 --> 00:06:51.360]   we deal with actual parameters of the neural network.
+[00:06:51.360 --> 00:06:54.240]   So we run gradient descent, we update the parameters,
+[00:06:54.240 --> 00:06:57.840]   but we don't really think about how is the function evolving
+[00:06:57.840 --> 00:06:59.040]   during the course of training.
+[00:06:59.040 --> 00:07:03.600]   It turns out that if you try to write down the evolution equation
+[00:07:03.600 --> 00:07:07.120]   for the function that the neural network is learning during training,
+[00:07:07.120 --> 00:07:12.960]   it's very easy. You just use a chain rule, some calculus,
+[00:07:12.960 --> 00:07:16.720]   you'll, you can get this expression that I've shown here for MSC loss.
+[00:07:16.720 --> 00:07:21.040]   And so there's very, there's this very special object that's appearing here
+[00:07:21.040 --> 00:07:23.360]   that is, that I refer to as theta.
+[00:07:23.360 --> 00:07:27.520]   And this box equation, this tells you how to compute it.
+[00:07:27.520 --> 00:07:31.440]   Theta is this neural tangent kernel.
+[00:07:31.440 --> 00:07:36.080]   It's a particular kind of kernel that you get from the neural network
+[00:07:36.080 --> 00:07:43.760]   by taking the gradients of the function that the neural network represents
+[00:07:43.760 --> 00:07:46.480]   with respect to the parameters.
+[00:07:46.480 --> 00:07:49.520]   And taking this inner product between these two gradients
+[00:07:49.520 --> 00:07:51.840]   for two different points, x and x prime,
+[00:07:51.840 --> 00:07:56.640]   taking that dot product that gives you one entry of this kernel.
+[00:07:56.640 --> 00:08:01.040]   And so I only touch on this because this is kind of a core part
+[00:08:01.040 --> 00:08:03.680]   of how we're gonna, it works into the theory,
+[00:08:03.680 --> 00:08:05.680]   and it's how we're gonna distinguish between
+[00:08:05.680 --> 00:08:08.240]   what's a small learning rate and what's a large learning rate.
+[00:08:08.240 --> 00:08:10.640]   But this is something that you could easily compute
+[00:08:10.640 --> 00:08:12.720]   when you have access to the network gradients.
+[00:08:12.720 --> 00:08:17.200]   So the question here is now, imagine you took
+[00:08:18.640 --> 00:08:21.760]   the model that you have and you train it at different learning rates.
+[00:08:21.760 --> 00:08:23.920]   What kind of phenomenon would you observe?
+[00:08:23.920 --> 00:08:29.840]   Well, you're in practice, you probably have a lot of experience with this.
+[00:08:29.840 --> 00:08:35.200]   If you choose a learning rate too large, a training will diverge.
+[00:08:35.200 --> 00:08:37.680]   And that's because you're just taking like,
+[00:08:37.680 --> 00:08:45.200]   the validity of your gradient descent does not hold for step sizes that are too big.
+[00:08:46.720 --> 00:08:51.440]   You don't really match the curvature and really the kind of geometry of the lost landscape.
+[00:08:51.440 --> 00:08:54.160]   And so that's something that we know.
+[00:08:54.160 --> 00:08:59.760]   But can we come up with a distinction between small and large that's also, that's meaningful?
+[00:08:59.760 --> 00:09:04.800]   And it turns out that we can, and it's related to this theory of infinitely wide networks.
+[00:09:04.800 --> 00:09:10.240]   And the way we're gonna do that is using a special quantity
+[00:09:10.240 --> 00:09:13.440]   that I'm gonna refer to for the rest of the talk, which is called lambda naught.
+[00:09:14.000 --> 00:09:17.360]   It's basically just the top eigenvalue of some matrix.
+[00:09:17.360 --> 00:09:23.600]   The way you construct this matrix is from this object that I mentioned on the previous slide.
+[00:09:23.600 --> 00:09:33.600]   So you can evaluate basically this similarity matrix for every pair of points in your data set.
+[00:09:33.600 --> 00:09:38.320]   And although, you know, maybe you're dealing, maybe your data set is quite large,
+[00:09:38.320 --> 00:09:42.640]   it's like 50,000 points, but you don't actually have to evaluate it on all those points.
+[00:09:42.640 --> 00:09:45.200]   You can just take, evaluate it on a small batch of data.
+[00:09:45.200 --> 00:09:51.120]   So in our experiments, this can be just 100 points to get an estimate of what this eigenvalue is.
+[00:09:51.120 --> 00:09:57.520]   So construct this matrix, which has elements theta sub a, b, on your batch of,
+[00:09:57.520 --> 00:10:04.320]   on your batch of 100 training points, compute the top eigenvalue,
+[00:10:04.320 --> 00:10:09.040]   and we're gonna use this quantity to tell us whether something is small or large.
+[00:10:09.040 --> 00:10:12.720]   And again, this ties into all of the theory that's kind of been,
+[00:10:12.720 --> 00:10:14.800]   been built around infinite width networks.
+[00:10:14.800 --> 00:10:23.760]   So once you have this number, lambda naught, but I told you it's pretty cheap to compute.
+[00:10:23.760 --> 00:10:25.680]   You just need some gradients.
+[00:10:25.680 --> 00:10:28.000]   You evaluate it at initialization.
+[00:10:28.000 --> 00:10:33.120]   So you just take your random network, compute these gradients from the previous slide,
+[00:10:33.120 --> 00:10:36.400]   evaluate it on, say, your 100 data points.
+[00:10:36.400 --> 00:10:38.000]   So it's a 100 by 100 matrix.
+[00:10:38.800 --> 00:10:40.880]   Diagonalize it, get the top eigenvalue.
+[00:10:40.880 --> 00:10:47.040]   2 over lambda naught is gonna be a special learning rate that tells us,
+[00:10:47.040 --> 00:10:52.720]   that distinguishes two regimes, which I'm gonna refer to as lazy and catapult.
+[00:10:52.720 --> 00:10:56.640]   The lazy regime is something that's been studied before.
+[00:10:56.640 --> 00:11:02.400]   It's basically the regime that I mentioned when you make the network wider and wider
+[00:11:02.400 --> 00:11:07.680]   would give you this kind of kernel regression type learning.
+[00:11:08.240 --> 00:11:10.160]   That people know about.
+[00:11:10.160 --> 00:11:20.640]   But what's new and what we study in our paper is this other regime that we named the catapult phase.
+[00:11:20.640 --> 00:11:26.080]   Because of the sort of picture, the thing that sort of happens qualitatively is that
+[00:11:26.080 --> 00:11:28.960]   the learning rate is too large for the sort of basin
+[00:11:28.960 --> 00:11:32.800]   in the optimization landscape that you're initially sitting in.
+[00:11:32.800 --> 00:11:36.080]   And so when the learning rate is just, is too large,
+[00:11:36.080 --> 00:11:39.680]   you know, you migrate out of that basin very rapidly at the beginning of training
+[00:11:39.680 --> 00:11:41.760]   and you end up in some other basin.
+[00:11:41.760 --> 00:11:47.200]   So it kind of allows you to explore a very different part of the optimization landscape
+[00:11:47.200 --> 00:11:50.640]   than you otherwise would have if you had trained with a small learning rate
+[00:11:50.640 --> 00:11:52.560]   and stayed very close to initialization.
+[00:11:52.560 --> 00:11:57.360]   Another thing we point out in the paper is that
+[00:11:57.360 --> 00:12:00.800]   if you wanted to know what the max learning rate is,
+[00:12:00.800 --> 00:12:06.720]   well empirically we found that it tends to have this simple form of C over lambda naught.
+[00:12:06.720 --> 00:12:08.240]   So lambda naught you've already computed.
+[00:12:08.240 --> 00:12:15.920]   C is a number that in some networks was 4 for us and in other networks was 12.
+[00:12:15.920 --> 00:12:19.840]   In our theory C is exactly 4.
+[00:12:19.840 --> 00:12:22.960]   So that's all to say that if you measure lambda naught,
+[00:12:22.960 --> 00:12:26.560]   you would know what 2 over lambda naught is, what C over lambda naught is.
+[00:12:27.360 --> 00:12:31.280]   And it would tell you kind of these three different regimes.
+[00:12:31.280 --> 00:12:32.480]   When am I going to diverge?
+[00:12:32.480 --> 00:12:34.080]   When will I get catapult behavior?
+[00:12:34.080 --> 00:12:35.920]   When am I, will I get a lazy phase?
+[00:12:35.920 --> 00:12:38.720]   Yes, Man.
+[00:12:38.720 --> 00:12:41.360]   It looks like we have a question from Mike Trainer.
+[00:12:41.360 --> 00:12:46.160]   They're asking, is lambda naught calculated using the initial parameter values
+[00:12:46.160 --> 00:12:48.240]   before any gradient steps have been taken?
+[00:12:48.240 --> 00:12:49.040]   Does it matter?
+[00:12:49.040 --> 00:12:50.000]   How much does it change?
+[00:12:50.000 --> 00:12:51.920]   That's a great question.
+[00:12:51.920 --> 00:12:56.480]   So it's computed at initialization.
+[00:12:57.440 --> 00:13:03.200]   This, you know, even though we'll be talking about, you know,
+[00:13:03.200 --> 00:13:07.920]   the, this is, it's a fantastic question because the catapult regime is a regime
+[00:13:07.920 --> 00:13:10.000]   in which this number will change quite a bit.
+[00:13:10.000 --> 00:13:15.520]   But nonetheless, these kind of demarcations have to do,
+[00:13:15.520 --> 00:13:17.360]   or are just taken at initialization.
+[00:13:17.360 --> 00:13:19.840]   They have to do kind of with the infinite width theory.
+[00:13:19.840 --> 00:13:20.560]   Yeah.
+[00:13:20.560 --> 00:13:23.200]   And all of the things that I'm saying are kind of,
+[00:13:23.200 --> 00:13:25.520]   you should take it with a little bit of grain of salt.
+[00:13:25.520 --> 00:13:30.800]   So they're like, you know, the difference between running SGD
+[00:13:30.800 --> 00:13:34.640]   versus full batch gradient descent, what kind of batch size,
+[00:13:34.640 --> 00:13:36.400]   all of these effects that I'm going to show you,
+[00:13:36.400 --> 00:13:39.600]   we kind of tested over all these different hyperparameter choices.
+[00:13:39.600 --> 00:13:41.600]   So we think they're pretty robust.
+[00:13:41.600 --> 00:13:46.480]   I should say that we're dealing with networks that are pretty wide.
+[00:13:46.480 --> 00:13:50.800]   So I mean, in practice, they don't have to be that wide.
+[00:13:50.800 --> 00:13:54.800]   They can be, you know, maybe hundreds of hidden units wide.
+[00:13:55.520 --> 00:13:59.600]   In general, I would advocate if you can make your network wider, you should try it.
+[00:13:59.600 --> 00:14:05.040]   Because that tends to not hurt performance most of the time.
+[00:14:05.040 --> 00:14:09.280]   But the sort of distinction that I'm talking about is one in which,
+[00:14:09.280 --> 00:14:10.960]   if you don't see a sharp distinction,
+[00:14:10.960 --> 00:14:13.360]   you should just make your network wider and you will see it.
+[00:14:13.360 --> 00:14:17.760]   Because it's really coming from infinite width or large width analysis.
+[00:14:17.760 --> 00:14:23.680]   So let's go to what are some of the signatures of these two phases.
+[00:14:23.680 --> 00:14:26.080]   Like what is different about these two?
+[00:14:26.080 --> 00:14:29.600]   So one of the things that's different is that if you looked at
+[00:14:29.600 --> 00:14:35.920]   how your training or your test loss evolves in these two different regimes,
+[00:14:35.920 --> 00:14:37.040]   lazy versus catapult.
+[00:14:37.040 --> 00:14:41.280]   So let's say you choose a learning rate that's smaller than eta crit
+[00:14:41.280 --> 00:14:45.520]   and one that's falling in this other regime between eta crit and eta max.
+[00:14:45.520 --> 00:14:50.160]   In the catapult phase, you would find that your loss actually grows
+[00:14:50.800 --> 00:14:53.840]   very early on in training as if it's about to diverge,
+[00:14:53.840 --> 00:14:56.080]   but it won't actually diverge, it'll come back down.
+[00:14:56.080 --> 00:15:01.760]   Whereas in the lazy phase, you see kind of a smooth decrease in the loss.
+[00:15:01.760 --> 00:15:08.400]   And so that's shown here, kind of these green and red curves are basically eta values,
+[00:15:08.400 --> 00:15:11.040]   learning rate values that put you in the catapult phase,
+[00:15:11.040 --> 00:15:15.680]   and the blue and orange curves put you in the lazy phase.
+[00:15:15.680 --> 00:15:18.320]   And the model on the left is sort of toyish.
+[00:15:18.320 --> 00:15:20.640]   It's just three hidden layers trained on MNIST,
+[00:15:20.640 --> 00:15:24.320]   but you see that the same thing holds up for a wide resonant on CIFAR-10,
+[00:15:24.320 --> 00:15:29.600]   which is a very different setting, but you kind of see the same phenomenon.
+[00:15:29.600 --> 00:15:35.920]   The other thing that is kind of a signature of the distinction between these two
+[00:15:35.920 --> 00:15:39.360]   is that if you actually looked at the evolution of lambda,
+[00:15:39.360 --> 00:15:41.520]   which is effectively like a measure,
+[00:15:41.520 --> 00:15:46.080]   a rough measure of the curvature of the basin that you're kind of currently in,
+[00:15:47.200 --> 00:15:51.200]   you would see two very different chart, like very different behaviors.
+[00:15:51.200 --> 00:15:56.880]   So again, the green and red curves show an eta value that puts you in the catapult phase,
+[00:15:56.880 --> 00:16:00.560]   the blue and orange curves are in the lazy phase.
+[00:16:00.560 --> 00:16:06.560]   And what you see is that the curvature drops pretty rapidly early in training
+[00:16:06.560 --> 00:16:09.520]   if you're in the catapult phase,
+[00:16:09.520 --> 00:16:14.640]   whereas you just see it kind of decay a little bit if you're in the lazy phase.
+[00:16:14.640 --> 00:16:17.040]   And it turns out as you make it wider and wider,
+[00:16:17.040 --> 00:16:20.080]   actually in the lazy phase, your curvature won't drop at all
+[00:16:20.080 --> 00:16:23.040]   because you're going to actually stay in the initial basin.
+[00:16:23.040 --> 00:16:25.920]   This is sort of the existing theoretical result that we know.
+[00:16:25.920 --> 00:16:30.000]   But if your learning rate is above this value,
+[00:16:30.000 --> 00:16:34.000]   you will evolve into another basin, your curvature will change.
+[00:16:34.000 --> 00:16:38.800]   And again, you see kind of similar phenomenology in a wide resonant,
+[00:16:38.800 --> 00:16:43.280]   despite the fact that that has more bells and whistles than a fully connected network.
+[00:16:44.320 --> 00:16:48.800]   And here, a final signature that I want to mention is
+[00:16:48.800 --> 00:16:51.200]   you kind of see that this persists throughout training.
+[00:16:51.200 --> 00:16:53.760]   So even if you looked at the curvature, say at some,
+[00:16:53.760 --> 00:16:58.720]   at a certain time or at the end of training, you'd find that in the catapult phase,
+[00:16:58.720 --> 00:17:02.480]   so this is showing, you know, lambda as a function of the learning rate.
+[00:17:02.480 --> 00:17:09.040]   In general, the curvatures in the catapult phase are much smaller than they are in the lazy phase.
+[00:17:09.040 --> 00:17:12.320]   Now this particular plot, you can kind of see
+[00:17:13.520 --> 00:17:16.480]   what we found was particular to networks with ReLU,
+[00:17:16.480 --> 00:17:21.120]   which we don't quite, haven't quite understood why it's different.
+[00:17:21.120 --> 00:17:24.080]   But in networks with ReLU nonlinearities,
+[00:17:24.080 --> 00:17:27.680]   so there's the two over lambda naught that I mentioned at the very beginning,
+[00:17:27.680 --> 00:17:33.600]   which is universal across all models for being the value of eta critical.
+[00:17:33.600 --> 00:17:40.720]   Eta max, which is this black kind of vertical line here for these models,
+[00:17:40.720 --> 00:17:43.680]   occurs at 12 over lambda naught instead of 4.
+[00:17:43.680 --> 00:17:50.160]   So what that constant is, kind of, again, there seems to be two rough cases that we see
+[00:17:50.160 --> 00:17:53.440]   between ReLU models and non-ReLU models, but
+[00:17:53.440 --> 00:17:59.120]   for lambda naught, then somewhere between, you know, 2 and 12-ish over lambda naught
+[00:17:59.120 --> 00:18:02.080]   gives you the catapult phase, learning rates that are smaller,
+[00:18:02.080 --> 00:18:07.600]   give you the lazy phase, and you start to diverge if your learning rate is larger than that.
+[00:18:07.600 --> 00:18:11.920]   So if I'm doing okay on time, I just want to mention maybe two
+[00:18:11.920 --> 00:18:15.280]   kind of things that you may not have heard about,
+[00:18:15.280 --> 00:18:20.480]   but I think are, for people who train neural networks all the time,
+[00:18:20.480 --> 00:18:26.160]   it's important to try out and maybe, yeah, just a good thing to note,
+[00:18:26.160 --> 00:18:29.680]   which is that there are two different ways, actually,
+[00:18:29.680 --> 00:18:32.400]   well, there are many different ways you can parametrize a neural network,
+[00:18:32.400 --> 00:18:37.920]   and the one that you're often used to, that kind of exists,
+[00:18:37.920 --> 00:18:41.120]   is what I'm going to refer to as standard parametrization.
+[00:18:41.120 --> 00:18:46.560]   So it has to do with the fact that when you choose to initialize your parameters,
+[00:18:46.560 --> 00:18:52.640]   you usually have some units of size of the neural network hidden in there.
+[00:18:52.640 --> 00:18:57.120]   So for instance, you might choose the weights of your neural network
+[00:18:57.120 --> 00:19:01.840]   to be drawn from the normal distribution, but you'll scale the variance appropriately.
+[00:19:01.840 --> 00:19:08.880]   So in this case, the width of the hidden layer that's coming in is n,
+[00:19:08.880 --> 00:19:11.600]   and you scale the variance as 1/n.
+[00:19:11.600 --> 00:19:15.920]   So that's kind of crucial for training.
+[00:19:15.920 --> 00:19:21.600]   I think it's pretty widespread also, but it's crucial as you kind of change
+[00:19:21.600 --> 00:19:25.840]   the size of your hidden layer or make models deeper and so on,
+[00:19:25.840 --> 00:19:29.200]   that these factors kind of come in in the right places,
+[00:19:29.200 --> 00:19:33.040]   because you want to make sure that you're not losing signal,
+[00:19:33.040 --> 00:19:35.760]   or not amplifying or diminishing signal,
+[00:19:35.760 --> 00:19:41.840]   as you kind of propagate a signal through a neural network at initialization,
+[00:19:41.840 --> 00:19:43.680]   so when you first begin to optimize.
+[00:19:43.680 --> 00:19:49.520]   So in the standard case, what we usually do is we push those dimensions
+[00:19:49.520 --> 00:19:52.400]   into the initialization of the parameters,
+[00:19:52.400 --> 00:19:56.960]   and then we'll just multiply the weights into whatever came from the previous layer
+[00:19:56.960 --> 00:20:00.000]   to give us the new weight, to give us the new function.
+[00:20:00.000 --> 00:20:04.160]   So from f to the l-1 to f to the l.
+[00:20:04.160 --> 00:20:08.400]   I want to point out that another thing you could have done,
+[00:20:08.400 --> 00:20:12.400]   which was done in this, one of the papers that I referenced earlier,
+[00:20:12.400 --> 00:20:21.280]   is to pull out the dimensions explicitly in the parameter.
+[00:20:21.280 --> 00:20:27.360]   So just write your neural network as parametrized as 1 over root n times the weights,
+[00:20:27.360 --> 00:20:33.280]   and now the weights are going to be initialized as being drawn from a normal distribution,
+[00:20:33.280 --> 00:20:36.400]   with a variance that doesn't change with size.
+[00:20:36.400 --> 00:20:40.800]   So it's just a constant here, sigma squared w is an order one constant.
+[00:20:40.800 --> 00:20:44.320]   And at initialization, these two are similar.
+[00:20:44.320 --> 00:20:48.400]   They lead to slightly different gradient descent dynamics,
+[00:20:48.400 --> 00:20:52.880]   but the nice one, nice thing about NTK parameterization is that
+[00:20:52.880 --> 00:20:57.680]   it's kind of more resilient to changes in model size.
+[00:20:57.680 --> 00:21:01.920]   So a lot of the things that I talked about right now,
+[00:21:01.920 --> 00:21:09.520]   some of the equations I showed were done in this particular NTK parameterization,
+[00:21:09.520 --> 00:21:15.120]   which, you know, in practice what it would mean is if you worked in this parameterization,
+[00:21:15.120 --> 00:21:17.840]   what you would find is that your learning rates,
+[00:21:17.840 --> 00:21:20.800]   your maximum learning rate, or your critical learning rate,
+[00:21:20.800 --> 00:21:24.000]   as you made the network wider or as you changed its size,
+[00:21:24.000 --> 00:21:26.880]   would stay about the same in value.
+[00:21:26.880 --> 00:21:28.960]   It stays an order one constant.
+[00:21:28.960 --> 00:21:33.200]   In standard parameterization, what happens is
+[00:21:33.200 --> 00:21:37.120]   the learning rate actually tends to vanish with width.
+[00:21:37.120 --> 00:21:40.400]   So if you're kind of scanning over different,
+[00:21:40.400 --> 00:21:45.280]   this is relevant if width is a hyperparameter for you in your experiments,
+[00:21:45.280 --> 00:21:51.200]   because if you're comparing different models of different widths of different sizes,
+[00:21:51.200 --> 00:21:53.920]   but you're sweeping over the same learning rate range,
+[00:21:53.920 --> 00:21:56.000]   and you're working in standard parameterization,
+[00:21:56.000 --> 00:22:02.160]   you won't, you're not testing kind of equivalent models or an equivalent range.
+[00:22:02.160 --> 00:22:04.320]   So that's maybe just kind of a side note.
+[00:22:04.320 --> 00:22:08.000]   You can read more about it in this paper and elsewhere,
+[00:22:08.720 --> 00:22:10.400]   kind of in our paper too.
+[00:22:10.400 --> 00:22:13.120]   All of the results that I'm going to show are basically robust
+[00:22:13.120 --> 00:22:15.040]   to whatever parameterization you choose.
+[00:22:15.040 --> 00:22:18.480]   So actually the experiments we did are done in standard parameterization,
+[00:22:18.480 --> 00:22:23.280]   but it's just something to be aware of about how the maximum learning rate,
+[00:22:23.280 --> 00:22:28.320]   or how any learning rate in general scales with width,
+[00:22:28.320 --> 00:22:32.000]   depending on how you've chosen this parameterization.
+[00:22:32.000 --> 00:22:35.760]   And this is just kind of not really discussing why that happens,
+[00:22:35.760 --> 00:22:37.920]   but just hinting, kind of giving you,
+[00:22:37.920 --> 00:22:40.640]   touching on the fact that it does happen,
+[00:22:40.640 --> 00:22:42.240]   and it's something to maybe be aware of.
+[00:22:42.240 --> 00:22:47.440]   So I suspect I might be low on time.
+[00:22:47.440 --> 00:22:52.640]   And if that's the case, I might jump to the end.
+[00:22:52.640 --> 00:22:56.320]   Yeah, I think it'd be a good idea to jump to the end,
+[00:22:56.320 --> 00:22:57.680]   so we have time for questions.
+[00:22:57.680 --> 00:23:01.840]   Okay, so I won't go over the kind of one of the heart of the paper,
+[00:23:01.840 --> 00:23:05.040]   which is that we kind of not only observe these things empirically,
+[00:23:05.040 --> 00:23:09.920]   but we can explain them theoretically with a very simple elegant model
+[00:23:09.920 --> 00:23:12.560]   that comes from a single hidden layer neural network.
+[00:23:12.560 --> 00:23:14.320]   I won't talk about it.
+[00:23:14.320 --> 00:23:17.680]   For people who are interested in dynamical systems,
+[00:23:17.680 --> 00:23:24.240]   I'll just say as a teaser that you can basically just analyze these two coupled
+[00:23:24.240 --> 00:23:30.240]   update equations, discrete update equations, for two variables,
+[00:23:30.240 --> 00:23:31.120]   f and lambda.
+[00:23:31.120 --> 00:23:32.320]   They're just two scalars,
+[00:23:32.320 --> 00:23:35.760]   and you can recover the existence of these two phases.
+[00:23:35.760 --> 00:23:41.360]   And so here are the numerics that come from just the analysis of this two variable
+[00:23:41.360 --> 00:23:49.840]   kind of dynamical system that you see is kind of pretty close to the empirical results
+[00:23:49.840 --> 00:23:52.400]   I showed you for like wide resonant and other models,
+[00:23:52.400 --> 00:23:55.440]   where again, there's, you know,
+[00:23:55.440 --> 00:23:58.720]   eta critical is computed in a particular way,
+[00:23:58.720 --> 00:24:03.600]   and eta max also has the form c over lambda naught,
+[00:24:03.600 --> 00:24:06.800]   where c is exactly four in this particular theoretical model.
+[00:24:06.800 --> 00:24:10.560]   So this is kind of the final slide.
+[00:24:10.560 --> 00:24:14.640]   It's - we did a lot of experiments trying to understand
+[00:24:14.640 --> 00:24:18.720]   if there was a connection between large learning rates and generalization,
+[00:24:18.720 --> 00:24:22.160]   because that's certainly a thing that, you know,
+[00:24:22.160 --> 00:24:25.520]   people have mentioned in the past, you know,
+[00:24:25.520 --> 00:24:29.760]   do connections between flatter minima and generalization.
+[00:24:29.760 --> 00:24:33.040]   So one of the things we can say kind of in this paper is,
+[00:24:33.040 --> 00:24:35.520]   well, of course, larger learning rates lead you to
+[00:24:35.520 --> 00:24:40.880]   lower values of final curvature and therefore flatter minima in a certain sense.
+[00:24:40.880 --> 00:24:44.560]   Across a lot of the experiments that we looked at,
+[00:24:44.560 --> 00:24:47.600]   it tended to be the case that larger learning rates,
+[00:24:47.600 --> 00:24:51.840]   mainly meaning in this phase, in the catapult phase,
+[00:24:51.840 --> 00:24:55.360]   that I mentioned, did better,
+[00:24:55.360 --> 00:24:59.920]   or that is to say that like the best performing model was often in the catapult phase,
+[00:24:59.920 --> 00:25:04.240]   but I don't want to give kind of a universal statement about that,
+[00:25:04.240 --> 00:25:06.800]   because again, it may depend on your problem,
+[00:25:06.800 --> 00:25:09.760]   where the optimal kind of learning rate lies.
+[00:25:09.760 --> 00:25:12.880]   I think for a lot of problems in deep learning
+[00:25:12.880 --> 00:25:16.320]   that people work on, particularly like image classification and things like that,
+[00:25:17.600 --> 00:25:21.920]   it may be the case that optimal learning rate kind of lies in this other regime.
+[00:25:21.920 --> 00:25:27.440]   I didn't really talk about this, but there's kind of this ongoing debate now
+[00:25:27.440 --> 00:25:33.760]   and investigation and research as to what's actually happening in,
+[00:25:33.760 --> 00:25:36.320]   what does feature learning actually consist of
+[00:25:36.320 --> 00:25:38.880]   when we talk about that in kind of neural network models.
+[00:25:38.880 --> 00:25:42.720]   And this catapult phase, another way to frame it is that it's one where
+[00:25:42.720 --> 00:25:44.400]   we think there's a lot of feature learning.
+[00:25:45.120 --> 00:25:48.400]   This object that I referred to earlier, this kernel,
+[00:25:48.400 --> 00:25:50.720]   has to do with the features that are being learned,
+[00:25:50.720 --> 00:25:54.080]   and so if it's changing by a great amount, then you're learning a lot of features,
+[00:25:54.080 --> 00:25:56.640]   whereas in the lazy phase that I mentioned,
+[00:25:56.640 --> 00:26:01.040]   we know that in the infinite width limit, you don't do any feature learning,
+[00:26:01.040 --> 00:26:06.400]   you just have fixed kernel regression using a kernel you evaluated at initialization.
+[00:26:06.400 --> 00:26:11.920]   So there's kind of, that's an ongoing kind of topic of investigation,
+[00:26:11.920 --> 00:26:15.920]   but here are just three plots that kind of show three different experiments,
+[00:26:15.920 --> 00:26:21.440]   starting from on the left, a very simple system on just a small number of samples
+[00:26:21.440 --> 00:26:24.720]   where you see a huge gain in the test performance,
+[00:26:24.720 --> 00:26:30.960]   because there aren't that many samples, and then in the middle and right most plots,
+[00:26:30.960 --> 00:26:34.640]   you just see wide ResNet models on CIFAR-10 and CIFAR-100,
+[00:26:34.640 --> 00:26:40.320]   where the better performing models seem to fall in the catapult phase roughly.
+[00:26:40.880 --> 00:26:43.600]   These are also experiments where we did learning rate decay,
+[00:26:43.600 --> 00:26:49.040]   so again, I don't know that there's like a universal statement that I want to say,
+[00:26:49.040 --> 00:26:52.400]   but it tends to be the case across our observations,
+[00:26:52.400 --> 00:26:55.920]   that when the model, if you make the model wider and wider, it gets better,
+[00:26:55.920 --> 00:27:01.120]   and in general, between a small and large learning rate kind of phase,
+[00:27:01.120 --> 00:27:03.680]   large learning rate tends to be better.
+[00:27:03.680 --> 00:27:09.200]   So I'll end there, I'll maybe just point you to the paper if you want to read more,
+[00:27:10.080 --> 00:27:14.800]   and also for actually computing this eigenvalue,
+[00:27:14.800 --> 00:27:20.640]   I think the Neural Tangents Library is a very useful library from collaborators of mine at Google,
+[00:27:20.640 --> 00:27:24.880]   and it can help with actually measuring, constructing this
+[00:27:24.880 --> 00:27:28.800]   NTK kernel on a batch of data, measuring the eigenvalue,
+[00:27:28.800 --> 00:27:33.760]   and so you can use it in experiments to kind of determine how to choose learning rates,
+[00:27:33.760 --> 00:27:36.160]   and how to more generally tune hyperparameters.
+[00:27:39.840 --> 00:27:44.640]   Great, thanks Yasaman, that was a really interesting talk.
+[00:27:44.640 --> 00:27:49.360]   It highlighted some of the features of your work that I didn't really get
+[00:27:49.360 --> 00:27:52.080]   from just reading the paper, which is great.
+[00:27:52.080 --> 00:27:55.360]   One of those that I wanted to check in on is,
+[00:27:55.360 --> 00:28:03.280]   the batch norm is known to reduce the biggest eigenvalue of the loss Hessian,
+[00:28:03.280 --> 00:28:06.720]   which says that the loss service gets a little bit less curvy,
+[00:28:06.720 --> 00:28:10.320]   and this is thought to be what, like, maybe the way that batch norm
+[00:28:10.320 --> 00:28:13.840]   sort of gives you the ability to give higher learning rates.
+[00:28:13.840 --> 00:28:20.320]   Would you expect that to also reduce lambda zero of this tangent kernel matrix,
+[00:28:20.320 --> 00:28:27.120]   and if so, do you think that your work helps explain a little bit of the utility of batch norm?
+[00:28:27.120 --> 00:28:31.840]   So that's a good question.
+[00:28:31.840 --> 00:28:34.160]   I don't think our work does at the moment.
+[00:28:35.040 --> 00:28:37.280]   Maybe that's a direction it could be taken in.
+[00:28:37.280 --> 00:28:39.200]   What I didn't mention, and what,
+[00:28:39.200 --> 00:28:43.760]   because it, I probably needed more time to explain it in detail,
+[00:28:43.760 --> 00:28:49.520]   is that actually this lambda naught is very closely related to the top eigenvalue of the Hessian,
+[00:28:49.520 --> 00:28:56.080]   if you're using MSC loss, so actually they're exactly the same in an infinitely wide model,
+[00:28:56.080 --> 00:28:59.360]   and the difference comes about as you back off of infinite width.
+[00:28:59.360 --> 00:29:03.280]   And so at finite width, there's kind of like a small correction term,
+[00:29:03.280 --> 00:29:08.480]   which in our experiments, we actually, for a lot of the things that I showed,
+[00:29:08.480 --> 00:29:10.640]   I don't want to say necessarily all,
+[00:29:10.640 --> 00:29:17.840]   we also measured the Hessian, like, top eigenvalue to, like, study that discrepancy,
+[00:29:17.840 --> 00:29:24.480]   and they're kind of more or less the same for models of this size.
+[00:29:24.480 --> 00:29:31.360]   But I would expect basically that because, as you noted, batch norm reduces that top eigenvalue,
+[00:29:31.360 --> 00:29:35.040]   then lambda naught here in a batch norm network would also be smaller.
+[00:29:35.040 --> 00:29:41.120]   What I think that, although there's no batch norm in our theory,
+[00:29:41.120 --> 00:29:45.440]   I think that this difference between small and large learning rate, though, nonetheless,
+[00:29:45.440 --> 00:29:48.640]   seems to persist even with batch norm models,
+[00:29:48.640 --> 00:29:50.720]   because they are some of the models that we tested,
+[00:29:50.720 --> 00:29:52.800]   but we don't really understand why.
+[00:29:52.800 --> 00:29:55.760]   The theory is just a very minimal model.
+[00:29:55.760 --> 00:29:57.620]   For sure.
+[00:29:58.560 --> 00:30:01.520]   Great question from Tom Bishop through Zoom.
+[00:30:01.520 --> 00:30:05.840]   So how do these investigations relate to empirical uses of, like,
+[00:30:05.840 --> 00:30:10.640]   warm-up and one-cycle learning rate policies that should be very effective in practice?
+[00:30:10.640 --> 00:30:15.040]   So just for folks listening, it's actually very common not to just use a single learning rate
+[00:30:15.040 --> 00:30:19.440]   scalar value, but to actually cause that value to go up and down throughout training,
+[00:30:19.440 --> 00:30:20.880]   like a sawtooth pattern.
+[00:30:20.880 --> 00:30:22.480]   So do you think that that connects to this,
+[00:30:22.480 --> 00:30:26.560]   the presence of these different phases in learning rates?
+[00:30:26.560 --> 00:30:32.480]   So that's a great question also, and not one that we understand, or at least I understand.
+[00:30:32.480 --> 00:30:36.880]   Again, this work doesn't tell us about that.
+[00:30:36.880 --> 00:30:40.800]   As far as I know, also, from talking to practitioners,
+[00:30:40.800 --> 00:30:43.280]   I get the sense that warm-up maybe depends,
+[00:30:43.280 --> 00:30:48.400]   the effectiveness of warm-up depends a bit on the model,
+[00:30:48.400 --> 00:30:51.600]   as far as I have heard.
+[00:30:52.640 --> 00:30:56.800]   So that's something that I would kind of want to look into in understanding this,
+[00:30:56.800 --> 00:31:00.640]   but at the moment, I don't have a good understanding of what happens,
+[00:31:00.640 --> 00:31:06.480]   how to do the warm-up, how long to have it go for, what max learning rate to achieve.
+[00:31:06.480 --> 00:31:14.320]   The context of this paper was, I mean, one could make some guesses maybe based off of
+[00:31:14.320 --> 00:31:18.320]   this paper, but I don't know that we'd want to do that.
+[00:31:18.320 --> 00:31:23.360]   But for this paper, another way to interpret it is not just constant learning rate,
+[00:31:23.360 --> 00:31:27.280]   SUD, but just the choice of the initial learning rate,
+[00:31:27.280 --> 00:31:30.960]   and then you could decay even to the same value later on or so on.
+[00:31:30.960 --> 00:31:40.160]   But it's that initial choice that kind of determines this distinction that I was talking about.
+[00:31:40.160 --> 00:31:43.280]   All right.
+[00:31:43.280 --> 00:31:47.200]   I think we only have time for one last question.
+[00:31:48.160 --> 00:31:51.760]   So you mentioned that for over-parameterized networks,
+[00:31:51.760 --> 00:31:54.640]   they effectively behave as though they were linear in the parameters.
+[00:31:54.640 --> 00:32:00.560]   And so you're sort of staying close by and just doing this first-order Taylor expansion.
+[00:32:00.560 --> 00:32:05.120]   So famously, I think in some of the work that you and I have both done on when neural networks
+[00:32:05.120 --> 00:32:12.080]   optimize and when they don't, some of the most prominent work recently has been about these very
+[00:32:12.080 --> 00:32:16.720]   over-parameterized networks and proving that they are actually locally convex,
+[00:32:16.720 --> 00:32:20.720]   that they don't go very far, and that if they don't go very far,
+[00:32:20.720 --> 00:32:23.200]   then you can prove that gradient descent converges.
+[00:32:23.200 --> 00:32:25.440]   So are those two phenomena related?
+[00:32:25.440 --> 00:32:30.400]   Is it the case that those proofs like from Alan Jew at Microsoft and similar,
+[00:32:30.400 --> 00:32:33.920]   that those only hold in the lazy regime and not like the catapult regime?
+[00:32:33.920 --> 00:32:37.520]   So that's a great question.
+[00:32:37.520 --> 00:32:41.520]   So one, I guess there are--
+[00:32:44.720 --> 00:32:50.400]   Actually, so I'm not quite sure of those other papers, whether they're--
+[00:32:50.400 --> 00:32:56.480]   I suspect that they're studying some properties of the local geometry and not global geometry,
+[00:32:56.480 --> 00:32:59.680]   because this is really now a statement about the global geometry,
+[00:32:59.680 --> 00:33:02.720]   that the fact that there exists other basins that are sort of far.
+[00:33:02.720 --> 00:33:08.400]   The older results that-- there were a series of results that were leading,
+[00:33:08.400 --> 00:33:10.880]   basically, I think some of the ones that you were referring to,
+[00:33:11.680 --> 00:33:14.640]   that told us over-parameterized models behave like--
+[00:33:14.640 --> 00:33:20.000]   just are effectively like convex optimization is what's relevant here.
+[00:33:20.000 --> 00:33:26.480]   And this is-- this neural tangent kernel result is kind of-- is consistent with that.
+[00:33:26.480 --> 00:33:31.440]   So it's maybe a slightly different result or maybe flavor of result,
+[00:33:31.440 --> 00:33:34.960]   because it's not talking-- maybe the way I see it is,
+[00:33:34.960 --> 00:33:40.320]   it's not talking about the geometry in a neighborhood.
+[00:33:41.360 --> 00:33:45.440]   Maybe like actually studying, like, let's say you define a neighborhood you want to study,
+[00:33:45.440 --> 00:33:48.160]   and then study all the critical points in that neighborhood,
+[00:33:48.160 --> 00:33:53.760]   but sort of talking about the effective landscape that a neural network sees
+[00:33:53.760 --> 00:33:59.680]   as a result of our choice of initialization is effectively a convex landscape.
+[00:33:59.680 --> 00:34:02.720]   That's kind of the way I understood that distinction.
+[00:34:02.720 --> 00:34:04.400]   But I think you're right that--
+[00:34:08.560 --> 00:34:11.760]   there is some something to be done in between here.
+[00:34:11.760 --> 00:34:18.720]   The catapult result kind of suggests that there are other basins.
+[00:34:18.720 --> 00:34:25.120]   I should say that there's maybe-- there are subtleties here that I didn't mention.
+[00:34:25.120 --> 00:34:30.640]   So this kind of result is very relevant for finite-width networks
+[00:34:30.640 --> 00:34:32.720]   because of the way the time scale--
+[00:34:32.720 --> 00:34:36.240]   so I showed you results that show that this kind of increase in loss
+[00:34:36.240 --> 00:34:37.840]   happens very early in training.
+[00:34:38.800 --> 00:34:43.680]   We-- out of this effective model, we can get a time scale for how this--
+[00:34:43.680 --> 00:34:46.880]   how fast this happens, and it grows logarithmically with the width.
+[00:34:46.880 --> 00:34:52.720]   So it's actually a diverging time scale as you make models wider and wider.
+[00:34:52.720 --> 00:34:57.360]   In practice, we never observed that it was-- or we saw that it would scale,
+[00:34:57.360 --> 00:34:59.360]   but it scales so weakly that it's like a--
+[00:34:59.360 --> 00:35:02.880]   it, you know, this catapult happens within the first few steps
+[00:35:02.880 --> 00:35:06.640]   or first kind of 50 steps or so of gradient descent.
+[00:35:07.680 --> 00:35:11.440]   But to make a statement about infinite-width networks,
+[00:35:11.440 --> 00:35:13.920]   I think, you know, this basin that we're talking about,
+[00:35:13.920 --> 00:35:17.920]   strictly speaking, an infinite width also takes like infinite time to get to.
+[00:35:17.920 --> 00:35:21.200]   So I think it would be kind of tricky.
+[00:35:21.200 --> 00:35:26.960]   I don't know how to tie those two together like right now, I think,
+[00:35:26.960 --> 00:35:28.720]   but those-- yeah.
+[00:35:28.720 --> 00:35:32.240]   I do think for intensive purposes, like,
+[00:35:32.240 --> 00:35:37.520]   the optimization is effectively convex when you're infinitely wide.
+[00:35:37.920 --> 00:35:40.960]   But like in practice of the widths that we're talking about,
+[00:35:40.960 --> 00:35:45.040]   this other time scale, logarithmic time scale, is very small.
+[00:35:45.040 --> 00:35:47.520]   And so this other regime is relevant.
+[00:35:47.520 --> 00:35:51.520]   So this work kind of points out in some ways that
+[00:35:51.520 --> 00:35:54.720]   there's another way to take an infinite-width limit,
+[00:35:54.720 --> 00:35:57.200]   which is that you should also take time to be infinite.
+[00:35:57.200 --> 00:36:01.840]   And that was not accessible to the previous kind of papers as far as I know.
+[00:36:01.840 --> 00:36:06.040]   Yeah, it's an interesting thought.
+

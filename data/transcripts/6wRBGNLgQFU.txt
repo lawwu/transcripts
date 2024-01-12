@@ -1,0 +1,807 @@
+
+[00:00:00.000 --> 00:00:03.040]   Yes, so I'm Stacey.
+[00:00:03.040 --> 00:00:06.480]   I'm a deep learning engineer here at Weights and Biases.
+[00:00:06.480 --> 00:00:08.760]   And I'm here to talk about how to tune your deep learning
+[00:00:08.760 --> 00:00:10.260]   models faster.
+[00:00:10.260 --> 00:00:12.640]   I won't get into much theory or math
+[00:00:12.640 --> 00:00:16.400]   behind different algorithms for hyperparameter optimization,
+[00:00:16.400 --> 00:00:18.640]   like what's guaranteed to converge faster,
+[00:00:18.640 --> 00:00:21.340]   what kind of model-based optimization you should use.
+[00:00:21.340 --> 00:00:23.720]   And I'm not going to tell you the best type of parameters
+[00:00:23.720 --> 00:00:26.280]   to pick for a given problem, because the space just
+[00:00:26.280 --> 00:00:27.640]   varies so much.
+[00:00:27.640 --> 00:00:29.040]   Instead, I'm going to focus on what
+[00:00:29.040 --> 00:00:31.880]   I've learned from reproducing and fine-tuning
+[00:00:31.880 --> 00:00:34.800]   a bunch of different models over the last two years.
+[00:00:34.800 --> 00:00:36.800]   In my setup, I'm often forking some code
+[00:00:36.800 --> 00:00:39.040]   for an existing model from GitHub,
+[00:00:39.040 --> 00:00:42.120]   instrumenting it with logging and visualizations,
+[00:00:42.120 --> 00:00:44.520]   and then trying to improve the performance,
+[00:00:44.520 --> 00:00:46.760]   or at least report some interesting analysis of what
+[00:00:46.760 --> 00:00:49.360]   I learned, generally as fast as I can.
+[00:00:49.360 --> 00:00:52.220]   And I do that so I can showcase more examples of machine
+[00:00:52.220 --> 00:00:55.200]   learning on our platform, but also
+[00:00:55.200 --> 00:00:57.600]   be able to say something interesting and helpful
+[00:00:57.600 --> 00:01:00.120]   each time.
+[00:01:00.120 --> 00:01:02.000]   And in that process, I've learned a lot
+[00:01:02.000 --> 00:01:04.840]   about the explore-exploit trade-off, which
+[00:01:04.840 --> 00:01:06.760]   interestingly came up in the previous talk.
+[00:01:06.760 --> 00:01:08.480]   That was cool.
+[00:01:08.480 --> 00:01:10.060]   Yeah, and I'll show lots of screenshots
+[00:01:10.060 --> 00:01:11.960]   from weights and biases, because that's where
+[00:01:11.960 --> 00:01:13.600]   I track all my experiments.
+[00:01:13.600 --> 00:01:15.040]   But the general approach and tips
+[00:01:15.040 --> 00:01:17.080]   should work in any developer environment,
+[00:01:17.080 --> 00:01:18.640]   and hopefully with any framework.
+[00:01:18.640 --> 00:01:21.280]   I'm also giving this talk tomorrow,
+[00:01:21.280 --> 00:01:23.120]   and it's supposed to not be a product pitch.
+[00:01:23.120 --> 00:01:24.960]   So I really appreciate any feedback,
+[00:01:24.960 --> 00:01:30.080]   and generally aiming to have it be not too weights and biases
+[00:01:30.080 --> 00:01:31.960]   specific, even though obviously I'm very
+[00:01:31.960 --> 00:01:35.520]   excited about weights and biases.
+[00:01:35.520 --> 00:01:37.840]   If you haven't heard about the explore-exploit trade-off
+[00:01:37.840 --> 00:01:41.880]   before, it's a useful handle for many life situations.
+[00:01:41.880 --> 00:01:44.120]   It comes from the multi-armed bandit problem,
+[00:01:44.120 --> 00:01:47.520]   where classically you're in a casino,
+[00:01:47.520 --> 00:01:53.080]   and all the slot machines have a different unknown
+[00:01:53.080 --> 00:01:55.480]   and probably really tiny probability of paying out
+[00:01:55.480 --> 00:01:56.200]   money.
+[00:01:56.200 --> 00:01:58.360]   So how do you maximize your winnings?
+[00:01:58.360 --> 00:02:00.640]   You can go try a bunch of machines
+[00:02:00.640 --> 00:02:03.400]   in this explore strategy, or you could pick one
+[00:02:03.400 --> 00:02:05.600]   and play it over and over and hope
+[00:02:05.600 --> 00:02:07.520]   that you picked a really good one.
+[00:02:07.520 --> 00:02:08.840]   That's the exploit strategy.
+[00:02:08.840 --> 00:02:13.520]   I'm not super into the casino metaphor,
+[00:02:13.520 --> 00:02:18.280]   but I think it does bring out a darker side of the process
+[00:02:18.280 --> 00:02:24.120]   that's similar across both of these things, which
+[00:02:24.120 --> 00:02:28.480]   is that it's hard to stop.
+[00:02:28.480 --> 00:02:29.080]   That's it.
+[00:02:29.080 --> 00:02:31.160]   I can't lose any more money, or this
+[00:02:31.160 --> 00:02:32.440]   is as good as this model gets.
+[00:02:32.440 --> 00:02:37.040]   I don't know about that last 0.05%.
+[00:02:37.040 --> 00:02:40.280]   It's hard to tell what's really happening
+[00:02:40.280 --> 00:02:42.520]   versus how you're feeling about it, the story you're
+[00:02:42.520 --> 00:02:43.800]   telling yourself.
+[00:02:43.800 --> 00:02:47.840]   So for example, I might have just lost 20 times in a row,
+[00:02:47.840 --> 00:02:49.080]   but I might be thinking I'm doing great.
+[00:02:49.080 --> 00:02:50.320]   I'm having a lot of fun.
+[00:02:50.320 --> 00:02:51.200]   This is awesome.
+[00:02:51.200 --> 00:02:53.760]   Or I might be thinking, oh, this is awful.
+[00:02:53.760 --> 00:02:54.480]   This is the worst.
+[00:02:54.480 --> 00:02:58.440]   This accuracy is never going to get above 70%.
+[00:02:58.440 --> 00:03:00.480]   I give up.
+[00:03:00.480 --> 00:03:03.400]   As often happens, I think the story and what you experience
+[00:03:03.400 --> 00:03:04.440]   is more important.
+[00:03:04.440 --> 00:03:07.200]   What are you getting out of the process?
+[00:03:07.200 --> 00:03:09.200]   What can you do better next time?
+[00:03:09.200 --> 00:03:11.840]   And so I'm going to tell a few stories of how
+[00:03:11.840 --> 00:03:14.280]   I've encountered this, and they definitely won't point you
+[00:03:14.280 --> 00:03:16.840]   to the best hyperparameter slot machine.
+[00:03:16.840 --> 00:03:19.880]   But hopefully, you'll be able to tune your models faster
+[00:03:19.880 --> 00:03:22.720]   next time, or at least avoid repeating my mistakes
+[00:03:22.720 --> 00:03:24.800]   by thinking about the constraints
+[00:03:24.800 --> 00:03:28.560]   for each hyperparameter sweep, making sure you write down
+[00:03:28.560 --> 00:03:31.720]   what you found from the sweep and what to do next time,
+[00:03:31.720 --> 00:03:35.520]   and then improving that way over time.
+[00:03:35.520 --> 00:03:38.560]   So what is hyperparameter tuning?
+[00:03:38.560 --> 00:03:40.400]   Hyperparameter tuning or optimization
+[00:03:40.400 --> 00:03:42.920]   is the task of finding the best hyperparameters for learning
+[00:03:42.920 --> 00:03:45.360]   algorithms, which for the purposes of this talk,
+[00:03:45.360 --> 00:03:48.840]   it's going to be a convolutional or recurrent neural network.
+[00:03:48.840 --> 00:03:51.040]   GANs and reinforcement learning could probably
+[00:03:51.040 --> 00:03:55.160]   take their whole own separate talk on how to tune those.
+[00:03:55.160 --> 00:03:58.960]   And this tuning could be done entirely by hand,
+[00:03:58.960 --> 00:04:01.360]   one experiment at a time, one hyperparameter at a time.
+[00:04:01.360 --> 00:04:03.240]   But of course, that would be super slow,
+[00:04:03.240 --> 00:04:05.400]   and we really like going meta.
+[00:04:05.400 --> 00:04:07.400]   And so we'll go meta on this manual practice
+[00:04:07.400 --> 00:04:12.320]   of trying hyperparameters and use algorithms.
+[00:04:12.320 --> 00:04:15.040]   There's a lot of research and different tools,
+[00:04:15.040 --> 00:04:18.760]   both paid and open source, for this algorithmic or automated
+[00:04:18.760 --> 00:04:20.760]   aspect of hyperparameter tuning.
+[00:04:20.760 --> 00:04:22.880]   And basically, we're trying to figure out
+[00:04:22.880 --> 00:04:26.960]   how to save time and optimally pick
+[00:04:26.960 --> 00:04:30.960]   the next combination of hyperparameters each time.
+[00:04:30.960 --> 00:04:34.240]   And the most common methods are manual, which I described.
+[00:04:34.240 --> 00:04:36.480]   You just do it.
+[00:04:36.480 --> 00:04:39.400]   Grid, which tries all possible combinations.
+[00:04:39.400 --> 00:04:42.600]   And that's useful if your search space is small and specific
+[00:04:42.600 --> 00:04:45.760]   and you want to guarantee finding the best combination.
+[00:04:45.760 --> 00:04:47.920]   Random search is generally faster and especially
+[00:04:47.920 --> 00:04:50.920]   recommended if you have a larger search space,
+[00:04:50.920 --> 00:04:53.160]   because it's going to sample more of the space
+[00:04:53.160 --> 00:04:55.240]   and give you a sense for various possibilities
+[00:04:55.240 --> 00:04:57.000]   faster than grid search.
+[00:04:57.000 --> 00:05:01.080]   But it's not guaranteed to find the best combination.
+[00:05:01.080 --> 00:05:04.160]   Bayesian optimization tries to build a probabilistic model,
+[00:05:04.160 --> 00:05:07.680]   or guess at the function, that maps from your hyperparameters
+[00:05:07.680 --> 00:05:10.640]   to your target measure of your performance, which is usually
+[00:05:10.640 --> 00:05:14.040]   accuracy on the validation set.
+[00:05:14.040 --> 00:05:16.440]   And this Bayesian model of your actual model
+[00:05:16.440 --> 00:05:18.760]   that you're training updates from every experiment.
+[00:05:18.760 --> 00:05:20.180]   So we tried these hyperparameters,
+[00:05:20.180 --> 00:05:22.640]   got this result. And it actually aims
+[00:05:22.640 --> 00:05:25.360]   to balance the explore-exploit trade-off,
+[00:05:25.360 --> 00:05:29.040]   such that it tries values that it needs to learn about
+[00:05:29.040 --> 00:05:31.120]   to explore the space, and also tries
+[00:05:31.120 --> 00:05:33.080]   ones that it expects to be near optimal
+[00:05:33.080 --> 00:05:36.480]   and gets you closer to the objective.
+[00:05:36.480 --> 00:05:38.600]   In practice, this works faster than grid and random,
+[00:05:38.600 --> 00:05:41.600]   because it runs fewer bad experiments.
+[00:05:41.600 --> 00:05:45.200]   One caveat, though, is that it needs a metric to optimize.
+[00:05:45.200 --> 00:05:47.920]   So you would need to know what that is
+[00:05:47.920 --> 00:05:49.080]   and compute that explicitly.
+[00:05:49.080 --> 00:05:50.760]   If you're just playing around initially,
+[00:05:50.760 --> 00:05:54.200]   a random or grid search might be pretty good.
+[00:05:54.200 --> 00:05:55.840]   And there's a long tail of other methods
+[00:05:55.840 --> 00:05:58.240]   that I'm not going to get into.
+[00:05:58.240 --> 00:06:00.360]   You can actually do gradient-based optimization
+[00:06:00.360 --> 00:06:02.800]   with respect to specific hyperparameters.
+[00:06:02.800 --> 00:06:06.720]   You can do early stopping so that you detect earlier
+[00:06:06.720 --> 00:06:08.180]   if a certain run is not promising
+[00:06:08.180 --> 00:06:10.320]   and don't waste compute on it.
+[00:06:10.320 --> 00:06:13.080]   You can do population-based training,
+[00:06:13.080 --> 00:06:15.980]   where actually you have multiple independent processes that
+[00:06:15.980 --> 00:06:18.800]   learn both hyperparameter values and network weights.
+[00:06:18.800 --> 00:06:20.220]   So you don't even need to be using
+[00:06:20.220 --> 00:06:22.220]   the same architecture for different processes
+[00:06:22.220 --> 00:06:24.080]   in your suite.
+[00:06:24.080 --> 00:06:27.440]   So there are many, many options here.
+[00:06:27.440 --> 00:06:31.400]   And what I like to ask myself is,
+[00:06:31.400 --> 00:06:32.900]   am I at that stage where I've thought
+[00:06:32.900 --> 00:06:34.680]   through the specific model that I'm tuning
+[00:06:34.680 --> 00:06:36.720]   and the specific problem that I'm solving,
+[00:06:36.720 --> 00:06:39.900]   and there's nothing else clever I can do?
+[00:06:39.900 --> 00:06:42.140]   I just want to throw GPUs at this hyperparameter sweep
+[00:06:42.140 --> 00:06:45.160]   and get my answer and go think about something else.
+[00:06:45.160 --> 00:06:46.680]   And I think if that's the case, I
+[00:06:46.680 --> 00:06:48.100]   would suggest just using something
+[00:06:48.100 --> 00:06:50.660]   that's model-based optimized, like a Bayesian sweep,
+[00:06:50.660 --> 00:06:55.140]   because it's probably going to work much faster.
+[00:06:55.140 --> 00:06:58.380]   But I also think the more interesting and challenging
+[00:06:58.380 --> 00:07:00.380]   and rewarding work of hyperparameter tuning
+[00:07:00.380 --> 00:07:02.220]   happens before you get to that stage
+[00:07:02.220 --> 00:07:04.300]   where you just want to throw compute at it.
+[00:07:04.300 --> 00:07:08.040]   And we really don't have good guaranteed algorithms for it
+[00:07:08.040 --> 00:07:11.620]   yet, which is why many of us still have jobs.
+[00:07:11.620 --> 00:07:13.600]   And that's what I'm going to try to talk about.
+[00:07:13.600 --> 00:07:15.180]   And obviously, as we go through this,
+[00:07:15.180 --> 00:07:18.420]   please keep in mind that these are general approaches.
+[00:07:18.420 --> 00:07:20.740]   And your particular task might be different.
+[00:07:20.740 --> 00:07:22.260]   And especially in machine learning,
+[00:07:22.260 --> 00:07:25.540]   there's exceptions to every rule.
+[00:07:25.540 --> 00:07:31.820]   So before you start trying different hyperparameters,
+[00:07:31.820 --> 00:07:34.300]   you decide what hyperparameter even is.
+[00:07:34.300 --> 00:07:36.220]   And there's an important distinction between
+[00:07:36.220 --> 00:07:37.980]   the regular parameters of the network,
+[00:07:37.980 --> 00:07:40.900]   like the model weights and biases, which are learned
+[00:07:40.900 --> 00:07:44.660]   or iteratively improved during the training process,
+[00:07:44.660 --> 00:07:47.020]   and hyperparameters, which are configured outside
+[00:07:47.020 --> 00:07:48.060]   of the training process.
+[00:07:48.060 --> 00:07:52.020]   And generally, they're fixed for the duration of your run,
+[00:07:52.020 --> 00:07:56.060]   although some could be adaptive, like learning rate.
+[00:07:56.060 --> 00:07:58.420]   So for a given network, this could be the number
+[00:07:58.420 --> 00:08:01.540]   of training epochs, learning optimizer type, batch size,
+[00:08:01.540 --> 00:08:05.020]   weight decay, and a lot of other stuff.
+[00:08:05.020 --> 00:08:06.700]   The network architecture itself, you
+[00:08:06.700 --> 00:08:08.580]   could think of that as a hyperparameter.
+[00:08:08.580 --> 00:08:10.540]   You could start from a well-known base network,
+[00:08:10.540 --> 00:08:13.220]   like Inception or ResNet.
+[00:08:13.220 --> 00:08:16.940]   You could tune a certain number of layers, freeze some,
+[00:08:16.940 --> 00:08:19.940]   tune some variable other number.
+[00:08:19.940 --> 00:08:21.900]   And if you're designing a network from scratch,
+[00:08:21.900 --> 00:08:24.540]   then the number and size and type and connection patterns
+[00:08:24.540 --> 00:08:28.780]   and all of that could all be hyperparameters.
+[00:08:28.780 --> 00:08:31.520]   So one useful way to think about whether you're
+[00:08:31.520 --> 00:08:34.380]   going to fix a hyperparameter and keep it constant
+[00:08:34.380 --> 00:08:36.260]   or you're going to vary and explore it
+[00:08:36.260 --> 00:08:39.780]   is how well you can predict its effect in advance
+[00:08:39.780 --> 00:08:43.100]   and how it will affect the overall runtime for your suite.
+[00:08:43.100 --> 00:08:46.340]   So a first easy one here is epochs,
+[00:08:46.340 --> 00:08:49.140]   or the number of passes through your training data.
+[00:08:49.140 --> 00:08:51.340]   And this one's pretty well understood.
+[00:08:51.340 --> 00:08:52.780]   If I'm running repeated experiments,
+[00:08:52.780 --> 00:08:54.540]   I want to set this high enough so
+[00:08:54.540 --> 00:08:56.300]   that I can see that my model's learning
+[00:08:56.300 --> 00:08:58.040]   and there's definite improvement,
+[00:08:58.040 --> 00:08:59.940]   but not so high that I'm wasting time
+[00:08:59.940 --> 00:09:02.220]   on a very slowly converging curve.
+[00:09:02.220 --> 00:09:04.460]   So usually I'll try something like 10.
+[00:09:04.460 --> 00:09:07.340]   If I can get away with it, as long
+[00:09:07.340 --> 00:09:11.140]   as I see some improvement in validation loss
+[00:09:11.140 --> 00:09:14.220]   and make sure that I'm not memorizing the data,
+[00:09:14.220 --> 00:09:17.460]   I like to set this to the minimum to see improvement.
+[00:09:17.460 --> 00:09:19.860]   Another obvious hyperparameter that generally
+[00:09:19.860 --> 00:09:23.720]   has a reliable effect is the size of your training data.
+[00:09:23.720 --> 00:09:25.380]   If you have a representative sample
+[00:09:25.380 --> 00:09:27.860]   and your split is unbiased, then generally,
+[00:09:27.860 --> 00:09:29.900]   the more training data you have, the better
+[00:09:29.900 --> 00:09:31.780]   the model will learn.
+[00:09:31.780 --> 00:09:34.700]   I follow the conventional wisdom of 80 for train,
+[00:09:34.700 --> 00:09:38.220]   10 for validation, and 10 for test.
+[00:09:38.220 --> 00:09:39.460]   Those are percentages.
+[00:09:39.460 --> 00:09:41.380]   And you don't look at the 10% that's
+[00:09:41.380 --> 00:09:44.600]   for testing until you're done with the whole optimization
+[00:09:44.600 --> 00:09:46.300]   process.
+[00:09:46.300 --> 00:09:49.700]   And I actually lower these for a run, an experiment,
+[00:09:49.700 --> 00:09:50.660]   in a suite.
+[00:09:50.660 --> 00:09:56.020]   I take about 20% to 50% of each split.
+[00:09:58.540 --> 00:10:01.220]   And often, I'm testing my code end
+[00:10:01.220 --> 00:10:04.860]   to end on a very small subset anyways of the training data
+[00:10:04.860 --> 00:10:07.060]   to make sure that it works.
+[00:10:07.060 --> 00:10:11.180]   And usually, I try to do this to get the run time down
+[00:10:11.180 --> 00:10:12.420]   to a few minutes.
+[00:10:12.420 --> 00:10:15.220]   Of course, that can be impossible in some applications.
+[00:10:15.220 --> 00:10:20.500]   And of course, a general caveat here
+[00:10:20.500 --> 00:10:22.480]   is that all of these things interrelate,
+[00:10:22.480 --> 00:10:25.780]   especially with all of the other hyperparameters
+[00:10:25.780 --> 00:10:29.500]   that I'm going to try to vary.
+[00:10:29.500 --> 00:10:33.140]   After I set up one experiment or run,
+[00:10:33.140 --> 00:10:37.140]   I can scale those to a suite or a set of experiments.
+[00:10:37.140 --> 00:10:39.900]   And after a phase of that, I can test with the full data set,
+[00:10:39.900 --> 00:10:42.460]   the full training data, and hopefully see
+[00:10:42.460 --> 00:10:46.060]   that the observed patterns hold and maybe even improve,
+[00:10:46.060 --> 00:10:47.980]   because I'm adding more data.
+[00:10:47.980 --> 00:10:50.980]   And if adding more data doesn't help or makes the results worse,
+[00:10:50.980 --> 00:10:53.340]   then I might be overfitting.
+[00:10:53.340 --> 00:10:57.060]   Validation data can be especially tricky to fix here,
+[00:10:57.060 --> 00:10:58.900]   because the smaller sample that I'm taking
+[00:10:58.900 --> 00:11:01.540]   might be too noisy and not representative.
+[00:11:01.540 --> 00:11:04.620]   I'll get to a very concrete example of that later.
+[00:11:04.620 --> 00:11:06.780]   One solution is to pick the validation set randomly
+[00:11:06.780 --> 00:11:08.780]   each time, and then just know that, if anything,
+[00:11:08.780 --> 00:11:11.260]   you're solving a harder problem.
+[00:11:11.260 --> 00:11:13.660]   But you need to remember to keep validating
+[00:11:13.660 --> 00:11:15.540]   the overall robustness of your solution
+[00:11:15.540 --> 00:11:19.660]   on the full validation set after you're done with the suite.
+[00:11:19.660 --> 00:11:25.540]   And here I have a graphic of my favorite most obvious
+[00:11:25.540 --> 00:11:28.420]   parallel coordinates chart, because generally,
+[00:11:28.420 --> 00:11:30.020]   as we're exploring these relationships
+[00:11:30.020 --> 00:11:33.900]   between hyperparameters, we want to see a really nice, clean
+[00:11:33.900 --> 00:11:35.140]   relationship.
+[00:11:35.140 --> 00:11:38.300]   As you increase learning rate, validation accuracy
+[00:11:38.300 --> 00:11:40.460]   really just increases.
+[00:11:40.460 --> 00:11:44.260]   And this is some data that I ran on the economic indicators
+[00:11:44.260 --> 00:11:49.580]   of 140 countries, I think, correlated
+[00:11:49.580 --> 00:11:54.340]   with their country's survey results on happiness.
+[00:11:54.340 --> 00:11:57.180]   And it just shows a really clear effect
+[00:11:57.180 --> 00:11:59.780]   that the more economic activity, the more happiness.
+[00:11:59.780 --> 00:12:02.020]   But I'm excited to dig into this data.
+[00:12:02.020 --> 00:12:04.380]   And in my experience, this is not
+[00:12:04.380 --> 00:12:07.900]   what most of my hyperparameter plots
+[00:12:07.900 --> 00:12:12.180]   look like for real machine learning data.
+[00:12:12.180 --> 00:12:17.300]   So now that we've set up a good framework, an iterative suite,
+[00:12:17.300 --> 00:12:21.380]   this is a repeated phase of tuning or exploring
+[00:12:21.380 --> 00:12:23.820]   with your suite and then testing on the full training
+[00:12:23.820 --> 00:12:24.740]   and validation set.
+[00:12:24.740 --> 00:12:29.380]   A good general strategy, especially
+[00:12:29.380 --> 00:12:31.460]   when you're pressed for time like I generally am,
+[00:12:31.460 --> 00:12:34.060]   is to start with a simple architecture
+[00:12:34.060 --> 00:12:37.180]   or whatever is given in the code that you're looking at,
+[00:12:37.180 --> 00:12:41.540]   or the most applicable state of the art.
+[00:12:41.540 --> 00:12:43.700]   And then after manual testing a few runs just
+[00:12:43.700 --> 00:12:45.740]   to get a sense of different train validation
+[00:12:45.740 --> 00:12:49.220]   sizes and epochs and maybe a few other hyperparameters
+[00:12:49.220 --> 00:12:50.980]   that you want to fix, you can set up
+[00:12:50.980 --> 00:12:53.540]   a first exploratory suite.
+[00:12:53.540 --> 00:12:55.700]   I would recommend only changing a few hyperparameters
+[00:12:55.700 --> 00:13:01.660]   at a time and sampling only a few values in each one,
+[00:13:01.660 --> 00:13:04.740]   but going for a wider range per hyperparameter
+[00:13:04.740 --> 00:13:06.300]   because even if those fail, you'll
+[00:13:06.300 --> 00:13:09.380]   get a better sense of the search space faster.
+[00:13:09.380 --> 00:13:11.660]   For example, I would try several orders of magnitude
+[00:13:11.660 --> 00:13:14.140]   for learning rate.
+[00:13:14.140 --> 00:13:18.700]   And I wouldn't get into very fancy specifics at this point.
+[00:13:18.700 --> 00:13:21.020]   I find that the training dynamics
+[00:13:21.020 --> 00:13:24.580]   make for easier candidates to explore first.
+[00:13:24.580 --> 00:13:27.140]   So looking at how slow or fast your network
+[00:13:27.140 --> 00:13:30.140]   learns for different learning rates and batch sizes
+[00:13:30.140 --> 00:13:33.140]   is going to be a little bit more effective because getting
+[00:13:33.140 --> 00:13:35.980]   the right order of magnitude for something like learning rate,
+[00:13:35.980 --> 00:13:40.300]   if it's 0.01 versus 0.0001, is going
+[00:13:40.300 --> 00:13:47.420]   to be more impactful than getting if it's 0.001 or 0.0015.
+[00:13:47.420 --> 00:13:48.580]   Same with batch size.
+[00:13:48.580 --> 00:13:51.820]   You can see if it's closer to 16 or 128,
+[00:13:51.820 --> 00:13:53.660]   but not exactly if it's 10 or 20.
+[00:13:53.660 --> 00:13:57.780]   That will help you more, and you don't
+[00:13:57.780 --> 00:14:00.820]   need to get the number exactly right right away.
+[00:14:00.820 --> 00:14:02.740]   I have Optimizer and Parens because that's
+[00:14:02.740 --> 00:14:06.060]   going to be highly correlated with your learning rate.
+[00:14:06.060 --> 00:14:07.540]   But in my experience, it can also
+[00:14:07.540 --> 00:14:09.580]   have a huge effect on convergence.
+[00:14:09.580 --> 00:14:12.460]   For example, Adam is generally great for most things,
+[00:14:12.460 --> 00:14:15.500]   but I have seen projects where SGD just outperforms it
+[00:14:15.500 --> 00:14:17.020]   massively.
+[00:14:17.020 --> 00:14:19.300]   So just an encouragement to consider exploring that as
+[00:14:19.300 --> 00:14:19.800]   well.
+[00:14:19.800 --> 00:14:26.900]   So knowing that none of these are fully independent,
+[00:14:26.900 --> 00:14:29.700]   I would then look at some of the fancier details,
+[00:14:29.700 --> 00:14:33.300]   so the number and shape of filters, your layer
+[00:14:33.300 --> 00:14:34.860]   configuration.
+[00:14:34.860 --> 00:14:37.140]   And when you're looking at layer configuration,
+[00:14:37.140 --> 00:14:40.500]   I would, again, not get too detailed
+[00:14:40.500 --> 00:14:42.060]   because if you make too many changes
+[00:14:42.060 --> 00:14:45.500]   or try too many detailed hypotheses in one sweep,
+[00:14:45.500 --> 00:14:48.940]   you're looking at an explosion of possible cases
+[00:14:48.940 --> 00:14:50.180]   that you need to test.
+[00:14:50.180 --> 00:14:53.540]   So as an example, you could construct
+[00:14:53.540 --> 00:14:55.500]   a few different versions of your architecture,
+[00:14:55.500 --> 00:14:58.780]   let's say a regular RNN and a bidirectional RNN,
+[00:14:58.780 --> 00:15:02.700]   or you could make a CNN with max pooling versus average pooling
+[00:15:02.700 --> 00:15:04.860]   and use those as categorical variables.
+[00:15:05.700 --> 00:15:10.140]   A dropout can also be good to test.
+[00:15:10.140 --> 00:15:13.900]   I have it lower in the list because I
+[00:15:13.900 --> 00:15:16.980]   found that if I increase it too early in my exploration
+[00:15:16.980 --> 00:15:18.940]   process, then a good fraction of my runs
+[00:15:18.940 --> 00:15:20.580]   just doesn't learn anything.
+[00:15:20.580 --> 00:15:22.660]   So I would only increase it if you're already
+[00:15:22.660 --> 00:15:25.260]   seeing some good results.
+[00:15:25.260 --> 00:15:26.900]   And then the details go on, of course,
+[00:15:26.900 --> 00:15:30.900]   weight decay, learning rate schedule, training stages,
+[00:15:30.900 --> 00:15:34.820]   number of layers to freeze, and so on.
+[00:15:34.820 --> 00:15:38.380]   My TL;DR advice here is I would try
+[00:15:38.380 --> 00:15:40.940]   to stick with a simpler sweep than you might want at first
+[00:15:40.940 --> 00:15:44.620]   and see what you learn.
+[00:15:44.620 --> 00:15:48.540]   And how do you see what you learn?
+[00:15:48.540 --> 00:15:51.580]   I'm definitely someone who obsessively refreshes
+[00:15:51.580 --> 00:15:55.940]   my terminal output to see the ticking numbers as my Keras
+[00:15:55.940 --> 00:15:57.260]   callback logs.
+[00:15:57.260 --> 00:15:59.540]   Weights and biases, of course, makes this much more pleasant
+[00:15:59.540 --> 00:16:04.020]   and that I can watch a real-time plot instead.
+[00:16:04.020 --> 00:16:07.540]   But I still think if you can in this stage,
+[00:16:07.540 --> 00:16:09.060]   once you've debugged your code and you
+[00:16:09.060 --> 00:16:12.700]   know that your sweep is running, let the algorithm just
+[00:16:12.700 --> 00:16:15.420]   do the work for you.
+[00:16:15.420 --> 00:16:19.980]   Because explicitly, you're not conditioning your experiment
+[00:16:19.980 --> 00:16:22.500]   B on the output of experiment A. You're
+[00:16:22.500 --> 00:16:25.100]   just letting the automatic hyperparameter tuning
+[00:16:25.100 --> 00:16:28.100]   work for you.
+[00:16:28.100 --> 00:16:31.100]   At this point, it's useful to set some sort of constraint.
+[00:16:31.100 --> 00:16:33.460]   So either the number of runs or the amount of time
+[00:16:33.460 --> 00:16:35.260]   that you're going to let this sweep explore.
+[00:16:35.260 --> 00:16:42.260]   You can also, as kind of a worst-case metric,
+[00:16:42.260 --> 00:16:46.740]   use if it's already been running twice as long as the time
+[00:16:46.740 --> 00:16:48.380]   at which you got your best result,
+[00:16:48.380 --> 00:16:52.900]   then that's just my heuristic for it's unlikely to keep
+[00:16:52.900 --> 00:16:53.980]   getting better results.
+[00:16:53.980 --> 00:16:56.740]   And of course, this might depend on the complexity of the sweep
+[00:16:56.740 --> 00:16:57.820]   that you generated.
+[00:17:01.340 --> 00:17:05.940]   A really important part here is to look at your results
+[00:17:05.940 --> 00:17:10.900]   once you're done and write down what you're concluding
+[00:17:10.900 --> 00:17:12.380]   and what you're going to test next.
+[00:17:12.380 --> 00:17:15.260]   Because it's very tempting to skip this step or think
+[00:17:15.260 --> 00:17:17.740]   that you will remember or feel like there's
+[00:17:17.740 --> 00:17:20.180]   some intuitive connection between learning rate
+[00:17:20.180 --> 00:17:25.100]   and validation accuracy that you're picking up on.
+[00:17:25.100 --> 00:17:26.500]   And I think the more concrete you
+[00:17:26.500 --> 00:17:27.980]   can get with that, the better.
+[00:17:27.980 --> 00:17:29.540]   Weights and biases also makes it easy
+[00:17:29.540 --> 00:17:33.540]   to select specific runs to seed future sweeps with.
+[00:17:33.540 --> 00:17:36.140]   And from there, you can, say, increase the range
+[00:17:36.140 --> 00:17:37.020]   that you're sampling.
+[00:17:37.020 --> 00:17:38.460]   You can increase the precision.
+[00:17:38.460 --> 00:17:41.900]   So try to get to a better value.
+[00:17:41.900 --> 00:17:44.700]   Here, we're no longer just testing orders of magnitude,
+[00:17:44.700 --> 00:17:48.340]   but maybe there's a significant difference between 60 filters
+[00:17:48.340 --> 00:17:49.300]   and 65 filters.
+[00:17:49.300 --> 00:17:55.820]   You can obviously add new hyperparameters here.
+[00:17:55.820 --> 00:17:58.660]   And you can decide that you've tried enough values
+[00:17:58.660 --> 00:18:01.540]   for this one and convert it to a constant in your code,
+[00:18:01.540 --> 00:18:08.180]   in which case I would just write down why that was a good idea.
+[00:18:08.180 --> 00:18:13.300]   So at this point, let's hop into some examples.
+[00:18:13.300 --> 00:18:15.540]   The first one here I have is from Drought Watch,
+[00:18:15.540 --> 00:18:17.220]   which I talked about last time.
+[00:18:17.220 --> 00:18:20.900]   This is a project to identify drought conditions
+[00:18:20.900 --> 00:18:23.460]   from satellite images based on expert labels
+[00:18:23.460 --> 00:18:26.620]   that we have from the ground.
+[00:18:26.620 --> 00:18:29.380]   And here's just an example sweep,
+[00:18:29.380 --> 00:18:31.980]   the way that I would frame it in weights and biases.
+[00:18:31.980 --> 00:18:34.060]   It's using Bayesian optimization to maximize
+[00:18:34.060 --> 00:18:35.660]   validation accuracy.
+[00:18:35.660 --> 00:18:37.620]   The ranges are pretty small, and they're all
+[00:18:37.620 --> 00:18:40.100]   in the sizes of the layers.
+[00:18:40.100 --> 00:18:42.380]   But I'm keeping the architecture fixed.
+[00:18:42.380 --> 00:18:43.980]   And there's some dropout as well.
+[00:18:43.980 --> 00:18:46.140]   And for this one, I actually ran only 50 runs.
+[00:18:46.140 --> 00:18:49.260]   So it's a proof of concept.
+[00:18:49.260 --> 00:18:54.020]   I like to name all my runs with the variables
+[00:18:54.020 --> 00:18:56.740]   that I'm testing so that I can easily read it off
+[00:18:56.740 --> 00:18:58.860]   from the chart always.
+[00:18:58.860 --> 00:19:01.900]   This is like an extra wrapper that I do.
+[00:19:01.900 --> 00:19:06.300]   Maybe at some point, it'll make it into the core feature.
+[00:19:06.300 --> 00:19:10.780]   This is the hyperparameter parallel coordinates chart
+[00:19:10.780 --> 00:19:14.700]   that you can interactively explore to show the correlations.
+[00:19:14.700 --> 00:19:18.420]   I think I'm just going to keep going here.
+[00:19:18.420 --> 00:19:23.940]   One thing that's interesting about this example
+[00:19:23.940 --> 00:19:28.620]   is that here you can see that the dropout actually
+[00:19:28.620 --> 00:19:31.820]   has an extremely important and high correlation
+[00:19:31.820 --> 00:19:34.900]   with the accuracy.
+[00:19:34.900 --> 00:19:38.260]   And that goes counter to the intuition
+[00:19:38.260 --> 00:19:39.860]   I was building up before.
+[00:19:39.860 --> 00:19:46.900]   And is this-- did it switch to a new tab successfully?
+[00:19:46.900 --> 00:19:50.140]   I'm going to see if I can show the Zoom.
+[00:19:50.140 --> 00:19:51.220]   All right.
+[00:19:51.220 --> 00:19:51.860]   We can see that.
+[00:19:51.860 --> 00:19:52.700]   OK.
+[00:19:52.700 --> 00:19:53.260]   Awesome.
+[00:19:53.260 --> 00:19:54.340]   Yeah.
+[00:19:54.340 --> 00:19:57.580]   So I'm just going to show real quick how awesome it
+[00:19:57.580 --> 00:20:03.980]   is to zoom into one of these regions, hopefully.
+[00:20:03.980 --> 00:20:07.900]   Sometimes it slows down when I'm sharing a tab.
+[00:20:07.900 --> 00:20:10.340]   Yeah, and then from here, you can
+[00:20:10.340 --> 00:20:15.980]   see what are the parameters that correspond to my best runs.
+[00:20:15.980 --> 00:20:21.180]   And it seems like if I just select the very top ones,
+[00:20:21.180 --> 00:20:24.060]   then that does correspond to kind of surprisingly high
+[00:20:24.060 --> 00:20:26.540]   dropout values.
+[00:20:26.540 --> 00:20:29.660]   But I think because this is running on a very small data
+[00:20:29.660 --> 00:20:34.620]   set sample, it might actually help.
+[00:20:34.620 --> 00:20:42.340]   So going back, I'm going to hop into a different case study.
+[00:20:42.340 --> 00:20:45.260]   In this case, it's more of a fine tuning.
+[00:20:45.260 --> 00:20:50.620]   And in this one, I'll talk about a fairly new shared project
+[00:20:50.620 --> 00:20:52.580]   that I'm working on, which is Deepform.
+[00:20:52.580 --> 00:20:57.060]   And the goal is to extract structured information
+[00:20:57.060 --> 00:20:58.900]   from receipts that look like this.
+[00:20:58.900 --> 00:21:02.220]   This is a receipt for a television advertisement.
+[00:21:02.220 --> 00:21:04.860]   And we want to be able to tell the name of the organization
+[00:21:04.860 --> 00:21:09.140]   that paid for the ad, the dates that the ad ran, and so forth.
+[00:21:09.140 --> 00:21:11.660]   And this is easy for a human, but hard to do for a computer,
+[00:21:11.660 --> 00:21:13.700]   especially from--
+[00:21:13.700 --> 00:21:17.660]   sorry, just the text, unless you incorporate
+[00:21:17.660 --> 00:21:18.660]   geometric information.
+[00:21:18.660 --> 00:21:21.540]   We're not quite at that stage yet.
+[00:21:21.540 --> 00:21:28.260]   So what I did here was set up a pretty big sweep
+[00:21:28.260 --> 00:21:31.140]   across a lot of parameters.
+[00:21:31.140 --> 00:21:35.740]   And you can see here that a bunch of my values
+[00:21:35.740 --> 00:21:39.700]   actually yielded NANDs.
+[00:21:39.700 --> 00:21:45.980]   And this is because the highest correlation found
+[00:21:45.980 --> 00:21:49.460]   from my sweep is this distractors field.
+[00:21:49.460 --> 00:21:50.700]   And that's what I'm training.
+[00:21:50.700 --> 00:21:54.100]   I'm looking at one positive example
+[00:21:54.100 --> 00:21:57.300]   of a correct answer for a receipt,
+[00:21:57.300 --> 00:21:59.660]   and then the text of the receipt.
+[00:21:59.660 --> 00:22:02.380]   The distractors are that for each correct match,
+[00:22:02.380 --> 00:22:05.140]   I create one or more fake matches
+[00:22:05.140 --> 00:22:08.380]   by picking a false label from the known set.
+[00:22:08.380 --> 00:22:10.700]   And it turns out that if I trained in a balanced way,
+[00:22:10.700 --> 00:22:13.900]   then the accuracy levels out pretty quickly.
+[00:22:13.900 --> 00:22:15.980]   But the more distractors I put in,
+[00:22:15.980 --> 00:22:17.260]   the better the accuracy gets.
+[00:22:17.260 --> 00:22:21.180]   So that's this really high correlation.
+[00:22:21.180 --> 00:22:23.900]   But the more distractors I put in,
+[00:22:23.900 --> 00:22:26.020]   the bigger my data set gets in memory.
+[00:22:26.020 --> 00:22:27.980]   And so it turned out that a bunch of my runs
+[00:22:27.980 --> 00:22:30.260]   were actually failing for precisely the highest
+[00:22:30.260 --> 00:22:32.340]   values of the distractors, which you can see here.
+[00:22:32.340 --> 00:22:35.540]   The gray lines all correspond to the higher distractor values
+[00:22:35.540 --> 00:22:36.220]   for the most part.
+[00:22:39.660 --> 00:22:44.700]   And in this case, I let my sweep run a really long time,
+[00:22:44.700 --> 00:22:47.900]   even though it found the best values pretty early on.
+[00:22:47.900 --> 00:22:50.420]   And then I let it run for another few hours,
+[00:22:50.420 --> 00:22:53.300]   I think, after that.
+[00:22:53.300 --> 00:22:56.020]   This is just a reminder to sanity check
+[00:22:56.020 --> 00:22:58.820]   how some of your range exploration
+[00:22:58.820 --> 00:23:01.940]   might be affected by the way you set up your training code.
+[00:23:01.940 --> 00:23:03.980]   In this case, the best performance from the sweep
+[00:23:03.980 --> 00:23:06.860]   was actually pretty comparable to my best manual run.
+[00:23:09.540 --> 00:23:11.260]   And then a bit of both.
+[00:23:11.260 --> 00:23:14.660]   Briefly, I have this project to semantically segment
+[00:23:14.660 --> 00:23:17.060]   street scenes, identify each pixel
+[00:23:17.060 --> 00:23:22.780]   as belonging to a car or a road or a human.
+[00:23:22.780 --> 00:23:27.340]   And one thing I found here was that initially, this project
+[00:23:27.340 --> 00:23:29.700]   was using accuracy to measure performance.
+[00:23:29.700 --> 00:23:33.420]   And accuracy is not a really great metric
+[00:23:33.420 --> 00:23:37.580]   because it only treats an exact match as correct.
+[00:23:37.580 --> 00:23:40.780]   And once I switched to intersection over union,
+[00:23:40.780 --> 00:23:42.540]   I started seeing much better results.
+[00:23:42.540 --> 00:23:44.820]   And this sweep-- actually, you can
+[00:23:44.820 --> 00:23:49.980]   see this blue line connecting all the best results so far.
+[00:23:49.980 --> 00:23:52.380]   This sweep improved the performance pretty well.
+[00:23:52.380 --> 00:23:56.620]   And it was helpful to see that learning rate had
+[00:23:56.620 --> 00:23:59.540]   the highest correlation in the negative direction.
+[00:23:59.540 --> 00:24:01.620]   So lowering learning rate would have helped.
+[00:24:04.420 --> 00:24:07.820]   But an interesting aspect is that I was specifically
+[00:24:07.820 --> 00:24:10.500]   interested in my performance on humans,
+[00:24:10.500 --> 00:24:15.140]   less so than cars and traffic signs and roads,
+[00:24:15.140 --> 00:24:17.580]   because it was already doing really well on those.
+[00:24:17.580 --> 00:24:21.860]   And found from the sweep that AlexNet
+[00:24:21.860 --> 00:24:25.780]   was the best for humans, but it was actually
+[00:24:25.780 --> 00:24:27.860]   less precise overall.
+[00:24:27.860 --> 00:24:30.140]   And the reason it's best on humans
+[00:24:30.140 --> 00:24:34.380]   is because it detects them as these kind of blocky figures,
+[00:24:34.380 --> 00:24:35.380]   which you can see here.
+[00:24:35.380 --> 00:24:38.020]   So it gets a high intersection over union
+[00:24:38.020 --> 00:24:39.300]   for kind of the wrong reasons.
+[00:24:39.300 --> 00:24:41.300]   It just guesses at a much larger region
+[00:24:41.300 --> 00:24:44.980]   than it needs to instead of precisely finding them.
+[00:24:44.980 --> 00:24:48.460]   And here, this is the raw photo, the prediction
+[00:24:48.460 --> 00:24:50.460]   in the second column, and then the ground truth.
+[00:24:50.460 --> 00:24:52.020]   So this just gives you a sense for--
+[00:24:52.020 --> 00:24:54.020]   the overall performance is pretty good.
+[00:24:54.020 --> 00:24:57.300]   You get some of the details wrong.
+[00:24:57.300 --> 00:25:00.420]   But yeah, this is a case where optimizing for one thing,
+[00:25:00.420 --> 00:25:07.420]   say human IOU, might be separate from optimizing for overall IOU.
+[00:25:07.420 --> 00:25:12.180]   And that might inform your decision in different sweeps.
+[00:25:12.180 --> 00:25:14.780]   Yeah, so this is just zooming into a parallel coordinates
+[00:25:14.780 --> 00:25:15.500]   plot.
+[00:25:15.500 --> 00:25:20.220]   You can see here that AlexNet has pretty much all the worst
+[00:25:20.220 --> 00:25:24.580]   performing runs, whereas ResNet-18 and ResNet-34
+[00:25:24.580 --> 00:25:26.660]   do better on average, even though for humans
+[00:25:26.660 --> 00:25:27.620]   it's different.
+[00:25:27.620 --> 00:25:34.260]   Yeah, so just to summarize general advice
+[00:25:34.260 --> 00:25:37.220]   from fine tuning lots and lots of different models
+[00:25:37.220 --> 00:25:39.540]   and different applications, I find it really helpful
+[00:25:39.540 --> 00:25:42.180]   to have one script that I can run manually
+[00:25:42.180 --> 00:25:46.340]   with a specific configuration and also run in a sweep.
+[00:25:46.340 --> 00:25:48.300]   The shorter the run, the shorter your sweeps,
+[00:25:48.300 --> 00:25:50.780]   the faster your feedback loop, the better.
+[00:25:50.780 --> 00:25:56.060]   I would bias towards exploring first and then
+[00:25:56.060 --> 00:26:00.580]   exploiting later, especially for cases like that DeepForm
+[00:26:00.580 --> 00:26:01.540]   project that I showed.
+[00:26:01.540 --> 00:26:05.260]   I got this model to 95% accuracy and was really
+[00:26:05.260 --> 00:26:06.420]   proud of it the other week.
+[00:26:06.420 --> 00:26:10.660]   And then Google published a paper the next day
+[00:26:10.660 --> 00:26:13.420]   or that week that uses a different, much better
+[00:26:13.420 --> 00:26:16.220]   approach and has a much more detailed architecture.
+[00:26:16.220 --> 00:26:18.140]   And the correct thing to do is definitely
+[00:26:18.140 --> 00:26:22.660]   stop optimizing that model and to switch to the Google way.
+[00:26:22.660 --> 00:26:24.580]   So yeah, just to say don't exploit too much
+[00:26:24.580 --> 00:26:28.140]   because the landscape is changing so quickly.
+[00:26:28.140 --> 00:26:30.940]   But also don't explore too much at once
+[00:26:30.940 --> 00:26:34.620]   because if you try to put in 100 hyperparameters
+[00:26:34.620 --> 00:26:36.420]   and test a bunch of values for those,
+[00:26:36.420 --> 00:26:38.340]   you're going to be running your sweep for days
+[00:26:38.340 --> 00:26:42.100]   and you're not going to be able to do the meta learning part
+[00:26:42.100 --> 00:26:44.820]   on how to do a better sweep next time.
+[00:26:44.820 --> 00:26:48.180]   And a lot of those choices might be a depth-first tree
+[00:26:48.180 --> 00:26:50.700]   in that they will determine how you structure
+[00:26:50.700 --> 00:26:52.860]   the rest of your progress.
+[00:26:52.860 --> 00:26:55.620]   So I would not get too attached to any particular aspect
+[00:26:55.620 --> 00:26:58.140]   of the model as you go.
+[00:26:58.140 --> 00:27:02.300]   And of course, your mileage on all of this may vary.
+[00:27:02.300 --> 00:27:06.340]   As a last note here, I have just two comparisons
+[00:27:06.340 --> 00:27:09.180]   of a parallel coordinates plot.
+[00:27:09.180 --> 00:27:11.980]   The one on the top is showing actual signal,
+[00:27:11.980 --> 00:27:14.660]   and the one below is showing noise.
+[00:27:14.660 --> 00:27:17.220]   And this is useful to think about when
+[00:27:17.220 --> 00:27:19.940]   you're looking at how much your performance improves
+[00:27:19.940 --> 00:27:22.500]   with any particular change.
+[00:27:22.500 --> 00:27:25.420]   In this case, I found that in the noise case
+[00:27:25.420 --> 00:27:27.820]   where all I varied was my random seed,
+[00:27:27.820 --> 00:27:33.260]   my output metric varied by about 0.9%.
+[00:27:33.260 --> 00:27:36.580]   And if I actually meaningfully varied hyperparameters,
+[00:27:36.580 --> 00:27:40.100]   my output metric varied by about 3%.
+[00:27:40.100 --> 00:27:44.020]   So that's not an order of magnitude difference.
+[00:27:44.020 --> 00:27:45.700]   That's like a 3x difference.
+[00:27:45.700 --> 00:27:49.060]   And that's useful to remember, especially for me
+[00:27:49.060 --> 00:27:52.500]   when I'm tracking these runs with such detail,
+[00:27:52.500 --> 00:27:55.700]   hoping that they'll get just a little better at solving
+[00:27:55.700 --> 00:27:58.380]   a particular problem.
+[00:27:58.380 --> 00:28:02.340]   And yeah, I think that's it.
+[00:28:02.340 --> 00:28:05.900]   Nice.
+[00:28:05.900 --> 00:28:08.500]   Thank you, Stacey.
+[00:28:08.500 --> 00:28:10.460]   I have a question.
+[00:28:10.460 --> 00:28:13.020]   So maybe I'll ask that while other people can
+[00:28:13.020 --> 00:28:15.380]   start popping their questions in the Q&A.
+[00:28:15.380 --> 00:28:18.820]   And also the YouTube people can pop it in the chat.
+[00:28:18.820 --> 00:28:22.980]   So people always talk about Bayes, Grid, and Random.
+[00:28:22.980 --> 00:28:25.820]   Do you have-- for the people who are just starting out,
+[00:28:25.820 --> 00:28:28.420]   do you have recommendations on which they should start with
+[00:28:28.420 --> 00:28:29.740]   and when to use which one?
+[00:28:29.740 --> 00:28:30.940]   Yeah, totally.
+[00:28:30.940 --> 00:28:32.540]   That's a great question.
+[00:28:32.540 --> 00:28:35.460]   And I think I tried to slip that in there.
+[00:28:35.460 --> 00:28:40.460]   But basically, Grid is going to try all possible combinations.
+[00:28:40.460 --> 00:28:43.740]   So you want that one if you really want to try everything
+[00:28:43.740 --> 00:28:46.300]   and you want to be sure you got the best one.
+[00:28:46.300 --> 00:28:48.620]   Random is what I would recommend if you're just
+[00:28:48.620 --> 00:28:51.980]   exploring and you want to try a bunch of different stuff.
+[00:28:51.980 --> 00:28:55.220]   But you do have to keep in mind that it's random
+[00:28:55.220 --> 00:28:58.380]   and you might not find the best solution.
+[00:28:58.380 --> 00:29:02.380]   And then I think Bayes overall does perform better.
+[00:29:02.380 --> 00:29:05.220]   And it's worth trying, unless for some reason
+[00:29:05.220 --> 00:29:08.060]   you don't have a metric that you're specifying.
+[00:29:08.060 --> 00:29:11.460]   On average, you can expect Bayes to do better.
+[00:29:11.460 --> 00:29:13.140]   So yeah, the only reason not to try it
+[00:29:13.140 --> 00:29:18.540]   would be if you don't know what your goal is.
+[00:29:18.540 --> 00:29:21.500]   Someone on YouTube said, in terms
+[00:29:21.500 --> 00:29:25.020]   of it not sounding like a product pitch you nailed it,
+[00:29:25.020 --> 00:29:26.620]   which I'm happy about.
+[00:29:26.620 --> 00:29:27.860]   Yes.
+[00:29:27.860 --> 00:29:29.940]   Thank you.
+[00:29:29.940 --> 00:29:32.900]   What are your tips for amateurs that
+[00:29:32.900 --> 00:29:35.300]   want to perform sweeps but don't have the compute?
+[00:29:35.300 --> 00:29:36.740]   That's a good question.
+[00:29:36.740 --> 00:29:37.420]   Yeah.
+[00:29:37.420 --> 00:29:38.100]   Oh, man.
+[00:29:38.100 --> 00:29:39.980]   That's a good question.
+[00:29:39.980 --> 00:29:43.580]   So that's definitely a caveat that I did not super highlight.
+[00:29:43.580 --> 00:29:49.740]   I have a machine on which I can use the GPU.
+[00:29:49.740 --> 00:29:54.300]   Colab is a great resource.
+[00:29:54.300 --> 00:29:57.740]   So ways that you can get access to a bit more compute.
+[00:29:57.740 --> 00:30:01.780]   I think if you try a few experiments manually first,
+[00:30:01.780 --> 00:30:04.100]   then you can really reduce the search space.
+[00:30:04.100 --> 00:30:11.700]   And in practice, I often do more manual exploration initially.
+[00:30:11.700 --> 00:30:14.500]   Definitely early stopping would be helpful if you
+[00:30:14.500 --> 00:30:17.740]   are concerned about compute.
+[00:30:17.740 --> 00:30:21.100]   And another nice thing about at least weights and biases sweeps
+[00:30:21.100 --> 00:30:22.660]   is that they're easy to parallelize.
+[00:30:22.660 --> 00:30:26.780]   So if you can get access to like eight GPUs for an hour,
+[00:30:26.780 --> 00:30:28.940]   then you can just have them all run the same sweep,
+[00:30:28.940 --> 00:30:30.980]   and they will coordinate which things to try.
+[00:30:30.980 --> 00:30:35.060]   And that's pretty beautiful.
+[00:30:35.060 --> 00:30:36.140]   Nice.
+[00:30:36.140 --> 00:30:40.060]   Also, one thing that I've even seen our authors--
+[00:30:40.060 --> 00:30:42.980]   we have an author program, so they struggle with this too.
+[00:30:42.980 --> 00:30:48.340]   Like when do you switch from manual to a sweep that's
+[00:30:48.340 --> 00:30:49.380]   very structured?
+[00:30:49.380 --> 00:30:51.740]   Because what if you don't even know what hyperparameters
+[00:30:51.740 --> 00:30:54.420]   to track in the beginning, and you're still trying to explore?
+[00:30:54.420 --> 00:30:54.940]   Yeah.
+[00:30:54.940 --> 00:30:56.900]   Yeah, definitely.
+[00:30:56.900 --> 00:30:58.780]   So it's definitely like a judgment call.
+[00:30:58.780 --> 00:31:06.660]   Or what I've done in the past is if I
+[00:31:06.660 --> 00:31:10.660]   can't see reliable improvement, that's one thing.
+[00:31:10.660 --> 00:31:15.100]   If I feel like I've tried all my hypotheses that
+[00:31:15.100 --> 00:31:17.340]   were easy to determine with one experiment,
+[00:31:17.340 --> 00:31:21.460]   and I'm kind of like, OK, I'm done.
+[00:31:21.460 --> 00:31:24.380]   Just run this on a GPU, and you tell me.
+[00:31:24.380 --> 00:31:25.980]   I think it's also useful to--
+[00:31:25.980 --> 00:31:31.620]   I think people tend to think of hyperparameter optimization
+[00:31:31.620 --> 00:31:35.780]   because of optimization as the thing that happens at the end.
+[00:31:35.780 --> 00:31:38.020]   You've done most of the work, and you're at 90%,
+[00:31:38.020 --> 00:31:41.180]   and now you want to get to 92%.
+[00:31:41.180 --> 00:31:43.740]   But I think especially if you set a large range,
+[00:31:43.740 --> 00:31:49.220]   then it can still be useful from the 50% or random baseline
+[00:31:49.220 --> 00:31:53.300]   to 75% just by telling you, hey, actually, you
+[00:31:53.300 --> 00:31:54.860]   should try a much larger learning rate.
+[00:31:54.860 --> 00:31:58.700]   Or it turns out the distractors are the most useful,
+[00:31:58.700 --> 00:32:02.060]   and you just could keep increasing that.
+[00:32:02.060 --> 00:32:02.980]   Nice.
+[00:32:02.980 --> 00:32:03.740]   Cool.
+[00:32:03.740 --> 00:32:05.500]   Charles, do you have one?
+[00:32:05.500 --> 00:32:06.740]   Yeah.
+[00:32:06.740 --> 00:32:10.300]   Well, one thing I wanted to plus one your statement
+[00:32:10.300 --> 00:32:11.660]   about using Colab.
+[00:32:11.660 --> 00:32:16.740]   I think modifying your tooling so that it works well
+[00:32:16.740 --> 00:32:19.300]   with Colab is well worth the extra compute
+[00:32:19.300 --> 00:32:21.020]   that it can bring you.
+[00:32:21.020 --> 00:32:25.180]   And secondly, if you want to try and increase your ability
+[00:32:25.180 --> 00:32:29.020]   to do hyperparameter tuning, you can learn a lot of things
+[00:32:29.020 --> 00:32:32.140]   that you were mentioning, like lower learning rate,
+[00:32:32.140 --> 00:32:35.260]   or higher learning rate, or use distractors,
+[00:32:35.260 --> 00:32:37.100]   use more or less data augmentation,
+[00:32:37.100 --> 00:32:38.060]   more or less drive-out.
+[00:32:38.060 --> 00:32:39.980]   You can learn that in smaller networks often,
+[00:32:39.980 --> 00:32:42.540]   and a lot of those things will translate.
+[00:32:42.540 --> 00:32:47.260]   So I think it's a good idea just to work
+[00:32:47.260 --> 00:32:51.260]   with a tight feedback loop, as you and Zhang mentioned first.
+[00:32:51.260 --> 00:32:53.780]   And you'll find, actually, you can get really far
+[00:32:53.780 --> 00:32:58.420]   without requiring 100 GPUs.
+[00:32:58.420 --> 00:33:01.180]   But the question I had was I wanted
+[00:33:01.180 --> 00:33:04.180]   to go back to sort of the beginning of your talk.
+[00:33:04.180 --> 00:33:06.140]   You said that a lot of your experience
+[00:33:06.140 --> 00:33:08.540]   of that what you were going to be talking about in your talk
+[00:33:08.540 --> 00:33:10.980]   was for classification.
+[00:33:10.980 --> 00:33:13.100]   And you mentioned GANs and reinforcement learning
+[00:33:13.100 --> 00:33:16.140]   as places where what you said might not apply.
+[00:33:16.140 --> 00:33:18.540]   So I'm curious, two things.
+[00:33:18.540 --> 00:33:21.580]   One, besides GANs and reinforcement learning,
+[00:33:21.580 --> 00:33:24.460]   can you think of any other sort of machine learning,
+[00:33:24.460 --> 00:33:27.300]   hyperparameter tuning problems that would also
+[00:33:27.300 --> 00:33:29.620]   be different from what we just talked about that people might
+[00:33:29.620 --> 00:33:31.020]   be working on in the audience?
+[00:33:31.020 --> 00:33:34.700]   And then also, what do you think should be done differently
+[00:33:34.700 --> 00:33:36.780]   in those categories, those types of things?
+[00:33:36.780 --> 00:33:38.980]   Yeah, that's a great question.
+[00:33:38.980 --> 00:33:42.540]   So I was drawing examples from basically the use cases
+[00:33:42.540 --> 00:33:44.500]   I've most worked on at Weights and Biases, which
+[00:33:44.500 --> 00:33:46.300]   is why it's like image classification
+[00:33:46.300 --> 00:33:48.860]   and a bit of text.
+[00:33:48.860 --> 00:33:52.020]   I've just recently started with a regression problem
+[00:33:52.020 --> 00:33:56.660]   where I think it kind of works a little bit differently.
+[00:33:56.660 --> 00:34:00.780]   One thing there is that the traditional machine learning
+[00:34:00.780 --> 00:34:05.140]   random forest baseline is actually really hard to beat.
+[00:34:05.140 --> 00:34:08.540]   And there, it's almost like my recommendation would be,
+[00:34:08.540 --> 00:34:11.420]   do you need a really fancy deep learning network
+[00:34:11.420 --> 00:34:16.140]   of millions of parameters?
+[00:34:16.140 --> 00:34:19.980]   Other cases where--
+[00:34:19.980 --> 00:34:23.500]   I think the rabbit hole phenomenon that I've mentioned
+[00:34:23.500 --> 00:34:27.020]   is I think once you start working on a model
+[00:34:27.020 --> 00:34:30.660]   and pursuing a certain idea, it can have a lot of pull to it.
+[00:34:30.660 --> 00:34:33.500]   Like, oh, I really want to make this model work.
+[00:34:33.500 --> 00:34:36.740]   Or this is the right way to think about it,
+[00:34:36.740 --> 00:34:38.540]   especially when you're seeing good results
+[00:34:38.540 --> 00:34:40.300]   and you can actually keep improving them
+[00:34:40.300 --> 00:34:42.700]   through optimization.
+[00:34:42.700 --> 00:34:44.660]   So there's something like keeping
+[00:34:44.660 --> 00:34:48.580]   the general approach in mind or almost like,
+[00:34:48.580 --> 00:34:54.180]   I'd love a metric for how much compute did you use on this?
+[00:34:54.180 --> 00:34:58.420]   Or how many parameters are worthwhile here?
+[00:34:58.420 --> 00:34:59.900]   If you actually pruned this network,
+[00:34:59.900 --> 00:35:03.940]   it could be twice as small or something.
+[00:35:03.940 --> 00:35:04.820]   So things like that.
+[00:35:04.820 --> 00:35:07.700]   I think it can get really exciting and powerful
+[00:35:07.700 --> 00:35:10.500]   when you're running a sweep and training these deep nets.
+[00:35:10.500 --> 00:35:16.140]   But it might not always be necessary.
+[00:35:16.140 --> 00:35:22.380]   Yeah, definitely a plus one for consider random forests.
+[00:35:22.380 --> 00:35:24.100]   There's a lot of tabular data out there.
+[00:35:24.100 --> 00:35:27.780]   And random forests are kind of designed for tabular data.
+[00:35:27.780 --> 00:35:28.860]   And they can be very good.
+[00:35:28.860 --> 00:35:35.540]   So maybe I missed it and you touched on this.
+[00:35:35.540 --> 00:35:40.340]   But for applications like GANs and reinforcement learning,
+[00:35:40.340 --> 00:35:42.700]   do you have any thoughts, any experiences
+[00:35:42.700 --> 00:35:45.540]   that you've had with what hyperparameters are more
+[00:35:45.540 --> 00:35:47.900]   or less important in those cases?
+[00:35:47.900 --> 00:35:49.860]   Yeah, that's a good question.
+[00:35:49.860 --> 00:35:56.820]   I have not run extensive sweeps specifically on those things.
+[00:35:56.820 --> 00:36:02.020]   Usually in those, the works that I've been reproducing
+[00:36:02.020 --> 00:36:06.140]   are already very finely tuned over a long time.
+[00:36:06.140 --> 00:36:07.940]   So the kinds of things that I've played with
+[00:36:07.940 --> 00:36:12.700]   are relative weights of discriminator and generator
+[00:36:12.700 --> 00:36:13.500]   loss.
+[00:36:13.500 --> 00:36:16.260]   Or if there's even multiple loss components,
+[00:36:16.260 --> 00:36:18.180]   how do we combine those?
+[00:36:18.180 --> 00:36:22.620]   One number that always seems pretty magical to me in papers
+[00:36:22.620 --> 00:36:26.060]   is a lambda coefficient that weighs
+[00:36:26.060 --> 00:36:28.140]   several different things relative to each other,
+[00:36:28.140 --> 00:36:31.420]   and how often it seems to be that 0.5 or even weighting
+[00:36:31.420 --> 00:36:32.660]   is the magical number.
+[00:36:32.660 --> 00:36:34.500]   So I think playing with something like that
+[00:36:34.500 --> 00:36:38.740]   could give you a lot of leverage.
+[00:36:38.740 --> 00:36:43.620]   In terms of reinforcement learning,
+[00:36:43.620 --> 00:36:44.900]   yeah, I feel like the setup would
+[00:36:44.900 --> 00:36:47.180]   have to be pretty different.
+[00:36:47.180 --> 00:36:49.540]   But I'm excited to try that at some point with existing
+[00:36:49.540 --> 00:36:52.220]   sweeps.
+[00:36:52.220 --> 00:36:58.260]   Well, yeah, I think starting from an existing
+[00:36:58.260 --> 00:37:00.860]   implemented baseline, whenever that's possible,
+[00:37:00.860 --> 00:37:04.980]   my three favorite things to compare neural net performance
+[00:37:04.980 --> 00:37:08.460]   to are the linear model, logistic regression,
+[00:37:08.460 --> 00:37:12.180]   linear regression, whatever, a relatively simple off-the-shelf
+[00:37:12.180 --> 00:37:16.380]   random forest type model, maybe with gradient-boosted trees
+[00:37:16.380 --> 00:37:20.260]   if I'm really feeling fancy, and then something
+[00:37:20.260 --> 00:37:22.220]   that somebody else has tried before,
+[00:37:22.220 --> 00:37:25.540]   just so that I can get some of that sense of scale of when--
+[00:37:25.540 --> 00:37:26.860]   what is really good performance?
+[00:37:26.860 --> 00:37:28.140]   What is really bad performance?
+[00:37:28.140 --> 00:37:30.980]   What's a meaningful improvement?
+[00:37:30.980 --> 00:37:33.020]   And what's me just sitting at the slot machine,
+[00:37:33.020 --> 00:37:35.020]   pulling and trying to find a new reward?
+[00:37:35.020 --> 00:37:35.520]   Yeah.
+[00:37:35.520 --> 00:37:39.620]   Thanks.
+[00:37:39.620 --> 00:37:43.420]   All right, so Danny on YouTube asks,
+[00:37:43.420 --> 00:37:45.980]   if you experience feature drift, do you
+[00:37:45.980 --> 00:37:48.460]   go through the entire hyperparameter optimization
+[00:37:48.460 --> 00:37:50.740]   process?
+[00:37:50.740 --> 00:37:54.540]   Feature drift, so when a model is deployed in practice,
+[00:37:54.540 --> 00:37:56.700]   and then it turns out that--
+[00:37:56.700 --> 00:37:58.620]   yeah.
+[00:37:58.620 --> 00:38:04.580]   Yeah, well, I haven't worked with an example like that,
+[00:38:04.580 --> 00:38:08.260]   at least in the weights and biases context.
+[00:38:08.260 --> 00:38:15.740]   In my previous work lives, it was a problem that happened.
+[00:38:15.740 --> 00:38:18.820]   And basically, there would be a retrain cycle for the model,
+[00:38:18.820 --> 00:38:21.140]   just because the data does change.
+[00:38:21.140 --> 00:38:24.860]   And for classification, a bigger question
+[00:38:24.860 --> 00:38:30.180]   is, do the target labels change in certain contexts,
+[00:38:30.180 --> 00:38:37.660]   if new hashtags arise, or if new instances are added?
+[00:38:37.660 --> 00:38:41.180]   Cool.
+[00:38:41.180 --> 00:38:45.460]   Han asks, how do you recommend we automate the model
+[00:38:45.460 --> 00:38:48.420]   retraining, or training with more APOCs
+[00:38:48.420 --> 00:38:52.220]   of all of the data, once a good set of hyperparameters
+[00:38:52.220 --> 00:38:54.180]   has been found?
+[00:38:54.180 --> 00:38:57.660]   Yeah, great question.
+[00:38:57.660 --> 00:38:59.660]   I think you could probably figure out
+[00:38:59.660 --> 00:39:01.940]   how to use a GitHub Action for that or something.
+[00:39:01.940 --> 00:39:04.260]   Maybe it could be a weights and biases feature.
+[00:39:04.260 --> 00:39:06.660]   I think the main--
+[00:39:06.660 --> 00:39:08.540]   or the relevant point that I brought up here
+[00:39:08.540 --> 00:39:11.940]   is I find it really useful to have the same script be
+[00:39:11.940 --> 00:39:15.740]   able to run in both sweep mode and individual test mode.
+[00:39:15.740 --> 00:39:20.220]   And then you can have, say, a command line shortcut flag
+[00:39:20.220 --> 00:39:23.500]   to run the whole thing.
+[00:39:23.500 --> 00:39:26.220]   You could set up a report that makes
+[00:39:26.220 --> 00:39:29.340]   sure to revisit that stage.
+[00:39:29.340 --> 00:39:31.420]   We don't have end-to-end automation
+[00:39:31.420 --> 00:39:35.980]   to make that easy right now, but that's a great idea.
+

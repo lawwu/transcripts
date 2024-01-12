@@ -1,0 +1,910 @@
+
+[00:00:00.000 --> 00:00:07.240]   The large amount of work we do on new platform is functionality parity.
+[00:00:07.240 --> 00:00:11.340]   So PyTorch is a fairly big API surface.
+[00:00:11.340 --> 00:00:17.400]   It's about a thousand API functions, and then it composes with whether you have a quantized
+[00:00:17.400 --> 00:00:22.040]   tensor or a regular tensor and various other things distributed.
+[00:00:22.040 --> 00:00:26.420]   You're listening to Gradient Dissent, a show about machine learning in the real world,
+[00:00:26.420 --> 00:00:28.920]   and I'm your host, Lukas Biewald.
+[00:00:28.920 --> 00:00:35.020]   Today we're talking with Sumit Chintala, a VP at Meta AI Research and one of the original
+[00:00:35.020 --> 00:00:40.260]   authors of PyTorch, which is currently by far the most popular deep learning framework.
+[00:00:40.260 --> 00:00:45.760]   We talk about the internals of PyTorch, managing a large open source community and his opinions
+[00:00:45.760 --> 00:00:47.760]   on the other popular ML libraries.
+[00:00:47.760 --> 00:00:49.680]   I hope you enjoy this one.
+[00:00:49.680 --> 00:00:50.680]   All right.
+[00:00:50.680 --> 00:00:57.200]   Well, maybe we could start by hearing what PyTorch is for the 001% of the audience that
+[00:00:57.200 --> 00:00:58.200]   might not know.
+[00:00:58.200 --> 00:01:00.480]   Thanks for having me, Lukas.
+[00:01:00.480 --> 00:01:05.120]   PyTorch is a accelerated scientific computing library.
+[00:01:05.120 --> 00:01:11.440]   People largely use it to write neural networks, and it gets a lot of attention these days
+[00:01:11.440 --> 00:01:19.120]   because neural networks have become pretty important and are used from Chad GPT to cancer
+[00:01:19.120 --> 00:01:20.120]   research.
+[00:01:20.120 --> 00:01:22.240]   So PyTorch helps with all of that.
+[00:01:22.240 --> 00:01:25.040]   And I guess PyTorch came from Torch, right?
+[00:01:25.040 --> 00:01:28.080]   Could you tell a little bit about the story of that?
+[00:01:28.080 --> 00:01:36.200]   I got involved in the Torch open source community starting 2011, 2012.
+[00:01:36.200 --> 00:01:41.240]   Torch was a scientific computing library that had acceleration.
+[00:01:41.240 --> 00:01:49.240]   It was based on Lua, which is a language you often use to write video games and microwave
+[00:01:49.240 --> 00:01:50.240]   software.
+[00:01:50.240 --> 00:01:55.440]   But then Torch, like Torch Lua was pretty well suited for it.
+[00:01:55.440 --> 00:02:05.480]   And the previous, the founders of Torch, Ranaan Kolaber, Kovay Kavukoglu, they wrote it in
+[00:02:05.480 --> 00:02:13.320]   2009, actually somewhere between 2005 and 2009, because there are two versions of it
+[00:02:13.320 --> 00:02:14.920]   written in Lua.
+[00:02:14.920 --> 00:02:17.600]   And that was a great package.
+[00:02:17.600 --> 00:02:23.560]   It was a scientific computing package that had neural network support.
+[00:02:23.560 --> 00:02:32.600]   And some of the best research labs at that time from DeepMind to FAIR to Twitter to a
+[00:02:32.600 --> 00:02:37.080]   bunch of universities were using Torch to do their research.
+[00:02:37.080 --> 00:02:44.600]   Eventually as things go, the scientific field moved and as they moved, they needed new tools
+[00:02:44.600 --> 00:02:46.920]   and the old tools got outdated.
+[00:02:46.920 --> 00:02:53.480]   And so we wanted to write a new tool that was more in line with what people were doing
+[00:02:53.480 --> 00:02:55.880]   in 2016, 2015.
+[00:02:55.880 --> 00:02:59.440]   So we decided to rebuild a new version of Torch.
+[00:02:59.440 --> 00:03:05.560]   And one of the things that people had moved on by then to was Python as their primary
+[00:03:05.560 --> 00:03:08.000]   language for scientific computing.
+[00:03:08.000 --> 00:03:13.480]   It wasn't evident or obvious in 2007 or 8, but it was pretty obvious in 2016.
+[00:03:13.480 --> 00:03:20.320]   And so we rewrote a new version of Torch, completely new design and in Python, that
+[00:03:20.320 --> 00:03:21.320]   ended up being PyTorch.
+[00:03:21.320 --> 00:03:25.640]   And now I remember back then, I mean, that was around the time I was starting Weights
+[00:03:25.640 --> 00:03:26.640]   and Biases.
+[00:03:26.640 --> 00:03:34.560]   At that point, it seemed like TensorFlow was kind of the runaway dominant library in the
+[00:03:34.560 --> 00:03:35.560]   field.
+[00:03:35.560 --> 00:03:41.040]   What did you feel TensorFlow was missing or what inspired you to start kind of a rival
+[00:03:41.040 --> 00:03:42.040]   system?
+[00:03:42.040 --> 00:03:43.040]   Yeah.
+[00:03:43.040 --> 00:03:49.040]   So just to recollect, December 2015 was when TensorFlow came out.
+[00:03:49.040 --> 00:03:54.480]   There were about 15 to 20 deep learning frameworks at that time.
+[00:03:54.480 --> 00:04:00.240]   It was not a duopoly like it is right now or a tripoly.
+[00:04:00.240 --> 00:04:05.240]   It was very much that it was a chaos of competition.
+[00:04:05.240 --> 00:04:11.080]   TensorFlow came out with full marketing power, right?
+[00:04:11.080 --> 00:04:16.680]   So Google was the best research lab at that time.
+[00:04:16.680 --> 00:04:25.920]   And they topped on, put a lot of Google marketing power, put in the Google Cloud budget.
+[00:04:25.920 --> 00:04:34.000]   They kind of came in with a force that deep learning frameworks did not even know could
+[00:04:34.000 --> 00:04:36.480]   be done at that time.
+[00:04:36.480 --> 00:04:43.760]   Just to give you context, at that time, every deep learning framework that came out had
+[00:04:43.760 --> 00:04:47.240]   a shell script to compile and install it.
+[00:04:47.240 --> 00:04:50.880]   It was not polished engineering.
+[00:04:50.880 --> 00:04:55.960]   Unit tests were maybe running on EPR.
+[00:04:55.960 --> 00:05:03.280]   So TensorFlow came in with a lot of positives, one of them being they showed the deep learning
+[00:05:03.280 --> 00:05:06.640]   framework world what high quality engineering was.
+[00:05:06.640 --> 00:05:16.280]   What they were missing was the incentive structure to care about open source.
+[00:05:16.280 --> 00:05:25.160]   And what comes out of that is engaging with the open source community with no other terms
+[00:05:25.160 --> 00:05:29.920]   than to help them, whether they're asking a stupid question or they're asking for a
+[00:05:29.920 --> 00:05:36.920]   feature or whether they're sending in pull requests that might not be perfect, but A
+[00:05:36.920 --> 00:05:39.560]   for effort kind of funds.
+[00:05:39.560 --> 00:05:45.000]   Engaging with the community and understanding them and intimately helping them and building
+[00:05:45.000 --> 00:05:46.880]   a community out of it.
+[00:05:46.880 --> 00:05:51.600]   I think that's somewhat what was missing with TensorFlow.
+[00:05:51.600 --> 00:06:00.920]   And it worked out for us because we had that DNA from the Torch days and we just continued
+[00:06:00.920 --> 00:06:03.240]   it but with greater magnitude.
+[00:06:03.240 --> 00:06:04.240]   Interesting.
+[00:06:04.240 --> 00:06:07.760]   So you don't think it was a big technical difference.
+[00:06:07.760 --> 00:06:15.920]   Some people point to the just-in-time evaluation of PyTorch as the big reason for its success,
+[00:06:15.920 --> 00:06:20.840]   but it sounds like you think of it more as community building and engagement.
+[00:06:20.840 --> 00:06:28.960]   I strongly believe TensorFlow stood for a programming model that had a reasonably good
+[00:06:28.960 --> 00:06:30.480]   chance of success.
+[00:06:30.480 --> 00:06:38.040]   One of the clearest examples you can take as to why technical direction was not really
+[00:06:38.040 --> 00:06:43.280]   the reason for TensorFlow to not stand up to expectations is JAX.
+[00:06:43.280 --> 00:06:48.280]   JAX actually is very similar to TensorFlow in its programming model.
+[00:06:48.280 --> 00:06:53.920]   You have to trace a program ahead of time and then run it later in the XLA runtime.
+[00:06:53.920 --> 00:06:58.720]   But people find JAX's experience to be totally fine.
+[00:06:58.720 --> 00:07:04.640]   And I think TensorFlow's going away from its symbolic execution model from the TensorFlow
+[00:07:04.640 --> 00:07:13.440]   1.0 to the TensorFlow 2.0 transition was probably the biggest positive for PyTorch in that if
+[00:07:13.440 --> 00:07:18.560]   people had to transition from a symbolic execution model to an eager execution model, why would
+[00:07:18.560 --> 00:07:25.320]   they switch to an eager framework that is zero days old when there is a framework called
+[00:07:25.320 --> 00:07:28.240]   PyTorch that has been doing this for a couple of years by then?
+[00:07:28.240 --> 00:07:35.000]   I guess when you say a duopoly or a triopoly of deep learning frameworks, I guess I sort
+[00:07:35.000 --> 00:07:37.520]   of view PyTorch as the runaway success.
+[00:07:37.520 --> 00:07:41.960]   Who do you include if you say a second or a third?
+[00:07:41.960 --> 00:07:45.480]   I think it depends on which bubble you are.
+[00:07:45.480 --> 00:07:50.440]   You kind of believe whether PyTorch or TensorFlow is bigger.
+[00:07:50.440 --> 00:07:53.280]   I think that's largely slowly.
+[00:07:53.280 --> 00:07:59.960]   I think PyTorch is becoming bigger in almost all circles, but TensorFlow does still hold
+[00:07:59.960 --> 00:08:04.280]   a lot of weight in some circles, some segments.
+[00:08:04.280 --> 00:08:10.560]   I think if you still see Kaggle competitions of certain kinds, there's still TensorFlow
+[00:08:10.560 --> 00:08:11.560]   usage and stuff.
+[00:08:11.560 --> 00:08:16.360]   So I was mainly referring to PyTorch, TensorFlow, and JAX.
+[00:08:16.360 --> 00:08:22.800]   And I guess, what are the considerations between a, as you called it, symbolic execution model
+[00:08:22.800 --> 00:08:24.640]   and an eager execution model?
+[00:08:24.640 --> 00:08:28.680]   How did you come to your point of view and what are the trade-offs?
+[00:08:28.680 --> 00:08:34.280]   Symbolic execution model is not something that's new.
+[00:08:34.280 --> 00:08:43.120]   In fact, with TensorFlow and PyTorch, I see this as a very natural evolution of Theano
+[00:08:43.120 --> 00:08:47.440]   and Torch, which were previous generation frameworks at that time.
+[00:08:47.440 --> 00:08:53.840]   Theano and TensorFlow are very similar and PyTorch and Torch are very similar in that
+[00:08:53.840 --> 00:08:57.760]   there's symbolic versus eager execution model.
+[00:08:57.760 --> 00:09:04.120]   Generally the people who like and cared about symbolic execution models believe in the
+[00:09:04.120 --> 00:09:12.400]   power of compilation and its ability to extract a lot more performance out of the system.
+[00:09:12.400 --> 00:09:19.200]   And the people who believe in eager execution models believe that the compiler people always
+[00:09:19.200 --> 00:09:22.440]   say this, but never deliver performance.
+[00:09:22.440 --> 00:09:30.400]   So when we built PyTorch in 2016 and when we used Torch before as the community of Torch
+[00:09:30.400 --> 00:09:40.840]   users, we believed more in the need to run the program with semantics that are very simple
+[00:09:40.840 --> 00:09:41.840]   to understand.
+[00:09:41.840 --> 00:09:43.440]   It's like, I run it, it runs.
+[00:09:43.440 --> 00:09:46.160]   I don't really have to think about it too much.
+[00:09:46.160 --> 00:09:49.760]   I don't need five abstraction layers.
+[00:09:49.760 --> 00:09:58.520]   And this philosophical difference, by the way, is not just in the deep learning world.
+[00:09:58.520 --> 00:10:06.880]   The graphics world went through the same thing in the '90s or '80s to '90s, where they had
+[00:10:06.880 --> 00:10:11.120]   immediate execution modes in graphics.
+[00:10:11.120 --> 00:10:16.600]   And I think they would call it pipeline execution.
+[00:10:16.600 --> 00:10:21.880]   And immediate execution won out again because of simplicity.
+[00:10:21.880 --> 00:10:27.480]   So this is like this deep philosophical thing that I think comes from innate biases in people
+[00:10:27.480 --> 00:10:29.920]   and they just prefer one or the other.
+[00:10:29.920 --> 00:10:34.520]   Interesting because I think it really matters what you're doing.
+[00:10:34.520 --> 00:10:38.840]   Certainly compilers exist and are useful in lots of domains.
+[00:10:38.840 --> 00:10:48.960]   So what do you think it is about deep learning that I guess prefers a more just-in-time execution
+[00:10:48.960 --> 00:10:49.960]   model?
+[00:10:49.960 --> 00:10:50.960]   Yeah.
+[00:10:50.960 --> 00:10:57.120]   So I think you always have to evaluate whether a particular thing is useful in a given time
+[00:10:57.120 --> 00:10:59.320]   based on its circumstances.
+[00:10:59.320 --> 00:11:08.240]   The compiled execution model in 2015 did not buy you very much for two reasons.
+[00:11:08.240 --> 00:11:15.260]   One, the compilers of that time, the ML compilers of that time, weren't very ready or sophisticated.
+[00:11:15.260 --> 00:11:22.540]   People had to do some more research and engineering to get those compilers to do useful things.
+[00:11:22.540 --> 00:11:30.200]   The second reason is the accelerators primarily at that time were NVIDIA GPUs and they were
+[00:11:30.200 --> 00:11:35.440]   already being saturated by eager execution mode.
+[00:11:35.440 --> 00:11:39.160]   So it's not the case as of today.
+[00:11:39.160 --> 00:11:45.500]   As of today, the compilers have gotten sophisticated and mature enough that they are able to extract
+[00:11:45.500 --> 00:11:49.600]   a lot more performance out of a compiled model.
+[00:11:49.600 --> 00:11:56.800]   And the accelerators have gotten so fast and so large that unless you compile your model,
+[00:11:56.800 --> 00:12:02.580]   you're not able to saturate the GPUs because the neural networks have stayed relatively
+[00:12:02.580 --> 00:12:09.720]   of similar sizes in relativeness to how fast the GPUs are getting.
+[00:12:09.720 --> 00:12:19.580]   Mostly the primary thing is on GPUs, the compute, the number of compute flops you have has increased
+[00:12:19.580 --> 00:12:24.340]   a lot faster than the amount of memory bandwidth you have.
+[00:12:24.340 --> 00:12:32.140]   So it was okay to be using eager mode when your compute to bandwidth ratio was a lot
+[00:12:32.140 --> 00:12:33.760]   more reasonable.
+[00:12:33.760 --> 00:12:39.080]   But now you're forced to compile or else you're just going to be memory bandwidth bound.
+[00:12:39.080 --> 00:12:45.500]   You need to do a lot more while you're computing things in register or else you're just going
+[00:12:45.500 --> 00:12:52.420]   to be bottlenecked by how fast you move your tensors from register to main memory.
+[00:12:52.420 --> 00:12:57.540]   So then are you predicting that more people will move to a compiled model over time?
+[00:12:57.540 --> 00:13:04.580]   Yeah, we predict that and that is primarily why we invested in and released PyTorch 2.0
+[00:13:04.580 --> 00:13:07.860]   late last year, where we introduced a compiled mode.
+[00:13:07.860 --> 00:13:11.820]   We do expect that people generally will...
+[00:13:11.820 --> 00:13:17.820]   There's two phases, right, people generally in AI and in deep learning, they experiment
+[00:13:17.820 --> 00:13:20.420]   and there's a lot of iterative debugging.
+[00:13:20.420 --> 00:13:23.820]   You change things, you experiment, you try things, whatever.
+[00:13:23.820 --> 00:13:30.780]   And I believe that phase will still somewhat be dominated by eager mode.
+[00:13:30.780 --> 00:13:38.700]   And then you then run your large scale experiment for two days to two weeks to two months, depending
+[00:13:38.700 --> 00:13:41.500]   on what you're doing.
+[00:13:41.500 --> 00:13:46.220]   And these large scale switchovers, like, "Okay, I'm going to be running this for X number
+[00:13:46.220 --> 00:13:47.540]   of days."
+[00:13:47.540 --> 00:13:56.220]   They're all going to be using compiled mode because you get 2X to 4 or 5X performance
+[00:13:56.220 --> 00:13:57.220]   in addition.
+[00:13:57.220 --> 00:13:58.260]   So why would you leave that out?
+[00:13:58.260 --> 00:14:03.300]   I guess when I think about myself, going back four or five years, I'm certainly not as sophisticated
+[00:14:03.300 --> 00:14:08.020]   as you or probably your super users or many of our listeners.
+[00:14:08.020 --> 00:14:12.300]   But I do remember using PyTorch and using TensorFlow.
+[00:14:12.300 --> 00:14:17.820]   And frankly, I wasn't making any use of modifying the model in flight.
+[00:14:17.820 --> 00:14:22.260]   But I did find PyTorch easier to use, like maybe just for the fact that I could inject
+[00:14:22.260 --> 00:14:24.940]   print statements and have them print out.
+[00:14:24.940 --> 00:14:30.940]   I guess, why do you think someone like me gravitated towards PyTorch when I'm kind of
+[00:14:30.940 --> 00:14:37.980]   not making use of any of the really additional functionality that's offered by an eager mode
+[00:14:37.980 --> 00:14:44.140]   and why did so many people make the transition if compiled mode is faster and handles a lot
+[00:14:44.140 --> 00:14:46.020]   of the normal cases reasonably well?
+[00:14:46.020 --> 00:14:50.940]   PyTorch versus TensorFlow or eager versus compiled are slightly different.
+[00:14:50.940 --> 00:14:53.420]   TensorFlow 1 was symbolic programming.
+[00:14:53.420 --> 00:14:56.220]   You could actually write an eager mode symbolic programming too.
+[00:14:56.220 --> 00:15:02.700]   So what made it harder for you to use TensorFlow versus using PyTorch is whether you were symbolically
+[00:15:02.700 --> 00:15:05.940]   programming, which is effectively like meta programming.
+[00:15:05.940 --> 00:15:11.240]   You have to think not in terms of the idea that you have, but in terms of how you need
+[00:15:11.240 --> 00:15:15.700]   to fit that idea into this other complicated symbolic system.
+[00:15:15.700 --> 00:15:21.540]   I think it's similar for you to mentally think about you have an idea and you know how to
+[00:15:21.540 --> 00:15:22.540]   do it.
+[00:15:22.540 --> 00:15:24.220]   Let's just say you know how to physically do it.
+[00:15:24.220 --> 00:15:31.260]   But if I ask you, oh, can you write exactly what you're thinking as a mathematical equation,
+[00:15:31.260 --> 00:15:36.380]   then you'll have to really think that through because even though you have the idea, it's
+[00:15:36.380 --> 00:15:40.700]   in your head, you just need to translate it into math.
+[00:15:40.700 --> 00:15:49.860]   But the mathematical symbolism is a system of its own and you need to be like, oh, it
+[00:15:49.860 --> 00:15:54.340]   has a summation, it has a that, it has a this, and I need to express what I'm thinking in
+[00:15:54.340 --> 00:15:56.060]   terms of mathematical terms.
+[00:15:56.060 --> 00:16:03.540]   So a lot of people find it hard to, for example, do math as fast as someone who's practiced
+[00:16:03.540 --> 00:16:08.580]   math really well and done homework and writing proofs and stuff.
+[00:16:08.580 --> 00:16:09.620]   It's very similar.
+[00:16:09.620 --> 00:16:11.740]   So PyTorch just gave you Python.
+[00:16:11.740 --> 00:16:13.940]   It's just like I am very stupid.
+[00:16:13.940 --> 00:16:16.860]   You have an idea and you know Python.
+[00:16:16.860 --> 00:16:19.300]   You just write your program.
+[00:16:19.300 --> 00:16:21.540]   And I'm not trying to do anything more.
+[00:16:21.540 --> 00:16:25.080]   I'm just a small library in Python.
+[00:16:25.080 --> 00:16:28.580]   And TensorFlow was a symbolic programming system.
+[00:16:28.580 --> 00:16:36.420]   So you had to spend this additional training, you had to train yourself to use TensorFlow.
+[00:16:36.420 --> 00:16:40.260]   So that's primarily the challenge people faced.
+[00:16:40.260 --> 00:16:46.420]   And one of the things that JAX tries to get better at, right, is like, you don't need
+[00:16:46.420 --> 00:16:52.220]   to program symbolically, just write your NumPy program and then trace it.
+[00:16:52.220 --> 00:16:55.680]   And we will try to recover the symbolic programming.
+[00:16:55.680 --> 00:17:00.080]   And similarly, PyTorch with Torch.compile, that's exactly the promise we say.
+[00:17:00.080 --> 00:17:02.400]   We say, "Oh, you have a PyTorch program.
+[00:17:02.400 --> 00:17:05.160]   Don't even think about what it means to compile.
+[00:17:05.160 --> 00:17:11.320]   Just wrap your program with a Torch.compile call and we will try to figure out what to
+[00:17:11.320 --> 00:17:12.760]   compile and what not to compile.
+[00:17:12.760 --> 00:17:14.600]   It's not your problem to figure out."
+[00:17:14.600 --> 00:17:21.240]   So that cognitive overhead was what got people with TensorFlow 1's symbolic programming.
+[00:17:21.240 --> 00:17:26.400]   I guess, what took you so long to build a compiled mode?
+[00:17:26.400 --> 00:17:28.500]   What's tricky about that?
+[00:17:28.500 --> 00:17:33.380]   When you're already doing it to some extent just to run these things, what made it need
+[00:17:33.380 --> 00:17:36.260]   a whole new version to get there?
+[00:17:36.260 --> 00:17:37.260]   Yeah.
+[00:17:37.260 --> 00:17:42.260]   Our compiler, this is the fifth compiler we built.
+[00:17:42.260 --> 00:17:44.860]   We spent a lot of time trying to get it right.
+[00:17:44.860 --> 00:17:52.160]   The biggest challenge is exactly the promise I just made to you earlier, which is you just
+[00:17:52.160 --> 00:17:58.680]   wrap a Torch.compile call and it's our problem to figure out what to do about it.
+[00:17:58.680 --> 00:17:59.680]   It's not your problem.
+[00:17:59.680 --> 00:18:06.400]   We do not want to put a cognitive overhead on you on whether you need to start thinking
+[00:18:06.400 --> 00:18:08.700]   about, "Oh, is this program compilable?
+[00:18:08.700 --> 00:18:10.280]   Do I need to adjust a line?
+[00:18:10.280 --> 00:18:13.500]   Did I get an error message and I don't understand it?"
+[00:18:13.500 --> 00:18:22.080]   So we had to experiment and research a lot with ways in which we can recover parts of
+[00:18:22.080 --> 00:18:30.080]   the Python program in a way that is pretty seamless and fall back to Python when we simply
+[00:18:30.080 --> 00:18:33.060]   cannot recover the program and compile it.
+[00:18:33.060 --> 00:18:36.440]   And then on top of it, we had to make the program faster.
+[00:18:36.440 --> 00:18:41.440]   If not, users would use the compiled mode, but not really find any benefit out of it,
+[00:18:41.440 --> 00:18:43.800]   which again is not very useful.
+[00:18:43.800 --> 00:18:45.920]   Both of these things, especially the first one.
+[00:18:45.920 --> 00:18:49.440]   The second one, people have figured out how to make the programs faster once you acquire
+[00:18:49.440 --> 00:18:53.280]   them since 2016 through 2020.
+[00:18:53.280 --> 00:18:59.420]   But acquiring the program correctly and well, that was something that was the biggest challenge.
+[00:18:59.420 --> 00:19:03.800]   And I would say it was a breakthrough that we made.
+[00:19:03.800 --> 00:19:10.320]   Our system that I consider is a breakthrough, it's called Torch Dynamo, and we built it
+[00:19:10.320 --> 00:19:18.440]   ... We first built it in December 2021, and then we refined it over the last year before
+[00:19:18.440 --> 00:19:20.840]   releasing it in December last year.
+[00:19:20.840 --> 00:19:27.480]   And now you actually need to calculate the gradient for arbitrary code to do the gradient
+[00:19:27.480 --> 00:19:28.480]   descent, right?
+[00:19:28.480 --> 00:19:32.840]   I feel like there must be some mathematical theorem that says you can't calculate the
+[00:19:32.840 --> 00:19:35.760]   gradient of arbitrary code that I generate, right?
+[00:19:35.760 --> 00:19:39.880]   Couldn't I create some pathological thing where it's impossible to find the gradient
+[00:19:39.880 --> 00:19:41.840]   if you let me do anything I want to?
+[00:19:41.840 --> 00:19:42.840]   Yeah.
+[00:19:42.840 --> 00:19:51.120]   You can not calculate the gradient of a bunch of discontinuous programming constructs.
+[00:19:51.120 --> 00:19:57.800]   For example, when you take the max of something, we only actually calculate gradient through
+[00:19:57.800 --> 00:20:04.320]   the things that we're passing through, and it's zero gradient everywhere else.
+[00:20:04.320 --> 00:20:11.800]   And that's okay, that's still like the gradient is correct, but not what you would traditionally
+[00:20:11.800 --> 00:20:13.880]   consider continuous gradient.
+[00:20:13.880 --> 00:20:15.620]   It's not a smooth function.
+[00:20:15.620 --> 00:20:20.080]   So at the edges, it's actually not, there's no gradient that exists.
+[00:20:20.080 --> 00:20:29.160]   Generally it works out because largely people try to do in a programming language is differentiable,
+[00:20:29.160 --> 00:20:30.160]   mathematically at least.
+[00:20:30.480 --> 00:20:36.320]   If you're doing it on tensors, then it largely works out.
+[00:20:36.320 --> 00:20:39.040]   How did the chips fit into this?
+[00:20:39.040 --> 00:20:45.920]   Like everybody talks about sort of Kudanen being this really impressive library and AMD
+[00:20:45.920 --> 00:20:50.680]   always seems like they're trying to make something for people.
+[00:20:50.680 --> 00:20:55.760]   How much are you coordinating with the hardware providers to make PyTorch useful?
+[00:20:55.760 --> 00:20:56.760]   A lot.
+[00:20:56.760 --> 00:21:02.600]   So we see ourselves as, we have two sets of customers.
+[00:21:02.600 --> 00:21:07.240]   One set of customers who are users of PyTorch from the front end side.
+[00:21:07.240 --> 00:21:14.120]   They express their mathematical ideas in PyTorch to get their job done.
+[00:21:14.120 --> 00:21:22.440]   And we have the backend customers, customers of hardware, basically hardware vendors of
+[00:21:22.440 --> 00:21:27.560]   various kinds on the server side, on the edge side.
+[00:21:27.560 --> 00:21:33.360]   And they are trying to get their hardware to work well within the PyTorch abstraction.
+[00:21:33.360 --> 00:21:40.320]   Because if they do, then they get all these, they get these millions of customers automatically.
+[00:21:40.320 --> 00:21:49.800]   So a large part of the work we do on existing platforms, that is Nvidia GPUs and CPUs is
+[00:21:49.800 --> 00:21:51.160]   performance tuning.
+[00:21:51.160 --> 00:21:55.120]   Hey, like the sweet spot has changed on this new GPU.
+[00:21:55.120 --> 00:22:00.880]   So we have to update our internal code and passes to make it more performant.
+[00:22:00.880 --> 00:22:09.600]   The large amount of work we do on new platforms such as AMD or Mac GPUs or other kinds of
+[00:22:09.600 --> 00:22:14.040]   accelerators such as TPUs is functionality parity.
+[00:22:14.040 --> 00:22:18.300]   So PyTorch is a fairly big API surfaces.
+[00:22:18.300 --> 00:22:20.880]   It's about a thousand API functions.
+[00:22:20.880 --> 00:22:26.760]   And then it composes with whether you have a quantized tensor or a regular tensor and
+[00:22:26.760 --> 00:22:28.820]   various other things distributed.
+[00:22:28.820 --> 00:22:34.340]   To make a backend work smoothly for PyTorch takes a lot of work.
+[00:22:34.340 --> 00:22:40.180]   And so that zero to one is something that we work on with a lot of newer vendors such
+[00:22:40.180 --> 00:22:43.020]   as TPUs and AMD GPUs and Apple.
+[00:22:43.020 --> 00:22:44.020]   Okay.
+[00:22:44.020 --> 00:22:50.420]   Another question I had is how you measure success while developing PyTorch or what metrics
+[00:22:50.420 --> 00:22:51.420]   you look at.
+[00:22:51.420 --> 00:22:55.220]   You know, we found some quotes of you saying that you've never responded to irrelevant
+[00:22:55.220 --> 00:22:59.260]   measures like, you know, GitHub stars or speed benchmarks.
+[00:22:59.260 --> 00:23:04.060]   But I was wondering if you try to hold yourself accountable with hard usage metrics or if
+[00:23:04.060 --> 00:23:07.380]   the process of building thing is intuitive.
+[00:23:07.380 --> 00:23:13.100]   We think of metrics as one way to help success.
+[00:23:13.100 --> 00:23:18.420]   I think there's a lot of products and a lot of people while they're building products,
+[00:23:18.420 --> 00:23:26.080]   they try to develop metrics much earlier than they should because they think optimizing
+[00:23:26.080 --> 00:23:33.020]   for the metric is going to or even measuring just the metric is gives them a very objective
+[00:23:33.020 --> 00:23:35.600]   and safe path to success.
+[00:23:35.600 --> 00:23:42.080]   A lot of that works out when you're building a performance product or something that clearly
+[00:23:42.080 --> 00:23:43.480]   is measurable.
+[00:23:43.480 --> 00:23:48.860]   But if you think about PyTorch, our entire thesis was, hey, we're going to give you a
+[00:23:48.860 --> 00:23:50.540]   better user experience.
+[00:23:50.540 --> 00:23:58.500]   And as far as I know, there isn't a good, effective, well understood measure of user
+[00:23:58.500 --> 00:23:59.500]   experience.
+[00:23:59.500 --> 00:24:01.420]   It's a very subjective thing.
+[00:24:01.420 --> 00:24:10.260]   So for the first two to three years of our development, we used some signal like number
+[00:24:10.260 --> 00:24:14.540]   of downloads and number of research papers citing PyTorch.
+[00:24:14.540 --> 00:24:19.780]   But a large amount of our product iteration came from listening to users.
+[00:24:19.780 --> 00:24:27.700]   I would personally read 500 notifications a day from forums to Twitter and reply to
+[00:24:27.700 --> 00:24:28.700]   a lot of them.
+[00:24:28.700 --> 00:24:33.380]   And we would constantly engage with a lot of our customer base very directly.
+[00:24:33.380 --> 00:24:35.140]   And we did a lot of these exercises.
+[00:24:35.140 --> 00:24:42.420]   We have a great team of six people who constantly engage with our top heavy customers or customers
+[00:24:42.420 --> 00:24:47.740]   who disproportionately bring a lot of value to the PyTorch ecosystem.
+[00:24:47.740 --> 00:24:55.140]   And this entire process really helps us make sure we are iterating on our product and we're
+[00:24:55.140 --> 00:24:57.440]   improving our product in the right way.
+[00:24:57.440 --> 00:25:03.900]   To me, the metrics we use are more of a tailwind of sanity check.
+[00:25:03.900 --> 00:25:06.860]   Like, okay, we are actually still on the right track.
+[00:25:06.860 --> 00:25:13.500]   Things are improving, but we don't really use them to inform our development cycle or
+[00:25:13.500 --> 00:25:15.740]   even like incentivize our success.
+[00:25:15.740 --> 00:25:22.360]   So when you think about a roadmap, how do you incorporate all the customer feedback?
+[00:25:22.360 --> 00:25:27.940]   Like who would I be that where you would listen to my feedback more loudly or what would I
+[00:25:27.940 --> 00:25:31.220]   be doing where you would feel free to discount my feedback?
+[00:25:31.220 --> 00:25:36.700]   We basically aggregate feedback from a variety of sources, right?
+[00:25:36.700 --> 00:25:41.420]   We aggregate them from forums, from Twitter, from top heavy engagements that we directly
+[00:25:41.420 --> 00:25:43.660]   do from our Slack.
+[00:25:43.660 --> 00:25:46.460]   During planning time, we do this once every six months or so.
+[00:25:46.460 --> 00:25:48.820]   We basically stack rank it.
+[00:25:48.820 --> 00:25:54.460]   We aggregate all the feedback and we subjectively weight it by who cared about it.
+[00:25:54.460 --> 00:25:56.180]   And then we stack rank it.
+[00:25:56.180 --> 00:26:01.860]   And then the other thing we do that might be interesting is then we ask people what
+[00:26:01.860 --> 00:26:02.860]   they want to pick.
+[00:26:02.860 --> 00:26:07.660]   Like we have a bunch of engineers who all work on the PyTorch team and we say, "Well,
+[00:26:07.660 --> 00:26:09.020]   what do you want to pick?"
+[00:26:09.020 --> 00:26:16.040]   And the matching works out reasonably well, but there are some features that didn't make
+[00:26:16.040 --> 00:26:21.520]   it to the top of the stack, but they ended up being worked on because someone thought
+[00:26:21.520 --> 00:26:22.600]   it was cool.
+[00:26:22.600 --> 00:26:26.300]   And then there's features who didn't make it to the top of the stack that didn't get
+[00:26:26.300 --> 00:26:29.340]   worked on because no one wanted to work on it.
+[00:26:29.340 --> 00:26:35.820]   So there's some amount of, is this a cool novel thing that also helps naturally, like
+[00:26:35.820 --> 00:26:37.500]   it helps us gravitate to things.
+[00:26:37.500 --> 00:26:38.900]   That's roughly how it goes.
+[00:26:38.900 --> 00:26:43.060]   Those are mostly the large amount of volume features we do.
+[00:26:43.060 --> 00:26:48.340]   And then there's the deeper strategy, which is like, "Hey, we need to do a Torch.compile
+[00:26:48.340 --> 00:26:49.700]   now."
+[00:26:49.700 --> 00:26:55.420]   And things that meaningfully are going to change our product, they usually almost never
+[00:26:55.420 --> 00:26:56.940]   come from user feedback.
+[00:26:56.940 --> 00:27:00.660]   Like zero number of times do they come from user feedback.
+[00:27:00.660 --> 00:27:04.900]   We have a natural hierarchical maintainer structure and there's some core maintainers
+[00:27:04.900 --> 00:27:10.700]   and we discuss strategy and we figure out what to do and when based on changing industry
+[00:27:10.700 --> 00:27:11.700]   trends.
+[00:27:11.700 --> 00:27:17.060]   Lukas: Think about libraries built on top of you, like Fast.ai or Lightning.
+[00:27:17.060 --> 00:27:22.380]   Do you try to collaborate with them and not build overlapping functionality?
+[00:27:22.380 --> 00:27:23.380]   Are they important constituents?
+[00:27:23.380 --> 00:27:24.380]   Arif: Yeah.
+[00:27:24.380 --> 00:27:29.340]   So our entire principle here is we should be doing the least amount of work we can get
+[00:27:29.340 --> 00:27:30.340]   away with.
+[00:27:30.340 --> 00:27:38.380]   So we strongly believe that we want to let the community be empowered by us and we want
+[00:27:38.380 --> 00:27:44.100]   to be doing less of, "We want to eat our community's lunch because we feel hungry."
+[00:27:44.100 --> 00:27:51.300]   So we are not even that big of a team in relativeness to the size of the community.
+[00:27:51.300 --> 00:27:57.220]   So it'd be foolish of us to take any other strategy unless incentives are completely
+[00:27:57.220 --> 00:27:58.220]   misaligned.
+[00:27:58.220 --> 00:28:03.140]   We generally, when we think about taking a direction, we first make sure no one else
+[00:28:03.140 --> 00:28:06.380]   in the community is interested in taking that direction.
+[00:28:06.380 --> 00:28:10.740]   And if there are people interested in taking that direction in the community, we first
+[00:28:10.740 --> 00:28:15.340]   make sure they either succeed or fail by giving them some time.
+[00:28:15.340 --> 00:28:21.820]   And we usually, the core PyTorch team takes directions that the community doesn't have
+[00:28:21.820 --> 00:28:27.340]   the incentive to take or they don't have the interest to take, but a large amount of the
+[00:28:27.340 --> 00:28:30.580]   community wants that direction to be taken.
+[00:28:30.580 --> 00:28:33.900]   So when there's an asymmetry, that is generally perfect for us.
+[00:28:33.900 --> 00:28:39.580]   So we work very closely with Fast.ai, Lightning, a bunch of our stakeholders in the community
+[00:28:39.580 --> 00:28:42.460]   to empower them, to enable them.
+[00:28:42.460 --> 00:28:45.340]   And it works well for us.
+[00:28:45.340 --> 00:28:48.580]   If they do more, then we need to do less.
+[00:28:48.580 --> 00:28:51.220]   And we have plenty of things to do.
+[00:28:51.220 --> 00:28:53.660]   I think we have tens of thousands of issues open.
+[00:28:53.660 --> 00:28:56.940]   We can work for a lifetime and still have more work to do.
+[00:28:56.940 --> 00:28:58.620]   So that's how we see it.
+[00:28:58.620 --> 00:29:01.900]   How do you work with FAIR?
+[00:29:01.900 --> 00:29:03.460]   Or is it still called FAIR?
+[00:29:03.460 --> 00:29:07.820]   The Facebook research group, you're a part of that.
+[00:29:07.820 --> 00:29:10.100]   What benefit does FAIR get?
+[00:29:10.100 --> 00:29:11.180]   Why do they invest in it?
+[00:29:11.180 --> 00:29:14.780]   And do you do things other than working on PyTorch there?
+[00:29:14.780 --> 00:29:18.060]   Yeah, I've been at Meta for close to nine years.
+[00:29:18.060 --> 00:29:23.580]   They hired me for working on Torch because they were a big user of Torch at that time.
+[00:29:23.580 --> 00:29:30.100]   In general, PyTorch clearly brings value to Meta in a variety of ways.
+[00:29:30.100 --> 00:29:35.380]   One of them, there's like six or seven of them I wrote down at some point, but the clearest
+[00:29:35.380 --> 00:29:41.740]   value I would say is the larger the ecosystem, the faster Meta can iterate on their own AI
+[00:29:41.740 --> 00:29:42.740]   work.
+[00:29:42.740 --> 00:29:47.900]   Imagine right now, just as an example, not as a dig or anything, but like Google uses
+[00:29:47.900 --> 00:29:49.340]   TensorFlow in production.
+[00:29:49.340 --> 00:29:55.100]   Now, if there's a new AI development, especially in research, it largely comes out in PyTorch.
+[00:29:55.100 --> 00:30:02.140]   So now their applied scientists internally have to then take that code, roughly rewrite
+[00:30:02.140 --> 00:30:09.300]   it in TensorFlow, test it, make sure everything checks out, and then start their research
+[00:30:09.300 --> 00:30:11.820]   and development from that point.
+[00:30:11.820 --> 00:30:17.220]   So just using the same tooling as everyone else in the industry works great.
+[00:30:17.220 --> 00:30:24.220]   And large companies generally, especially Meta, Google, like a few others, they kind
+[00:30:24.220 --> 00:30:25.820]   of want to use what they built.
+[00:30:25.820 --> 00:30:32.980]   So Meta investing in PyTorch and keeping it open source, I think it strictly works out
+[00:30:32.980 --> 00:30:35.140]   in like multitude of ways here.
+[00:30:35.140 --> 00:30:39.300]   The other thing I want to say is when you have a large ecosystem, if you're using the
+[00:30:39.300 --> 00:30:45.060]   most popular tool in the ecosystem, you can decide to do something new a year later and
+[00:30:45.060 --> 00:30:50.100]   then get a headstart because other people in the world have been working on that thing,
+[00:30:50.100 --> 00:30:51.220]   whatever that is.
+[00:30:51.220 --> 00:30:55.980]   And then you can start from there and you don't have a lot of lift in terms of tooling
+[00:30:55.980 --> 00:30:57.380]   and all of that.
+[00:30:57.380 --> 00:31:00.660]   So the timeline edge is a big one.
+[00:31:00.660 --> 00:31:08.780]   And I have to be honest, if I say at least one or two people we have hired because we
+[00:31:08.780 --> 00:31:11.780]   use PyTorch and not TensorFlow.
+[00:31:11.780 --> 00:31:16.220]   So there's obviously that recruiting thing, but I think it's a very small component of
+[00:31:16.220 --> 00:31:17.220]   the overall thing.
+[00:31:17.220 --> 00:31:20.020]   It's mainly the ecosystem that really helps.
+[00:31:20.020 --> 00:31:25.020]   So I guess from that perspective, then becoming the standard must have been really important
+[00:31:25.020 --> 00:31:27.140]   to PyTorch.
+[00:31:27.140 --> 00:31:31.400]   And I'm wondering, besides the obvious thing that you keep talking about of building the
+[00:31:31.400 --> 00:31:37.780]   highest quality, most useful library, were there other things you did to try to make
+[00:31:37.780 --> 00:31:42.220]   PyTorch the fastest growing or the standard deep learning framework?
+[00:31:42.220 --> 00:31:47.940]   Generally, strategically, if you try to become the standard, you will not become the standard.
+[00:31:47.940 --> 00:31:54.360]   If you try to build the best thing you can, your chances of becoming the standard will
+[00:31:54.360 --> 00:31:57.980]   be much higher just because that's the most obvious thing to happen.
+[00:31:57.980 --> 00:32:05.900]   Unless there are two characteristically, ideologically different projects that are both doing great
+[00:32:05.900 --> 00:32:08.500]   and so then you'll have two or three or four.
+[00:32:08.500 --> 00:32:13.460]   The only thing we strive to do, honestly, is to build the best scientific computing
+[00:32:13.460 --> 00:32:20.380]   framework and we hope that it works out in all other aspects such as becoming the standard.
+[00:32:20.380 --> 00:32:25.980]   But we've not really thought about that aspect top down.
+[00:32:25.980 --> 00:32:29.140]   I guess what about the community?
+[00:32:29.140 --> 00:32:33.780]   You mentioned engaging with people's whole requests, but it seems like you really did
+[00:32:33.780 --> 00:32:37.460]   a wonderful job at building a vibrant community.
+[00:32:37.460 --> 00:32:40.420]   Do you think there are any other little tricks there?
+[00:32:40.420 --> 00:32:44.860]   I'm sure a lot of people are listening that are a part of community or are trying to build
+[00:32:44.860 --> 00:32:48.180]   a community for themselves, me included.
+[00:32:48.180 --> 00:32:49.180]   Do you have any advice?
+[00:32:49.180 --> 00:32:57.420]   I think one advice I would give is to go in with a lot more trust and going in with a
+[00:32:57.420 --> 00:33:03.820]   lot more ability to empower someone who seems to be doing good work, but you don't necessarily
+[00:33:03.820 --> 00:33:06.820]   know them.
+[00:33:06.820 --> 00:33:12.700]   The other thing that people don't really know, it directionally gets lost even though we
+[00:33:12.700 --> 00:33:18.020]   try to remind people, is PyTorch was only partly built at Meta.
+[00:33:18.020 --> 00:33:23.700]   Eventually Meta became one of the biggest, they put a lot of resources into PyTorch and
+[00:33:23.700 --> 00:33:28.340]   became one of the biggest contributors, but PyTorch was a carryover from the Torch community
+[00:33:28.340 --> 00:33:34.100]   and the Torch community was a bunch of people who just liked Torch on the internet.
+[00:33:34.100 --> 00:33:41.620]   The primary paper author on PyTorch, the first author, Adam Paszka, he and I met online because
+[00:33:41.620 --> 00:33:44.620]   he was writing some blog posts on Torch.
+[00:33:44.620 --> 00:33:49.060]   I think he wrote one or two blog posts on Torch about its internals and I was like,
+[00:33:49.060 --> 00:33:50.420]   "This is cool."
+[00:33:50.420 --> 00:33:57.060]   So he messages me one day on one of those online chat things and he says, "Hey, I'm
+[00:33:57.060 --> 00:33:58.740]   looking for an internship.
+[00:33:58.740 --> 00:33:59.740]   I'm in Poland.
+[00:33:59.740 --> 00:34:01.940]   I haven't gotten one yet.
+[00:34:01.940 --> 00:34:03.140]   It's pretty late in the summer."
+[00:34:03.140 --> 00:34:08.700]   And I said, "Hey, we've been thinking of building this Python Torch thing."
+[00:34:08.700 --> 00:34:09.700]   And we were.
+[00:34:09.700 --> 00:34:16.060]   At that time, he, me, a bunch of other people, Natalia Gimelstein from NVIDIA, Luca Antiga,
+[00:34:16.060 --> 00:34:20.780]   Andreas Kov, all these people, they're not affiliated with one company.
+[00:34:20.780 --> 00:34:24.820]   They're just like, "We're doing this as a band of people online."
+[00:34:24.820 --> 00:34:27.900]   And so when he said that, I'm like, "Hey, I have an intern slot.
+[00:34:27.900 --> 00:34:33.860]   Why don't you come interview and if it works out, you can build that Python Torch thing
+[00:34:33.860 --> 00:34:35.520]   that we were thinking about."
+[00:34:35.520 --> 00:34:43.740]   So he did and he came on board and he, me, and Sam Gross were full-time on this project
+[00:34:43.740 --> 00:34:45.460]   and that's how PyTorch emerged.
+[00:34:45.460 --> 00:34:47.020]   It was pretty organic.
+[00:34:47.020 --> 00:34:54.020]   I think the PyTorch had community and community empowerment in its DNA and that it started
+[00:34:54.020 --> 00:34:55.020]   with it.
+[00:34:55.020 --> 00:34:59.660]   And a lot of people participated in PyTorch development and they were all people who were
+[00:34:59.660 --> 00:35:03.940]   online and they worked with us.
+[00:35:03.940 --> 00:35:05.860]   They've become friends online over the years.
+[00:35:05.860 --> 00:35:08.540]   We might or might not have even met them in person.
+[00:35:08.540 --> 00:35:15.540]   So I think that kind of trusting and there's a lot of ambiguity in community building.
+[00:35:15.540 --> 00:35:19.740]   You have to obviously trust a bunch of people and you know not everyone's capable in the
+[00:35:19.740 --> 00:35:24.380]   same way and not everyone turns out to be a rock star.
+[00:35:24.380 --> 00:35:27.840]   You don't do it with an ulterior end goal.
+[00:35:27.840 --> 00:35:30.980]   You do it to see where the direction goes.
+[00:35:30.980 --> 00:35:37.380]   I guess one thing that I hear about in a lot of open source communities is they can kind
+[00:35:37.380 --> 00:35:43.100]   of get toxic or you can kind of get stuck because it's kind of hard to make decisions
+[00:35:43.100 --> 00:35:45.220]   in this very decentralized way.
+[00:35:45.220 --> 00:35:49.260]   Have there been sort of like tough calls where not everyone agreed that you've had to work
+[00:35:49.260 --> 00:35:50.260]   through?
+[00:35:50.260 --> 00:35:51.260]   Absolutely.
+[00:35:51.260 --> 00:35:58.180]   So I think maybe if there's one thing I brought with a lot of value to PyTorch is shaping
+[00:35:58.180 --> 00:36:01.900]   its culture and shaping the incentive structures.
+[00:36:01.900 --> 00:36:06.340]   Even within a community, building the community, you really have to carefully build incentive
+[00:36:06.340 --> 00:36:07.380]   structures.
+[00:36:07.380 --> 00:36:09.180]   So there are tough calls.
+[00:36:09.180 --> 00:36:14.620]   For example, one of the biggest contributors to Torch in its last couple of years, he did
+[00:36:14.620 --> 00:36:17.580]   not agree with the Python direction at all.
+[00:36:17.580 --> 00:36:25.500]   And so imagine if you have someone who's pumping out code like it's nobody's and they disagree
+[00:36:25.500 --> 00:36:27.220]   with the direction, what do you do?
+[00:36:27.220 --> 00:36:30.460]   Do you kind of compromise on the vision or not?
+[00:36:30.460 --> 00:36:31.940]   Do you bring them along?
+[00:36:31.940 --> 00:36:35.460]   A lot of these are very ambiguous calls, very tough calls.
+[00:36:35.460 --> 00:36:36.460]   There's no right answer.
+[00:36:36.460 --> 00:36:41.460]   You kind of go with what feels like long term and directionally right.
+[00:36:41.460 --> 00:36:45.620]   But in terms of incentive structures, I think a lot of communities do end up becoming toxic
+[00:36:45.620 --> 00:36:51.460]   because they don't, I think they're too afraid to kick out the assholes.
+[00:36:51.460 --> 00:36:53.860]   I think you have to do that proactively.
+[00:36:53.860 --> 00:36:57.860]   You should first never let them come in, but like it's inevitable.
+[00:36:57.860 --> 00:37:01.980]   But then you should never let them get more of a voice.
+[00:37:01.980 --> 00:37:07.380]   I think you have to kind of protect your family or your communities, your family.
+[00:37:07.380 --> 00:37:09.740]   You have to keep it close knit.
+[00:37:09.740 --> 00:37:14.900]   And if there's people who are being not great, then you should just push them out.
+[00:37:14.900 --> 00:37:19.380]   Well, what does it even mean to push someone out of an open source community?
+[00:37:19.380 --> 00:37:20.380]   Can you tell us the story?
+[00:37:20.380 --> 00:37:24.180]   You don't have to name names, but I would love to hear how that actually works.
+[00:37:24.180 --> 00:37:26.980]   I think you should largely let them know.
+[00:37:26.980 --> 00:37:32.660]   A lot of people are afraid to even say something to another person.
+[00:37:32.660 --> 00:37:36.020]   The step one is establishing what is not okay.
+[00:37:36.020 --> 00:37:41.980]   So letting people know that something was not okay immediately sets the tone.
+[00:37:41.980 --> 00:37:46.740]   For example, there's one time in the early development of PyTorch Slack that someone
+[00:37:46.740 --> 00:37:53.540]   who's a great person in general, they posted a meme onto the random channel, one of the
+[00:37:53.540 --> 00:37:55.820]   channels that was a little sexist.
+[00:37:55.820 --> 00:37:57.540]   And I was like, this is not okay.
+[00:37:57.540 --> 00:37:59.380]   Please do not ever post this again.
+[00:37:59.380 --> 00:38:00.860]   And that sets the tone.
+[00:38:00.860 --> 00:38:04.580]   People kind of understand what's okay and what's not okay.
+[00:38:04.580 --> 00:38:07.780]   I think a lot of communities, people don't like doing that.
+[00:38:07.780 --> 00:38:13.580]   People don't like to be that person who tries to enforce things because it is a fine balance
+[00:38:13.580 --> 00:38:18.380]   and getting it wrong can make it overly restrictive.
+[00:38:18.380 --> 00:38:19.380]   It's hard.
+[00:38:19.380 --> 00:38:25.780]   The one thing I just want to drop, one incentive that we strongly enforce from day one, is
+[00:38:25.780 --> 00:38:31.460]   when you talk to people saying, "Hey, how do you build a community?
+[00:38:31.460 --> 00:38:32.700]   How do you expand it?"
+[00:38:32.700 --> 00:38:39.260]   One of the quickest things that says, "Hey, why don't we introduce a reward system?
+[00:38:39.260 --> 00:38:42.340]   Why don't we give people monetary incentives?
+[00:38:42.340 --> 00:38:45.300]   Why don't we give them gifts for contributing and stuff?"
+[00:38:45.300 --> 00:38:50.740]   I think open source generally works really well when the motivation is intrinsic.
+[00:38:50.740 --> 00:38:56.340]   So one guiding principle I've had for a very long time, and you can't do it all the way
+[00:38:56.340 --> 00:39:01.540]   to the end, but at least until a community reaches a critical mass, is don't rely on
+[00:39:01.540 --> 00:39:07.060]   extrinsic motivation to build your community because it's not going to last very long once
+[00:39:07.060 --> 00:39:09.380]   you take away the extrinsic motivation.
+[00:39:09.380 --> 00:39:14.100]   Figure out if people would come there because that's the most interesting thing to do and
+[00:39:14.100 --> 00:39:15.100]   that's why they're coming.
+[00:39:15.100 --> 00:39:19.420]   I guess you've mentioned incentives a whole bunch of times so far.
+[00:39:19.420 --> 00:39:25.060]   And then you said, what incentives not to use, but I guess what incentives do you intentionally
+[00:39:25.060 --> 00:39:28.580]   use to motivate the behavior that you want?
+[00:39:28.580 --> 00:39:34.780]   Recognizing good quality work and recognizing hard work, these happen less often than you
+[00:39:34.780 --> 00:39:35.780]   realize.
+[00:39:35.780 --> 00:39:42.260]   I think people only recognize certain kinds of good quality or hard work and recognizing
+[00:39:42.260 --> 00:39:47.060]   it consistently and over time, that really matters.
+[00:39:47.060 --> 00:39:52.860]   A lot of our contributors work at various companies, small and large, with their own
+[00:39:52.860 --> 00:39:54.020]   incentive structures.
+[00:39:54.020 --> 00:39:59.740]   I've written recommendation letters for someone's promotion directly to their boss because, not
+[00:39:59.740 --> 00:40:05.420]   even at my company, like at another company, because I wanted them to be recognized for
+[00:40:05.420 --> 00:40:06.980]   what they did.
+[00:40:06.980 --> 00:40:13.580]   And I explain to leadership at the other company why this thing is so hard and why this person
+[00:40:13.580 --> 00:40:14.620]   is fantastic.
+[00:40:14.620 --> 00:40:20.980]   I think various kinds of recognition, I think you've got to get right because it helped.
+[00:40:20.980 --> 00:40:25.540]   They're doing it because they feel like that's the coolest thing to do, but they also have
+[00:40:25.540 --> 00:40:30.540]   a life to live and there's a social aspect to it and there's an extrinsic aspect to it
+[00:40:30.540 --> 00:40:34.420]   in their own terms that you try to help.
+[00:40:34.420 --> 00:40:35.420]   Going into slightly...
+[00:40:35.420 --> 00:40:39.980]   Well, actually, wait, I have one more question on Fightroo specifically, and this is something
+[00:40:39.980 --> 00:40:44.580]   I experienced that I've always wondered about, which is I remember when I was developing
+[00:40:44.580 --> 00:40:51.880]   against PyTorch 0.3 and 0.4, and I actually did the first weights and biases integration
+[00:40:51.880 --> 00:40:54.360]   with PyTorch myself, so I really felt this.
+[00:40:54.360 --> 00:41:01.420]   It seemed like you had tons and tons and tons of breaking API changes, which I kind of wonder
+[00:41:01.420 --> 00:41:06.140]   if in retrospect, that was actually a really good plan because it caused you to bravely
+[00:41:06.140 --> 00:41:11.140]   move forward or if that was kind of unintentional or not.
+[00:41:11.140 --> 00:41:13.700]   I think you're the first person to say that.
+[00:41:13.700 --> 00:41:16.500]   No, leave it off.
+[00:41:16.500 --> 00:41:17.940]   It's been a while.
+[00:41:17.940 --> 00:41:21.140]   I think it's always relative.
+[00:41:21.140 --> 00:41:28.540]   People compared us to TensorFlow and MXNet and they said, "Hey, I wrote this code in
+[00:41:28.540 --> 00:41:32.740]   PyTorch 0.2 and it still works still today," and stuff like that.
+[00:41:32.740 --> 00:41:39.740]   So we always thought we were good at breaking changes, and it's culturally within the project,
+[00:41:39.740 --> 00:41:42.740]   we care about not breaking user LAN.
+[00:41:42.740 --> 00:41:49.580]   It's we passionately think about how it doesn't matter if it's a user LAN bug, it is our problem.
+[00:41:49.580 --> 00:41:55.220]   Once users do it intuitively, then it's our problem to fix and solve.
+[00:41:55.220 --> 00:41:58.420]   So anyways, that's the first time I'm hearing it.
+[00:41:58.420 --> 00:42:03.500]   Probably it's because I was building tools against it versus using it, the internals
+[00:42:03.500 --> 00:42:04.500]   kind of mattered.
+[00:42:04.500 --> 00:42:10.460]   I heard that you helped Meta acquire Papers with Code, which I thought was an awesome
+[00:42:10.460 --> 00:42:15.220]   acquisition and it was a product that we loved before and after the acquisition.
+[00:42:15.220 --> 00:42:17.700]   I'm curious if you could comment on that at all.
+[00:42:17.700 --> 00:42:23.420]   Yeah, this was several years ago and I thought Papers with Code was phenomenal.
+[00:42:23.420 --> 00:42:29.580]   This friend of mine who was the PyTorch project manager at that time, Joe Spisak and I, we
+[00:42:29.580 --> 00:42:36.100]   flew to London to convince Robert and Ross, the co-founders of Papers with Code, and we
+[00:42:36.100 --> 00:42:40.180]   pitched it to our VP at that time, Jerome.
+[00:42:40.180 --> 00:42:46.980]   I think I can't give a lot more of the details, but it all ended up working out really well.
+[00:42:46.980 --> 00:42:52.620]   If you could rewrite PyTorch from scratch, would you change anything fundamental?
+[00:42:52.620 --> 00:42:59.100]   If I could rewrite it from scratch, which I think this is the part where if I rewrote
+[00:42:59.100 --> 00:43:05.980]   it today, I would do it very differently than if I rewrote it in 2016.
+[00:43:05.980 --> 00:43:10.940]   If I rewrote it in 2016, I probably would do exactly the same thing because I don't
+[00:43:10.940 --> 00:43:16.140]   think we got many things wrong from our point of view at that time.
+[00:43:16.140 --> 00:43:22.580]   If I rewrite it today, I would do a lot more Python and write a lot of our kernels in Python.
+[00:43:22.580 --> 00:43:29.380]   And do a lot less C++ and do a little bit of like boxing of integers and things like
+[00:43:29.380 --> 00:43:35.620]   that that will that do help with like symbolic, sorry, symbolic integers and stuff so that
+[00:43:35.620 --> 00:43:37.660]   you don't need to have tensors around everything.
+[00:43:37.660 --> 00:43:44.020]   I would do a few things today because a lot has changed within the hardware landscape
+[00:43:44.020 --> 00:43:50.420]   that and the compiler landscape that allow us to write it way more compactly and way
+[00:43:50.420 --> 00:43:53.940]   more efficiently than we could have in 2016.
+[00:43:53.940 --> 00:43:59.060]   One of the things we've seen at Weights & Biases lately, actually through the life of Weights
+[00:43:59.060 --> 00:44:04.620]   & Biases, but especially lately, is kind of a movement from traditional ML researcher,
+[00:44:04.620 --> 00:44:10.820]   ML engineer to more of like a software developer that knows enough to be dangerous about ML
+[00:44:10.820 --> 00:44:13.220]   or potentially even less over time.
+[00:44:13.220 --> 00:44:17.220]   You're kind of a lower level, more technical framework maybe than Weights & Biases.
+[00:44:17.220 --> 00:44:22.020]   But I was wondering if you see this also on your side and if you're reacting to it at
+[00:44:22.020 --> 00:44:23.020]   all.
+[00:44:23.020 --> 00:44:24.020]   Yeah.
+[00:44:24.020 --> 00:44:25.020]   Yeah.
+[00:44:25.020 --> 00:44:30.660]   One of our biggest trends we're seeing is a lot of our users are now not even aware
+[00:44:30.660 --> 00:44:38.540]   that they're using PyTorch and they know they're using stable diffusion packaged up in a Mac
+[00:44:38.540 --> 00:44:46.020]   app or Hugging Face hub and spaces and like things like that.
+[00:44:46.020 --> 00:44:51.420]   So we are, it would be a lie for me to say we're not thinking about it.
+[00:44:51.420 --> 00:44:58.140]   Actually it is the biggest question on my plate that I'm figuring out what to do about.
+[00:44:58.140 --> 00:45:04.720]   I think it has to do with thinking about this whole thing in terms of leverage.
+[00:45:04.720 --> 00:45:06.820]   I said we have two sides of customers, right?
+[00:45:06.820 --> 00:45:09.740]   On one side is hardware vendors and the other side is users.
+[00:45:09.740 --> 00:45:16.660]   On hardware vendors, it's always been dominated by Nvidia and we try to help out other vendors,
+[00:45:16.660 --> 00:45:18.660]   but they don't have a significant market share.
+[00:45:18.660 --> 00:45:21.780]   On the user side, it's always been pretty well balanced.
+[00:45:21.780 --> 00:45:26.380]   There's no single dominating user cluster.
+[00:45:26.380 --> 00:45:34.180]   And we are now seeing that there's a bunch of users, a bunch of user clusters, and then
+[00:45:34.180 --> 00:45:39.180]   a new cluster that is just ballooning up to be much larger and they don't even use our
+[00:45:39.180 --> 00:45:40.660]   API directly.
+[00:45:40.660 --> 00:45:46.020]   So strategically, I wouldn't say this is existential for us as a product, but it's existential
+[00:45:46.020 --> 00:45:49.500]   for us from the changing leverage dynamics.
+[00:45:49.500 --> 00:45:57.900]   So a front end application tomorrow can ask us to change our API and we would not have
+[00:45:57.900 --> 00:46:03.180]   the reverse leverage to say no to them if that doesn't align with our philosophy.
+[00:46:03.180 --> 00:46:07.900]   Because as I said in a couple of places before, we are very pragmatic.
+[00:46:07.900 --> 00:46:10.000]   We serve the users.
+[00:46:10.000 --> 00:46:16.940]   We have some grounding philosophical things, but largely they're very low level and otherwise
+[00:46:16.940 --> 00:46:19.540]   we make decisions where they're very pragmatic.
+[00:46:19.540 --> 00:46:24.220]   So I kind of mostly worry about this aspect that you talked about.
+[00:46:24.220 --> 00:46:28.020]   I don't really have solutions to share.
+[00:46:28.020 --> 00:46:29.380]   We are actively thinking about it.
+[00:46:29.380 --> 00:46:34.540]   And when you say clusters, you mean Hugging Face is stable diffusion users or something
+[00:46:34.540 --> 00:46:35.540]   else?
+[00:46:35.540 --> 00:46:42.620]   I think Hugging Face is still, I think, somewhat diversified in that they don't have a vertical
+[00:46:42.620 --> 00:46:44.760]   application that dominates.
+[00:46:44.760 --> 00:46:51.000]   So people like have apps and these apps are used millions of times and these apps package
+[00:46:51.000 --> 00:46:53.400]   in like PyTorch.
+[00:46:53.400 --> 00:46:56.780]   So that's only used for one thing.
+[00:46:56.780 --> 00:47:02.440]   But then that one thing is used more than most other things people use PyTorch for.
+[00:47:02.440 --> 00:47:05.740]   So I would say that more like that.
+[00:47:05.740 --> 00:47:11.620]   So you've expressed some excitement about some of the new frameworks like Jaxi said
+[00:47:11.620 --> 00:47:14.960]   and TinyGrad and GGML and others.
+[00:47:14.960 --> 00:47:16.220]   Could you say a little more about that?
+[00:47:16.220 --> 00:47:20.620]   Like what are some of the innovations that you're seeing in some of these new things
+[00:47:20.620 --> 00:47:21.620]   that you appreciate?
+[00:47:21.620 --> 00:47:28.780]   I largely, well, not largely, I pretty much care about competition, especially friendly
+[00:47:28.780 --> 00:47:36.740]   competition where I think it is strictly always helpful, not just to user land, not just to
+[00:47:36.740 --> 00:47:40.700]   consumers, but to yourself because it lets us push ourselves.
+[00:47:40.700 --> 00:47:46.980]   For example, when Jax was being developed, we proactively engage with them, try to tell
+[00:47:46.980 --> 00:47:49.900]   them what things to do and not to do.
+[00:47:49.900 --> 00:47:54.340]   And when Jax was released, we tried to help put in a good word with a bunch of people
+[00:47:54.340 --> 00:47:55.860]   saying, "This is great."
+[00:47:55.860 --> 00:47:59.900]   And we tried to retweet things from our personal account and stuff like that.
+[00:47:59.900 --> 00:48:06.100]   So Jax, I think, is exploring a philosophical direction that we think is interesting.
+[00:48:06.100 --> 00:48:08.780]   And I think a lot of good ideas will come out of it.
+[00:48:08.780 --> 00:48:14.020]   And even if we might not use Jax's ideas in their own form, it will help us inform and
+[00:48:14.020 --> 00:48:15.020]   take the field forward.
+[00:48:15.020 --> 00:48:19.340]   And how would you describe Jax's philosophical direction?
+[00:48:19.340 --> 00:48:29.180]   Jax is trying to be a purely functional graph acquisition framework that uses its purely
+[00:48:29.180 --> 00:48:37.380]   functional nature to write elegant functional transforms that let people get the...
+[00:48:37.380 --> 00:48:44.180]   There's a whole cult of functional programmers who like, "Oh, I like to just do map and reduce,"
+[00:48:44.180 --> 00:48:49.500]   and various of these functional transforms that powerfully transform their program.
+[00:48:49.500 --> 00:48:52.700]   And Jax is trying to explore that to the limit.
+[00:48:52.700 --> 00:48:57.460]   And I think functional deep learning is probably their philosophy.
+[00:48:57.460 --> 00:48:58.460]   Yeah.
+[00:48:58.460 --> 00:49:04.220]   So I think Jax has been pretty great at validating a lot of good ideas, exploring a lot of good
+[00:49:04.220 --> 00:49:09.860]   ideas, invalidating a lot of good ideas that helped us inform our own direction in various
+[00:49:09.860 --> 00:49:10.860]   ways.
+[00:49:10.860 --> 00:49:14.980]   GDML and TinyGrad are slightly different.
+[00:49:14.980 --> 00:49:18.460]   GDML is taking a full vertical integration approach.
+[00:49:18.460 --> 00:49:24.620]   They're like, "Hey, if all we had to do was build a framework for Lama, it only has one
+[00:49:24.620 --> 00:49:29.820]   purpose in life, then how can we take that idea to its extreme and see what comes out
+[00:49:29.820 --> 00:49:30.820]   of it?"
+[00:49:30.820 --> 00:49:33.140]   So they're doing fairly interesting things there.
+[00:49:33.140 --> 00:49:42.260]   A lot of idea exploration, like what quantization ends up working out, what users like, what
+[00:49:42.260 --> 00:49:49.060]   are the baselines for performance on a Mac or something, these all are really useful
+[00:49:49.060 --> 00:49:54.180]   to know, and these are all quickly validated by GDML, and that helps us inform our own
+[00:49:54.180 --> 00:49:55.180]   things.
+[00:49:55.180 --> 00:50:00.340]   The TinyGrad stuff, I think it's philosophically, as Jihad said, we are a complex instruction
+[00:50:00.340 --> 00:50:05.460]   set, Jihad thinks that a reduced instruction set is sufficient for deep learning where
+[00:50:05.460 --> 00:50:09.860]   you don't really need control flow, you don't need a bunch of other factors.
+[00:50:09.860 --> 00:50:14.140]   We don't think so, but he thinks so, and I think someone should go explore it and that
+[00:50:14.140 --> 00:50:18.540]   would be fantastic, and something good will come out of it.
+[00:50:18.540 --> 00:50:22.180]   One great thing that could probably come out of it, he's going to build a fantastic AMD
+[00:50:22.180 --> 00:50:27.500]   backend that maybe we will see for further development or something like that.
+[00:50:27.500 --> 00:50:34.660]   So yeah, I kind of like when people take directions that are not the directions we're taking and
+[00:50:34.660 --> 00:50:35.660]   explore them.
+[00:50:35.660 --> 00:50:41.900]   Do you have any thoughts on open source model versus closed source model machine learning?
+[00:50:41.900 --> 00:50:44.860]   I mean, I think that's a topic everyone's been talking about.
+[00:50:44.860 --> 00:50:49.300]   We see stable diffusion, there's stability, I guess, putting out a lot of open models
+[00:50:49.300 --> 00:50:51.420]   and a lot of models going to Hugging Face India.
+[00:50:51.420 --> 00:50:56.580]   I think most of what we see our customers using when they're prompt engineering LLMs
+[00:50:56.580 --> 00:51:00.660]   these days is GPT-4, maybe Anthropic or maybe Cohere.
+[00:51:00.660 --> 00:51:02.620]   Do you think that's likely to change?
+[00:51:02.620 --> 00:51:08.740]   I'm obviously biased because I built most of my adult life in open source.
+[00:51:08.740 --> 00:51:13.580]   Even before I had a job or anything, I would just do open source for fun all the time.
+[00:51:13.580 --> 00:51:16.980]   I find a certain amount of liberation in open source.
+[00:51:16.980 --> 00:51:22.220]   I find a certain amount of transparency and a certain amount of empowerment in open source.
+[00:51:22.220 --> 00:51:32.340]   I think I would not have been as empowered as an individual with a low-powered laptop
+[00:51:32.340 --> 00:51:38.100]   that I shared with my dad in India, where you didn't really have money to buy expensive
+[00:51:38.100 --> 00:51:40.540]   software if it wasn't for open source.
+[00:51:40.540 --> 00:51:43.580]   I mean, open source and piracy, just to say it, right?
+[00:51:43.580 --> 00:51:45.260]   I mean, it's just true.
+[00:51:45.260 --> 00:51:47.960]   So and only one of them is legal.
+[00:51:47.960 --> 00:51:54.020]   So people think open source, so there's like, "Hey, why do you want to open source?"
+[00:51:54.020 --> 00:51:55.540]   It's a standard question, right?
+[00:51:55.540 --> 00:51:58.620]   "Why are you trying to give away your stuff?
+[00:51:58.620 --> 00:52:03.300]   Why are you, you can sell it for more money and things like that, right?"
+[00:52:03.300 --> 00:52:04.900]   I think that's all well and good.
+[00:52:04.900 --> 00:52:08.960]   There's money to be made in open source, case in point, just look at me.
+[00:52:08.960 --> 00:52:16.700]   But I think if you take the IP aspects, put it on one side, there's obviously the AI people
+[00:52:16.700 --> 00:52:20.820]   who believe large AI models are not safe to deploy and stuff like that.
+[00:52:20.820 --> 00:52:28.880]   I think this is a very, this is a debate where it depends on what you value more, you bias
+[00:52:28.880 --> 00:52:30.420]   towards that outcome.
+[00:52:30.420 --> 00:52:37.100]   So if you believe it is more important to empower people, even though you'll see a little
+[00:52:37.100 --> 00:52:44.780]   bit of spam spike up in like the short term, in like a year of these models being open
+[00:52:44.780 --> 00:52:50.740]   source, but it's way more important for this kid in Nigeria to have access to this model
+[00:52:50.740 --> 00:52:56.240]   to do whatever they want to do to create value locally.
+[00:52:56.240 --> 00:53:02.780]   If you believe that trade-off of open sourcing is more important than the slight negative
+[00:53:02.780 --> 00:53:07.780]   effects that come out, or if you believe, I strongly believe that if you open source
+[00:53:07.780 --> 00:53:13.740]   this model, then everyone will die and AI will like kill people or whatever.
+[00:53:13.740 --> 00:53:16.740]   I think it really depends on what people believe in.
+[00:53:16.740 --> 00:53:23.460]   I think there's a lot of, because it is not an obvious outcome that you can estimate probabilities
+[00:53:23.460 --> 00:53:29.000]   accurately to, whatever people believe is accurate, they are going to take decisions
+[00:53:29.000 --> 00:53:30.260]   in that direction.
+[00:53:30.260 --> 00:53:39.760]   I believe the AI models of this current generation and maybe even the next generation will not
+[00:53:39.760 --> 00:53:46.260]   be any kind of human killing, human dangerous kind of stuff.
+[00:53:46.260 --> 00:53:50.080]   And I think the open source benefits outweigh not open sourcing.
+[00:53:50.080 --> 00:53:52.860]   So I just think it should be open source.
+[00:53:52.860 --> 00:53:57.660]   And I also strongly believe in society's ability to adapt.
+[00:53:57.660 --> 00:54:02.800]   I think it's one of those things where I see this repeated pattern of whenever there's
+[00:54:02.800 --> 00:54:08.200]   a disruptive change, there's a whole class of people who believe that society will collapse
+[00:54:08.200 --> 00:54:12.020]   and a whole other class of people who believe that society will be fine.
+[00:54:12.020 --> 00:54:16.020]   And society largely is almost always fine.
+[00:54:16.020 --> 00:54:24.360]   Printing press, industrial revolution, you pick and choose whatever technological revolution,
+[00:54:24.360 --> 00:54:25.360]   the internet.
+[00:54:25.360 --> 00:54:32.220]   I think people underestimate the ability of society to adapt to things.
+[00:54:32.220 --> 00:54:33.860]   That's roughly where I lean at.
+[00:54:33.860 --> 00:54:39.700]   That probably makes me unhirable at a bunch of places, but whatever.
+[00:54:39.700 --> 00:54:45.260]   Well taking things in a completely different direction, I heard that you are working on
+[00:54:45.260 --> 00:54:47.380]   a household robotics project.
+[00:54:47.380 --> 00:54:49.700]   Would you care to tell us about that at all?
+[00:54:49.700 --> 00:54:50.700]   Sure, sure.
+[00:54:50.700 --> 00:54:52.700]   Yeah, I started working on this stuff.
+[00:54:52.700 --> 00:54:57.600]   I used to work in robotics close to 12 years ago for a couple of years.
+[00:54:57.600 --> 00:55:02.940]   And then I started picking up robotics again right around 2019, 2020.
+[00:55:02.940 --> 00:55:06.780]   It primarily comes from a very simple motivation.
+[00:55:06.780 --> 00:55:12.940]   I don't like to do household chores and I largely am looking to automate those things.
+[00:55:12.940 --> 00:55:18.940]   And I realized that it's not easy and this is something to be solved.
+[00:55:18.940 --> 00:55:24.060]   Yeah, I have a very simplistic motivation there, but I guess it's somewhat powerful
+[00:55:24.060 --> 00:55:28.500]   in that if you like to be lazy, great things will come out of it.
+[00:55:28.500 --> 00:55:35.180]   I spent half a day a week at NYU exploring this with another professor called Laurel
+[00:55:35.180 --> 00:55:38.080]   Pinto and a bunch of students.
+[00:55:38.080 --> 00:55:46.820]   If you take robotics, you can largely summarize it into the muscles and the bones, like building
+[00:55:46.820 --> 00:55:54.220]   the hardware and then building the brain and some amount of sensors, mostly building the
+[00:55:54.220 --> 00:55:56.500]   intelligence and the brain.
+[00:55:56.500 --> 00:56:00.380]   And then the third one is communicating with humans.
+[00:56:00.380 --> 00:56:05.500]   Like how do you, like, sure, like you're intelligent and you can do things, but can you talk to
+[00:56:05.500 --> 00:56:06.500]   a human?
+[00:56:06.500 --> 00:56:13.460]   So there's these three aspects and a lot of progress needs to be made in hardware, robotics,
+[00:56:13.460 --> 00:56:19.500]   just as something as fundamental as can you make a robotic hand that is the same size
+[00:56:19.500 --> 00:56:26.540]   as a human hand and have as much dexterity and can lift up as much weight and stuff.
+[00:56:26.540 --> 00:56:28.060]   We can't, we don't know how to.
+[00:56:28.060 --> 00:56:32.020]   We literally state of the art today is we don't know how to do this.
+[00:56:32.020 --> 00:56:39.060]   We can build something that's like 30% larger and is way crappier, dexterity and breaks
+[00:56:39.060 --> 00:56:41.060]   all the time and stuff.
+[00:56:41.060 --> 00:56:43.700]   And so progress needs to be made there.
+[00:56:43.700 --> 00:56:45.260]   I can't really help with it.
+[00:56:45.260 --> 00:56:46.780]   I'm not a hardware engineer.
+[00:56:46.780 --> 00:56:49.580]   I know a lot of smart people are working on it and that's great.
+[00:56:49.580 --> 00:56:50.780]   And then there's the brain part.
+[00:56:50.780 --> 00:56:53.340]   It's like, how do you reason about the role?
+[00:56:53.340 --> 00:56:54.340]   How do you look?
+[00:56:54.340 --> 00:56:55.340]   Whatever.
+[00:56:55.340 --> 00:57:00.060]   There's some amount of fit that I help fit, but largely I think there's a lot of people
+[00:57:00.060 --> 00:57:01.060]   working on it.
+[00:57:01.060 --> 00:57:06.420]   I think that's the part where most people in the deep learning slash robotics intersection
+[00:57:06.420 --> 00:57:07.420]   work on.
+[00:57:07.420 --> 00:57:10.580]   And then there's the human robotics interaction part.
+[00:57:10.580 --> 00:57:15.740]   And I don't really mean like HCI, HRI from a academic side of things.
+[00:57:15.740 --> 00:57:18.540]   I mean it more from a product side of things.
+[00:57:18.540 --> 00:57:22.220]   It's like when you use the iPhone for the first time, it was so natural that you didn't
+[00:57:22.220 --> 00:57:23.220]   need to learn it.
+[00:57:23.220 --> 00:57:24.220]   Kind of an angle.
+[00:57:24.220 --> 00:57:29.020]   It's like you need to communicate with a robot in a way that just feels like it's pretty
+[00:57:29.020 --> 00:57:30.020]   normal.
+[00:57:30.020 --> 00:57:32.180]   Not a lot of people work on it.
+[00:57:32.180 --> 00:57:36.900]   Mostly there's not a lot of incentive in academia and that's where a lot of the robotics research
+[00:57:36.900 --> 00:57:38.260]   goes on.
+[00:57:38.260 --> 00:57:45.700]   And then on the capital side, on the industry side, there's not enough money yet in robotics,
+[00:57:45.700 --> 00:57:47.580]   especially home robotics to work on it.
+[00:57:47.580 --> 00:57:51.460]   So I try to work a lot more on that side of things.
+[00:57:51.460 --> 00:57:54.780]   Just how do you teach a robot something quickly?
+[00:57:54.780 --> 00:58:01.820]   How do you most naturally teach it with a combination of gestures and actions and words?
+[00:58:01.820 --> 00:58:03.340]   I like it.
+[00:58:03.340 --> 00:58:05.020]   This is an interesting area.
+[00:58:05.020 --> 00:58:07.740]   I don't think it's anywhere close to being a reality.
+[00:58:07.740 --> 00:58:15.380]   I'm expecting maybe in seven years, I could automate it just for myself in my home in
+[00:58:15.380 --> 00:58:21.500]   a way that's not very generalized in other environments or it's robust enough.
+[00:58:21.500 --> 00:58:25.100]   And maybe that's probably when more capital can be injected.
+[00:58:25.100 --> 00:58:30.940]   That phase, I think it transitions from being a researchy thing that needs to be funded
+[00:58:30.940 --> 00:58:35.620]   by government grants to being, oh, you can actually put a lot more capital into it and
+[00:58:35.620 --> 00:58:40.460]   make it a big thing so that people can actually use it at scale.
+[00:58:40.460 --> 00:58:42.620]   Only time will tell, but I find that very fun.
+[00:58:42.620 --> 00:58:43.620]   All right.
+[00:58:43.620 --> 00:58:45.900]   Well, we always end with two questions.
+[00:58:45.900 --> 00:58:51.700]   And the second to last one is, what is an underrated aspect of machine learning that
+[00:58:51.700 --> 00:58:55.820]   you think people should pay more attention to or something that you'd like to look into
+[00:58:55.820 --> 00:58:57.220]   if you had more time?
+[00:58:57.220 --> 00:59:04.340]   With the amount of attention that is given to machine learning these days, it's really
+[00:59:04.340 --> 00:59:08.220]   hard to find a direction that is underrated.
+[00:59:08.220 --> 00:59:16.060]   But one thing that I do think people should spend a little bit more time into is build
+[00:59:16.060 --> 00:59:25.740]   systems that kind of merge the symbolic expert systems from the 80s to the end-to-end neural
+[00:59:25.740 --> 00:59:31.420]   network systems that we see today that were popular from the 90s and then in 2000s.
+[00:59:31.420 --> 00:59:35.100]   There's a bunch of effort that went into those kinds of systems.
+[00:59:35.100 --> 00:59:40.860]   A lot of people won Turing Awards for those directional systems in the 80s and late 70s.
+[00:59:40.860 --> 00:59:43.020]   Psyche as a project still exists today.
+[00:59:43.020 --> 00:59:44.020]   It does?
+[00:59:44.020 --> 00:59:45.020]   I can't believe it.
+[00:59:45.020 --> 00:59:46.020]   Psyche still exists?
+[00:59:46.020 --> 00:59:47.020]   Yeah, yeah.
+[00:59:47.020 --> 00:59:48.020]   It still exists today.
+[00:59:48.020 --> 00:59:52.660]   It's like people find it very important to dunk the other side.
+[00:59:52.660 --> 00:59:56.600]   They find it their life's mission to be like, no, that's an idiotic side.
+[00:59:56.600 --> 00:59:58.860]   That is just not useful or whatever.
+[00:59:58.860 --> 01:00:02.460]   But I don't know if I fully believe it.
+[01:00:02.460 --> 01:00:07.060]   If I had a little bit more time and priority, I would explore that side of it.
+[01:00:07.060 --> 01:00:08.060]   Interesting.
+[01:00:08.060 --> 01:00:09.060]   Very cool.
+[01:00:09.060 --> 01:00:13.940]   And then the last question is always, what's the biggest challenge of making machine learning
+[01:00:13.940 --> 01:00:15.420]   work in the real world?
+[01:00:15.420 --> 01:00:17.560]   And this might be your users.
+[01:00:17.560 --> 01:00:23.340]   What's the hardest part about getting a model working and into production doing something
+[01:00:23.340 --> 01:00:24.340]   useful?
+[01:00:24.340 --> 01:00:25.340]   Installing CUDA drivers.
+[01:00:25.340 --> 01:00:26.340]   Oh my God, still doing something?
+[01:00:26.340 --> 01:00:30.700]   No, no, I'm kidding.
+[01:00:30.700 --> 01:00:32.740]   That is largely better these days.
+[01:00:32.740 --> 01:00:36.960]   I think people underestimate all the time.
+[01:00:36.960 --> 01:00:43.200]   People all the time underestimate how little machine learning helps.
+[01:00:43.200 --> 01:00:47.860]   If you have a problem to be solved, machine learning probably solves the hardest part
+[01:00:47.860 --> 01:00:52.340]   of the problem, but it's probably a very small part of the overall problem.
+[01:00:52.340 --> 01:00:58.660]   And people are constantly surprised that AI is not just them just throwing a magic wand
+[01:00:58.660 --> 01:01:01.460]   and everything seems to just have been solved for them.
+[01:01:01.460 --> 01:01:09.820]   A large part of AI development, either research or in production, is constructing the loss
+[01:01:09.820 --> 01:01:10.900]   functions.
+[01:01:10.900 --> 01:01:16.260]   You construct the loss functions very carefully or else it doesn't work the way you want it
+[01:01:16.260 --> 01:01:17.260]   to.
+[01:01:17.260 --> 01:01:20.660]   The loss function or the feedback loop or whatever you call it, right?
+[01:01:20.660 --> 01:01:22.620]   How does it help inform things?
+[01:01:22.620 --> 01:01:28.460]   I think people perpetually underestimate it to a surprising effect.
+[01:01:28.460 --> 01:01:34.220]   It's almost like you expect it to get better, but it only gets worse over time.
+[01:01:34.220 --> 01:01:35.220]   Totally agree.
+[01:01:35.220 --> 01:01:36.220]   Awesome.
+[01:01:36.220 --> 01:01:37.220]   Well, thank you so much for your time.
+[01:01:37.220 --> 01:01:38.220]   This was a lot of fun.
+[01:01:38.220 --> 01:01:39.420]   Well, thank you so much, Lucas.
+[01:01:39.420 --> 01:01:42.620]   I just want to say I'm a huge fan of Weights and Biases.
+[01:01:42.620 --> 01:01:50.260]   I've been using it since 2016, 2017, and I've recommended it to hundreds of my friends
+[01:01:50.260 --> 01:01:53.300]   and I'm pretty honored to be on the podcast.
+[01:01:53.300 --> 01:01:54.300]   That's a nice thing to say.
+[01:01:54.300 --> 01:01:55.820]   I mean, can I ask just one last question?
+[01:01:55.820 --> 01:01:57.020]   What do you like about it?
+[01:01:57.020 --> 01:02:04.780]   I like that it is seamless and it always works and it's stupid proof.
+[01:02:04.780 --> 01:02:10.700]   It's just like, I know all I have to do is just put a van breed of log and it goes somewhere
+[01:02:10.700 --> 01:02:11.700]   into the internet.
+[01:02:11.700 --> 01:02:16.940]   I don't need to think about or run my server and my server broke and then that.
+[01:02:16.940 --> 01:02:23.740]   I don't need to cognitively think about a whole set of machinery in a way that wasn't
+[01:02:23.740 --> 01:02:26.860]   true before Weights and Biases, in my opinion.
+[01:02:26.860 --> 01:02:31.740]   There were other software as well, but they broke and somewhere or the other, TensorBoard,
+[01:02:31.740 --> 01:02:38.500]   okay, you have to go run a local server thing somewhere and then open it.
+[01:02:38.500 --> 01:02:43.740]   Practically you need tunneling because it's running on your server that you might not
+[01:02:43.740 --> 01:02:46.380]   have direct access to or whatever.
+[01:02:46.380 --> 01:02:51.300]   And there's other kinds of products that were like, yeah, this is great.
+[01:02:51.300 --> 01:02:52.300]   This is seamless.
+[01:02:52.300 --> 01:02:57.900]   Except you have to create an enterprise account for which you have to call our customer service
+[01:02:57.900 --> 01:03:01.820]   agent and convince us that you're a user that will pay us money.
+[01:03:01.820 --> 01:03:06.220]   There are many ways in which it was frictious and not intuitive.
+[01:03:06.220 --> 01:03:10.620]   Like others where it's like the API was clunky and hard to use and stuff.
+[01:03:10.620 --> 01:03:17.060]   I think you just solved it in a way that is just seamless and it just seems to work.
+[01:03:17.060 --> 01:03:23.820]   And it seems like you thought about the problem by the parallel plots and a few other ways.
+[01:03:23.820 --> 01:03:29.580]   You didn't think about the problem well in a way that felt like someone like me, as a
+[01:03:29.580 --> 01:03:35.540]   machine learning researcher, knows I have everything I need from your product.
+[01:03:35.540 --> 01:03:36.540]   So that's my take.
+[01:03:36.540 --> 01:03:44.580]   Do you have any future requests or any suggestions on how to make it better?
+[01:03:44.580 --> 01:03:50.500]   My future request will probably take your company to pay for it.
+[01:03:50.500 --> 01:03:57.820]   But in general, I think a lot about, I have had this pet project that I even wrote a proposal
+[01:03:57.820 --> 01:04:04.460]   for that for myself, because I keep forgetting about my own ideas, which I think is, I think
+[01:04:04.460 --> 01:04:10.820]   it is achievable, but needs to be extremely careful engineering that we can build a real-time
+[01:04:10.820 --> 01:04:17.740]   system that trains, but you can adjust almost all aspects of the system through the, it's
+[01:04:17.740 --> 01:04:18.740]   almost seamless.
+[01:04:18.740 --> 01:04:26.060]   It's like you go from programming, you go from code to the symbolic knobs to code in
+[01:04:26.060 --> 01:04:27.860]   a way that doesn't look clunky.
+[01:04:27.860 --> 01:04:33.540]   I mean, there's been attempts that have been made that looks like Streamlit and Streamlit.
+[01:04:33.540 --> 01:04:39.300]   Like this, oh, we run the program again and again, and we'll just only update the parts
+[01:04:39.300 --> 01:04:40.300]   or whatever.
+[01:04:40.300 --> 01:04:42.340]   But I don't think any of them got it right.
+[01:04:42.340 --> 01:04:48.100]   I think there is a product to be made and I would expect if anyone could do it, you
+[01:04:48.100 --> 01:04:49.100]   all could.
+[01:04:49.100 --> 01:04:50.100]   Amazing.
+[01:04:50.100 --> 01:04:53.180]   Well, I'll have to show you Weave, which we launched a few weeks ago, that might do this
+[01:04:53.180 --> 01:04:54.180]   for you.
+[01:04:54.180 --> 01:04:55.180]   Awesome.
+[01:04:55.180 --> 01:04:56.180]   Thank you very much.
+[01:04:56.180 --> 01:04:57.180]   Okay.
+[01:04:57.180 --> 01:04:58.180]   All right.
+[01:04:58.180 --> 01:04:59.180]   See you.
+[01:04:59.180 --> 01:05:03.100]   If you're enjoying these interviews and you want to learn more, please click on the link
+[01:05:03.100 --> 01:05:07.820]   to the show notes in the description where you can find links to all the papers that
+[01:05:07.820 --> 01:05:12.220]   are mentioned, supplemental material, and a transcription that we work really hard to
+[01:05:12.220 --> 01:05:13.220]   produce.
+[01:05:13.220 --> 01:05:13.220]   So check it out.
+[01:05:13.220 --> 01:05:16.580]   [MUSIC PLAYING]
+[01:05:16.580 --> 01:05:18.580]   You
+

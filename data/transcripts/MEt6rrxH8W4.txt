@@ -1,0 +1,357 @@
+
+[00:00:00.000 --> 00:00:04.340]   Hey, what's up everyone?
+[00:00:04.340 --> 00:00:09.400]   My name is Costa and I am a machine learning engineer intern at Weights and Biases.
+[00:00:09.400 --> 00:00:15.440]   I'm also a fourth year PhD student at Drexel University specializing in reinforcement learning.
+[00:00:15.440 --> 00:00:19.520]   Today I want to talk about proximal policy optimization or PPO.
+[00:00:19.520 --> 00:00:25.560]   PPO is a deep reinforcement learning algorithm proposed by OpenAI in 2017 and it has since
+[00:00:25.560 --> 00:00:29.540]   become one of the most popular reinforcement learning algorithms.
+[00:00:29.540 --> 00:00:35.800]   In today's video, we will build a PPO implementation in PyTorch from scratch, covering 11 general
+[00:00:35.800 --> 00:00:37.720]   implementation details.
+[00:00:37.720 --> 00:00:42.000]   You can find out where these implementation details come from by clicking on the GitHub
+[00:00:42.000 --> 00:00:46.840]   permanent links in my blog post, which is linked in the video description.
+[00:00:46.840 --> 00:00:50.360]   At the end of this video, you will know how to train the agents to balance a carpool with
+[00:00:50.360 --> 00:00:52.520]   PPO, which is only a start.
+[00:00:52.520 --> 00:00:57.360]   In the follow-up videos, we will make it work with a variety of games by making small modifications
+[00:00:57.360 --> 00:01:00.360]   to today's implementation.
+[00:01:00.360 --> 00:01:04.920]   The target audience of this video is intermediate to advanced reinforcement learning practitioners
+[00:01:04.920 --> 00:01:09.300]   who are familiar with PyTorch and roughly how PPO works.
+[00:01:09.300 --> 00:01:14.880]   If you are a beginner, a good way to start with PyTorch is to read the official tutorials.
+[00:01:14.880 --> 00:01:19.760]   My personal favorite is the 16-minute blitz, which dives into the basics such as tensors
+[00:01:19.760 --> 00:01:25.880]   and automatic differentiation before talking about the more advanced neural network stuff.
+[00:01:25.880 --> 00:01:31.520]   To read more on RL and PPO, I highly recommend checking out Joshua Akim's OpenAI Spinning
+[00:01:31.520 --> 00:01:35.800]   Up, which is a very beginner-friendly educational resource.
+[00:01:35.800 --> 00:01:41.040]   For more intrigued readers, the policy gradient algorithms blog post from Lil's Log is also
+[00:01:41.040 --> 00:01:43.680]   a fantastic resource.
+[00:01:43.680 --> 00:01:48.320]   The first part of this video is logistics setup on quality of life developer tools such
+[00:01:48.320 --> 00:01:53.200]   as ArcParse, TensorBoard, and Weights and Biases, so feel free to jump to the following
+[00:01:53.200 --> 00:01:58.040]   timestamp when the implementation details actually start.
+[00:01:58.040 --> 00:02:01.360]   Without further ado, let's get started.
+[00:02:01.360 --> 00:02:03.480]   We will first set up the development environment.
+[00:02:03.480 --> 00:02:08.400]   For my personal workflow, I usually use PyM to set up the virtualized environment, set
+[00:02:08.400 --> 00:02:14.480]   up Poetry as the package manager, and then use Poetry to install all of my dependencies.
+[00:02:14.480 --> 00:02:18.760]   After the installation has finished, we will start by creating a Python file.
+[00:02:18.760 --> 00:02:23.280]   Our first step is to use the ArcParse package to set up some common variables.
+[00:02:23.280 --> 00:02:30.040]   I usually give each variable a name, a type, a default value, and a help text for documentation.
+[00:02:30.040 --> 00:02:34.400]   My first common variable is the experiment name, which by default takes on the value
+[00:02:34.400 --> 00:02:35.960]   of the file name.
+[00:02:35.960 --> 00:02:40.640]   Then I have the gem ID, and by default I set it to carpool_v1.
+[00:02:40.640 --> 00:02:45.680]   Here I have the learning rate, and by default I set it to 2.5e-4.
+[00:02:45.680 --> 00:02:49.760]   Then I set up a random C, and by default set it to 1.
+[00:02:49.760 --> 00:02:53.880]   Next we have the total timestamps, which is the number of environment steps, and by default
+[00:02:53.880 --> 00:02:56.140]   we set it to 25,000.
+[00:02:56.140 --> 00:02:58.960]   Then I have two GPU-related variables.
+[00:02:58.960 --> 00:03:03.200]   The torch_deterministic equals true will help us reproduce the experiments, and the CUDA
+[00:03:03.200 --> 00:03:06.360]   equals true will utilize GPU whenever possible.
+[00:03:06.360 --> 00:03:11.440]   We can then parse these variables or command-line arguments and print to see their values.
+[00:03:11.440 --> 00:03:15.540]   This is really helpful because if we want to change one configuration, we can just do
+[00:03:15.540 --> 00:03:18.880]   this in the command-line without changing the code at all.
+[00:03:18.880 --> 00:03:21.400]   Next we're going to set up TensorBoard.
+[00:03:21.400 --> 00:03:25.760]   TensorBoard is a visualization toolkit to help you visualize training losses or episodic
+[00:03:25.760 --> 00:03:26.760]   returns.
+[00:03:26.760 --> 00:03:31.420]   Let's import the TensorBoard summary writer, set up a unique run name for our experiment,
+[00:03:31.420 --> 00:03:35.400]   and save the metrics of our experiment to a folder with that run name.
+[00:03:35.400 --> 00:03:41.040]   To test it out, we're going to encode our args variable as a text data, and we're also
+[00:03:41.040 --> 00:03:43.760]   going to add some scalar data.
+[00:03:43.760 --> 00:03:48.060]   We can now run the script and launch TensorBoard to see the recorded metrics.
+[00:03:48.060 --> 00:03:52.400]   We can open TensorBoard's dashboard by clicking on the URL here.
+[00:03:52.400 --> 00:03:57.160]   Here I can see my test scalar data, I can zoom it in, tune the smoothing parameter,
+[00:03:57.160 --> 00:04:03.520]   I can also go to the text section to see everything in the args parameter as my hyperparameters.
+[00:04:03.520 --> 00:04:07.560]   Next we're going to set up Weights and Biases, which is a developer tool that helps track
+[00:04:07.560 --> 00:04:10.720]   everything related to our experiments in the cloud.
+[00:04:10.720 --> 00:04:15.580]   To add Weights and Biases, we're going to set up a track flag that when toggled will
+[00:04:15.580 --> 00:04:19.200]   log our experiments to Weights and Biases.
+[00:04:19.200 --> 00:04:24.480]   Then we set up a WMB project name that defaults to cleanrl.
+[00:04:24.480 --> 00:04:28.160]   Then we also set up a WMB entity.
+[00:04:28.160 --> 00:04:34.120]   By setting it to none over here, WMB will use my default entity, which is my username.
+[00:04:34.120 --> 00:04:39.320]   To use Weights and Biases, we simply add a block of code under the track flag, which
+[00:04:39.320 --> 00:04:42.720]   sets up an experiment with WMB in it.
+[00:04:42.720 --> 00:04:48.960]   Here we add our default project name, our default entity, tell WMB to sync our TensorBoard
+[00:04:48.960 --> 00:04:56.640]   metrics, add our args variable as a configuration, add the run name, tell WMB to upload the videos
+[00:04:56.640 --> 00:05:01.600]   in the gym environment, and finally save a copy of the code.
+[00:05:01.600 --> 00:05:06.640]   Because we use TensorBoard and the track flag, our code is still be able to run locally,
+[00:05:06.640 --> 00:05:11.320]   but whenever we need it, we can turn on the track flag and all of a sudden we get experiment
+[00:05:11.320 --> 00:05:12.640]   tracking for free.
+[00:05:12.640 --> 00:05:16.400]   That is to do python ppl --track.
+[00:05:16.400 --> 00:05:22.160]   This will finish in just a second and we can go to this URL to see the tracked experiment.
+[00:05:22.160 --> 00:05:28.240]   Once we get into the URL, we can see our test loss, zoom it in, smooth it, and we can also
+[00:05:28.240 --> 00:05:32.620]   go to the overview tab to see metadata and our hyperparameters.
+[00:05:32.620 --> 00:05:38.040]   We can go to the files tab and open the requirements.txt to see the log dependency and we can also
+[00:05:38.040 --> 00:05:40.840]   see a copy of our code here.
+[00:05:40.840 --> 00:05:46.420]   Our final logistics is to delete the test code and set up random seeds.
+[00:05:46.420 --> 00:05:52.280]   Specifically we import random numpy torch and then set up their random seed over here.
+[00:05:52.280 --> 00:05:57.760]   For pytorch, we also set up a device variable that's going to try to use GPU if CUDA is
+[00:05:57.760 --> 00:06:02.440]   available, and we specifically set the CUDA flag to be true.
+[00:06:02.440 --> 00:06:06.440]   Now we're ready to dive into the implementation details.
+[00:06:06.440 --> 00:06:07.440]   Detail number one.
+[00:06:07.440 --> 00:06:13.160]   PPL deals with what's called the vector environments, which stacks multiple independent environments
+[00:06:13.160 --> 00:06:15.680]   into a single environment.
+[00:06:15.680 --> 00:06:20.000]   You might have already seen code like this to work with the gym environment.
+[00:06:20.000 --> 00:06:26.320]   Roughly how it works is you use gym.make to initialize the environment, reset the environment
+[00:06:26.320 --> 00:06:32.640]   to get the first observation, sample an action to step the environment, which gives you the
+[00:06:32.640 --> 00:06:38.320]   next observation, the current reward, a done variable that tells you whether the episode
+[00:06:38.320 --> 00:06:43.200]   has finished or not, and finally an info for extra stuff.
+[00:06:43.200 --> 00:06:47.720]   Once the episode is finished, you will use m.reset to get the observation for the next
+[00:06:47.720 --> 00:06:48.720]   episode.
+[00:06:48.720 --> 00:06:54.320]   Oftentimes, people will set up a variable to record the episode of return as shown here.
+[00:06:54.320 --> 00:06:57.720]   This code is straightforward and would run just fine.
+[00:06:57.720 --> 00:07:03.000]   A quick engineering tip is to use a record episode statistics gym wrapper to record the
+[00:07:03.000 --> 00:07:05.240]   episodic return instead.
+[00:07:05.240 --> 00:07:09.540]   When an episode is finished, this wrapper will populate the info variable with the episodic
+[00:07:09.540 --> 00:07:10.580]   return.
+[00:07:10.580 --> 00:07:14.960]   We can do a quick verification by running the code and we will see duplicated episodic
+[00:07:14.960 --> 00:07:17.040]   return being printed.
+[00:07:17.040 --> 00:07:22.420]   Now we can remove the code that self manages episodic return for clarity.
+[00:07:22.420 --> 00:07:26.640]   Another quick tip is to use a record video wrapper to record the videos of the agents
+[00:07:26.640 --> 00:07:37.640]   playing the game, which is always helpful for debugging what the agent is actually doing.
+[00:07:37.640 --> 00:07:42.200]   It's very important to note that PPO deals with the vector environments instead of deal
+[00:07:42.200 --> 00:07:45.080]   with gym environments directly.
+[00:07:45.080 --> 00:07:49.960]   To use the vector environments, we will first create a function that returns a function
+[00:07:49.960 --> 00:07:52.840]   that creates a gym environment.
+[00:07:52.840 --> 00:07:58.280]   Then we can use gym's synced vector env API to create a vector environment by passing
+[00:07:58.280 --> 00:08:01.600]   a list of env creating functions.
+[00:08:01.600 --> 00:08:04.180]   The vector environments API is very familiar.
+[00:08:04.180 --> 00:08:09.260]   We will still use mstartreset to get the initial observation and then sample an action to step
+[00:08:09.260 --> 00:08:11.160]   the environment.
+[00:08:11.160 --> 00:08:15.600]   What's changed is the vector environments will automatically reset.
+[00:08:15.600 --> 00:08:19.920]   Once the episode is finished, the set function will discard the terminal observation from
+[00:08:19.920 --> 00:08:25.520]   the current episode and return the initial observation from the next episode.
+[00:08:25.520 --> 00:08:29.840]   This code would also just run fine.
+[00:08:29.840 --> 00:08:33.800]   It's worth mentioning that since we're using the gym integration with Weights and Biases
+[00:08:33.800 --> 00:08:38.800]   via monitor gym equal to true, when we turn on experiment tracking, the videos of the
+[00:08:38.800 --> 00:08:43.360]   agents playing the game will automatically be logged to Weights and Biases.
+[00:08:43.360 --> 00:08:48.100]   Here I can use a friendly slider to visualize what the agent is actually doing at different
+[00:08:48.100 --> 00:08:50.480]   stages of training.
+[00:08:50.480 --> 00:08:54.760]   In practice, I'll set up the make and function a little bit differently.
+[00:08:54.760 --> 00:08:59.720]   I will include a capture video flag to allow me to record videos for only the first sub
+[00:08:59.720 --> 00:09:02.000]   environment.
+[00:09:02.000 --> 00:09:07.100]   I will also add a section for the random sees to make things more reproducible.
+[00:09:07.100 --> 00:09:11.880]   I'll add a capture video flag in my args variable.
+[00:09:11.880 --> 00:09:17.320]   I'll also set up a num_ems variable to tune the number of sub environments in the vector
+[00:09:17.320 --> 00:09:18.320]   environment.
+[00:09:18.320 --> 00:09:25.120]   Then, I'll pass in the relevant variables to the make_em function and use this args.num_ems
+[00:09:25.120 --> 00:09:29.680]   variable to tune the number of em creating functions.
+[00:09:29.680 --> 00:09:35.000]   Now let us clean up the demo code we had earlier.
+[00:09:35.000 --> 00:09:38.920]   Before we continue, we're going to assert the script only works with discrete action
+[00:09:38.920 --> 00:09:39.920]   space.
+[00:09:39.920 --> 00:09:44.900]   Also, we're going to print out some useful ems properties.
+[00:09:44.900 --> 00:09:49.520]   As we can see, carpool's observation space has four features and its action space has
+[00:09:49.520 --> 00:09:54.500]   two discrete actions, going left and right, respectively.
+[00:09:54.500 --> 00:09:57.280]   At this point, we're ready for something more interesting.
+[00:09:57.280 --> 00:10:01.880]   We're going to set up the agent class and code up the neural network.
+[00:10:01.880 --> 00:10:07.600]   Let us import some packages, including Torch's neural network module, optimizer module, and
+[00:10:07.600 --> 00:10:09.640]   a categorical distribution.
+[00:10:09.640 --> 00:10:14.400]   Then, set up an agent class that takes ems as the argument.
+[00:10:14.400 --> 00:10:19.600]   The second implementation detail is the orthogonal and constant initialization for the layers
+[00:10:19.600 --> 00:10:20.600]   parameters.
+[00:10:20.600 --> 00:10:26.080]   Here, I will create a layer_init function that takes a layer and two initialization
+[00:10:26.080 --> 00:10:27.880]   parameters as inputs.
+[00:10:27.880 --> 00:10:33.400]   PPO uses the orthogonal initialization on the layer's weight and the constant initialization
+[00:10:33.400 --> 00:10:39.960]   on the layer's bias, whereas PyTorch would use different layer initialization methods.
+[00:10:39.960 --> 00:10:44.200]   Now we're going to set up the critics network, which is composed of three linear layers with
+[00:10:44.200 --> 00:10:47.560]   the hyperbolic tangent as the activation function.
+[00:10:47.560 --> 00:10:51.800]   Notice the layers by default use the square root of two as the center deviation or gain
+[00:10:51.800 --> 00:10:56.800]   for the orthogonal initialization, but the output linear layer uses one as the center
+[00:10:56.800 --> 00:10:58.800]   deviation.
+[00:10:58.800 --> 00:11:02.560]   Another thing to note is the input shape to the first linear layer is the product of the
+[00:11:02.560 --> 00:11:04.740]   observation space shape.
+[00:11:04.740 --> 00:11:11.200]   In this case, the input shape is the product of this tuple, which is four.
+[00:11:11.200 --> 00:11:15.840]   The actors network has a similar setup except its output linear layer is initialized with
+[00:11:15.840 --> 00:11:19.160]   a different standard deviation of 0.01.
+[00:11:19.160 --> 00:11:24.200]   Such standard deviation ensures the layers parameters will have similar scalar values,
+[00:11:24.200 --> 00:11:28.880]   and as a result, the probability of taking each action will be similar.
+[00:11:28.880 --> 00:11:33.060]   Another difference is the number of output features is the same as the number of available
+[00:11:33.060 --> 00:11:35.980]   actions in the action space, which is two.
+[00:11:35.980 --> 00:11:41.280]   In comparison, the number of output features in a critics output layer is just one.
+[00:11:41.280 --> 00:11:45.100]   We can now create an instance of the agent class and print it out to see what it looks
+[00:11:45.100 --> 00:11:46.100]   like.
+[00:11:46.100 --> 00:11:49.340]   Nothing too surprising over here.
+[00:11:49.340 --> 00:11:54.980]   The third implementation detail is to set up the atom's epsilon parameter correctly.
+[00:11:54.980 --> 00:12:01.220]   By default, PyTorch's atom optimizer has epsilon parameter to be 1e-8, however the original
+[00:12:01.220 --> 00:12:05.780]   implementation uses epsilon=1e-5.
+[00:12:05.780 --> 00:12:10.500]   Here we create the atom optimizer with respect to the agent's parameters, set up the learning
+[00:12:10.500 --> 00:12:15.740]   rate, and match the epsilon parameter of 1e-5.
+[00:12:15.740 --> 00:12:21.820]   Our next step is to understand the training loop and subsequently set up the storage variables.
+[00:12:21.820 --> 00:12:26.860]   On a high level, we'll take the agent we just initialized to do policy rollouts, aka
+[00:12:26.860 --> 00:12:28.260]   to play the game.
+[00:12:28.260 --> 00:12:33.860]   This generates rollouts data that we can use for policy training, after which we can take
+[00:12:33.860 --> 00:12:38.900]   the updated agents to do policy rollouts and continue the training loop.
+[00:12:38.900 --> 00:12:41.880]   But how much rollouts data do we collect?
+[00:12:41.880 --> 00:12:47.400]   This leads to the introduction of a very important variable called num_steps.
+[00:12:47.400 --> 00:12:52.340]   This num_steps variable controls exactly how much data we want to collect.
+[00:12:52.340 --> 00:12:58.420]   For example, here I have num_steps set to 128 and num_ends set to 4.
+[00:12:58.420 --> 00:13:04.420]   That means for each policy rollout, I will collect 4 times 128 equals 512 data points
+[00:13:04.420 --> 00:13:06.220]   for training.
+[00:13:06.220 --> 00:13:13.380]   These data points include the observations, actions, log probabilities, rewards, dones,
+[00:13:13.380 --> 00:13:15.140]   and values.
+[00:13:15.140 --> 00:13:21.820]   And notice how we set up the shapes to capture these 512 data points in these variables.
+[00:13:21.820 --> 00:13:27.460]   Also we'll set up a global step to track the number of environment steps, a start time
+[00:13:27.460 --> 00:13:34.260]   that will help us calculate frames per second later, a next_obs to store the initial observation,
+[00:13:34.260 --> 00:13:39.420]   and a next_done to store the initial termination condition to be false.
+[00:13:39.420 --> 00:13:43.540]   If you recall, our rollouts data has 512 data points.
+[00:13:43.540 --> 00:13:47.520]   This 512 is also known as the batch size.
+[00:13:47.520 --> 00:13:50.700]   Here we simply create a variable to store it.
+[00:13:50.700 --> 00:13:55.620]   Given this, if we divide the total time steps by the batch size, we can actually calculate
+[00:13:55.620 --> 00:14:00.500]   the number of iterations or updates for the entirety of training.
+[00:14:00.500 --> 00:14:04.820]   Given our current settings, we have 48 updates.
+[00:14:04.820 --> 00:14:08.540]   Now that we have the initial observation, we're going to implement the critics inference
+[00:14:08.540 --> 00:14:12.660]   by passing the observation to the critics network.
+[00:14:12.660 --> 00:14:16.380]   Then we're going to try out this get_value function.
+[00:14:16.380 --> 00:14:22.300]   Here I see my initial observation has shape 4,4 where the first 4 is the number of environments
+[00:14:22.300 --> 00:14:25.900]   and the second 4 is the observation space shape.
+[00:14:25.900 --> 00:14:32.540]   And when we do agent.get_value(next_obs), we get 4 scalar values for each environment.
+[00:14:32.540 --> 00:14:36.220]   And its shape is simply 4,1.
+[00:14:36.220 --> 00:14:40.100]   When doing the actors inference, it's actually best to bundle the results with the critics
+[00:14:40.100 --> 00:14:41.100]   inference.
+[00:14:41.100 --> 00:14:45.420]   So here I would create a get_action and value function.
+[00:14:45.420 --> 00:14:50.080]   Then I would pass in the observation x to the actors network to get the logits, which
+[00:14:50.080 --> 00:14:53.220]   are unnormalized action probabilities.
+[00:14:53.220 --> 00:14:58.460]   The logits are then passed to a categorical distribution, which is essentially a softmax
+[00:14:58.460 --> 00:15:02.540]   operation to get the action probability distribution.
+[00:15:02.540 --> 00:15:06.660]   And since we're in the rollout phase, we're going to sample actions.
+[00:15:06.660 --> 00:15:12.140]   Finally, we're going to return the actions, the log probabilities, the entropies, and
+[00:15:12.140 --> 00:15:13.940]   the values.
+[00:15:13.940 --> 00:15:17.280]   Let's test out this function by giving it a run.
+[00:15:17.280 --> 00:15:23.020]   Here we see the sampled actions, the log probabilities associated with these actions, the entropies
+[00:15:23.020 --> 00:15:27.720]   of the action probabilities distribution, and the values.
+[00:15:27.720 --> 00:15:33.180]   Let us clean up these print statements real quick.
+[00:15:33.180 --> 00:15:37.540]   Now we can set up the training loop based on the nums updates.
+[00:15:37.540 --> 00:15:41.380]   At this point, we introduce the fourth implementation detail.
+[00:15:41.380 --> 00:15:44.720]   The learning rate is annealed with each update.
+[00:15:44.720 --> 00:15:50.980]   We implement this by setting up an anneal_lr flag and by default set it to true.
+[00:15:50.980 --> 00:15:55.540]   Then we would get the current learning rate by multiplying the learning rate with a fraction
+[00:15:55.540 --> 00:15:57.060]   variable.
+[00:15:57.060 --> 00:16:02.260]   This fraction variable is one at the first update and will linearly decrease to zero
+[00:16:02.260 --> 00:16:04.220]   at the end of the updates.
+[00:16:04.220 --> 00:16:09.220]   Finally, we will use PyTorch's API to update the learning rate.
+[00:16:09.220 --> 00:16:13.500]   Note that each update corresponds to one iteration of the training loop.
+[00:16:13.500 --> 00:16:18.460]   The policy rollouts is itself a loop which is implemented as an inner loop with a range
+[00:16:18.460 --> 00:16:20.800]   of num_steps.
+[00:16:20.800 --> 00:16:25.420]   Because each policy step happens at the vector environment, we increment the global step
+[00:16:25.420 --> 00:16:27.460]   by the number of ends.
+[00:16:27.460 --> 00:16:32.780]   Then here we store the next observation and next_done to the storage variables.
+[00:16:32.780 --> 00:16:36.700]   During the rollouts, we don't need to cache any gradient so we can get the action, log
+[00:16:36.700 --> 00:16:41.340]   probabilities, and values under the torch.nograd context.
+[00:16:41.340 --> 00:16:45.460]   We will also need to put them in the storage variables.
+[00:16:45.460 --> 00:16:47.700]   Then we can step the environment.
+[00:16:47.700 --> 00:16:52.260]   Here I transfer the actions from the GPU to CPU to do the step.
+[00:16:52.260 --> 00:16:58.540]   I also need to transfer the returned rewards to GPU and so do the next_obs and next_done.
+[00:16:58.540 --> 00:17:05.180]   Lastly, we can use TensorBoard to log the episodic return and length as shown earlier.
+[00:17:05.180 --> 00:17:09.300]   We'll give it a quick run and as we can see, the script would print out every episodic
+[00:17:09.300 --> 00:17:10.660]   return.
+[00:17:10.660 --> 00:17:16.260]   And at the end of the script, the global step will match the total time steps of 25,000.
+[00:17:16.260 --> 00:17:22.220]   The fifth implementation detail is PPO uses General Advantage Estimation or GAE to do
+[00:17:22.220 --> 00:17:24.740]   advantage calculations.
+[00:17:24.740 --> 00:17:29.180]   Let us set up a GAE flag and by default set it to true.
+[00:17:29.180 --> 00:17:34.380]   Then we introduce a discount variable gamma and set it to 0.99.
+[00:17:34.380 --> 00:17:40.260]   We also set up the lambda variable for GAE and set it to 0.95.
+[00:17:40.260 --> 00:17:45.100]   To implement GAE, here I have copied the modified code from the original repo.
+[00:17:45.100 --> 00:17:51.580]   It's a very intricate implementation especially compared to the formulas in the original paper.
+[00:17:51.580 --> 00:17:56.020]   Feel free to write out a few terms on a piece of paper to help with understanding.
+[00:17:56.020 --> 00:18:02.940]   For comparison, the common way to do advantage calculation is to use returns minus values.
+[00:18:02.940 --> 00:18:08.740]   One worth mentioning detail is PPO bootstraps values if the environments are not done.
+[00:18:08.740 --> 00:18:13.500]   In this example, all four environments are not done and we estimate the values of the
+[00:18:13.500 --> 00:18:17.380]   next ops as the end of rollout values.
+[00:18:17.380 --> 00:18:22.580]   Another detail is returns is calculated as advantages plus values which is different
+[00:18:22.580 --> 00:18:28.180]   from the regular return calculated as sum of discounted rewards.
+[00:18:28.180 --> 00:18:34.840]   Here I'm using my IDE spider to easily inspect the values of various variables and I can
+[00:18:34.840 --> 00:18:40.260]   directly show the regular returns is different from the returns from GAE.
+[00:18:40.260 --> 00:18:46.160]   One more thing, we're going to create variables to store the flattened storage variables.
+[00:18:46.160 --> 00:18:50.420]   Here I have 512 data points which is the batch size.
+[00:18:50.420 --> 00:18:55.700]   The sixth implementation detail is PPO will break this batch of 512 data into mini-batches
+[00:18:55.700 --> 00:18:57.460]   for training.
+[00:18:57.460 --> 00:19:02.580]   To do so, let us introduce a new variable to tune the number of mini-batches and by
+[00:19:02.580 --> 00:19:05.380]   default we set it to 4.
+[00:19:05.380 --> 00:19:10.200]   And the mini-batch size is batch size divided by the number of mini-batches.
+[00:19:10.200 --> 00:19:14.980]   We also set up the number of update epochs and by default set it to 4.
+[00:19:14.980 --> 00:19:20.180]   To do training, we acquire all of the indices of the batch and for each update epoch, we
+[00:19:20.180 --> 00:19:22.300]   shuffle these batch indices.
+[00:19:22.300 --> 00:19:28.060]   Afterwards, we would loop through the entire batch, one mini-batch at a time.
+[00:19:28.060 --> 00:19:34.540]   Here each mini-batch indices contains 128 items of the randomized batch indices.
+[00:19:34.540 --> 00:19:37.460]   Given this, our training finally begins.
+[00:19:37.460 --> 00:19:41.660]   We first do a forward pass on the mini-batch observations.
+[00:19:41.660 --> 00:19:46.540]   Notice we also pass in the mini-batch actions so that our agent would not sample any new
+[00:19:46.540 --> 00:19:47.660]   actions.
+[00:19:47.660 --> 00:19:52.540]   This forward pass gives us the log probability, entropy, and value.
+[00:19:52.540 --> 00:19:57.340]   We can then do a logarithmic subtraction between the new log probabilities and the old log
+[00:19:57.340 --> 00:20:02.040]   probabilities associated with the actions in the policy rollout phase.
+[00:20:02.040 --> 00:20:07.740]   This gives us the log ratio and we can use the exponential function to get the ratio.
+[00:20:07.740 --> 00:20:12.020]   Something we should know is during the forward pass of the first mini-batch, this ratio would
+[00:20:12.020 --> 00:20:13.860]   contain only once.
+[00:20:13.860 --> 00:20:17.740]   That is because we haven't made any change to the policy parameters and therefore the
+[00:20:17.740 --> 00:20:22.500]   new and old log probabilities would be the same.
+[00:20:22.500 --> 00:20:27.660]   The seventh implementation detail is PPO does advantage normalization.
+[00:20:27.660 --> 00:20:33.460]   In addition to acquiring the mini-batch advantages, we set up another flag to do advantage normalization
+[00:20:33.460 --> 00:20:36.100]   and by default set it to true.
+[00:20:36.100 --> 00:20:40.580]   And the normalization is done by subtracting the mean and divided by the standard deviation
+[00:20:40.580 --> 00:20:45.140]   plus a small scalar value to prevent the divide by zero error.
+[00:20:45.140 --> 00:20:50.140]   The eighth implementation detail is PPO's clipped policy objective.
+[00:20:50.140 --> 00:20:55.940]   To implement it, we set up a clip coefficient and by default set it to 0.2.
+[00:20:55.940 --> 00:20:59.180]   Then we set up the policy loss as follows.
+[00:20:59.180 --> 00:21:04.500]   Notice the policy loss does the max of negatives and the paper's objective does the mean of
+[00:21:04.500 --> 00:21:07.580]   positives, so they are equivalent.
+[00:21:07.580 --> 00:21:13.140]   The ninth implementation detail is PPO also does value loss clipping.
+[00:21:13.140 --> 00:21:18.540]   Here we add another flag to do value loss clipping and by default set it to true.
+[00:21:18.540 --> 00:21:21.620]   Then we implement the value loss as follows.
+[00:21:21.620 --> 00:21:26.300]   Normally, the value loss is implemented as a mean squared error between the predicted
+[00:21:26.300 --> 00:21:30.980]   values and the empirical returns, but the original implementation also does clipping
+[00:21:30.980 --> 00:21:33.500]   like the clipped policy objective.
+[00:21:33.500 --> 00:21:39.980]   The tenth implementation detail is PPO also includes an entropy loss in its overall loss.
+[00:21:39.980 --> 00:21:45.220]   Here I add a coefficient for the entropy loss and by default set it to 0.01.
+[00:21:45.220 --> 00:21:50.820]   I also set up a value loss coefficient and by default set it to 0.5.
+[00:21:50.820 --> 00:21:54.300]   Then the overall loss is implemented as follows.
+[00:21:54.300 --> 00:22:02.860]   The idea is to minimize the policy loss and the value loss, but maximize the entropy loss.
+[00:22:02.860 --> 00:22:07.500]   Entropy is a measure of the level of chaos in an action probability distribution.
+[00:22:07.500 --> 00:22:12.700]   Intuitively, maximizing entropy would encourage agent to explore more.
+[00:22:12.700 --> 00:22:17.100]   Our final implementation detail is global gradient clipping.
+[00:22:17.100 --> 00:22:22.300]   Here we set up a maximum gradient norm and by default set it to 0.5.
+[00:22:22.300 --> 00:22:27.460]   Normally, we would implement the backpropagation like this, but this implementation detail
+[00:22:27.460 --> 00:22:30.700]   would add this line of code.
+[00:22:30.700 --> 00:22:34.660]   The original implementation also has variables to help debug.
+[00:22:34.660 --> 00:22:39.940]   For example, the callback Leibler divergence helps us understand how aggressively the policy
+[00:22:39.940 --> 00:22:41.440]   updates.
+[00:22:41.440 --> 00:22:46.700]   The original implementation approximates the KL divergence by doing negative log ratio.
+[00:22:46.700 --> 00:22:52.060]   However, a recent blog post from John Schumann suggests the following approximation is a
+[00:22:52.060 --> 00:22:55.140]   better estimator.
+[00:22:55.140 --> 00:23:00.060]   There is also a clipped fraction variable that measures how often the clipped objective
+[00:23:00.060 --> 00:23:02.460]   is actually triggered.
+[00:23:02.460 --> 00:23:07.060]   Another variable is the explained variance, which tells you if your value function is
+[00:23:07.060 --> 00:23:10.340]   a good indicator of the returns.
+[00:23:10.340 --> 00:23:15.820]   A bonus implementation detail is what's called early stopping.
+[00:23:15.820 --> 00:23:20.540]   This is actually an implementation detail proposed by Joshua Akim in the OpenAI Spinning
+[00:23:20.540 --> 00:23:21.780]   Up.
+[00:23:21.780 --> 00:23:27.040]   The rough idea is to stop the policy update if the KL divergence has grown too large so
+[00:23:27.040 --> 00:23:31.820]   as to exceed a preset target KL divergence threshold.
+[00:23:31.820 --> 00:23:38.180]   To implement it, we set up a target KL variable and by default set it to none.
+[00:23:38.180 --> 00:23:43.580]   If you want to consistently use it, you can also set it to 0.015, which is the default
+[00:23:43.580 --> 00:23:45.940]   value in OpenAI Spinning Up.
+[00:23:45.940 --> 00:23:49.860]   However, by default, let's turn it back to none.
+[00:23:49.860 --> 00:23:54.600]   And here we add a condition to break the update epochs if the approximate KL divergence go
+[00:23:54.600 --> 00:23:57.060]   over that threshold.
+[00:23:57.060 --> 00:24:01.380]   Notice here we're implementing the early stopping at the batch level, however, it is
+[00:24:01.380 --> 00:24:05.460]   also possible to implement it at the mini-batch level.
+[00:24:05.460 --> 00:24:10.180]   The OpenAI Spinning Up's PPO implementation didn't really use a mini-batch, so this
+[00:24:10.180 --> 00:24:12.500]   detail is really up to us.
+[00:24:12.500 --> 00:24:17.580]   Finally, we'll use TensorBoard to record all of the metrics.
+[00:24:17.580 --> 00:24:28.300]   It's now time to give it a run.
+[00:24:28.300 --> 00:24:32.820]   By clicking on the generated WMB link, we would go to this page.
+[00:24:32.820 --> 00:24:37.180]   Immediately, we see the videos of the agents playing the game, and we can adjust the slider
+[00:24:37.180 --> 00:24:40.980]   to see the agents' behavior at different stages of the training.
+[00:24:40.980 --> 00:24:46.720]   Then if we scroll down and expand the loss section, we can see the various losses.
+[00:24:46.720 --> 00:24:53.100]   And if we go down to expand the chart section, we see the episodic returns and episodic lengths.
+[00:24:53.100 --> 00:24:58.540]   We can also go to the overview tab and here we see all of our hyperparameters.
+[00:24:58.540 --> 00:25:03.220]   Spinning up, we see our experiment took 18 seconds to finish, and here we can see the
+[00:25:03.220 --> 00:25:06.960]   exact command that was used to produce this experiment.
+[00:25:06.960 --> 00:25:10.940]   We can also go to this tab to check out the system metrics usage.
+[00:25:10.940 --> 00:25:16.320]   And because our experiment has finished so fast, there isn't really that many data points.
+[00:25:16.320 --> 00:25:20.900]   We can also go to the files tab and check out the requirements.txt for all of the logged
+[00:25:20.900 --> 00:25:22.580]   dependencies.
+[00:25:22.580 --> 00:25:29.200]   And finally, we can go to the code tab to see a copy of our code.
+[00:25:29.200 --> 00:25:30.700]   This concludes our video.
+[00:25:30.700 --> 00:25:32.380]   Thanks so much for watching.
+[00:25:32.380 --> 00:25:35.260]   If you have any questions, feel free to comment down below.
+[00:25:35.260 --> 00:25:39.540]   I also encourage you to check out the links in the video description where you can find
+[00:25:39.540 --> 00:25:44.140]   my source code and blog posts on the implementation details.
+[00:25:44.140 --> 00:25:45.980]   Thank you and I'll see you in the next video.
+[00:25:45.980 --> 00:25:48.560]   (upbeat music)
+[00:25:48.560 --> 00:25:51.140]   (upbeat music)
+
