@@ -93,6 +93,15 @@ crontab -e
 0 */2 * * 1-6 /Users/lwu-macstudio/github/transcripts/src/transcripts/transcribe_new_videos.py
 ```
 
+To remove large files:
+
+Can you use: https://github.com/newren/git-filter-repo
+
+```
+# brew install git-filter-repo
+git filter-repo --strip-blobs-bigger-than 100M
+```
+
 # TODO
 
 Download history of videos
