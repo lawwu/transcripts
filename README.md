@@ -137,3 +137,14 @@ UnicodeDecodeError: 'utf-8' codec can't decode byte 0xeb in position 1264: inval
 ```
 
 - [ ] Use python bindings instead of calling whisper.cpp directly, can use https://github.com/aarnphm/whispercpp
+
+- [ ] add financial samurai - https://podcasts.google.com/feed/aHR0cDovL2ZpbmFuY2lhbHNhbXVyYWkubGlic3luLmNvbS9yc3M
+- [ ] add MLJ
+```
+    {
+        "name": "martyn_lloyd_jones_trust",
+        "url": "https://www.youtube.com/@MLJTrust",
+        "in_file": "mljt_ids.txt",
+        "file": "mljt_ids_done.txt"
+    },
+```
