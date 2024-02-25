@@ -14,7 +14,7 @@ with open(configs_dir / "channels.json", "r") as f:
     channels = json.load(f)
 
 for channel in channels:
-    channels_to_skip_download = ["ask_pastor_john", "ask_the_compound"]
+    channels_to_skip_download = ["ask_pastor_john", "ask_the_compound", "all_the_hacks"]
     if channel["name"] in channels_to_skip_download:
         continue
     # Step 1: Get all video list from the channel
