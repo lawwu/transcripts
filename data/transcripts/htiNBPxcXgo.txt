@@ -1,0 +1,795 @@
+
+[00:00:00.000 --> 00:00:17.980]   So welcome to the last lesson of part 1 of practical deep learning for coders. It's been
+[00:00:17.980 --> 00:00:28.920]   a really fun time doing this course and depending on when you're watching and listening to this
+[00:00:28.920 --> 00:00:36.160]   you may want to check the forums or the fast.ai website to see whether we have a part 2 planned
+[00:00:36.160 --> 00:00:45.280]   which is going to be sometime towards the end of 2022. Or if it's already past that
+[00:00:45.280 --> 00:00:51.920]   then maybe there's even a part 2 already on the website. So part 2 goes a lot deeper than
+[00:00:51.920 --> 00:00:59.440]   part 1 technically in terms of getting to the point that you should be able to read
+[00:00:59.440 --> 00:01:09.700]   and implement research papers and deploy models in a very kind of real life situation. So
+[00:01:09.700 --> 00:01:26.960]   yeah, last lesson we started on the collaborative filtering notebook and we were looking at
+[00:01:26.960 --> 00:01:30.740]   collaborative filtering and this is where we got to which is creating your own embedding
+[00:01:30.740 --> 00:01:36.320]   module and this is a very cool place to start the lesson because you're going to learn a
+[00:01:36.320 --> 00:01:42.960]   lot about what's really going on. And it's really important before you dig into this
+[00:01:42.960 --> 00:01:51.560]   to make sure that you're really comfortable with the 05 EDM model and neural net from
+[00:01:51.560 --> 00:02:01.240]   scratch notebook. So if parts of this are not totally clear put it aside and redo this
+[00:02:01.240 --> 00:02:08.760]   notebook because what we're looking at from here are kind of the abstractions that PyTorch
+[00:02:08.760 --> 00:02:16.480]   and fastai add on top of functionality that we've built ourselves from scratch. So if
+[00:02:16.480 --> 00:02:24.320]   you remember in the neural network from scratch we built we initialized a number of coefficients
+[00:02:24.320 --> 00:02:34.960]   a couple of different layers and a bias term and then during as the model trained we updated
+[00:02:34.960 --> 00:02:40.880]   those coefficients by going through each layer of them and subtracting out the gradients
+[00:02:40.880 --> 00:02:50.440]   by the learning rate. You've probably noticed that in PyTorch we don't have to go to all
+[00:02:50.440 --> 00:02:56.760]   that trouble and I wanted to show you how PyTorch does this. PyTorch we don't have to
+[00:02:56.760 --> 00:03:06.680]   keep track of what our coefficients or parameters or weights are. PyTorch does that for us and
+[00:03:06.680 --> 00:03:15.960]   the way it does that is it looks inside our our module and it tries to find anything that
+[00:03:15.960 --> 00:03:22.640]   looks like a neural network parameter or a tensor of neural network parameters and it
+[00:03:22.640 --> 00:03:27.760]   keeps track of them and so here is a class we've created called T which is a subclass
+[00:03:27.760 --> 00:03:33.760]   of module and I've created one thing inside it which is something with the attribute A.
+[00:03:33.760 --> 00:03:41.600]   So this is A in the T module and it just contains three ones and so the idea is you know maybe
+[00:03:41.600 --> 00:03:46.760]   we're creating a module and we're initializing some parameter that we want to train. Now
+[00:03:46.760 --> 00:03:52.920]   we can find out what trainable parameters or just what parameters in general PyTorch
+[00:03:52.920 --> 00:04:01.880]   knows about in our model by instantiating our model and then asking for the parameters
+[00:04:01.880 --> 00:04:06.080]   which you then have to turn that into a list or in fast call we have a thing called capital
+[00:04:06.080 --> 00:04:11.420]   L which is like a fancy list which prints out the number of items in the list and shows
+[00:04:11.420 --> 00:04:19.760]   you those items. Now in this case when we create our object of type T and ask for its parameters
+[00:04:19.760 --> 00:04:25.880]   we get told there are zero tensors of parameters and a list with nothing in it. Now why is
+[00:04:25.880 --> 00:04:29.960]   that we actually said we wanted to create three tensor with three ones in it how would
+[00:04:29.960 --> 00:04:38.520]   we make those parameters? Well the answer is that the way you create your way you tell
+[00:04:38.520 --> 00:04:44.600]   PyTorch what your parameters are is you actually just have to put them inside a special object
+[00:04:44.600 --> 00:04:51.920]   called an nn.parameter. This thing almost doesn't really do anything. In fact last time
+[00:04:51.920 --> 00:04:55.840]   I checked it really quite literally had almost no code in it sometimes these things change
+[00:04:55.840 --> 00:05:08.840]   but let's take a look. Yeah okay so it's about a dozen lines of code or 20 lines of code
+[00:05:08.840 --> 00:05:14.040]   which does almost nothing it's got a way of being copied it's got a way of printing itself
+[00:05:14.040 --> 00:05:21.000]   it's got a way of saving itself and it's got a way of being initialized. So parameter hardly
+[00:05:21.000 --> 00:05:27.200]   does anything the key thing is though that when PyTorch checks to see which parameters
+[00:05:27.200 --> 00:05:33.080]   should it update when it optimizes it just looks for anything that's been wrapped in
+[00:05:33.080 --> 00:05:37.700]   this parameter class. So if we do exactly the same thing as before which is to set an
+[00:05:37.700 --> 00:05:47.000]   attribute containing a tensor with three ones in it but this case we wrap it in a parameter
+[00:05:47.000 --> 00:05:55.080]   we now get told okay there's one parameter tensor in this model and it contains a tensor
+[00:05:55.080 --> 00:06:01.080]   with three ones and you can see it also actually by default assumes that we're going to want
+[00:06:01.080 --> 00:06:04.960]   require gradient it's assuming that anything that's a parameter is something that you want
+[00:06:04.960 --> 00:06:11.320]   to calculate gradients for. Now most of the time we don't have to do this because PyTorch
+[00:06:11.320 --> 00:06:18.960]   provides lots of convenient things for us such as what you've seen before nn.linear
+[00:06:18.960 --> 00:06:24.920]   which is something that also contain creates a tensor so this would contain a create a
+[00:06:24.920 --> 00:06:32.320]   tensor of 1 by 3 without a bias term in it. This has not been wrapped in an nn.parameter
+[00:06:32.320 --> 00:06:39.320]   but that's okay PyTorch knows that anything which is basically a layer in a neural net
+[00:06:39.320 --> 00:06:46.080]   is going to be a parameter so it automatically considers this a parameter. So here's exactly
+[00:06:46.080 --> 00:06:51.160]   the same thing again I construct my object of type T I've checked for its parameters and
+[00:06:51.160 --> 00:06:55.960]   I can see there's three of one tensor of parameters and there's our three things and you'll notice
+[00:06:55.960 --> 00:07:04.280]   that it's also automatically randomly initialize them which again is generally what we want.
+[00:07:04.280 --> 00:07:15.880]   So PyTorch does go to some effort to try to make things easy for you. So the this attribute
+[00:07:15.880 --> 00:07:31.160]   A is a is a linear layer and it's got a bunch of things in it one of the things in it is
+[00:07:31.160 --> 00:07:37.040]   the weights and that's where you'll actually find the parameters that is of type parameter
+[00:07:37.040 --> 00:07:43.880]   so a linear layer is something that contains attributes of type parameter. Okay so what
+[00:07:43.880 --> 00:07:51.520]   we want to do is we want to create something that works just like this did which is something
+[00:07:51.520 --> 00:08:03.760]   that creates a matrix which will be trained as we train the model. Okay so an embedding
+[00:08:03.760 --> 00:08:13.000]   is something which yeah it's going to create a matrix of this by this and it will be a
+[00:08:13.000 --> 00:08:19.480]   parameter and it's something that yeah we need to be able to index into as we did here
+[00:08:19.480 --> 00:08:24.640]   and so yeah what is what is happening behind the scenes you know we're in PyTorch it's
+[00:08:24.640 --> 00:08:29.360]   nice to be able to create these things ourselves in Scratch because it means we really understand
+[00:08:29.360 --> 00:08:38.680]   it and so let's create that exact same module that we did last time but this time we're
+[00:08:38.680 --> 00:08:46.040]   going to use a function I've created called createParams you pass in a size so such as
+[00:08:46.040 --> 00:08:57.960]   in this case n uses by n factors and it's going to call torch.zeros to create a tensor
+[00:08:57.960 --> 00:09:07.840]   of zeros of the size that you request and then it's going to do normal random distributions
+[00:09:07.840 --> 00:09:14.960]   or a Gaussian distribution of mean zero standard deviation 0.01 to randomly initialize those
+[00:09:14.960 --> 00:09:20.760]   and it'll put the whole thing into an nn.parameter so that so this here is going to create an
+[00:09:20.760 --> 00:09:28.480]   attribute called user factors which will be a parameter containing some tensor of normally
+[00:09:28.480 --> 00:09:40.160]   distributed random numbers of this size excuse me and because it's a parameter that's going
+[00:09:40.160 --> 00:09:51.720]   to be stored inside that's going to be available as in parameters in the module almost nothing
+[00:09:51.720 --> 00:09:59.000]   so user bias will be a vector of parameters user factors will be a matrix of parameters
+[00:09:59.000 --> 00:10:04.760]   movie factors will be a matrix and movies by n factors movie bias will be a vector of
+[00:10:04.760 --> 00:10:10.400]   n movies and this is the same as before so now in the forward we can do exactly what
+[00:10:10.400 --> 00:10:18.240]   we did before the thing is when you put a tensor inside a parameter it has all the exact
+[00:10:18.240 --> 00:10:30.560]   same features that a tensor has so for example we can index into it so this whole thing is
+[00:10:30.560 --> 00:10:35.800]   identical to what we had before and so that's actually believe it or not all that's required
+[00:10:35.800 --> 00:10:47.440]   to replicate pytorches embedding layer from scratch so let's run those and see if it works
+[00:10:47.440 --> 00:10:53.760]   and there it is it's training so we'll be able to have a look when this is done at for
+[00:10:53.760 --> 00:11:09.520]   example model dot let's have a look movie bias
+[00:11:09.520 --> 00:11:18.440]   and here it is right it's a parameter containing a bunch of numbers that have been trained
+[00:11:18.440 --> 00:11:26.360]   as we'd expect it's got 1665 things in because that's how many movies we have so a question
+[00:11:26.360 --> 00:11:36.360]   from Jonah Raphael was does torch dot zeros not produce all zeros yes torch dot zeros does
+[00:11:36.360 --> 00:11:44.320]   produce all zeros but remember a method that ends in underscore changes in place the tensor
+[00:11:44.320 --> 00:11:59.280]   it's being applied to and so if you look up pytorch normal underscore you'll see it fills
+[00:11:59.280 --> 00:12:07.640]   itself with elements sampled from the normal distribution so this is actually modifying
+[00:12:07.640 --> 00:12:20.880]   this tensor in place and so that's why we end up with something which isn't just zeros
+[00:12:20.880 --> 00:12:32.520]   now this is a bit iphone really fun is we train this model but what did it do how is
+[00:12:32.520 --> 00:12:39.120]   it going about predicting who's going to like what movie what well one of the things that's
+[00:12:39.120 --> 00:12:48.720]   happened is we've created this movie bias parameter which has been optimized and what
+[00:12:48.720 --> 00:13:00.280]   we could do is we could find which movie IDs have the highest numbers here and the lowest
+[00:13:00.280 --> 00:13:04.240]   numbers so I think this is going to start lowest and then we can print out we can look
+[00:13:04.240 --> 00:13:10.500]   inside our data loaders and grab the names of those movies for each of those five lowest
+[00:13:10.500 --> 00:13:22.400]   numbers and what's happened here well we can see broadly speaking that it is printed out
+[00:13:22.400 --> 00:13:29.680]   some pretty crappy movies and why is that well that's because when it does that matrix
+[00:13:29.680 --> 00:13:36.160]   product that we saw in the Excel spreadsheet last week it's trying to figure out who's
+[00:13:36.160 --> 00:13:41.880]   going to like what movie based on previous movies people have enjoyed or not and then
+[00:13:41.880 --> 00:13:46.080]   it adds movie bias which can be positive or negative that's a different number for each
+[00:13:46.080 --> 00:13:51.920]   movie so in order to do a good job of predicting whether you're going to like a movie or not
+[00:13:51.920 --> 00:13:56.720]   it has to know which movies are crap and so the crap movies are going to end up with a
+[00:13:56.720 --> 00:14:08.040]   very low movie bias parameter and so we can actually find out which movies to people not
+[00:14:08.040 --> 00:14:13.120]   only which movies to people really not like but which movies to people like like less
+[00:14:13.120 --> 00:14:23.300]   than one would expect given the kind of movie that it is so lawnmower man 2 for example not
+[00:14:23.300 --> 00:14:29.680]   only apparently is it a crappy movie but based on the kind of movie it is you know it's kind
+[00:14:29.680 --> 00:14:37.400]   of like a high-tech pop kind of sci-fi movie people who like those kinds of movies still
+[00:14:37.400 --> 00:14:42.120]   don't like lawnmower man 2 so that's what this is meaning so it's kind of nice that
+[00:14:42.120 --> 00:14:46.560]   we can like use a model not just to predict things but to understand things about the
+[00:14:46.560 --> 00:14:55.760]   data so if we saw it by descending it'll give us the exact opposite so here are movies that
+[00:14:55.760 --> 00:15:02.360]   people enjoy even when they don't normally enjoy that kind of movie so for example LA
+[00:15:02.360 --> 00:15:10.600]   confidential classic kind of film noir detective movie with the Aussie Guy Pearce even if you
+[00:15:10.600 --> 00:15:19.200]   don't really like film noir detective movies you might like this one you know silence of
+[00:15:19.200 --> 00:15:26.960]   the lambs classic kind of I guess you'd say like horror kind of not horror is it suspense
+[00:15:26.960 --> 00:15:31.120]   movie even people who don't normally like kind of serial killer suspense movies tend
+[00:15:31.120 --> 00:15:40.280]   to like this this one now the other thing we can do is not just look at what's happening
+[00:15:40.280 --> 00:15:44.240]   in in the bias oh and by the way we could do the same thing with users and find out
+[00:15:44.240 --> 00:15:52.240]   like which user just loves movies even the crappy ones you know just likes all movies
+[00:15:52.240 --> 00:15:58.600]   and vice versa but what about the other thing we didn't just have bias we also had movie
+[00:15:58.600 --> 00:16:05.440]   factors which has got the number of movies as one axis and the number of factors as the
+[00:16:05.440 --> 00:16:12.600]   other and we passed in 50 what's in that huge matrix well pretty hard to visualize such
+[00:16:12.600 --> 00:16:16.720]   a huge matrix and we're not going to talk about the details but you can do something
+[00:16:16.720 --> 00:16:21.920]   called PCA which stands for principal component analysis and that basically tries to compress
+[00:16:21.920 --> 00:16:34.120]   those 50 columns down into three columns and then we can draw a chart of the top two and
+[00:16:34.120 --> 00:16:43.080]   so this is PCA component number one and this is PCA component number two and here's a bunch
+[00:16:43.080 --> 00:16:51.840]   of movies and this is a compressed view of these latent factors that it created and you
+[00:16:51.840 --> 00:16:57.120]   can see that they obviously have some kind of meaning right so over here towards the
+[00:16:57.120 --> 00:17:05.200]   right we've got kind of you know very pop mainstream kind of movies and over here on
+[00:17:05.200 --> 00:17:13.440]   the left we've got more of the kind of critically acclaimed gritty kind of movies and then towards
+[00:17:13.440 --> 00:17:19.440]   the top we've got very kind of action-oriented and sci-fi movies and then down towards the
+[00:17:19.440 --> 00:17:26.360]   bottom we've got very dialogue driven movies so remember we didn't program in any of these
+[00:17:26.360 --> 00:17:34.440]   things and we don't have any data at all about what movie is what kind of movie but thanks
+[00:17:34.440 --> 00:17:44.240]   to the magic of SGD we just told it to please try and optimize these parameters and the
+[00:17:44.240 --> 00:17:49.920]   way it was able to predict who would like what movie was it had to figure out what kinds
+[00:17:49.920 --> 00:17:56.040]   of movies are there or what kind of taste is there for each movie so I think that's
+[00:17:56.040 --> 00:18:04.480]   pretty interesting so this is called visualizing embeddings and then this is visualizing the
+[00:18:04.480 --> 00:18:28.720]   bias we we obviously would rather not do everything by hand like this or even like this and fast
+[00:18:28.720 --> 00:18:35.080]   AI provides an application for collaborative learner and so we can create one and this
+[00:18:35.080 --> 00:18:38.200]   is going to look much the same as what we just had we're going to say how many latent
+[00:18:38.200 --> 00:18:44.040]   factors we want and what the y range is to do the sigmoid in the multiply and then we
+[00:18:44.040 --> 00:19:01.440]   can do fit and away it goes so let's see how it does all right so it's done a bit better
+[00:19:01.440 --> 00:19:11.120]   than our manual one let's take a look at the model it created the model looks very similar
+[00:19:11.120 --> 00:19:15.560]   to what we created in terms of the parameters you can see these are the two embeddings and
+[00:19:15.560 --> 00:19:21.680]   these are the two biases and we can do exactly the same thing we can look in that model and
+[00:19:21.680 --> 00:19:26.840]   we can find the you'll see it's not called movies it's i for items it's users and items
+[00:19:26.840 --> 00:19:34.280]   this is the item bias so we can look at the item bias grab the weights sort and we get
+[00:19:34.280 --> 00:19:38.800]   a very similar result in this case it's very even more confident that LA Confidential is
+[00:19:38.800 --> 00:19:42.440]   a movie that you should probably try watching even if you don't like those kind of movies
+[00:19:42.440 --> 00:19:47.100]   and titanic's right up there as well even if you don't really like romancy kind of movies
+[00:19:47.100 --> 00:19:52.480]   you might like this one even if you don't like classic detective you might like this
+[00:19:52.480 --> 00:20:12.140]   one you know we can have a look at the source code for collab learner and we can see that
+[00:20:12.140 --> 00:20:17.040]   let's see username is false by default so where our model is going to be of this type
+[00:20:17.040 --> 00:20:27.240]   embedding bias so we can take a look at that here it is and look this does look very similar
+[00:20:27.240 --> 00:20:37.840]   okay it's creating an embedding using the size we requested for each of users by factors
+[00:20:37.840 --> 00:20:44.520]   and items by factors and users and items and then it's grabbing each thing from the embedding
+[00:20:44.520 --> 00:20:55.040]   in the forward and it's doing the model play and it's adding it up and it's doing the sigmoid
+[00:20:55.040 --> 00:21:03.680]   so yeah it looks looks exactly the same isn't that neat so you can see that what's actually
+[00:21:03.680 --> 00:21:18.320]   happening in real models is not yeah it's not it's not that weird or magic so Kurian
+[00:21:18.320 --> 00:21:27.000]   is asking is PCA useful in any other areas and the answer is absolutely and what I suggest
+[00:21:27.000 --> 00:21:40.120]   you do if you're interested is check out our contribon putational linear algebra course
+[00:21:40.120 --> 00:21:44.880]   it's five years old now but it I mean this is stuff which hasn't changed for decades
+[00:21:44.880 --> 00:21:55.200]   really and this will teach you all about things like PCA and stuff like that it's it's not
+[00:21:55.200 --> 00:22:00.160]   nearly as directly practical as practical deep learning for coders but it's definitely
+[00:22:00.160 --> 00:22:05.480]   like very interesting and it's the kind of thing which if you want to go deeper you know
+[00:22:05.480 --> 00:22:17.240]   it's it can become pretty useful later along your path okay so here's something else interesting
+[00:22:17.240 --> 00:22:23.640]   we can do let's grab the movie factors so that's in our model it's the item weights
+[00:22:23.640 --> 00:22:31.880]   and it's the weight attribute that PyTorch creates okay and now we can convert the movie
+[00:22:31.880 --> 00:22:39.760]   Silence of the Lambs into its class ID and we can do that with object to ID O to I for
+[00:22:39.760 --> 00:22:45.520]   the titles and so that's the movie index of Silence of the Lambs and what we can do now
+[00:22:45.520 --> 00:22:55.080]   is we can look through all of the movies in our latent factors and calculate how far apart
+[00:22:55.080 --> 00:23:02.760]   the each vector is each each embedding vector is from this one and this cosine similarity
+[00:23:02.760 --> 00:23:09.700]   is very similar to basically the Euclidean distance you know the kind of the root sum
+[00:23:09.700 --> 00:23:18.000]   squared of the differences but it normalizes it so it's basically the angle between the
+[00:23:18.000 --> 00:23:23.280]   vectors so this is going to calculate how similar each movie is to the Silence of the
+[00:23:23.280 --> 00:23:36.920]   Lambs based on these latent factors and so then we can find which ID is the closest yeah
+[00:23:36.920 --> 00:23:45.020]   so based on this embedding distance the closest is dial M for murder which makes a lot of
+[00:23:45.020 --> 00:24:01.320]   sense I'm not going to discuss it today but in the book there's also some discussion about
+[00:24:01.320 --> 00:24:05.800]   what's called the bootstrapping problem which is the question of like if you've got a new
+[00:24:05.800 --> 00:24:13.080]   company or a new product how would you get started with making recommendations given
+[00:24:13.080 --> 00:24:16.600]   that you don't have any previous history with which to make recommendations and that's a
+[00:24:16.600 --> 00:24:26.600]   very interesting problem that you can read about in the book
+[00:24:26.600 --> 00:24:38.400]   now that's one way to do collaborative filtering which is where we create that do that matrix
+[00:24:38.400 --> 00:24:43.760]   completion exercise using all those dot products there's a different way however which is we
+[00:24:43.760 --> 00:24:55.360]   can use deep learning and to do it with deep learning what we could do is we can we could
+[00:24:55.360 --> 00:25:02.400]   basically create our user and item embeddings as per usual and then we could create a sequential
+[00:25:02.400 --> 00:25:11.040]   model so sequential model is just layers of a deep learning neural network in order and
+[00:25:11.040 --> 00:25:17.520]   what we could do is we could just concatenate so in forward we could just concatenate the
+[00:25:17.520 --> 00:25:25.840]   user and item embeddings together and then do a value so this is this is basically a
+[00:25:25.840 --> 00:25:30.240]   single hidden layer neural network and then a linear layer at the end to create a single
+[00:25:30.240 --> 00:25:37.760]   output so this is a very you know world's most simple neural net exactly the same as
+[00:25:37.760 --> 00:25:46.320]   the style that we created back here in our neural net from scratch this is exactly the
+[00:25:46.320 --> 00:25:57.080]   same but we're using pytorch as functionality to do it more easily so in the forward here
+[00:25:57.080 --> 00:26:01.280]   we're going to in the same exactly the same way as we have before we'll look up the user
+[00:26:01.280 --> 00:26:07.320]   embeddings and we'll look up the item embeddings and then this is new this is where we concatenate
+[00:26:07.320 --> 00:26:12.000]   those two things together and put it through our neural network and then finally do our
+[00:26:12.000 --> 00:26:24.560]   sigmoid now one thing different this time is that we're going to ask fastai to figure
+[00:26:24.560 --> 00:26:28.560]   out how big our embeddings should be and so fastai has something called get embedding
+[00:26:28.560 --> 00:26:37.240]   sizes and it just uses a rule of thumb that says that for 944 users we recommend 74 factor
+[00:26:37.240 --> 00:26:43.640]   embeddings and for 1665 movies or is it the other way around I can't remember we recommend
+[00:26:43.640 --> 00:26:52.840]   102 factors your embeddings so that's what those sizes are so now we can create that
+[00:26:52.840 --> 00:27:08.780]   model and we can pop it into a learner and fit in the usual way and so rather than doing
+[00:27:08.780 --> 00:27:13.160]   all that from scratch what you can do is you can do exactly the same thing that we've done
+[00:27:13.160 --> 00:27:21.200]   before which is to call collaborative learner but you can pass in the parameter use neural
+[00:27:21.200 --> 00:27:26.680]   network equals true and you can then say how big do you want each layer so this is going
+[00:27:26.680 --> 00:27:31.960]   to create a two hidden layer deep learning neural net the first will have 1500 and the
+[00:27:31.960 --> 00:27:48.080]   second will have 50 and then you can say fit and away it goes
+[00:27:48.080 --> 00:27:57.200]   okay so here is our we got 0.87 so these are doing less well than our dot product version
+[00:27:57.200 --> 00:28:01.480]   which is not too surprising because kind of the dot product version is really trying to
+[00:28:01.480 --> 00:28:08.920]   take advantage of our understanding of the problem domain in practice nowadays a lot
+[00:28:08.920 --> 00:28:14.280]   of companies kind of combine they kind of create a combined model that have a as a dot
+[00:28:14.280 --> 00:28:22.100]   product component and also has a neural net component the neural net components particularly
+[00:28:22.100 --> 00:28:28.440]   helpful if you've got metadata for example information about your users like when did
+[00:28:28.440 --> 00:28:33.960]   they sign up how old are they what sex are they you know where are they from and then
+[00:28:33.960 --> 00:28:39.960]   those are all things that you could concatenate in with your embeddings and ditto with metadata
+[00:28:39.960 --> 00:28:51.480]   about the movie how old is it what genre is it and so forth all right so we've got a question
+[00:28:51.480 --> 00:28:56.480]   from Jonah which I think is interesting and the question is is there an issue where the
+[00:28:56.480 --> 00:29:10.720]   bias components are overwhelmingly determined by the non-experts in a genre in general actually
+[00:29:10.720 --> 00:29:16.440]   there's a there's a more general issue which is in collaborative filtering recommendation
+[00:29:16.440 --> 00:29:27.480]   systems very often a small number of users or a small number of movies overwhelm everybody
+[00:29:27.480 --> 00:29:36.400]   else and the classic one is anime a relatively small number of people watch anime and those
+[00:29:36.400 --> 00:29:42.240]   group of people watch a lot of anime so in movie recommendations like there's a classic
+[00:29:42.240 --> 00:29:47.360]   problem which is every time people try to make a list of well-loved movies all the top
+[00:29:47.360 --> 00:29:51.480]   ones into be anime and so you can imagine what's happening in the matrix completion
+[00:29:51.480 --> 00:29:59.440]   exercise is that there are yeah some some users that just you know really watch this
+[00:29:59.440 --> 00:30:05.600]   one genre of movie and they watch an awful lot of them so in general you've actually
+[00:30:05.600 --> 00:30:14.280]   do have to be pretty careful about the you know these subtlety kind of issues and yeah
+[00:30:14.280 --> 00:30:17.300]   we're going to details about how to deal with them but they generally involve kind of taking
+[00:30:17.300 --> 00:30:32.320]   various kinds of ratios or normalizing things or so forth all right so that's collaborative
+[00:30:32.320 --> 00:30:38.920]   filtering and I wanted to show you something interesting then about embeddings which is
+[00:30:38.920 --> 00:30:45.760]   that embeddings are not just for collaborative filtering and in fact if you've heard about
+[00:30:45.760 --> 00:30:51.160]   embeddings before you've probably heard about them in the context of natural language processing
+[00:30:51.160 --> 00:30:56.880]   so you might have been wondering back when we did the hugging face transformers stuff
+[00:30:56.880 --> 00:31:06.480]   how did we go about you know using text as inputs to models and we talked about how you
+[00:31:06.480 --> 00:31:12.920]   can turn words into integers we make a list so here's here's the movie a certain movie
+[00:31:12.920 --> 00:31:22.760]   here's the poem I am Sam I am Daniel I am Sam Sam I am that Sam I am etc etc we can
+[00:31:22.760 --> 00:31:28.240]   find a list of all the unique words in that poem and make this list here and then we can
+[00:31:28.240 --> 00:31:36.280]   give each of those words a unique ID just arbitrarily well actually in this case it's
+[00:31:36.280 --> 00:31:40.640]   alphabetical order but it doesn't have to be and so we kind of talked about that and
+[00:31:40.640 --> 00:31:46.640]   that's what we do with categories in general but how do we turn those into like you know
+[00:31:46.640 --> 00:31:51.920]   lists of random numbers and you might not be surprised to hear what we do is we create
+[00:31:51.920 --> 00:32:01.260]   an embedding matrix so here's an embedding matrix containing four latent factors for
+[00:32:01.260 --> 00:32:06.640]   each word in the vocab so here's each word in the vocab and here's the embedding matrix
+[00:32:06.640 --> 00:32:19.600]   so if we then want to present this poem to a neural net then what we do is we list out
+[00:32:19.600 --> 00:32:26.280]   our our poem I do not like that Sam I am do you like green eggs and ham etc then for each
+[00:32:26.280 --> 00:32:34.300]   word we look it up so in Excel for example we use match so that will find this word over
+[00:32:34.300 --> 00:32:52.080]   here and find it is word ID 8 and then we will find the eighth word and the first embedding
+[00:32:52.080 --> 00:33:07.400]   and so that's gives us that's not right 8 oh no that is right sorry here it is it's just
+[00:33:07.400 --> 00:33:14.660]   weird column it's so it's going to be 0.22 then 0.1 0.01 and here it is 0.22 0.1 0.1 etc
+[00:33:14.660 --> 00:33:23.700]   so this is the embedding matrix we end up with for this poem and so if you wanted to
+[00:33:23.700 --> 00:33:29.300]   train or use and train neural network on this poem you basically turn it into this matrix
+[00:33:29.300 --> 00:33:38.580]   of numbers and so this is what an embedding matrix looks like in an NLP model and it works
+[00:33:38.580 --> 00:33:45.700]   exactly the same way as you can see and then you can do exactly the same things in terms
+[00:33:45.700 --> 00:33:57.440]   of interpretation of an NLP model by looking at both the bias factors and the latent factors
+[00:33:57.440 --> 00:34:10.420]   in a word embedding matrix so hopefully you're getting the idea here that our you know our
+[00:34:10.420 --> 00:34:16.700]   different models you know the inputs to them that they're based on a relatively small number
+[00:34:16.700 --> 00:34:22.380]   of kind of basic principles and these principles are generally things like lock up something
+[00:34:22.380 --> 00:34:29.140]   in array and then we know inside the model we're basically multiplying things together
+[00:34:29.140 --> 00:34:33.100]   adding them up and replacing the negatives of zeros so hopefully you're getting the idea
+[00:34:33.100 --> 00:34:39.720]   that what's going on inside a neural network is generally not that complicated but it happens
+[00:34:39.720 --> 00:34:59.180]   very quickly in its scale now it's not just collaborative filtering and NLP but also tabular
+[00:34:59.180 --> 00:35:08.380]   analysis so in chapter 9 of the book we've talked about how random forests can be used
+[00:35:08.380 --> 00:35:13.780]   for this which was for this is for the thing where we're predicting the auction sale price
+[00:35:13.780 --> 00:35:20.320]   of industrial heavy equipment like bulldozers instead of using a random forest we can use
+[00:35:20.320 --> 00:35:36.180]   a neural net now in this data set there are some continuous columns and there are some
+[00:35:36.180 --> 00:35:43.980]   categorical columns now I'm not going to go into the details too much but in short the
+[00:35:43.980 --> 00:35:50.420]   we can separate out the continuous columns and categorical columns using cont cat split
+[00:35:50.420 --> 00:35:58.020]   and that will automatically find which is which based on their data types and so in
+[00:35:58.020 --> 00:36:07.260]   this case it looks like okay so continuous columns the elapsed sale date so I think it's
+[00:36:07.260 --> 00:36:13.300]   the number of seconds or years or something since the start of the data set is a continuous
+[00:36:13.300 --> 00:36:21.340]   variable and then here are the cut the categorical variables so for example there are six different
+[00:36:21.340 --> 00:36:27.700]   product sizes and two couple of systems five thousand and fifty nine model descriptions
+[00:36:27.700 --> 00:36:42.740]   six enclosures seventeen tire sizes and so forth so we can use fast AI basically to say
+[00:36:42.740 --> 00:36:49.820]   okay we'll take that data frame and pass in the categorical and continuous variables and
+[00:36:49.820 --> 00:36:56.620]   create some random splits and what's the dependent variable and we can create data loaders from
+[00:36:56.620 --> 00:37:07.140]   that and from that we can create a tabular learner and basically what that's going to
+[00:37:07.140 --> 00:37:15.420]   do is it's going to create a pretty regular multi-layer neural network not that different
+[00:37:15.420 --> 00:37:26.780]   to this one that we created by hand and each of the categorical variables it's going to
+[00:37:26.780 --> 00:37:31.700]   create an embedding for it and so I can actually show you this right so we're going to use
+[00:37:31.700 --> 00:37:39.020]   tabular learner to create the learner and so tabular learner is one two three four five
+[00:37:39.020 --> 00:37:43.620]   six seven eight nine lines of code and basically the main thing it does is create a tabular
+[00:37:43.620 --> 00:37:51.420]   model and so then tabular model you're not going to understand all of it but you might
+[00:37:51.420 --> 00:37:58.220]   be surprised at how much so a tabular model is a module we're going to be passing in how
+[00:37:58.220 --> 00:38:08.620]   big is each embedding going to be and tabular learner what's that passing in it's going
+[00:38:08.620 --> 00:38:15.180]   to call get embedding sizes just like we did manually before automatically so that's how
+[00:38:15.180 --> 00:38:22.780]   it gets its embedding sizes and then it's going to create an embedding for each of those
+[00:38:22.780 --> 00:38:30.140]   embedding sizes from number of inputs to number of factors dropout we're going to come back
+[00:38:30.140 --> 00:38:37.500]   to later batch norm we won't do till part two so then it's going to create a layer for
+[00:38:37.500 --> 00:38:42.740]   each of the layers we want which is going to contain a linear layer followed by batch
+[00:38:42.740 --> 00:38:48.060]   norm followed by dropout it's going to add the sigmoid range we've talked about at the
+[00:38:48.060 --> 00:38:56.460]   very end and so the forward this is the entire thing if there's some embeddings it'll go
+[00:38:56.460 --> 00:39:01.340]   through and get each of the embeddings using the same indexing approach we've used before
+[00:39:01.340 --> 00:39:08.740]   it'll concatenate them all together and then it'll run it through the layers of the neural
+[00:39:08.740 --> 00:39:16.140]   net which are these so yeah we don't know all of those details yet but we know quite
+[00:39:16.140 --> 00:39:32.020]   a few of them so that's encouraging hopefully
+[00:39:32.020 --> 00:39:43.620]   and once we've got that we can do the standard LR find and fit now this exact data set was
+[00:39:43.620 --> 00:39:52.100]   used in a Kaggle competition this this data set was in a Kaggle competition and the third
+[00:39:52.100 --> 00:39:57.700]   place getter published a paper about their technique and it's basically the exact almost
+[00:39:57.700 --> 00:40:04.500]   the exact one I'm showing you here so it wasn't this sorry it wasn't this data set it was
+[00:40:04.500 --> 00:40:12.540]   a data set it was a different one it was about predicting the amount of sales in different
+[00:40:12.540 --> 00:40:21.540]   stores but they they use this basic kind of technique and one of the interesting things
+[00:40:21.540 --> 00:40:29.340]   is that they used a lot less manual feature engineering than the other high placed entries
+[00:40:29.340 --> 00:40:33.460]   like they had a much simpler approach and one of the interesting things they published
+[00:40:33.460 --> 00:40:48.960]   a paper about their approach so they published a paper about their approach so this is the
+[00:40:48.960 --> 00:40:55.220]   team from this company and they basically describe here exactly what I just showed you
+[00:40:55.220 --> 00:41:00.220]   these different embedding layers being concatenated together and then going through a couple of
+[00:41:00.220 --> 00:41:06.340]   layers of a neural network and it's showing here it points out in the paper exactly what
+[00:41:06.340 --> 00:41:11.780]   we learned in the last lesson which is embedding layers are exactly equivalent to linear layers
+[00:41:11.780 --> 00:41:23.860]   on top of a one hot encoded input and yeah they found that their their technique worked
+[00:41:23.860 --> 00:41:28.860]   really well one of the interesting things they also showed is that you can take you
+[00:41:28.860 --> 00:41:34.980]   can create your neural net get your trained embeddings and then you can put those embeddings
+[00:41:34.980 --> 00:41:42.620]   into a random forest or gradient booster tree and your main average percent error will dramatically
+[00:41:42.620 --> 00:41:50.280]   improve so you can actually combine random forests and embeddings or gradient booster
+[00:41:50.280 --> 00:41:55.940]   trees and embeddings which is really interesting now what I really wanted to show you though
+[00:41:55.940 --> 00:42:02.180]   is what they then did so as I said this was a thing about the predicted amount that different
+[00:42:02.180 --> 00:42:10.260]   products would sell for at different shops around Germany and what they did was they
+[00:42:10.260 --> 00:42:15.660]   they had a so one of their embedding matrices was embeddings by region and then they did
+[00:42:15.660 --> 00:42:22.940]   a I think this is a PCA principal component analysis of the embeddings for their German
+[00:42:22.940 --> 00:42:31.980]   regions and when they could a chart of them you can see that the locations that are close
+[00:42:31.980 --> 00:42:38.540]   together in the embedding matrix are the same locations that are close together in Germany
+[00:42:38.540 --> 00:42:42.860]   so you can see here's the blue ones and here's the blue ones and again it's important to
+[00:42:42.860 --> 00:42:48.240]   recognize that the data that they used had no information about the location of these
+[00:42:48.240 --> 00:42:56.300]   places the fact that they are close together geographically is something that was figured
+[00:42:56.300 --> 00:43:05.220]   out as being something that actually helped it to predict sales and so in fact they then
+[00:43:05.220 --> 00:43:13.140]   did a plot showing each of these dots is a shop a store and it's showing for each pair
+[00:43:13.140 --> 00:43:21.340]   of stores how far away is it in real life in metric space and then how far away is it
+[00:43:21.340 --> 00:43:28.220]   in embedding space and there's this very strong correlation right so it's you know it's kind
+[00:43:28.220 --> 00:43:34.700]   of reconstructed somehow this kind of the kind of the geography of Germany by figuring
+[00:43:34.700 --> 00:43:41.900]   out how how people shop and similar for days of the week so there was no information really
+[00:43:41.900 --> 00:43:47.620]   about days of the week but when they put it on the embedding matrix the days of the week
+[00:43:47.620 --> 00:43:51.980]   Monday Tuesday Wednesday close to each other Thursday Friday close to each other as you
+[00:43:51.980 --> 00:43:56.860]   can see Saturday and Sunday close to each other and ditto for months of the year January
+[00:43:56.860 --> 00:44:07.140]   February March April May June so yeah really interesting cool stuff I think what's actually
+[00:44:07.140 --> 00:44:29.620]   going on and since inside a neural network all right let's take a 10-minute break and
+[00:44:29.620 --> 00:44:40.020]   I will see you back here at 710 all right folks this is something I think is really fun which
+[00:44:40.020 --> 00:44:49.180]   is we're going to we've looked at what goes into the the start of a model the input we've
+[00:44:49.180 --> 00:44:55.020]   learned about how they can be categories or embeddings and embeddings are basically kind
+[00:44:55.020 --> 00:44:59.340]   of one hot encoded category categories with a little compute trick or they can just be
+[00:44:59.340 --> 00:45:04.180]   continuous numbers we've learned about what comes the other out the other side which is
+[00:45:04.180 --> 00:45:11.220]   a bunch of activation so just a bunch a tensor of numbers which we can use things like softmax
+[00:45:11.220 --> 00:45:20.700]   to constrain them to add up to one and and so forth and we've looked at what can go in
+[00:45:20.700 --> 00:45:29.820]   the middle which is the matrix butterflies sandwiched together with you know as rectified
+[00:45:29.820 --> 00:45:36.020]   linear units and I mentioned that there are other things that can go in the middle as
+[00:45:36.020 --> 00:45:42.340]   well but we haven't really talked about what those other things are so I thought we might
+[00:45:42.340 --> 00:45:48.900]   look at one of the most important and interesting version of things that can go in the middle
+[00:45:48.900 --> 00:45:54.220]   but what you'll see is it turns out it's actually just another kind of matrix multiplication
+[00:45:54.220 --> 00:45:57.620]   which might not be obvious at first but I'll explain we're going to look at something called
+[00:45:57.620 --> 00:46:03.020]   a convolution and convolutions are at the heart of a convolutional neural network so
+[00:46:03.020 --> 00:46:07.260]   the first thing to realize is a convolutional neural network is very very very similar to
+[00:46:07.260 --> 00:46:12.380]   the neural networks we've seen so far it's got imports it's got things that are a lot
+[00:46:12.380 --> 00:46:17.140]   like or actually are a form of matrix multiplication sandwich with activation functions which can
+[00:46:17.140 --> 00:46:25.020]   be rectified linear but there's a particular thing which makes them very useful for computer
+[00:46:25.020 --> 00:46:31.420]   vision and I'm going to show you using this excel spreadsheet that's in our repo called
+[00:46:31.420 --> 00:46:39.740]   conv example and we're going to look at it using an image from MNIST so MNIST is kind
+[00:46:39.740 --> 00:46:45.740]   of the world's most famous computer vision data set I think because it was like the first
+[00:46:45.740 --> 00:46:54.300]   one really which really showed image recognition being being cracked it's pretty small by today's
+[00:46:54.300 --> 00:47:02.860]   standards it's a data set of handwritten digits each one is 28 by 28 pixels but it yeah you
+[00:47:02.860 --> 00:47:09.820]   know back in the mid 90s Jan LeCun showed you know really practically useful performance
+[00:47:09.820 --> 00:47:17.420]   on this data set and as a result ended up with convnets being used in the American banking
+[00:47:17.420 --> 00:47:22.660]   system for reading checks so here's an example of one of those digits this is a seven that
+[00:47:22.660 --> 00:47:27.020]   somebody drew it's one of those ones with a stroke through it and this is what it looks
+[00:47:27.020 --> 00:47:34.140]   like this is this is the image and so I got it from this is just one of the images from
+[00:47:34.140 --> 00:47:48.780]   MNIST which I put into excel and what you see in the in the next column is a version
+[00:47:48.780 --> 00:47:55.940]   of the image where the horizontal lines are being recognized and another one where the
+[00:47:55.940 --> 00:48:00.420]   vertical lines are being recognized and if you think back to that Zyla and Fergus paper
+[00:48:00.420 --> 00:48:04.600]   that talked about what the layers of a neural net does this is absolutely an example of
+[00:48:04.600 --> 00:48:11.140]   something that we we know that the first layer of a neural network tends to learn how to
+[00:48:11.140 --> 00:48:17.900]   do now how did I do this I did this using something called a convolution and so what
+[00:48:17.900 --> 00:48:23.260]   we're going to do now is we're going to zoom in to this Excel notebook we're going to keep
+[00:48:23.260 --> 00:48:28.460]   zooming in we're going to keep zooming in so take a look keep a lay on this on this
+[00:48:28.460 --> 00:48:33.420]   image and you'll see that once we zoom in enough it's actually just made of numbers
+[00:48:33.420 --> 00:48:42.500]   which as we discussed in the very first in the very first lesson we saw how images are
+[00:48:42.500 --> 00:48:50.200]   made of numbers so here they are right here are the numbers between zero and one and what
+[00:48:50.200 --> 00:49:00.020]   I just did is I just used a little trick I used Microsoft Excel's conditional formatting
+[00:49:00.020 --> 00:49:07.340]   to basically make things the higher numbers more red so that's how I turn this Excel sheet
+[00:49:07.340 --> 00:49:12.140]   and I've just rounded it off to the nearest decimal but it's actually they're actually
+[00:49:12.140 --> 00:49:22.940]   bigger than that and so yeah so here is the image as numbers and so let me show you how
+[00:49:22.940 --> 00:49:34.300]   we went about creating this top edge detector what we did was we created this formula don't
+[00:49:34.300 --> 00:49:42.540]   worry about the max let's focus on this what it's doing is have a look at the colored in
+[00:49:42.540 --> 00:49:54.900]   areas it's taking each of these cells and multiplying them by each of these cells and
+[00:49:54.900 --> 00:50:03.780]   then adding them up and then we do the rectified linear part which is if that ends up less
+[00:50:03.780 --> 00:50:12.260]   than zero then make it zero so this is a this is like a rectified linear unit but it's not
+[00:50:12.260 --> 00:50:20.820]   doing the normal matrix product it's doing the equivalent of a dot product but just on
+[00:50:20.820 --> 00:50:27.460]   these nine cells and with just these nine weights so you might not be surprised to hear
+[00:50:27.460 --> 00:50:37.340]   that if I move now one to the right then now it's using the next nine cells right so if
+[00:50:37.340 --> 00:50:45.700]   I move like to the right quite a bit and down quite a bit here it's using these nine cells
+[00:50:45.700 --> 00:50:52.640]   so it's still doing a dot product right which as we know is a form of matrix multiplication
+[00:50:52.640 --> 00:50:56.580]   but it's doing it in this way where it's kind of taking advantage of the of the geometry
+[00:50:56.580 --> 00:51:01.700]   of this situation that the things that are close to each other are being multiplied by
+[00:51:01.700 --> 00:51:08.440]   this consistent group of the same nine weights each time because there's actually 28 by 28
+[00:51:08.440 --> 00:51:21.060]   numbers here right which I think is 768 28 times 28 that plus enough 784 but we don't
+[00:51:21.060 --> 00:51:26.340]   want we're not we don't have 784 parameters we only have nine parameters and so this is
+[00:51:26.340 --> 00:51:33.980]   called a convolution so a convolution is where you basically slide this kind of little three
+[00:51:33.980 --> 00:51:40.780]   by three matrix across a bigger matrix and at each location you do a dot product of the
+[00:51:40.780 --> 00:51:45.260]   corresponding elements of that three by three with the corresponding elements of this three
+[00:51:45.260 --> 00:51:51.860]   by three matrix of coefficients now why does that create something that finds as you see
+[00:51:51.860 --> 00:51:58.340]   top edges well it's because of the particular way I constructed this three by three matrix
+[00:51:58.340 --> 00:52:09.580]   what I said was that all of the rows just above so these ones are going to get a one
+[00:52:09.580 --> 00:52:14.140]   and all of the ones just below are going to get a minus one and all of the ones in the
+[00:52:14.140 --> 00:52:19.640]   middle are going to get a zero. So let's think about what happens somewhere like
+[00:52:19.640 --> 00:52:32.200]   here, right? That is, let's try to find the right one, here it is. So here we're
+[00:52:32.200 --> 00:52:39.240]   going to get 1 times 1 plus 1 times 1 plus 1 times 1 minus 1 times 1 minus 1
+[00:52:39.240 --> 00:52:48.940]   times 1 minus 1 times 1, we're going to get 0. But what about up here? Here we're
+[00:52:48.940 --> 00:52:57.840]   going to get 1 times 1 plus 1 times 1 plus 1 times 1, these do nothing because
+[00:52:57.840 --> 00:53:04.100]   they're times 0, minus 1 times 0. So we're going to get 3. So we're only going to
+[00:53:04.100 --> 00:53:10.820]   get 3, the highest possible number, in the situation where these are all as black
+[00:53:10.820 --> 00:53:15.980]   as possible, or in this case as red as possible, and these are all white. And so
+[00:53:15.980 --> 00:53:25.460]   that's only going to happen at a horizontal edge. So the one underneath it
+[00:53:25.460 --> 00:53:33.880]   does exactly the same thing, exactly the same formulas. Oopsie dozy. The one
+[00:53:33.880 --> 00:53:40.480]   underneath are exactly the same formulas. The 3 by 3 sliding thing here, but this
+[00:53:40.480 --> 00:53:43.960]   time we've got a different matrix, different little mini matrix of
+[00:53:43.960 --> 00:53:48.760]   coefficients, which is all ones going down and all minus ones going down. And
+[00:53:48.760 --> 00:53:55.720]   so for exactly the same reason, this will only be 3 in situations where they're
+[00:53:55.720 --> 00:54:05.200]   all 1 here and they're all 0 here. So you can think of a convolution as being a
+[00:54:05.200 --> 00:54:11.540]   sliding window of little mini dot products of these little 3 by 3
+[00:54:11.540 --> 00:54:15.820]   matrices. And they don't have to be 3 by 3, right? You could have, we could just
+[00:54:15.820 --> 00:54:22.360]   have easily done 5 by 5, and then we'd have a 5 by 5 matrix of coefficients, or
+[00:54:22.360 --> 00:54:27.700]   whatever, whatever size you like. So the size of this is called its kernel size.
+[00:54:27.700 --> 00:54:38.100]   This is a 3 by 3 kernel for this convolution. So then, because this is deep
+[00:54:38.100 --> 00:54:42.900]   learning, we just repeat the, we just repeat these steps again and again and
+[00:54:42.900 --> 00:54:47.520]   again. So this is, this layer I'm calling conv1, it's the first convolutional
+[00:54:47.520 --> 00:54:52.220]   layer. So conv2, it's going to be a little bit different, because on conv1
+[00:54:52.220 --> 00:54:56.640]   we only had a single channel input. It's just black and white, or you know, yeah,
+[00:54:56.640 --> 00:55:05.600]   black and white, grayscale, one channel. But now we've got two channels. We've got
+[00:55:05.600 --> 00:55:12.680]   the, let's make it a little smaller so we can see better, we've got the horizontal
+[00:55:12.680 --> 00:55:17.640]   edges channel and the vertical edges channel. And we'd have a similar thing in
+[00:55:17.640 --> 00:55:20.800]   the first layer of its color. We'd have a red channel, a green channel, and blue
+[00:55:20.800 --> 00:55:31.560]   channel. So now our, our filter, this has got the filter, this little mini matrix
+[00:55:31.560 --> 00:55:35.740]   has got the filter. Our filter,
+[00:55:44.720 --> 00:55:52.960]   our filter now contains a 3 by 3 by depth 2, or if you want to think of
+[00:55:52.960 --> 00:55:59.200]   another way, 2 3 by 3 kernels, or 1 3 by 3 by 2 kernel. And we basically do
+[00:55:59.200 --> 00:56:04.120]   exactly the same thing, which is we're going to multiply each of these by each
+[00:56:04.120 --> 00:56:09.120]   of these and sum them up. But then we do it for the second bit as well, we
+[00:56:09.120 --> 00:56:17.000]   multiply each of these by each of these and sum them up. And so that gives us, and
+[00:56:17.000 --> 00:56:20.560]   then I think I just picked some random numbers here, right? So this is going to
+[00:56:20.560 --> 00:56:25.120]   now be something which can combine, oh sorry, the second one, the second set, so
+[00:56:25.120 --> 00:56:32.240]   it's, sorry, each of the red ones by each of the blue ones, that's here, plus each
+[00:56:32.240 --> 00:56:38.200]   of the green ones times each of the mauve ones, that's here. So this first filter
+[00:56:38.200 --> 00:56:43.520]   is being applied to the horizontal edge detector and the second filter is being
+[00:56:43.520 --> 00:56:47.520]   applied to the vertical edge detector. And as a result we can end up with
+[00:56:47.520 --> 00:56:53.440]   something that combines features of the two things. And so then we can have a
+[00:56:53.440 --> 00:57:01.720]   second channel over here, which is just a different bunch of convolutions for each
+[00:57:01.720 --> 00:57:08.440]   of the two channels, this one times this one. Again you can see the colors. So what
+[00:57:08.440 --> 00:57:14.160]   we could do is if, you know, once we kind of get to the end, we'll end up, as I'll
+[00:57:14.160 --> 00:57:22.720]   show you how in a moment, we'll end up with a single set of 10 activations, one
+[00:57:22.720 --> 00:57:28.080]   per digit we're recognising, 0 to 9, or in this case I think we could just
+[00:57:28.080 --> 00:57:30.840]   create one, you know, maybe we're just trying to recognise nothing but the
+[00:57:30.840 --> 00:57:33.640]   number, number seven, or not the number seven, so we could just have one
+[00:57:33.640 --> 00:57:40.920]   activation. And then we would back propagate through this using SGD in the
+[00:57:40.920 --> 00:57:46.680]   usual way and that is going to end up optimising these numbers. So in this case
+[00:57:46.680 --> 00:57:51.800]   I manually put in the numbers I knew would create edge detectors. In real life
+[00:57:51.800 --> 00:57:56.240]   you start with random numbers and then you use SGD to optimise these
+[00:57:56.240 --> 00:58:05.040]   parameters. Okay so there's a few things we can do next and I'm going to
+[00:58:05.040 --> 00:58:09.800]   show you the way that was more common a few years ago and then I'll explain some
+[00:58:09.800 --> 00:58:13.720]   changes that have been made more recently. What happened a few years ago
+[00:58:13.720 --> 00:58:20.920]   was we would then take these these activations, which as you can see these
+[00:58:20.920 --> 00:58:27.280]   activations now kind of in a grid pattern, and we would do something called max
+[00:58:27.280 --> 00:58:32.400]   pooling. And max pooling is kind of like a convolution, it's a sliding window, but
+[00:58:32.400 --> 00:58:37.520]   this time as the sliding window goes across, so here we're up to here, we don't
+[00:58:37.520 --> 00:58:43.520]   do a dot product over a filter, but instead we just take a maximum. See here,
+[00:58:43.520 --> 00:58:48.880]   just this is the maximum of these four numbers and if we go across a little bit
+[00:58:48.880 --> 00:58:54.600]   this is the maximum of these four numbers. Go across a bit, go across a bit
+[00:58:54.600 --> 00:59:00.800]   and so forth, oh that goes off the edge. And you can see what happens when this
+[00:59:00.800 --> 00:59:11.380]   is called a 2 by 2 max pooling. So you can see what happens with a 2 by 2 max
+[00:59:11.380 --> 00:59:20.600]   pooling, we end up losing half of our activations on each dimension. So we're
+[00:59:20.600 --> 00:59:24.920]   going to end up with only one quarter of the number of activations we used to
+[00:59:24.920 --> 00:59:32.120]   have. And that's actually a good thing because if we keep on doing convolution,
+[00:59:32.120 --> 00:59:37.360]   max pool, convolution, max pool, we're going to get fewer and fewer and fewer
+[00:59:37.360 --> 00:59:44.600]   activations until eventually we'll just have one left, which is what we want.
+[00:59:44.600 --> 00:59:51.400]   That's effectively what we used to do, but the other thing I mentioned is we
+[00:59:51.400 --> 00:59:56.000]   didn't normally keep going until there's only one left. What we used to then do is
+[00:59:56.000 --> 00:59:59.960]   we'd basically say okay at some point we're going to take all of the
+[00:59:59.960 --> 01:00:08.120]   activations that are left and we're going to basically just do a dot product of
+[01:00:08.120 --> 01:00:13.680]   those with a bunch of coefficients, not as a convolution but just as a normal
+[01:00:13.680 --> 01:00:19.520]   linear layer, and this is called the dense layer. And then we would add them
+[01:00:19.520 --> 01:00:29.240]   all up. So we basically end up with our final big dot product of all of the max
+[01:00:29.240 --> 01:00:34.880]   pooled activations by all of the weights, and we do that for each channel. And so
+[01:00:34.880 --> 01:00:40.480]   that would give us our final activation. And as I say here, MNIST would actually
+[01:00:40.480 --> 01:00:44.240]   have 10 activations, so you'd have a separate set of weights for each of the
+[01:00:44.240 --> 01:00:50.920]   digits you're predicting, and then softmax after that. Okay, nowadays we do
+[01:00:50.920 --> 01:00:55.160]   things very slightly differently. Nowadays we normally don't have max pool
+[01:00:55.160 --> 01:01:03.200]   layers, but instead what we normally do is when we do our sliding window like
+[01:01:03.200 --> 01:01:11.880]   this one here, we don't normally - let's go back to C - so when I go one to the
+[01:01:11.880 --> 01:01:18.040]   right, so currently we're starting in cell column G, if I go one to the right
+[01:01:18.040 --> 01:01:22.680]   the next one is column H, and if I go one to the right the next one starts in
+[01:01:22.680 --> 01:01:27.160]   column I. So you can see it's sliding the window every three by three.
+[01:01:27.160 --> 01:01:32.240]   Nowadays what we tend to do instead is we generally skip one. So we would
+[01:01:32.240 --> 01:01:38.640]   normally only look at every second. So we would after doing column I, we would skip
+[01:01:38.640 --> 01:01:43.480]   columns J and would go straight to column K. And that's called a stride to
+[01:01:43.480 --> 01:01:47.400]   convolution. We do that both across the rows and down the columns. And what that
+[01:01:47.400 --> 01:01:53.840]   means is every time we do a convolution we reduce our effective kind of feature
+[01:01:53.840 --> 01:02:01.840]   size, grid size, by two on each axis. So it reduces it by four in total. So that's
+[01:02:01.840 --> 01:02:07.840]   basically instead of doing max pooling. And then the other thing that we do
+[01:02:07.840 --> 01:02:14.600]   differently is nowadays we don't normally have a single dense layer at
+[01:02:14.600 --> 01:02:19.000]   the end, a single matrix multiply at the end. But instead what we do, we generally
+[01:02:19.000 --> 01:02:23.760]   keep doing stride two convolutions. So each one's going to reduce the grid size
+[01:02:23.760 --> 01:02:30.560]   by two by two. We keep going down until we've got about a seven by seven grid. And
+[01:02:30.560 --> 01:02:35.080]   then we do a single pooling at the end. And we don't normally do max pool
+[01:02:35.080 --> 01:02:43.360]   nowadays. Instead we do an average pool. So we average the the activations of each
+[01:02:43.360 --> 01:02:49.160]   one of the seven by seven features. This is actually quite important to know
+[01:02:49.160 --> 01:02:54.840]   because if you think about what that means, it means that something like an
+[01:02:54.840 --> 01:03:01.600]   ImageNet style image detector is going to end up with a seven by seven grid. Let's
+[01:03:01.600 --> 01:03:06.040]   try to say is this a bear? And in each of the parts of the seven by seven grid
+[01:03:06.040 --> 01:03:09.600]   it's basically saying is there a bear in this part of the photo? Is there a bear
+[01:03:09.600 --> 01:03:12.800]   in this part of the photo? Is there a bear in this part of the photo? And then
+[01:03:12.800 --> 01:03:17.560]   it takes the average of those 49 seven by seven predictions to decide whether
+[01:03:17.560 --> 01:03:24.400]   there's a bear in the photo. That works very well if it's basically a photo of a
+[01:03:24.400 --> 01:03:28.600]   bear, right? Because most you know if it's if the bear is big and takes up most of
+[01:03:28.600 --> 01:03:34.880]   the frame then most of those seven by seven bits are bits of a bear. On the
+[01:03:34.880 --> 01:03:40.560]   other hand, if it's a teeny tiny bear in the corner, then potentially only one of
+[01:03:40.560 --> 01:03:46.800]   those 49 squares has a bear in it. And even worse, if it's like a picture of
+[01:03:46.800 --> 01:03:50.640]   lots and lots of different things, only one of which is a bear, it could end up
+[01:03:50.640 --> 01:03:56.720]   not being a great bear detector. And so this is where like the details of how we
+[01:03:56.720 --> 01:04:02.640]   construct our model turn out to be important. And so if you're trying to
+[01:04:02.640 --> 01:04:09.120]   find like just one part of a photo that has a small bear in it, you might decide
+[01:04:09.120 --> 01:04:13.200]   to use maximum pooling instead of average pooling. Because max
+[01:04:13.200 --> 01:04:17.760]   pooling will just say, "I think this is a picture of a bear if any one of those
+[01:04:17.760 --> 01:04:25.120]   49 bits of my grid has something that looks like a bear in it." So these are, you
+[01:04:25.120 --> 01:04:32.480]   know, these are potentially important details which often get hand-waved over.
+[01:04:33.120 --> 01:04:42.800]   Although, you know, again, like the key thing here is that this is happening
+[01:04:42.800 --> 01:04:46.800]   right at the very end, right? That max pool or that average pool. And actually
+[01:04:46.800 --> 01:04:51.160]   FastAI handles this for you. We do a special thing which we kind of
+[01:04:51.160 --> 01:04:56.440]   independently invented. I think we did it first, which is we do both max pool and
+[01:04:56.440 --> 01:05:00.880]   average pool and we concatenate them together. We call that concat pooling. And
+[01:05:00.880 --> 01:05:08.880]   that has since been reinvented in at least one paper. And so that means that
+[01:05:08.880 --> 01:05:11.800]   you don't have to think too much about it because we're going to try both for
+[01:05:11.800 --> 01:05:19.840]   you basically. So I mentioned that this is actually really just matrix
+[01:05:19.840 --> 01:05:28.320]   multiplication. And to show you that, I'm going to show you some images created by
+[01:05:28.320 --> 01:05:31.720]   a guy called Matthew Kline-Smith who did this actually, I think this is the now
+[01:05:31.720 --> 01:05:39.720]   very first ever course, might have been the part two, first part two course. And he
+[01:05:39.720 --> 01:05:44.520]   basically pointed out that in a certain way of thinking about it, it turns out
+[01:05:44.520 --> 01:05:49.320]   that convolution is the same thing as a matrix multiplier. So I want to show you
+[01:05:49.320 --> 01:05:56.560]   how he shows this. He basically says, "Okay, let's take this 3x3 image and a
+[01:05:56.560 --> 01:06:06.760]   2x2 kernel containing the coefficients alpha, beta, gamma, delta." And so in this, as
+[01:06:06.760 --> 01:06:16.160]   we slide the window over, each of the colors, each of the colors are multiplied
+[01:06:16.160 --> 01:06:20.880]   together, red by red plus green by green plus, what is that, orange by orange plus
+[01:06:20.880 --> 01:06:24.400]   blue by blue gives you this. And so to put it another way,
+[01:06:24.400 --> 01:06:37.800]   algebraically P equals alpha times A plus beta times B, etc. And so then as we
+[01:06:37.800 --> 01:06:42.800]   slide to this part, we're multiplying again, red by red, green by green, and so
+[01:06:42.800 --> 01:06:48.600]   forth. So we can say Q equals alpha times B plus beta times C, etc. And so this is
+[01:06:48.600 --> 01:06:53.560]   how we calculate a convolution using the approach we just described as a sliding
+[01:06:53.560 --> 01:07:04.080]   window. But here's another way of thinking about it. We could say, "Okay,
+[01:07:04.080 --> 01:07:12.120]   we've got all these different things, A, B, C, D, E, F, G, H, J. Let's put them all into a
+[01:07:12.120 --> 01:07:20.680]   single vector and then let's create a single matrix that has alpha, alpha, alpha,
+[01:07:20.680 --> 01:07:27.560]   alpha, beta, beta, beta, beta, etc. And then if we do this matrix multiplied by
+[01:07:27.560 --> 01:07:37.040]   this vector, we get this with these gray zeros in the appropriate places, which
+[01:07:37.040 --> 01:07:47.360]   gives us this, which is the same as this. And so this shows that a convolution is
+[01:07:47.360 --> 01:07:51.240]   actually a special kind of matrix multiplication. It's a matrix
+[01:07:51.240 --> 01:07:55.800]   multiplication where there are some zeros that are fixed and some numbers
+[01:07:55.800 --> 01:08:02.560]   that are forced to be the same. Now in practice it's going to be faster to do it
+[01:08:02.560 --> 01:08:08.160]   this way, but it's a useful kind of thing to think about, I think, that just to
+[01:08:08.160 --> 01:08:12.920]   realize like, "Oh, it's just another of these special types of matrix
+[01:08:12.920 --> 01:08:31.360]   multiplications." Okay, I think, well let's look at one more thing because there was
+[01:08:31.360 --> 01:08:34.320]   one other thing that we saw and I mentioned we would look at in the
+[01:08:34.320 --> 01:08:39.880]   tabular model, which is called dropout. And I actually have this in my Excel
+[01:08:39.880 --> 01:08:52.000]   spreadsheet. If you go to the conv example dropout page, you'll see we've
+[01:08:52.000 --> 01:08:55.120]   actually got a little bit more stuff here. We've got the same input as before
+[01:08:55.120 --> 01:09:00.080]   and the same first convolution as before and the same second convolution as
+[01:09:00.080 --> 01:09:14.160]   before. And then we've got a bunch of random numbers. They're showing as between
+[01:09:14.160 --> 01:09:17.880]   0 and 1, but they're actually, that's just because they're rounding off, they're
+[01:09:17.880 --> 01:09:30.480]   actually random numbers that are floats between 0 and 1. Over here, we're
+[01:09:30.480 --> 01:09:47.720]   then saying, "If..." Let's have a look. So way up here, I'll zoom in a bit, I've got a
+[01:09:47.720 --> 01:09:56.760]   dropout factor. Let's change this say to 0.5. There we go. So over here, this is
+[01:09:56.760 --> 01:10:03.080]   something that says if the random number in the equivalent place is greater than
+[01:10:03.080 --> 01:10:10.960]   0.5, then 1, otherwise 0. And so here's a whole bunch of 1s and 0s. Now this thing
+[01:10:10.960 --> 01:10:20.080]   here is called a dropout mask. Now what happens is we multiply over here, we
+[01:10:20.080 --> 01:10:28.320]   multiply the dropout mask and we multiply it by our filtered image. And what that
+[01:10:28.320 --> 01:10:35.160]   means is we end up with exactly the same image we started with. Here's the image
+[01:10:35.160 --> 01:10:42.560]   we started with, but it's corrupted. Random bits of it have been deleted. And
+[01:10:42.560 --> 01:10:50.720]   based on the amount of dropout we use, so if we change it to say 0.2, not very much
+[01:10:50.720 --> 01:10:55.080]   if it's deleted at all, so it's still very easy to recognize. Or else if we use lots
+[01:10:55.080 --> 01:11:04.000]   of dropout, say 0.8, it's almost impossible to see what the number was. And then we
+[01:11:04.000 --> 01:11:13.040]   use this as the input to the next layer. So that seems weird. Why would we delete
+[01:11:13.040 --> 01:11:22.640]   some data at random from our processed image from our activations after a layer
+[01:11:22.640 --> 01:11:29.200]   of the convolutions? Well the reason is that a human is able to look at this
+[01:11:29.200 --> 01:11:34.400]   corrupted image and still recognize it's a seven. And the idea is that a computer
+[01:11:34.400 --> 01:11:40.720]   should be able to as well. And if we randomly delete different bits of the
+[01:11:40.720 --> 01:11:50.640]   activations each time, then the computer is forced to learn the underlying real
+[01:11:50.640 --> 01:11:56.200]   representation rather than overfitting. You can think of this as data
+[01:11:56.200 --> 01:12:01.640]   augmentation, but it's data augmentation not for the inputs, but data augmentation
+[01:12:01.640 --> 01:12:09.200]   for the activations. So this is called a dropout layer. And so dropout layers are
+[01:12:09.200 --> 01:12:20.760]   really helpful for avoiding overfitting. And you can decide how much you want to
+[01:12:20.760 --> 01:12:27.560]   compromise between good generalization, so avoiding overfitting,
+[01:12:27.560 --> 01:12:32.440]   versus getting something that works really well on the training data. And so
+[01:12:32.440 --> 01:12:37.000]   the more dropout you use, the less good it's going to be on the training data,
+[01:12:37.000 --> 01:12:49.240]   but the better it ought to generalize. And so this comes from a paper by Jeffrey
+[01:12:49.240 --> 01:12:57.480]   Hinton's group quite a few years ago now. Ruslan's now at Apple I think. And then
+[01:12:57.480 --> 01:13:04.600]   Kajeski and Hinton went on to found Google Brain. And you can see here
+[01:13:04.600 --> 01:13:08.360]   they've got this picture of a like fully connected neural network, two layers just
+[01:13:08.360 --> 01:13:12.040]   like the one we built. And here look they're kind of randomly deleting some
+[01:13:12.040 --> 01:13:16.520]   of the activations. And all that's left is these connections. And so that's a
+[01:13:16.520 --> 01:13:27.560]   different bunch that's going to be deleted, each batch. I thought
+[01:13:27.560 --> 01:13:32.600]   this is an interesting point. So dropout, which is super important, was actually
+[01:13:32.600 --> 01:13:37.640]   developed in a master's thesis. And it was rejected from the main neural
+[01:13:37.640 --> 01:13:43.160]   networks conference, then called NIPS, now called NeurIPS. So it ended up being
+[01:13:43.160 --> 01:13:52.600]   disseminated through Archive, which is a preprint server. And it's just been
+[01:13:52.600 --> 01:13:59.880]   pointed out on our chat that Ilya was one of the founders of OpenAI. I don't
+[01:13:59.880 --> 01:14:05.560]   know what happened to Nitish. I think he went to Google Brain as well, maybe.
+[01:14:05.560 --> 01:14:15.480]   Yeah, so you know peer review is a very fallible thing in both directions. And
+[01:14:15.480 --> 01:14:19.000]   it's great that we have preprint servers so we can read stuff like this even if
+[01:14:19.000 --> 01:14:25.480]   reviewers decide it's not worthy. It's been one of the most important papers ever.
+[01:14:30.840 --> 01:14:38.120]   Okay, now I think that's given us a good tour now. We've really seen quite a few
+[01:14:38.120 --> 01:14:41.480]   ways of dealing with input to a neural network, quite a few of the things that
+[01:14:41.480 --> 01:14:45.480]   can happen in the middle of a neural network. We've only talked about rectified
+[01:14:45.480 --> 01:14:55.160]   linear units, which is this one here, zero if x is less than zero or x otherwise.
+[01:14:55.800 --> 01:15:01.640]   These are some of the other activations you can use. Don't use this one, of course,
+[01:15:01.640 --> 01:15:06.360]   because you end up with a linear model. But they're all just different functions.
+[01:15:06.360 --> 01:15:10.440]   I should mention, it turns out these don't matter very much.
+[01:15:10.440 --> 01:15:20.040]   Basically, pretty much any non-linearity works fine. So we don't spend much time
+[01:15:20.040 --> 01:15:23.960]   talking about activation functions, even in part two of the course, just a little bit.
+[01:15:23.960 --> 01:15:32.440]   So, yeah, so we understand there's our inputs. They can be one hot encoded or embeddings,
+[01:15:32.440 --> 01:15:40.360]   which is a computational shortcut. There are sandwiched layers of matrix multipliers
+[01:15:40.360 --> 01:15:44.360]   and activation functions. The matrix multipliers can sometimes be special cases,
+[01:15:44.360 --> 01:15:52.200]   such as the convolutions or the embeddings. The output can go through some tweaking,
+[01:15:52.200 --> 01:15:58.440]   such as softmax. And then, of course, you've got the loss function, such as cross entropy loss
+[01:15:58.440 --> 01:16:08.920]   or mean squared error or absolute error. But there's nothing too crazy going on in there.
+[01:16:08.920 --> 01:16:16.280]   So I feel like we've got a good sense now of what goes inside
+[01:16:16.280 --> 01:16:21.640]   a wide range of neural nets. You're not going to see anything too weird from here.
+[01:16:22.520 --> 01:16:25.160]   And we've also seen a wide range of applications.
+[01:16:25.160 --> 01:16:29.560]   So before you come back to do part two,
+[01:16:29.560 --> 01:16:41.720]   you know, what now? And we're going to have a little AMA session here. And in fact,
+[01:16:41.720 --> 01:16:46.120]   one of the questions was what now? So this is quite, quite good.
+[01:16:50.600 --> 01:16:56.680]   One thing I strongly suggest is if you've got this far, it's probably worth
+[01:16:56.680 --> 01:17:06.200]   you investing your time in reading Radex's book, which is meta-learning.
+[01:17:06.200 --> 01:17:16.440]   And so meta-learning is very heavily based on the kind of teachings of fast AI over the last few
+[01:17:16.440 --> 01:17:22.520]   years and is all about how to learn deep learning and learn pretty much anything.
+[01:17:22.520 --> 01:17:28.920]   Yeah, because, you know, you've got to this point,
+[01:17:28.920 --> 01:17:33.000]   you may as well know how to get to the next point as well as possible.
+[01:17:40.200 --> 01:17:51.240]   And the main thing you'll see that Radex talks about, or one of the main things is
+[01:17:51.240 --> 01:18:01.240]   practicing and writing. So if you've kind of zipped through the videos on, you know,
+[01:18:01.240 --> 01:18:06.760]   2x and haven't done any exercises, you know, go back and watch the videos again. You know,
+[01:18:06.760 --> 01:18:11.800]   a lot of the best students end up watching them two or three times, probably more like three times,
+[01:18:11.800 --> 01:18:17.320]   and actually go through and code as you watch, you know, and experiment.
+[01:18:17.320 --> 01:18:22.520]   You know, write posts, blog posts about what you're doing.
+[01:18:22.520 --> 01:18:31.320]   Spend time on the forum, both helping others and seeing other people's answers to questions.
+[01:18:33.160 --> 01:18:38.280]   Read the success stories on the forum and of people's projects to get inspiration for
+[01:18:38.280 --> 01:18:44.120]   things you could try. One of the most important things to do is to get together with other people.
+[01:18:44.120 --> 01:18:50.600]   For example, you can do, you know, a Zoom study group, in fact, on our Discord,
+[01:18:50.600 --> 01:18:54.440]   which you can find through our forum. There's always study groups going on,
+[01:18:54.440 --> 01:19:01.320]   or you can create your own, you know, a study group to go through the book together.
+[01:19:02.200 --> 01:19:07.400]   Yeah, and of course, you know, build stuff. And sometimes it's tricky to
+[01:19:07.400 --> 01:19:14.120]   always be able to build stuff for work, because maybe there isn't,
+[01:19:14.120 --> 01:19:17.560]   you're not quite in the right area, or they're not quite ready to try out deep learning yet.
+[01:19:17.560 --> 01:19:24.920]   But that's okay. You know, build some hobby projects, build some stuff just for fun,
+[01:19:24.920 --> 01:19:26.840]   or build some stuff that you're passionate about.
+[01:19:29.800 --> 01:19:35.960]   Yeah, so it's really important to not just put the videos away and go away and do something else,
+[01:19:35.960 --> 01:19:38.360]   because you'll forget everything you've learned and you won't have practiced.
+[01:19:38.360 --> 01:19:50.440]   So one of our community members
+[01:19:50.440 --> 01:19:55.720]   went on to create an activation function, for example,
+[01:19:57.320 --> 01:20:04.760]   which is Mish, which is now, as Tanisha just reminded me on our forums, is now
+[01:20:04.760 --> 01:20:10.840]   used in many of the state-of-the-art networks around the world,
+[01:20:10.840 --> 01:20:20.600]   which is pretty cool. And he's now at Miele, I think, one of the top research labs in the world.
+[01:20:20.600 --> 01:20:25.240]   I wonder how that's doing. Let's have a look, go to Google Scholar.
+[01:20:25.640 --> 01:20:35.960]   Nice, 486 citations. They're doing great.
+[01:20:35.960 --> 01:20:47.560]   All right, let's have a look at how our AMA topic is going and pick out
+[01:20:47.560 --> 01:20:53.320]   some of the highest ranked AMAs.
+[01:20:53.320 --> 01:20:57.400]   Okay.
+[01:20:57.400 --> 01:21:09.400]   So the first one is from Lucas, and actually maybe I should, actually let's switch our view here.
+[01:21:09.400 --> 01:21:19.160]   So our first AMA is from Lucas, and Lucas asks, "How do you stay motivated?
+[01:21:19.960 --> 01:21:26.520]   I often find myself overwhelmed in this field. There are so many new things coming up that I
+[01:21:26.520 --> 01:21:31.240]   feel like I have to put so much energy just to keep my head above the waterline."
+[01:21:31.240 --> 01:21:41.560]   Yeah, that's a very interesting question. I mean, I think, Lucas, the important thing is to realize
+[01:21:41.560 --> 01:21:49.240]   you don't have to know everything, you know. In fact, nobody knows everything.
+[01:21:49.240 --> 01:21:59.400]   And that's okay. What people do is they take an interest in some area, and they follow that,
+[01:21:59.400 --> 01:22:06.600]   and they try and do the best job they can of keeping up with some little sub area. And if
+[01:22:06.600 --> 01:22:13.960]   your little sub area is too much to keep up on, pick a sub sub area. Yeah, there's nothing like,
+[01:22:13.960 --> 01:22:17.800]   there's no need for it to be demotivating that there's a lot of people doing a lot of interesting
+[01:22:17.800 --> 01:22:23.080]   work and a lot of different sub fields. That's cool, you know. It used to be kind of dull,
+[01:22:23.080 --> 01:22:27.000]   but then there's only basically five labs in the world working on neural nets.
+[01:22:27.000 --> 01:22:35.880]   And yeah, from time to time, you know, take a dip into other areas that maybe you're not following
+[01:22:35.880 --> 01:22:43.080]   as closely. But when you're just starting out, you'll find that things are not changing that fast
+[01:22:43.080 --> 01:22:47.320]   at all, really. They can kind of look that way because people are always putting out press
+[01:22:47.320 --> 01:22:55.800]   releases about their new tweaks. But fundamentally, the stuff that is in the course now is not that
+[01:22:55.800 --> 01:23:03.640]   different to what was in the course five years ago. The foundations haven't changed. And it's
+[01:23:03.640 --> 01:23:09.480]   not that different, in fact, to the convolutional neural network that Yann LeCun used on MNIST back
+[01:23:09.480 --> 01:23:18.280]   in 1996. It's, you know, the basic ideas I've described are forever, you know, the way the
+[01:23:18.280 --> 01:23:22.520]   inputs work and the sandwiches of matrix multipliers and activation functions and the
+[01:23:22.520 --> 01:23:28.760]   stuff you do to the to the final layer, you know, everything else is tweaks. And the more you learn
+[01:23:28.760 --> 01:23:35.560]   about those basic ideas, the more you'll recognize those tweaks as simple little tricks that you'll
+[01:23:35.560 --> 01:23:41.560]   be able to quickly get your head around. So then Lucas goes on to ask or to comment, another thing
+[01:23:41.560 --> 01:23:46.200]   that constantly bothers me as I feel the field is getting more and more skewed towards bigger and
+[01:23:46.200 --> 01:23:52.440]   more computationally expensive models and huge amounts of data. I keep wondering if in some years
+[01:23:52.440 --> 01:23:57.800]   now, I would still be able to train reasonable models with a single GPU, or if everything is
+[01:23:57.800 --> 01:24:03.880]   going to require a compute cluster. Yeah, that's a great question. I get that a lot.
+[01:24:04.680 --> 01:24:13.560]   But interestingly, you know, I've been teaching people machine learning and data science stuff
+[01:24:13.560 --> 01:24:22.760]   for nearly 30 years. And I've had a variation of this question throughout. And the reason is that
+[01:24:22.760 --> 01:24:30.760]   engineers always want to push the envelope in like the on the biggest computers they can find,
+[01:24:30.760 --> 01:24:35.880]   you know, that's just this, like, fun thing engineers love to do. And by definition,
+[01:24:35.880 --> 01:24:42.280]   they're going to get slightly better results than people doing exactly the same thing on smaller
+[01:24:42.280 --> 01:24:50.440]   computers. So it always looks like, oh, you need big computers to be state of the art.
+[01:24:50.440 --> 01:24:59.400]   But that's actually never true, right? Because there's always smarter ways to do things,
+[01:24:59.400 --> 01:25:04.360]   not just bigger ways to do things. And so, you know, when you look at fast ai's
+[01:25:04.360 --> 01:25:11.240]   dawn bench success, when we trained image net faster than anybody had trained it before,
+[01:25:11.240 --> 01:25:18.440]   on standard GPUs, you know, me and a bunch of students, that was not meant to happen.
+[01:25:18.440 --> 01:25:23.000]   You know, Google was working very hard with their TPU introduction to try to show how good they
+[01:25:23.000 --> 01:25:34.680]   were. Intel was using like 256 PCs in parallel or something. But yeah, you know, we used common
+[01:25:34.680 --> 01:25:41.960]   sense and smarts and showed what can be done. You know, it's also a case of picking the problems
+[01:25:41.960 --> 01:25:48.920]   you solve. So I would not be probably doing like going head to head up against codecs and trying to
+[01:25:49.560 --> 01:25:58.520]   create code from English descriptions. You know, because that's a problem that does probably
+[01:25:58.520 --> 01:26:05.640]   require very large neural nets and very large amounts of data. But if you pick areas in different
+[01:26:05.640 --> 01:26:13.960]   domains, you know, there's still huge areas where much smaller models are still going to be state
+[01:26:13.960 --> 01:26:22.600]   of the art. So hopefully that helped answer your question. Let's see what else we got here.
+[01:26:22.600 --> 01:26:33.960]   So Daniel has obviously been following my journey with teaching my daughter math. Yeah, he's
+[01:26:33.960 --> 01:26:38.520]   so I homeschool my daughter. And Daniel asks, how do you homeschool young children,
+[01:26:39.160 --> 01:26:46.680]   science in general and math in particular? Would you share your experiences by blogging or in
+[01:26:46.680 --> 01:26:55.480]   lectures someday? Yeah, I could do that. So I actually spent quite a few months just reading
+[01:26:55.480 --> 01:27:02.120]   research papers about education recently. So I do probably have a lot I probably need to talk about
+[01:27:02.120 --> 01:27:15.000]   at some stage. But yeah, broadly speaking, I lean into using computers and tablets a lot more than
+[01:27:15.000 --> 01:27:19.960]   most people. Because actually, there's an awful lot of really great apps that are super compelling.
+[01:27:19.960 --> 01:27:28.760]   They're adaptive, so they go at the right speed for the student. And they're fun. And I really like
+[01:27:28.760 --> 01:27:33.320]   my daughter to have fun. You know, I really don't like to force her to do things.
+[01:27:33.320 --> 01:27:42.440]   And for example, there's a really cool app called Dragonbox algebra five plus, which teaches
+[01:27:42.440 --> 01:27:47.880]   algebra to five year olds by using a really fun computer game involving helping dragon eggs to
+[01:27:47.880 --> 01:27:56.040]   hatch. And it turns out that yeah, algebra, the basic ideas of algebra are no more complex than
+[01:27:56.040 --> 01:28:02.200]   the basic ideas that we do in other kindergarten math. And all the parents I know of who have given
+[01:28:02.200 --> 01:28:08.200]   their kids Dragonbox algebra five plus their kids have successfully learned algebra. So that would
+[01:28:08.200 --> 01:28:22.120]   be an example. But yeah, we should talk about this more at some point. All right, let's see what else
+[01:28:22.120 --> 01:28:33.640]   we've got here. So Farah says the walkthroughs have been a game changer for me. The knowledge and tips
+[01:28:33.640 --> 01:28:38.040]   you shared in those sessions are skills required to become an effective machine learning practitioner
+[01:28:38.040 --> 01:28:42.840]   and utilize fast AI more effectively. Have you considered making the walkthroughs a more formal
+[01:28:42.840 --> 01:28:47.400]   part of the course, doing a separate software engineering course, or continuing live coding
+[01:28:47.400 --> 01:28:52.200]   sessions between part one and two? So yes, I am going to keep doing live coding sessions.
+[01:28:52.200 --> 01:28:59.000]   At the moment, we've switched to those specifically to focusing on APL. And then in a couple of weeks,
+[01:28:59.000 --> 01:29:04.040]   they're going to be going to fast AI study groups. And then after that, they'll gradually turn back
+[01:29:04.040 --> 01:29:12.200]   into more live coding sessions. But yeah, the thing I try to do in my live coding or study groups,
+[01:29:12.200 --> 01:29:20.360]   whatever is definitely try to show the foundational techniques that just make life easier as a coder
+[01:29:20.360 --> 01:29:26.440]   or a data scientist. When I say foundational, I mean, yeah, the stuff which you can reuse again
+[01:29:26.440 --> 01:29:32.040]   and again and again, like learning regular expressions really well, or knowing how to
+[01:29:32.040 --> 01:29:38.200]   use a VM or understanding how to use the terminal and command line, you know, all that kind of stuff.
+[01:29:40.200 --> 01:29:45.080]   Never goes out of style. It never gets old. And yeah, I do plan to
+[01:29:45.080 --> 01:29:54.280]   at some point hopefully actually do a course really all about that stuff specifically. But yeah,
+[01:29:54.280 --> 01:29:58.120]   for now, the best approach is follow along with the live coding and stuff.
+[01:29:58.120 --> 01:30:05.560]   Okay, WGPubs, which is Wade asks, how do you turn a model into a business?
+[01:30:06.760 --> 01:30:12.120]   Specifically, how does a coder with a little or no startup experience turn an ML based
+[01:30:12.120 --> 01:30:17.560]   radio prototype into a legitimate business venture? Okay, I plan to do a course about
+[01:30:17.560 --> 01:30:26.920]   this at some point as well. So, you know, obviously, there isn't a two minute version
+[01:30:26.920 --> 01:30:34.440]   to this. But the key thing with creating a legitimate business venture is to solve
+[01:30:35.560 --> 01:30:39.880]   a legitimate problem, you know, a problem that people need solved,
+[01:30:39.880 --> 01:30:47.480]   solving, and which they will pay you to solve. And so it's important not to start with your
+[01:30:47.480 --> 01:30:54.520]   fun radio prototype as the basis your business, but instead start with, here's a problem I want
+[01:30:54.520 --> 01:31:03.480]   to solve. And generally speaking, you should try to pick a problem that you understand better than
+[01:31:03.480 --> 01:31:09.400]   most people. So it's either a problem that you face day to day in your work, or in some hobby,
+[01:31:09.400 --> 01:31:15.080]   your passion that you have, or that you know, your club has, or your local school has, or your,
+[01:31:15.080 --> 01:31:23.240]   your spouse deals with in their workplace, you know, it's something where you understand that
+[01:31:23.240 --> 01:31:30.280]   there's something that doesn't work as well as it ought to. Particularly something where you think
+[01:31:30.280 --> 01:31:37.480]   yourself, you know, if they just used deep learning here, or some algorithm here, or some
+[01:31:37.480 --> 01:31:45.400]   better compute here, that problem would go away. And that's, that's the start of a business.
+[01:31:45.400 --> 01:31:54.040]   And so then my friend Eric Reese wrote a book called The Lean Startup, where he describes
+[01:31:54.040 --> 01:31:59.640]   what you do next, which is basically you fake it, you create, so he calls it the minimum viable
+[01:31:59.640 --> 01:32:05.320]   product, you create something that solves that problem, that takes you as little time as possible
+[01:32:05.320 --> 01:32:10.280]   to create, it could be very manual, it can be loss making, it's fine, you know, even the bit
+[01:32:10.280 --> 01:32:14.600]   in the middle where you're like, oh, there's going to be a neural net here, it's fine to like launch
+[01:32:14.600 --> 01:32:19.880]   without the neural net and do everything by hand. You're just trying to find out if people are going
+[01:32:19.880 --> 01:32:26.120]   to pay for this, and this is actually useful. And then once you have, you know, hopefully confirmed
+[01:32:26.120 --> 01:32:30.920]   that the need is real, that people will pay for it, and you can solve the need, you can gradually
+[01:32:30.920 --> 01:32:38.760]   make it less and less of a fake, you know, and do, you know, more and more getting the
+[01:32:38.760 --> 01:32:52.520]   product to where you want it to be. Okay, I don't know how to pronounce the name M-I-W-O-J-C.
+[01:32:53.160 --> 01:32:59.640]   M-I-W-O-J-C says, Jeremy, can you share some of your productivity hacks
+[01:32:59.640 --> 01:33:03.960]   from the content you produce, it may seem you work 24 hours a day.
+[01:33:03.960 --> 01:33:12.840]   Okay, I certainly don't do that. I think one of my main productivity hacks actually is not to work
+[01:33:12.840 --> 01:33:21.400]   too hard, or at least, no, not to work too hard, not to work too much. I spend probably less hours
+[01:33:21.400 --> 01:33:28.120]   a day working than most people, I would guess. But I think I do a couple of things differently
+[01:33:28.120 --> 01:33:37.080]   when I'm working. One is I've spent half, at least half of every working day since I was about 18,
+[01:33:37.080 --> 01:33:45.080]   learning or practicing something new. Could be a new language, could be a new algorithm,
+[01:33:45.080 --> 01:33:53.160]   could be something I read about. And nearly all of that time, therefore, I've been doing that thing
+[01:33:53.160 --> 01:33:58.680]   more slowly than I would if I just used something I already knew.
+[01:33:58.680 --> 01:34:07.080]   Which often drives my co-workers crazy, because they're like, you know, why aren't you focusing
+[01:34:07.080 --> 01:34:14.600]   on getting that thing done? But in the other 50% of the time, I'm constantly, you know, building up
+[01:34:14.600 --> 01:34:21.960]   this kind of exponentially improving base of expertise in a wide range of areas. And so now
+[01:34:21.960 --> 01:34:31.160]   I do find, you know, I can do things, often orders of magnitude faster than people around me, or
+[01:34:31.160 --> 01:34:36.280]   certainly many multiples faster than people around me, because I, you know, know a whole bunch of
+[01:34:36.280 --> 01:34:43.960]   tools and skills and ideas which, yeah, no, other people don't necessarily know. So like, I think
+[01:34:43.960 --> 01:34:47.160]   that's one thing that's been helpful. And then another is, yeah, like trying to really
+[01:34:47.160 --> 01:34:53.480]   not overdo things, like get good sleep and eat well and exercise well.
+[01:34:53.480 --> 01:35:04.280]   And also, I think it's a case of like tenacity, you know, I've noticed a lot of people
+[01:35:04.280 --> 01:35:15.640]   give up much earlier than I do. So, yeah, if you just keep going until something's actually
+[01:35:15.640 --> 01:35:23.080]   finished, then that's going to put you in a small minority, to be honest. Most people don't do that.
+[01:35:23.080 --> 01:35:28.840]   And when I say finished, like finish something really nicely. And I try to make it like, so I
+[01:35:28.840 --> 01:35:33.880]   particularly like coding, and so I try to do a lot of coding related stuff. So I create things
+[01:35:33.880 --> 01:35:40.600]   like NBDev, and NBDev makes it much, much easier for me to finish something nicely, you know.
+[01:35:40.600 --> 01:35:47.400]   So in my kind of chosen area, I've spent quite a bit of time trying to make sure it's really easy
+[01:35:47.400 --> 01:35:53.560]   for me to like, get out a blog post, get out a Python library, get out a notebook analysis,
+[01:35:53.560 --> 01:36:00.360]   whatever. So, yeah, trying to make these things I want to do easier, and so then I'll do them more.
+[01:36:01.160 --> 01:36:13.080]   So, well, thank you, everybody. That's been a lot of fun. Really appreciate you taking the time to go
+[01:36:13.080 --> 01:36:21.000]   through this course with me. Yeah, if you enjoyed it, it would really help if you would give a like
+[01:36:21.000 --> 01:36:26.600]   on YouTube, because it really helps other people find the course, goes into the YouTube recommendation
+[01:36:26.600 --> 01:36:34.440]   system. And please do come and help other beginners on forums.fast.ai. It's a great way to learn
+[01:36:34.440 --> 01:36:42.120]   yourself, is to try to teach other people. And yeah, I hope you'll join us in part two.
+[01:36:42.120 --> 01:36:50.520]   Thanks everybody very much. I've really enjoyed this process, and I hope to get to meet more of
+[01:36:50.520 --> 01:36:53.640]   here in person in the future. Bye.
+[01:36:53.640 --> 01:37:03.640]   [BLANK_AUDIO]
+

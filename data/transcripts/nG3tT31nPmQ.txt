@@ -1,0 +1,1262 @@
+
+[00:00:00.000 --> 00:00:03.000]   Thank you.
+[00:00:03.000 --> 00:00:08.040]   Welcome to the last lesson, lesson 14.
+[00:00:08.040 --> 00:00:13.080]   We're going to be looking at image segmentation today, amongst other things, but before we
+[00:00:13.080 --> 00:00:20.040]   do, a bit of show and tell from last week.
+[00:00:20.040 --> 00:00:24.160]   Elena Harley did something really interesting, which was she tried finding out what would
+[00:00:24.160 --> 00:00:28.780]   happen if you did CycleGAN on just 300 or 400 images.
+[00:00:28.780 --> 00:00:33.360]   I really like these projects where people just go to Google image search using the API
+[00:00:33.360 --> 00:00:35.400]   or one of the libraries out there.
+[00:00:35.400 --> 00:00:38.720]   Some of our students have created some very good libraries for interacting with Google
+[00:00:38.720 --> 00:00:44.360]   images API, download a bunch of stuff they're interested in, in this case some photos and
+[00:00:44.360 --> 00:00:51.320]   some stained glass windows, and with 300 or 400 photos of that she trained a model.
+[00:00:51.320 --> 00:00:54.840]   She trained actually a few different models, this is what I particularly liked, and as
+[00:00:54.840 --> 00:00:59.760]   you can see, with quite a small number of images she gets some very nice stained glass
+[00:00:59.760 --> 00:01:00.760]   effects.
+[00:01:00.760 --> 00:01:06.440]   So I thought that was an interesting example of using pretty small amounts of data that
+[00:01:06.440 --> 00:01:10.960]   was readily available, which she was able to download pretty quickly, and there's more
+[00:01:10.960 --> 00:01:17.160]   information about that on the forum if you're interested.
+[00:01:17.160 --> 00:01:20.280]   It's interesting to wonder about what kinds of things people will come up with with this
+[00:01:20.280 --> 00:01:28.120]   kind of generative model, it's clearly a great artistic medium, it's clearly a great medium
+[00:01:28.120 --> 00:01:35.240]   for forgeries and fakeries, I wonder what other kinds of things people will realize
+[00:01:35.240 --> 00:01:38.080]   they can do with these kind of generative models.
+[00:01:38.080 --> 00:01:45.240]   I think audio is going to be the next big area, and also very interactive type stuff.
+[00:01:45.240 --> 00:01:54.940]   Nvidia just released a paper showing an interactive photo repair tool where you just brush over
+[00:01:54.940 --> 00:02:01.400]   an object and it replaces it with a deep learning generated replacement very nicely.
+[00:02:01.400 --> 00:02:07.000]   Those kinds of interactive tools I think will be very interesting too.
+[00:02:07.000 --> 00:02:12.240]   So before we talk about segmentation, we've got some stuff to finish up from last time
+[00:02:12.240 --> 00:02:22.760]   which is that we looked at doing style transfer by actually directly optimizing pixels.
+[00:02:22.760 --> 00:02:30.680]   Like with most of the things in Part 2, it's not so much that I'm wanting you to understand
+[00:02:30.680 --> 00:02:37.240]   style transfer per se, but the kind of idea of optimizing your input directly and using
+[00:02:37.240 --> 00:02:46.920]   activations as part of a loss function is really the key kind of takeaway here.
+[00:02:46.920 --> 00:02:52.680]   So it's interesting then to kind of see what is effectively the follow-up paper, not from
+[00:02:52.680 --> 00:02:57.240]   the same people, but the paper that kind of came next in the sequence of these kind of
+[00:02:57.240 --> 00:03:05.240]   vision generative models with this one from Justin Johnson and folks at Stanford.
+[00:03:05.240 --> 00:03:11.200]   And it actually does the same thing, style transfer, but it does it in a different way.
+[00:03:11.200 --> 00:03:16.480]   Rather than optimizing the pixels, we're going to go back to something much more familiar
+[00:03:16.480 --> 00:03:18.760]   and optimize some weights.
+[00:03:18.760 --> 00:03:25.020]   And so specifically we're going to train a model which learns to take a photo and translate
+[00:03:25.020 --> 00:03:30.360]   it into a photo in the style of a particular artwork.
+[00:03:30.360 --> 00:03:39.260]   So each ConvNet will learn to produce one kind of style.
+[00:03:39.260 --> 00:03:45.040]   Now it turns out that getting to that point, there's an intermediate point which is I actually
+[00:03:45.040 --> 00:03:52.480]   think kind of more useful and takes us halfway there, which is something called super-resolution.
+[00:03:52.480 --> 00:03:57.240]   So we're actually going to start with super-resolution because then we'll build on top of super-resolution
+[00:03:57.240 --> 00:04:02.560]   to finish off the style transfer, ConvNet based style transfer.
+[00:04:02.560 --> 00:04:09.200]   And so super-resolution is where we take a low-res image, we're going to take 72x72 and
+[00:04:09.200 --> 00:04:18.160]   upscale it to a larger image, 288x288 in our case, trying to create a higher-res image
+[00:04:18.160 --> 00:04:24.360]   that looks as real as possible.
+[00:04:24.360 --> 00:04:28.640]   And so this is a pretty challenging thing to do because at 72x72 there's not that much
+[00:04:28.640 --> 00:04:31.000]   information about a lot of the details.
+[00:04:31.000 --> 00:04:35.680]   And the cool thing is that we're going to do it in a way as we tend to do with vision
+[00:04:35.680 --> 00:04:39.160]   models which is not tied to the input size.
+[00:04:39.160 --> 00:04:45.160]   So you could totally then take this model and apply it to a 288x288 image and get something
+[00:04:45.160 --> 00:04:51.840]   that's 4 times bigger on each side, so 16 times bigger than that.
+[00:04:51.840 --> 00:04:57.440]   But often it even works better at that level because you're really introducing a lot of
+[00:04:57.440 --> 00:05:02.080]   detail into the finer details and you could really print out a high-resolution print of
+[00:05:02.080 --> 00:05:07.560]   something which earlier on was pretty pixelated.
+[00:05:07.560 --> 00:05:12.520]   So this is the notebook called Enhance.
+[00:05:12.520 --> 00:05:18.600]   And it is a lot like that kind of CSI style enhancement where we're going to take something
+[00:05:18.600 --> 00:05:25.760]   that appears like the information is just not there and we kind of invent it, but the
+[00:05:25.760 --> 00:05:29.320]   ConvNet is going to learn to invent it in a way that's consistent with the information
+[00:05:29.320 --> 00:05:33.920]   that is there, so hopefully it's kind of inventing the right information.
+[00:05:33.920 --> 00:05:40.440]   One of the really nice things about this kind of problem is that we can create our own dataset
+[00:05:40.440 --> 00:05:47.240]   as big as we like without any labeling requirements because we can easily create a low-res image
+[00:05:47.240 --> 00:05:51.200]   from a high-res image just by downsampling our images.
+[00:05:51.200 --> 00:05:57.760]   So something I would love some of you to try during the week would be to do other types
+[00:05:57.760 --> 00:06:04.920]   of image-to-image translation where you can invent kind of labels, invent your dependent
+[00:06:04.920 --> 00:06:05.920]   variable.
+[00:06:05.920 --> 00:06:12.720]   For example, de-skewing, so either recognize things that have been rotated by 90 degrees
+[00:06:12.720 --> 00:06:18.480]   or better still that have been rotated by 5 degrees and straighten them.
+[00:06:18.480 --> 00:06:24.360]   Colorization, so make a bunch of images into black and white and learn to put the color
+[00:06:24.360 --> 00:06:27.480]   back again.
+[00:06:27.480 --> 00:06:38.080]   Noise reduction, maybe do a really low-quality JPEG save and learn to put it back to how
+[00:06:38.080 --> 00:06:45.360]   it should have been, and so forth, or maybe take something that's in a 16 color palette
+[00:06:45.360 --> 00:06:49.280]   and put it back to a higher color palette.
+[00:06:49.280 --> 00:06:56.600]   I think these things are all interesting because they can be used to take pictures that you
+[00:06:56.600 --> 00:07:00.880]   may have taken back on crappy old digital cameras before they were high resolution,
+[00:07:00.880 --> 00:07:06.120]   or you may have scanned in some old photos that have faded or whatever, I think it's
+[00:07:06.120 --> 00:07:11.120]   a really useful thing to be able to do, and also it's a good project because it's really
+[00:07:11.120 --> 00:07:15.140]   similar to what we're doing here, but different enough that you'll come across some interesting
+[00:07:15.140 --> 00:07:19.200]   challenges on the way, I'm sure.
+[00:07:19.200 --> 00:07:22.400]   So I'm going to use ImageNet again.
+[00:07:22.400 --> 00:07:26.360]   You don't need to use all of ImageNet at all, I just happen to have it lying around.
+[00:07:26.360 --> 00:07:29.720]   You can download the 1% sample of ImageNet from files.fast.ai.
+[00:07:29.720 --> 00:07:35.880]   You can use any set of pictures you have lying around, honestly.
+[00:07:35.880 --> 00:07:42.160]   And in this case, as I said, we don't really have labels per se, so I'm just going to give
+[00:07:42.160 --> 00:07:50.360]   everything a label of 0 just so we can use it with our existing infrastructure more easily.
+[00:07:50.360 --> 00:07:54.880]   Now because I'm in this case pointing at a folder that contains all of ImageNet, I certainly
+[00:07:54.880 --> 00:07:58.420]   don't want to wait for all of ImageNet to finish, to run an epoch.
+[00:07:58.420 --> 00:08:06.720]   So here most of the time I would set keep% to 1 or 2%, and then I just generate a bunch
+[00:08:06.720 --> 00:08:14.000]   of random numbers, and then I just keep those which are less than 0.02, and so that lets
+[00:08:14.000 --> 00:08:21.720]   me quickly sub-sample my rows.
+[00:08:21.720 --> 00:08:35.960]   So we're going to use VGG16, and VGG16 is something that we haven't really looked at in this class,
+[00:08:35.960 --> 00:08:46.240]   but it's a very simple model where we take our normal, presumably 3-channel input, and
+[00:08:46.240 --> 00:08:55.200]   we basically run it through a number of 3x3 convolutions, and then from time to time we
+[00:08:55.200 --> 00:09:08.280]   put it through a 2x2 MaxPool, and then we do a few more 3x3 convolutions, MaxPool, so
+[00:09:08.280 --> 00:09:10.160]   on and so forth.
+[00:09:10.160 --> 00:09:21.520]   And then this is kind of our backbone, I guess.
+[00:09:21.520 --> 00:09:27.560]   And then we don't do an average pooling layer, an adaptive average pooling layer.
+[00:09:27.560 --> 00:09:36.760]   After a few of these we end up with this 7x7 grid as usual, I think it's about 7x7x512.
+[00:09:36.760 --> 00:09:42.160]   And so rather than average pooling we do something different, which is we flatten the whole thing.
+[00:09:42.160 --> 00:09:52.900]   So that spits out a very long vector of activations of size 7x7x512 if memory says correctly.
+[00:09:52.900 --> 00:10:04.920]   And then that gets fed into two fully connected layers, each one of which has 4096 activations,
+[00:10:04.920 --> 00:10:10.840]   and then one more fully connected layer which has however many classes.
+[00:10:10.840 --> 00:10:25.440]   So if you think about it, the weight matrix here is huge, it's 7x7x512x4096, and it's because
+[00:10:25.440 --> 00:10:32.100]   of that weight matrix really that VGG went out of favor pretty quickly, because it takes
+[00:10:32.100 --> 00:10:36.920]   a lot of memory, it takes a lot of computation, and it's really slow.
+[00:10:36.920 --> 00:10:44.040]   And there's a lot of redundant stuff going on here, because really those 512 activations
+[00:10:44.040 --> 00:10:51.720]   are not that specific to which of those 7x7 grid cells they're in, but when you have this
+[00:10:51.720 --> 00:11:00.600]   entire weight matrix here of every possible combination, it treats all of them uniquely.
+[00:11:00.600 --> 00:11:04.560]   And so that can also lead to generalization problems, because there's just a lot of weights
+[00:11:04.560 --> 00:11:07.800]   and so forth.
+[00:11:07.800 --> 00:11:14.840]   My view is that the approach that's used in every modern network, which is here we do
+[00:11:14.840 --> 00:11:21.840]   an adaptive average pooling in Keras that we know as a global average pooling, or in
+[00:11:21.840 --> 00:11:32.320]   fast.ai we generally do a concat pooling, which spits it straight down to a 512-long activation.
+[00:11:32.320 --> 00:11:39.000]   I think that's throwing away too much geometry, so to me probably the correct answer is somewhere
+[00:11:39.000 --> 00:11:45.160]   in between and would involve some kind of factored convolution or some kind of tensor
+[00:11:45.160 --> 00:11:51.020]   decomposition which maybe some of us can think about in the coming months.
+[00:11:51.020 --> 00:11:56.200]   So for now we've gone from one extreme, which is the adaptive average pooling, to the other
+[00:11:56.200 --> 00:12:00.400]   extreme which is this huge flattened pooling connection layer.
+[00:12:00.400 --> 00:12:08.200]   So a couple of things which are interesting about VGG that make it still useful today.
+[00:12:08.200 --> 00:12:18.000]   The first one is that there's more interesting layers going on here with most modern networks
+[00:12:18.000 --> 00:12:20.600]   including the ResNet family.
+[00:12:20.600 --> 00:12:31.560]   The very first layer generally is a 7x7 pond, or something similar, which means we throw
+[00:12:31.560 --> 00:12:39.120]   away half the grid size straight away and so there's little opportunity to use the fine
+[00:12:39.120 --> 00:12:44.640]   detail because we never do any computation with it.
+[00:12:44.640 --> 00:12:52.080]   And so that's a bit of a problem for things like segmentation or super resolution models
+[00:12:52.080 --> 00:12:57.400]   because the fine detail matters, we actually want to restore it.
+[00:12:57.400 --> 00:13:03.800]   And then the second problem is that the adaptive average pooling layer entirely throws away
+[00:13:03.800 --> 00:13:08.800]   the geometry in the last few sections, which means that the rest of the model doesn't really
+[00:13:08.800 --> 00:13:13.560]   have as much interest in learning the geometry as it otherwise might.
+[00:13:13.560 --> 00:13:18.360]   And so therefore for things which are dependent on position, any kind of localization based
+[00:13:18.360 --> 00:13:22.800]   approach to anything that requires generative modeling is going to be less effective.
+[00:13:22.800 --> 00:13:28.080]   So one of the things I'm hoping you're hearing as I describe this is that probably none of
+[00:13:28.080 --> 00:13:32.340]   the existing architectures are actually ideal.
+[00:13:32.340 --> 00:13:33.520]   We can invent a new one.
+[00:13:33.520 --> 00:13:42.360]   And actually I just tried inventing a new one over the week which was to take the VGG
+[00:13:42.360 --> 00:13:47.720]   thread and attach it to a ResNet backbone.
+[00:13:47.720 --> 00:13:53.520]   And interestingly I found I actually got a slightly better classifier than a normal ResNet,
+[00:13:53.520 --> 00:13:57.640]   but it also was something with a little bit more useful information.
+[00:13:57.640 --> 00:14:05.960]   It took 5 or 10% longer to train, but nothing worth worrying about.
+[00:14:05.960 --> 00:14:10.040]   I think maybe we couldn't in ResNet replace this as we've talked about briefly before,
+[00:14:10.040 --> 00:14:14.760]   this very early convolution with something more like an inception stem which does a bit
+[00:14:14.760 --> 00:14:16.160]   more computation.
+[00:14:16.160 --> 00:14:22.820]   I think there's definitely room for some nice little tweaks to these architectures so that
+[00:14:22.820 --> 00:14:26.360]   we can build some models which are maybe more versatile.
+[00:14:26.360 --> 00:14:29.720]   At the moment people tend to build architectures that just do one thing.
+[00:14:29.720 --> 00:14:35.120]   They don't really think what am I throwing away in terms of opportunity because that's
+[00:14:35.120 --> 00:14:36.120]   how publishing works.
+[00:14:36.120 --> 00:14:40.240]   You know you publish like I've got the state-of-the-art in this one thing rather than I've created
+[00:14:40.240 --> 00:14:43.480]   something that's good at lots of things.
+[00:14:43.480 --> 00:14:49.020]   So for these reasons we're going to use VGG today even though it's ancient and it's missing
+[00:14:49.020 --> 00:14:50.760]   lots of great stuff.
+[00:14:50.760 --> 00:14:55.200]   One thing we are going to do though is use a slightly more modern version which is a
+[00:14:55.200 --> 00:15:00.400]   version of VGG where batch norm has been added after all the convolutions.
+[00:15:00.400 --> 00:15:05.200]   And so in fast.ai actually when you ask for a VGG network you always get the batch norm
+[00:15:05.200 --> 00:15:09.280]   one because that's basically always what you want.
+[00:15:09.280 --> 00:15:12.480]   So this is actually our VGG with batch norm.
+[00:15:12.480 --> 00:15:14.160]   There's a 16 and a 19.
+[00:15:14.160 --> 00:15:23.480]   The 19 is way bigger and heavier and doesn't really any better so no one really uses it.
+[00:15:23.480 --> 00:15:30.500]   So we're going to go from 72x72, LR is low resolution input, Si is low resolution.
+[00:15:30.500 --> 00:15:37.340]   We're going to initially scale it up by x2 with a batch size of 64 to get a 2x72, so
+[00:15:37.340 --> 00:15:39.720]   1x44x144 output.
+[00:15:39.720 --> 00:15:46.120]   So that's going to be our stage 1.
+[00:15:46.120 --> 00:15:52.800]   We'll create our own dataset for this and the dataset, it's very worthwhile looking
+[00:15:52.800 --> 00:15:59.920]   inside the fastai.dataset module and seeing what's there because just about anything you'd
+[00:15:59.920 --> 00:16:04.120]   want we probably have something that's almost what you want.
+[00:16:04.120 --> 00:16:10.880]   So in this case I want a dataset where my x's are images and my y's are also images.
+[00:16:10.880 --> 00:16:15.360]   So there's already a files dataset we can inherit from where the x's are images and
+[00:16:15.360 --> 00:16:20.200]   then I just inherit from that and I just copied and pasted the get x and turned that into
+[00:16:20.200 --> 00:16:23.520]   get y so it just opens an image.
+[00:16:23.520 --> 00:16:27.760]   So now I've got something where the x is an image and the y is an image and in both cases
+[00:16:27.760 --> 00:16:31.240]   what we're passing in is an array of file names.
+[00:16:31.240 --> 00:16:37.320]   I'm going to do some data augmentation, obviously with all of ImageNet we don't really need
+[00:16:37.320 --> 00:16:43.640]   it, but this is mainly here for anybody who's using smaller datasets to make most of it.
+[00:16:43.640 --> 00:16:50.240]   Random dihedral is referring to every possible 90 degree rotation plus optional left/right
+[00:16:50.240 --> 00:16:56.560]   flipping, so the dihedral group of eight symmetries.
+[00:16:56.560 --> 00:17:01.440]   Probably we don't use this transformation for ImageNet pictures because you don't normally
+[00:17:01.440 --> 00:17:07.480]   flip dogs upside down, but in this case we're not trying to classify whether it's a dog
+[00:17:07.480 --> 00:17:13.640]   or a cat, we're just trying to keep the general structure of it, so actually every possible
+[00:17:13.640 --> 00:17:20.280]   flip is a reasonably sensible thing to do for this problem.
+[00:17:20.280 --> 00:17:26.360]   So create a validation set in the usual way, and you can see I'm kind of using a few more
+[00:17:26.360 --> 00:17:30.440]   slightly lower level functions, generally speaking I just copy and paste them out of
+[00:17:30.440 --> 00:17:34.600]   the fast.ai source code to find the bits I want.
+[00:17:34.600 --> 00:17:43.480]   So here's the bit which takes an array of validation set indexes and one or more arrays
+[00:17:43.480 --> 00:17:50.440]   of variables and simply splits, so in this case this into a training and a validation
+[00:17:50.440 --> 00:17:58.760]   set and this into a training and a validation set to give us our x's and y's.
+[00:17:58.760 --> 00:18:05.720]   Now in this case the x and y are the same, our image and our output are the same, we're
+[00:18:05.720 --> 00:18:10.720]   going to use transformations to make one of them lower resolution, so that's why these
+[00:18:10.720 --> 00:18:14.760]   are the same thing.
+[00:18:14.760 --> 00:18:24.880]   So the next thing that we need to do is to create our transformations as per usual, and
+[00:18:24.880 --> 00:18:30.440]   we're going to use this transform y parameter like we did for bounding boxes, but rather
+[00:18:30.440 --> 00:18:38.320]   than use transform type.coordinate, we're going to use transform type.pixel, and so
+[00:18:38.320 --> 00:18:47.160]   that tells our transformations framework that your y values are images with normal pixels
+[00:18:47.160 --> 00:18:54.200]   in them and so anything you do with the x you also need to do the y, do the same thing.
+[00:18:54.200 --> 00:18:59.560]   And you need to make sure any data representation transforms you use have the same parameter
+[00:18:59.560 --> 00:19:06.440]   as well.
+[00:19:06.440 --> 00:19:09.960]   So you can see the possible transform types, basically you've got classification, which
+[00:19:09.960 --> 00:19:15.040]   we're about to use for segmentation in the second half of today, coordinates, no transformation
+[00:19:15.040 --> 00:19:20.480]   at all, or pixel.
+[00:19:20.480 --> 00:19:28.840]   So once we've got a dataset class and some x and y training and validation sets, there's
+[00:19:28.840 --> 00:19:34.760]   a handy little method called get_datasets, which basically runs that constructor over
+[00:19:34.760 --> 00:19:39.560]   all the different things that you have to return all the datasets that you need in exactly
+[00:19:39.560 --> 00:19:46.560]   the right format to pass to a model data constructor, in this case the image data constructor.
+[00:19:46.560 --> 00:19:51.520]   So we're kind of like going back under the covers of fast.ai a little bit and building
+[00:19:51.520 --> 00:19:53.840]   it up from scratch.
+[00:19:53.840 --> 00:19:58.400]   And in the next few weeks this will all be wrapped up and refactored into something that
+[00:19:58.400 --> 00:20:03.000]   you can do in a single step in fast.ai, but the point of this class is to learn a bit
+[00:20:03.000 --> 00:20:08.320]   about going under the covers.
+[00:20:08.320 --> 00:20:17.200]   So something we've briefly seen before is that when we take images in we transform them
+[00:20:17.200 --> 00:20:23.800]   not just with data augmentation, but we also move the channels dimension up to the start,
+[00:20:23.800 --> 00:20:27.800]   we subtract the mean, divide by the standard deviation, whatever.
+[00:20:27.800 --> 00:20:32.640]   So if we want to be able to display those pictures that have come out of our datasets
+[00:20:32.640 --> 00:20:38.840]   or data loaders, we need to denormalize them, and so the model data objects dataset has
+[00:20:38.840 --> 00:20:43.680]   a denorm function that knows how to do that, so I'm just going to give that a short name
+[00:20:43.680 --> 00:20:46.160]   for convenience.
+[00:20:46.160 --> 00:20:50.320]   So now I'm going to create a function that can show an image from a dataset, and if you
+[00:20:50.320 --> 00:20:55.560]   pass in something saying this is a normalized image, then we'll denormalize it.
+[00:20:55.560 --> 00:20:59.160]   So we can go ahead and have a look at that.
+[00:20:59.160 --> 00:21:07.400]   You'll see here we've passed in size_low_res as our size for the transforms, and size_high_res
+[00:21:07.400 --> 00:21:10.760]   as this is something new, the size_y parameter.
+[00:21:10.760 --> 00:21:14.620]   So the two bits are going to get different sizes.
+[00:21:14.620 --> 00:21:20.240]   And so here you can see the two different resolutions of our x and our y for a whole
+[00:21:20.240 --> 00:21:23.800]   bunch of fish.
+[00:21:23.800 --> 00:21:29.360]   As per usual, plot.subplots to create our two plots, and then we can just use the different
+[00:21:29.360 --> 00:21:37.980]   axes that came back to put stuff next to each other.
+[00:21:37.980 --> 00:21:43.640]   So we can then have a look at a few different versions of the data transformation, and there
+[00:21:43.640 --> 00:21:49.480]   you can see them being flipped in all different directions.
+[00:21:49.480 --> 00:21:57.260]   So let's create our model.
+[00:21:57.260 --> 00:22:07.520]   So we're going to have an image coming in, a small image coming in, and we want to have
+[00:22:07.520 --> 00:22:12.720]   a big image coming out.
+[00:22:12.720 --> 00:22:18.480]   And so we need to do some computation between those two to calculate what the big image
+[00:22:18.480 --> 00:22:20.000]   would look like.
+[00:22:20.000 --> 00:22:23.120]   And so essentially there's kind of two ways of doing that computation.
+[00:22:23.120 --> 00:22:31.640]   We could first of all do some upsampling, and then do a few stride1 kind of layers to
+[00:22:31.640 --> 00:22:34.240]   do lots of computation.
+[00:22:34.240 --> 00:22:39.080]   Or we could first do lots of stride1 layers to do all the computation, and then at the
+[00:22:39.080 --> 00:22:42.760]   end do some upsampling.
+[00:22:42.760 --> 00:22:48.160]   We're going to pick the second approach, because we want to do lots of computation on something
+[00:22:48.160 --> 00:22:53.160]   smaller because it's much faster to do it that way.
+[00:22:53.160 --> 00:23:01.760]   And also like all that computation we get to leverage during the upsampling process.
+[00:23:01.760 --> 00:23:05.960]   So upsampling, we know a couple of possible ways to do that.
+[00:23:05.960 --> 00:23:14.440]   We can use transposed or fractionally strided convolutions, or we can use nearest neighbor
+[00:23:14.440 --> 00:23:21.920]   upsampling, followed by a 1x1 conv.
+[00:23:21.920 --> 00:23:30.400]   And then in the do lots of computation section, we could just have a whole bunch of 3x3 cons.
+[00:23:30.400 --> 00:23:37.000]   But in this case in particular, it seems likely that ResNet blocks are going to be better,
+[00:23:37.000 --> 00:23:45.200]   because really the output and the input are very similar.
+[00:23:45.200 --> 00:23:51.040]   So we really want a flow-through path that allows as little fussing around as possible
+[00:23:51.040 --> 00:23:55.760]   except the minimal amount necessary to do our super-resolution.
+[00:23:55.760 --> 00:24:01.920]   And so if we use ResNet blocks, then they have an identity path already.
+[00:24:01.920 --> 00:24:09.880]   So you could imagine the most simple version where it does a bilinear sampling kind of
+[00:24:09.880 --> 00:24:10.880]   approach or something.
+[00:24:10.880 --> 00:24:14.080]   It could basically just go through identity blocks all the way through, and then in the
+[00:24:14.080 --> 00:24:19.400]   upsampling blocks just learn to take the averages of the inputs and get something that's not
+[00:24:19.400 --> 00:24:22.160]   too terrible.
+[00:24:22.160 --> 00:24:23.160]   So that's what we're going to do.
+[00:24:23.160 --> 00:24:31.960]   We're going to create something with 5 ResNet blocks, and then for each 2x scale-up we have
+[00:24:31.960 --> 00:24:38.440]   to do, we'll have one upsampling block.
+[00:24:38.440 --> 00:24:43.600]   So they're all going to consist of, obviously as per usual, convolution layers, possibly
+[00:24:43.600 --> 00:24:46.760]   with activation functions after many of them.
+[00:24:46.760 --> 00:24:53.840]   So I kind of like to put my standard convolution block into a function so I can refactor it
+[00:24:53.840 --> 00:24:56.240]   more easily.
+[00:24:56.240 --> 00:25:00.560]   As per usual I just won't worry about passing in padding and just calculate it directly
+[00:25:00.560 --> 00:25:04.340]   as kernel size over 2.
+[00:25:04.340 --> 00:25:09.720]   So one interesting thing about our little conv block here is that there's no batch norm,
+[00:25:09.720 --> 00:25:14.880]   which is pretty unusual for ResNet-type models.
+[00:25:14.880 --> 00:25:20.560]   And the reason there's no batch norm is because I'm stealing ideas from this fantastic recent
+[00:25:20.560 --> 00:25:27.280]   paper which actually won a recent competition in super-resolution performance.
+[00:25:27.280 --> 00:25:32.800]   And to see how good this paper is, here's kind of a previous state of the art, this
+[00:25:32.800 --> 00:25:41.200]   SR ResNet, and what they've done here is they've zoomed way in to an upsampled kind of net
+[00:25:41.200 --> 00:25:43.680]   or fence, this is the original.
+[00:25:43.680 --> 00:25:49.080]   And you can see in the previous best approach there's a whole lot of distortion and blurring
+[00:25:49.080 --> 00:25:55.040]   going on, whereas in their approach it's nearly perfect.
+[00:25:55.040 --> 00:25:59.520]   So it was a really big step up this paper.
+[00:25:59.520 --> 00:26:03.000]   They call their model EDSR, Enhanced Deep Residual Networks.
+[00:26:03.000 --> 00:26:10.280]   And they did two things differently to the previous standard approaches.
+[00:26:10.280 --> 00:26:15.000]   One was to take the ResNet block, this is a regular ResNet block, and throw away the batch
+[00:26:15.000 --> 00:26:17.360]   norm.
+[00:26:17.360 --> 00:26:19.520]   So why would they throw away the batch norm?
+[00:26:19.520 --> 00:26:25.980]   Well the reason they would throw away the batch norm is because batch norm changes stuff,
+[00:26:25.980 --> 00:26:31.360]   and we want a nice straight-through path that doesn't change stuff.
+[00:26:31.360 --> 00:26:36.200]   So the idea basically here is if you don't want to fiddle with the input more than you
+[00:26:36.200 --> 00:26:41.120]   have to, then don't force it to have to calculate things like batch norm parameters.
+[00:26:41.120 --> 00:26:42.760]   So throw away the batch norm.
+[00:26:42.760 --> 00:26:46.000]   And the second trick we'll see shortly.
+[00:26:46.000 --> 00:26:49.640]   So here's a conv with no batch norm.
+[00:26:49.640 --> 00:26:58.480]   And so then we're going to create a residual block containing, as per usual, two convolutions.
+[00:26:58.480 --> 00:27:03.520]   And as you see in their approach, they don't even have a value after their second conv.
+[00:27:03.520 --> 00:27:11.760]   So that's why I've only got activation on the first one.
+[00:27:11.760 --> 00:27:16.460]   So a couple of interesting things here.
+[00:27:16.460 --> 00:27:26.280]   One is that this idea of having some kind of main ResNet path, like conv_relu_conv,
+[00:27:26.280 --> 00:27:30.840]   and then turning that into a relu block by adding it back to the identity, it's something
+[00:27:30.840 --> 00:27:31.840]   we do so often.
+[00:27:31.840 --> 00:27:36.880]   We've kind of factored it out into a tiny little module called res_sequential, which
+[00:27:36.880 --> 00:27:44.660]   simply takes a bunch of layers that you want to put into your residual path, turns that
+[00:27:44.660 --> 00:27:50.560]   into a sequential model, runs it, and then adds it back to the input.
+[00:27:50.560 --> 00:27:58.160]   So with this little module we can now turn anything like conv_activation_conv into a
+[00:27:58.160 --> 00:28:04.960]   ResNet block, just by wrapping it in res_sequential.
+[00:28:04.960 --> 00:28:10.760]   But that's not quite all I'm doing, because normally a res block just has that in its
+[00:28:10.760 --> 00:28:11.760]   forward.
+[00:28:11.760 --> 00:28:15.760]   But I've also got that.
+[00:28:15.760 --> 00:28:16.760]   What's res_scale?
+[00:28:16.760 --> 00:28:20.040]   Res_scale is the number 0.1.
+[00:28:20.040 --> 00:28:22.400]   Why is it there?
+[00:28:22.400 --> 00:28:25.320]   I'm not sure anybody quite knows.
+[00:28:25.320 --> 00:28:33.400]   But the short answer is that the guy who invented batchnorm also somewhat more recently did
+[00:28:33.400 --> 00:28:39.800]   a paper in which he showed, I think the first time, the ability to train imageNet in under
+[00:28:39.800 --> 00:28:41.480]   an hour.
+[00:28:41.480 --> 00:28:48.500]   And the way he did it was fire up lots and lots of machines and have them work in parallel
+[00:28:48.500 --> 00:28:51.400]   to create really large batch sizes.
+[00:28:51.400 --> 00:28:56.880]   Now generally when you increase the batch size by order n, you also increase the learning
+[00:28:56.880 --> 00:28:58.960]   rate by order n to go with it.
+[00:28:58.960 --> 00:29:04.200]   So generally very large batch size training means very high learning rate training as
+[00:29:04.200 --> 00:29:05.200]   well.
+[00:29:05.200 --> 00:29:13.240]   And he found that with these very large batch sizes of 8,000 plus, or even up to 32,000,
+[00:29:13.240 --> 00:29:18.760]   that at the start of training his activations would basically go straight to infinity.
+[00:29:18.760 --> 00:29:22.880]   And a lot of other people found that, we actually found that when we were competing in Dawnbench
+[00:29:22.880 --> 00:29:28.920]   both on the Cypher and the imageNet competitions that we really struggled to make the most
+[00:29:28.920 --> 00:29:34.920]   of even the eight GPUs that we were trying to take advantage of because of these challenges
+[00:29:34.920 --> 00:29:38.760]   with these larger batch sizes and taking advantage of them.
+[00:29:38.760 --> 00:29:43.920]   So something that Christian found, this researcher, was that in the resNet blocks, if he multiplied
+[00:29:43.920 --> 00:29:50.320]   them by some number smaller than 1, something like 0.1 or 0.2, it really helped stabilize
+[00:29:50.320 --> 00:29:53.760]   training at the start.
+[00:29:53.760 --> 00:30:01.000]   And that's kind of weird because mathematically it's kind of identical, because obviously
+[00:30:01.000 --> 00:30:07.560]   whatever I'm multiplying it by here, I could just scale the weights by the opposite amount
+[00:30:07.560 --> 00:30:10.440]   here and have the same number.
+[00:30:10.440 --> 00:30:21.480]   So it's kind of like we're not dealing with abstract math, we're dealing with real optimization
+[00:30:21.480 --> 00:30:27.920]   problems and different initializations and learning rates and whatever else.
+[00:30:27.920 --> 00:30:35.280]   And so the problem of weights disappearing off into infinity I guess generally is really
+[00:30:35.280 --> 00:30:42.040]   about the kind of discrete and finite nature of computers in practice.
+[00:30:42.040 --> 00:30:46.800]   And so often these kind of little tricks can make the difference.
+[00:30:46.800 --> 00:30:55.040]   So in this case we're just kind of toning things down, at least based on our initialization.
+[00:30:55.040 --> 00:30:58.400]   And so there are probably other ways to do this.
+[00:30:58.400 --> 00:31:04.320]   For example, one approach from some folks at Nvidia called Lars, L-A-R-S, which I briefly
+[00:31:04.320 --> 00:31:09.760]   mentioned last week, is an approach which uses discriminative learning rates calculated
+[00:31:09.760 --> 00:31:18.200]   in real time, basically looking at the ratio between the gradients and the activations
+[00:31:18.200 --> 00:31:20.820]   to scale learning rates by layer.
+[00:31:20.820 --> 00:31:30.000]   And so they found that they didn't need this trick to scale up the batch sizes a lot.
+[00:31:30.000 --> 00:31:35.060]   Maybe a different initialization would be all that's necessary.
+[00:31:35.060 --> 00:31:39.560]   The reason I mention this is not so much because I think a lot of you are likely to want to
+[00:31:39.560 --> 00:31:45.200]   train on massive clusters of computers, but rather that I think a lot of you want to train
+[00:31:45.200 --> 00:31:51.800]   models quickly, and that means using high learning rates and ideally getting super-convergence.
+[00:31:51.800 --> 00:31:58.880]   And I think these kinds of tricks, the tricks that we'll need to be able to get super-convergence
+[00:31:58.880 --> 00:32:02.640]   across more different architectures and so forth.
+[00:32:02.640 --> 00:32:10.240]   And other than Leslie Smith, no one else is really working on super-convergence other
+[00:32:10.240 --> 00:32:12.640]   than some fast AI students nowadays.
+[00:32:12.640 --> 00:32:17.120]   So these kinds of things about how do we train at very, very high learning rates, we're going
+[00:32:17.120 --> 00:32:24.840]   to have to be the ones who figure it out as far as I can tell nobody else cares yet.
+[00:32:24.840 --> 00:32:31.160]   So I think looking at the literature around training ImageNet in one hour, or more recently
+[00:32:31.160 --> 00:32:37.720]   there's now a train ImageNet in 15 minutes, these papers actually have some of the tricks
+[00:32:37.720 --> 00:32:40.960]   to allow us to train things at high learning rates.
+[00:32:40.960 --> 00:32:42.200]   And so here's one of them.
+[00:32:42.200 --> 00:32:47.920]   And so interestingly other than the train ImageNet in one hour paper, the only other
+[00:32:47.920 --> 00:32:53.280]   place I've seen this mentioned was in this EDSR paper.
+[00:32:53.280 --> 00:33:00.640]   And it's really cool because people who win competitions, I just find them to be very
+[00:33:00.640 --> 00:33:03.200]   pragmatic and well-read.
+[00:33:03.200 --> 00:33:05.420]   They actually have to get things to work.
+[00:33:05.420 --> 00:33:10.480]   And so this paper describes an approach which actually worked better than anybody else's
+[00:33:10.480 --> 00:33:11.480]   approach.
+[00:33:11.480 --> 00:33:17.120]   And they did these pragmatic things like throw away batch norm and use this little scaling
+[00:33:17.120 --> 00:33:23.000]   factor which almost nobody else seems to know about and stuff like that.
+[00:33:23.000 --> 00:33:26.400]   So that's where the point one comes from.
+[00:33:26.400 --> 00:33:32.960]   So basically our super-resolution ResNet is going to do a convolution to go from our three
+[00:33:32.960 --> 00:33:36.760]   channels to 64 channels just to richen up the space a little bit.
+[00:33:36.760 --> 00:33:39.920]   Oh sorry, I've got actually 8, not 5.
+[00:33:39.920 --> 00:33:43.560]   Eight lots of these res blocks.
+[00:33:43.560 --> 00:33:48.880]   Remember every one of these res blocks is Stripe 1, so the grid size doesn't change,
+[00:33:48.880 --> 00:33:54.080]   the number of filters doesn't change, it's just 64 all the way through.
+[00:33:54.080 --> 00:33:58.800]   We'll do one more convolution and then we'll do our up-sampling by however much scale
+[00:33:58.800 --> 00:34:01.160]   we asked for.
+[00:34:01.160 --> 00:34:06.720]   And then something I've added which is a little idea is just one batch norm here because it
+[00:34:06.720 --> 00:34:11.560]   kind of felt like it might be helpful just to scale the last layer.
+[00:34:11.560 --> 00:34:16.120]   And then finally a conv to go back to the three channels we want.
+[00:34:16.120 --> 00:34:20.960]   So you can see that's basically here's lots and lots of computation and then a little
+[00:34:20.960 --> 00:34:32.200]   bit of up-sampling just like we kind of described.
+[00:34:32.200 --> 00:34:38.640]   So the only other piece here then is -- and also just to mention as you can see as I'm
+[00:34:38.640 --> 00:34:44.800]   tending to do now, this whole thing is done by creating just a list of layers and then
+[00:34:44.800 --> 00:34:49.920]   at the end turning that into a sequential model, and so my forward function is as simple
+[00:34:49.920 --> 00:34:53.120]   as can be.
+[00:34:53.120 --> 00:34:55.800]   So here's our up-sampling.
+[00:34:55.800 --> 00:35:05.680]   And up-sampling is a bit interesting because it is not doing either of these two things.
+[00:35:05.680 --> 00:35:13.820]   So let's talk a bit about up-sampling.
+[00:35:13.820 --> 00:35:18.040]   Here's a picture from the paper, not from the competition-winning paper but from this
+[00:35:18.040 --> 00:35:20.480]   original paper.
+[00:35:20.480 --> 00:35:25.040]   And so they're saying our approach is so much better, but look at their approach.
+[00:35:25.040 --> 00:35:30.000]   It's got goddamn artifacts in it.
+[00:35:30.000 --> 00:35:31.800]   These just pop up everywhere, don't they?
+[00:35:31.800 --> 00:35:35.960]   And so one of the reasons for this is that they use transposed convolutions, and we all
+[00:35:35.960 --> 00:35:40.840]   know don't use transposed convolutions.
+[00:35:40.840 --> 00:35:42.600]   So here are transposed convolutions.
+[00:35:42.600 --> 00:35:47.640]   This is from this fantastic convolutional arithmetic paper that was shown also in the
+[00:35:47.640 --> 00:35:48.720]   Theano docs.
+[00:35:48.720 --> 00:35:55.760]   If we're going from the blue is the original image, so a 3x3 image up to a 5x5 image, or
+[00:35:55.760 --> 00:36:01.520]   a 6x6 if we added a layer of padding, then all a transposed convolution does is it uses
+[00:36:01.520 --> 00:36:10.320]   a regular 3x3 conv, but it sticks white 0 pixels between every pair of pixels.
+[00:36:10.320 --> 00:36:14.680]   So that makes the input image bigger and when we run this convolution up over it, it therefore
+[00:36:14.680 --> 00:36:17.240]   gives us a larger output.
+[00:36:17.240 --> 00:36:23.480]   But that's obviously stupid because when we get here, for example, of the 9 pixels coming
+[00:36:23.480 --> 00:36:26.200]   in, 8 of them are 0.
+[00:36:26.200 --> 00:36:28.960]   So we're just wasting a whole lot of computation.
+[00:36:28.960 --> 00:36:35.080]   And then on the other hand, if we're slightly off over here, then 4 of our 9 are non-zero.
+[00:36:35.080 --> 00:36:42.600]   But yet we only have one filter, like one kernel to use, so it can't change depending
+[00:36:42.600 --> 00:36:48.640]   on how many zeros are coming in, so it has to be suitable for both.
+[00:36:48.640 --> 00:36:50.680]   And it's just not possible.
+[00:36:50.680 --> 00:36:53.720]   So we end up with these artifacts.
+[00:36:53.720 --> 00:36:59.320]   So one approach we've learned to make it a bit better is to not put white things here,
+[00:36:59.320 --> 00:37:07.240]   but instead to copy this pixel's value to each of these three locations.
+[00:37:07.240 --> 00:37:11.480]   That's certainly a bit better, but it's still pretty crappy because now still when we get
+[00:37:11.480 --> 00:37:17.160]   to these 9 here, 4 of them are exactly the same number.
+[00:37:17.160 --> 00:37:25.200]   And when we move across 1, then now we've got a different situation entirely.
+[00:37:25.200 --> 00:37:30.440]   And so depending on where we are, in particular if we're here, there's going to be a lot less
+[00:37:30.440 --> 00:37:31.480]   repetition.
+[00:37:31.480 --> 00:37:36.640]   So again we have this problem where there's wasted computation and too much structure
+[00:37:36.640 --> 00:37:39.480]   in the data and it's going to lead to artifacts.
+[00:37:39.480 --> 00:37:45.160]   So up-sampling is better than transposed convolutions, it's better to copy them rather than replace
+[00:37:45.160 --> 00:37:50.220]   them with zeros, but it's still not quite good enough.
+[00:37:50.220 --> 00:38:00.640]   So instead we're going to do the pixel shuffle.
+[00:38:00.640 --> 00:38:07.160]   So the pixel shuffle is an operation in this sub-pixel convolutional neural network.
+[00:38:07.160 --> 00:38:12.900]   And it's a little bit mind-bending, but it's kind of fascinating.
+[00:38:12.900 --> 00:38:18.200]   And so we start with our input, we go through some convolutions to create some feature maps
+[00:38:18.200 --> 00:38:27.800]   for a while until eventually we get to layer i-1, which has n i-1 feature maps.
+[00:38:27.800 --> 00:38:29.960]   We're going to do another 3x3 conv.
+[00:38:29.960 --> 00:38:36.960]   And our goal here is to go from a 7x7 grid cell, we're going to go a 3x3 upscaling, so
+[00:38:36.960 --> 00:38:41.400]   we're going to go up to a 21x21 grid cell.
+[00:38:41.400 --> 00:38:45.560]   So what's another way we could do that?
+[00:38:45.560 --> 00:38:50.700]   To make it simpler, let's just pick one face, just one filter.
+[00:38:50.700 --> 00:38:54.720]   So we'll just take the topmost filter and just do a convolution over that just to see
+[00:38:54.720 --> 00:38:56.120]   what happens.
+[00:38:56.120 --> 00:39:02.840]   And what we're going to do is we're going to use a convolution where the kernel size
+[00:39:02.840 --> 00:39:12.200]   the number of filters is 9 times bigger than we, strictly speaking, need.
+[00:39:12.200 --> 00:39:20.600]   So if we needed 64 filters, we're actually going to do 64 times 9 filters.
+[00:39:20.600 --> 00:39:21.840]   Why is that?
+[00:39:21.840 --> 00:39:27.980]   And so here r is the scale factor, so 3, so r squared, 3 squared is 9.
+[00:39:27.980 --> 00:39:38.120]   So here are the 9 filters to cover one of these input layers, one of these input slices.
+[00:39:38.120 --> 00:39:47.240]   But what we can do is we started with 7x7 and we turned it into 7x7x9.
+[00:39:47.240 --> 00:39:58.160]   Well the output that we want is equal to 7x3 by 7x3, so in other words there's an equal
+[00:39:58.160 --> 00:40:04.100]   number of pixels here, or activations here, as there are r activations here.
+[00:40:04.100 --> 00:40:17.320]   So we can literally reshuffle these 7x7x9 activations to create this 7x3x7x3 map.
+[00:40:17.320 --> 00:40:21.920]   And so what we're going to do is we're going to take one little tube here, the top left
+[00:40:21.920 --> 00:40:29.280]   hand of each grid, and we're going to put the purple one up in the top left, and then
+[00:40:29.280 --> 00:40:35.440]   the blue one, one to the right, and then the light blue one, one to the right of that, and
+[00:40:35.440 --> 00:40:40.920]   then the slightly darker blue one in the middle of the far left, the green one in the middle,
+[00:40:40.920 --> 00:40:41.920]   and so forth.
+[00:40:41.920 --> 00:40:49.320]   So each of these 9 cells in the top left are going to end up in this little 3x3 section
+[00:40:49.320 --> 00:40:51.640]   of our grid.
+[00:40:51.640 --> 00:40:58.760]   And then we're going to take 2, 1 and take all of those 9 and move them to these 3x3
+[00:40:58.760 --> 00:41:02.160]   part of the grid, and so on and so forth.
+[00:41:02.160 --> 00:41:08.000]   And so we're going to end up having every one of these 7x7x9 activations inside this
+[00:41:08.000 --> 00:41:13.360]   7x3x7x3 image.
+[00:41:13.360 --> 00:41:19.280]   So the first thing to realize is, yes of course this works under some definition of works
+[00:41:19.280 --> 00:41:25.440]   because we have a learnable convolution here, and it's going to get some gradients, which
+[00:41:25.440 --> 00:41:30.880]   is going to do the best job it can of filling in the correct activation such that this output
+[00:41:30.880 --> 00:41:33.720]   is the thing we want.
+[00:41:33.720 --> 00:41:40.360]   So the first step is to realize there's nothing particularly magical here, we can create any
+[00:41:40.360 --> 00:41:46.640]   architecture we like, we can move things around anyhow we want to, and our weights in the convolution
+[00:41:46.640 --> 00:41:49.040]   will do their best to do all we asked.
+[00:41:49.040 --> 00:41:52.760]   The real question is, is it a good idea?
+[00:41:52.760 --> 00:41:58.680]   Is this an easier thing for it to do, and a more flexible thing for it to do, than the
+[00:41:58.680 --> 00:42:04.440]   transposed convolution or the upsampling followed by 1x1 conv?
+[00:42:04.440 --> 00:42:07.480]   And the short answer is, yes it is.
+[00:42:07.480 --> 00:42:13.760]   And the reason it's better in short is that the convolution here is happening in the low
+[00:42:13.760 --> 00:42:21.160]   resolution 7x7 space, which is quite efficient, whereas if we first of all upsampled and then
+[00:42:21.160 --> 00:42:30.960]   did our conv, then our conv would be happening in the 21x21 space, which is a lot of computation.
+[00:42:30.960 --> 00:42:35.880]   And furthermore as we discussed, there's a lot of replication and redundancy in the nearest
+[00:42:35.880 --> 00:42:40.840]   neighbor upsampled version.
+[00:42:40.840 --> 00:42:45.160]   So they actually show in this paper, in fact I think they have a follow-up technical note
+[00:42:45.160 --> 00:42:51.080]   where they provide some more mathematical details as to exactly what work is being done
+[00:42:51.080 --> 00:42:58.480]   and show that the work really is more efficient this way.
+[00:42:58.480 --> 00:43:00.280]   So that's what we're going to do.
+[00:43:00.280 --> 00:43:02.880]   So for our upsampling we're going to have two steps.
+[00:43:02.880 --> 00:43:11.920]   The first will be a 3x3 conv with R^2 times more channels than we originally wanted, and
+[00:43:11.920 --> 00:43:20.880]   then a pixel shuffle operation which moves everything in each grid cell into the little
+[00:43:20.880 --> 00:43:25.880]   R/R grids that are located throughout here.
+[00:43:25.880 --> 00:43:31.200]   So here it is, it's one line of code.
+[00:43:31.200 --> 00:43:37.400]   And so here's the conv from number of in to number of filters out times 4, because we're
+[00:43:37.400 --> 00:43:43.560]   doing a scale2 upsample, so 2^2 is 4.
+[00:43:43.560 --> 00:43:49.320]   So that's our convolution, and then here is our pixel shuffle, it's built into PyTorch.
+[00:43:49.320 --> 00:43:54.960]   Pixel shuffle is the thing that moves each thing into its right spot.
+[00:43:54.960 --> 00:44:02.800]   So that will increase, will upsample by a scale factor of 2, and so we need to do that
+[00:44:02.800 --> 00:44:12.200]   log base2 scale times, so if scale is 4, then we have to do it 2 times to go 2 times 2 bigger.
+[00:44:12.200 --> 00:44:17.840]   So that's what this upsample here does.
+[00:44:17.840 --> 00:44:24.240]   Great, guess what?
+[00:44:24.240 --> 00:44:27.440]   That does not get rid of the checkerboard patterns.
+[00:44:27.440 --> 00:44:30.580]   We still have checkerboard patterns.
+[00:44:30.580 --> 00:44:35.040]   So I'm sure in great fury and frustration, this same team from Twitter, I think this
+[00:44:35.040 --> 00:44:39.500]   was back when they used to be at a startup called MagicPony that Twitter bought, came
+[00:44:39.500 --> 00:44:52.760]   back again with another paper saying, okay, this time we've got rid of the checkerboard.
+[00:44:52.760 --> 00:45:00.080]   So why do we still have, as you can see here, we still have a checkerboard?
+[00:45:00.080 --> 00:45:07.300]   And so the reason we still have a checkerboard, even after doing this, is that when we randomly
+[00:45:07.300 --> 00:45:13.840]   initialize this convolutional kernel at the start, it means that each of these 9 pixels
+[00:45:13.840 --> 00:45:19.320]   in this little 3x3 grid over here are going to be totally randomly different.
+[00:45:19.320 --> 00:45:24.840]   But then the next set of 3 pixels will be randomly different to each other, but will
+[00:45:24.840 --> 00:45:29.520]   be very similar to the corresponding pixel in the previous 3x3 section.
+[00:45:29.520 --> 00:45:33.880]   So we're going to have repeating 3x3 things all the way across.
+[00:45:33.880 --> 00:45:40.720]   And so then as we try to learn something better, it's starting from this repeating 3x3 starting
+[00:45:40.720 --> 00:45:44.300]   point, which is not what we want.
+[00:45:44.300 --> 00:45:51.100]   What we actually would want is for these 3x3 pixels to be the same to start with.
+[00:45:51.100 --> 00:45:59.440]   So to make these 3x3 pixels the same, we would need to make these 9 channels the same here.
+[00:45:59.440 --> 00:46:01.760]   For each filter.
+[00:46:01.760 --> 00:46:10.980]   And so the solution, and this paper is very simple, is that when we initialize this convolution
+[00:46:10.980 --> 00:46:15.740]   at the start, when we randomly initialize it, we don't totally randomly initialize it.
+[00:46:15.740 --> 00:46:23.620]   We randomly initialize one of the R^2 sets of channels, and then we copy that to the
+[00:46:23.620 --> 00:46:26.800]   other R^2, so they're all the same.
+[00:46:26.800 --> 00:46:31.900]   And that way, initially, each of these 3x3s will be the same.
+[00:46:31.900 --> 00:46:42.420]   And so that is called IC&R, and that's what we're going to use in a moment.
+[00:46:42.420 --> 00:46:45.140]   So before we do, let's take a quick look.
+[00:46:45.140 --> 00:46:50.600]   So we've got this super resolution ResNet, which does lots of computation with lots of
+[00:46:50.600 --> 00:46:57.020]   ResNet blocks, and then it does some up-sampling and gets our final 3 channels out.
+[00:46:57.020 --> 00:47:03.140]   And then to make life faster, we're going to run this in parallel.
+[00:47:03.140 --> 00:47:08.960]   One reason we want to run it in parallel is because Dorado told us that he has 6 GPUs,
+[00:47:08.960 --> 00:47:13.240]   and this is what his computer looks like right now.
+[00:47:13.240 --> 00:47:19.900]   And so I'm sure anybody who has more than one GPU has had this experience before.
+[00:47:19.900 --> 00:47:27.700]   So how do we get these men working together?
+[00:47:27.700 --> 00:47:37.220]   All you need to do is to take your PyTorch module and wrap it with nn.data_parallel.
+[00:47:37.220 --> 00:47:43.580]   And once you've done that, it copies it to each of your GPUs and will automatically run
+[00:47:43.580 --> 00:47:45.820]   it in parallel.
+[00:47:45.820 --> 00:47:54.580]   It scales pretty well to 2 GPUs, okay to 3 GPUs, better than nothing to 4 GPUs, and beyond
+[00:47:54.580 --> 00:48:00.140]   that performance starts to go backwards.
+[00:48:00.140 --> 00:48:03.220]   By default it will copy it to all of your GPUs.
+[00:48:03.220 --> 00:48:08.940]   You can add an array of GPUs, otherwise if you want to avoid getting in trouble, for
+[00:48:08.940 --> 00:48:13.340]   example I have to share our box with Yannette, and if I didn't put this here, then she would
+[00:48:13.340 --> 00:48:17.720]   be yelling at me right now, or maybe boycotting my class.
+[00:48:17.720 --> 00:48:22.740]   So this is how you avoid getting into trouble with Yannette.
+[00:48:22.740 --> 00:48:29.460]   So one thing to be aware of here is that once you do this, it actually modifies your module.
+[00:48:29.460 --> 00:48:34.140]   So if you now print out your module, let's say prohibuously it was just an nn.sequential,
+[00:48:34.140 --> 00:48:43.020]   now you'll find it's an nn.sequential embedded inside a module called module.
+[00:48:43.020 --> 00:48:49.580]   And so in other words, if you save something which you had nn.data_parallel, and then try
+[00:48:49.580 --> 00:48:54.580]   to load it back into something that you hadn't, nn.beta_parallel, it'll say it doesn't match
+[00:48:54.580 --> 00:49:00.820]   up because one of them is embedded inside this module attribute and the other one isn't.
+[00:49:00.820 --> 00:49:07.020]   It may also depend even on which GPU IDs you had it copied to.
+[00:49:07.020 --> 00:49:16.380]   So two possible solutions, one is don't save the module m, but instead save the module attribute
+[00:49:16.380 --> 00:49:21.860]   m.module, because that's actually the non-data parallel bit.
+[00:49:21.860 --> 00:49:28.540]   Or always put it on the same GPU IDs and use data parallel and load and save that every
+[00:49:28.540 --> 00:49:29.540]   time.
+[00:49:29.540 --> 00:49:30.540]   That's what I was using.
+[00:49:30.540 --> 00:49:35.060]   This would be an easy thing for me to fix automatically in fast.ai and I'll do it pretty
+[00:49:35.060 --> 00:49:41.140]   soon so it'll look for that module attribute and deal with it automatically, but for now
+[00:49:41.140 --> 00:49:42.140]   we have to do it manually.
+[00:49:42.140 --> 00:49:46.720]   It's probably useful to know what's going on behind the scenes anyway.
+[00:49:46.720 --> 00:49:54.340]   So we've got our module, I find it'll run like 50% or 60% faster on a 1080ti.
+[00:49:54.340 --> 00:50:00.580]   If you're running on Volta, it actually parallelizes a bit better.
+[00:50:00.580 --> 00:50:06.260]   There are much faster ways to parallelize, but this is a super easy way.
+[00:50:06.260 --> 00:50:08.980]   So we create our learner in the usual way.
+[00:50:08.980 --> 00:50:13.340]   We could use mse_loss here, so that's just going to compare the pixels of the output
+[00:50:13.340 --> 00:50:19.360]   to the pixels that we expected, and we can run our learning rate finder and we can train
+[00:50:19.360 --> 00:50:27.420]   it for a while, and here's our input and here's our output, and you can see that what we've
+[00:50:27.420 --> 00:50:32.500]   managed to do is to train a very advanced residual convolutional network that's learned
+[00:50:32.500 --> 00:50:36.100]   to blur things.
+[00:50:36.100 --> 00:50:37.100]   Why is that?
+[00:50:37.100 --> 00:50:38.540]   Well because it's what we asked for.
+[00:50:38.540 --> 00:50:45.900]   We said to minimize mse_loss, an mse_loss between pixels, really the best way to do
+[00:50:45.900 --> 00:50:50.400]   that is just average the pixels, i.e. to blur it.
+[00:50:50.400 --> 00:50:52.620]   So that's why pixel_loss is no good.
+[00:50:52.620 --> 00:50:56.980]   So we want to use our perceptual loss.
+[00:50:56.980 --> 00:51:00.120]   So let's try perceptual loss.
+[00:51:00.120 --> 00:51:06.260]   So with perceptual loss, we're basically going to take our VGG network, and just like we
+[00:51:06.260 --> 00:51:14.120]   did last week, we're going to find the block index just before we get a max pool.
+[00:51:14.120 --> 00:51:20.500]   So here are the ends of each block of the same grid size, and if we just print them
+[00:51:20.500 --> 00:51:26.040]   out as we'd expect, every one of those is a value module.
+[00:51:26.040 --> 00:51:32.440]   And so in this case, these last two blocks are less interesting to us.
+[00:51:32.440 --> 00:51:39.580]   The grid size there is small enough, coarse enough that it's not as useful for super resolution,
+[00:51:39.580 --> 00:51:42.380]   so we're just going to use the first three.
+[00:51:42.380 --> 00:51:47.300]   And so just to save unnecessary computation, we're just going to use those first 23 layers
+[00:51:47.300 --> 00:51:54.340]   for VGG, we'll throw away the rest, we'll stick it on the GPU, we're not going to be
+[00:51:54.340 --> 00:51:59.740]   training this VGG model at all, we're just using it to compare activations.
+[00:51:59.740 --> 00:52:07.540]   So we'll stick it in eval mode, and we will set it to not trainable.
+[00:52:07.540 --> 00:52:13.940]   Just like last week, we'll use a save_features class to do a forward hook, which saves the
+[00:52:13.940 --> 00:52:17.340]   output activations at each of those layers.
+[00:52:17.340 --> 00:52:21.180]   And so now we've got everything we need to create our perceptual loss, or as I call it
+[00:52:21.180 --> 00:52:24.660]   here, feature_loss_plus.
+[00:52:24.660 --> 00:52:32.160]   And so we're going to pass in a list of layer IDs, the layers where we want the content
+[00:52:32.160 --> 00:52:39.580]   loss to be calculated, an array of weights, a list of weights for each of those layers.
+[00:52:39.580 --> 00:52:46.180]   So we can just go through each of those layer IDs and create an object which has got the
+[00:52:46.180 --> 00:52:49.860]   hook function, forward hook function to store the activations.
+[00:52:49.860 --> 00:52:58.220]   And so in our forward, then we can just go ahead and call the forward pass of our model
+[00:52:58.220 --> 00:53:02.620]   with the target, so the target is the high res image we're trying to create.
+[00:53:02.620 --> 00:53:06.860]   And so the reason we do that is because that's going to then call that hook function and
+[00:53:06.860 --> 00:53:14.060]   store in self.save_features the activations we want.
+[00:53:14.060 --> 00:53:20.540]   Now we're going to need to do that for our Confinet output as well.
+[00:53:20.540 --> 00:53:24.780]   So we need to clone these because otherwise the Confinet output is going to go ahead and
+[00:53:24.780 --> 00:53:27.980]   just plobber what we already had.
+[00:53:27.980 --> 00:53:34.180]   So now we can do the same thing for the Confinet output, which is the input to the loss function.
+[00:53:34.180 --> 00:53:40.500]   And so now we've got those two things, we can zip them all together along with the weights.
+[00:53:40.500 --> 00:53:45.420]   So we've got inputs, targets, weights, and then we can do the L1 loss between the inputs
+[00:53:45.420 --> 00:53:48.820]   and the targets and multiply by the layer weights.
+[00:53:48.820 --> 00:53:57.100]   The only other thing I do is I also grab the pixel loss, but I weight it down quite a bit.
+[00:53:57.100 --> 00:54:02.260]   And most people don't do this, I haven't seen papers that do this, but in my opinion it's
+[00:54:02.260 --> 00:54:09.860]   maybe a little bit better because you've got the perceptual content loss activation stuff,
+[00:54:09.860 --> 00:54:18.660]   but at the finest level it also cares about the individual pixels.
+[00:54:18.660 --> 00:54:24.060]   So that's our loss function, we create our super resolution ResNet, telling it how much
+[00:54:24.060 --> 00:54:28.060]   to scale up by.
+[00:54:28.060 --> 00:54:38.820]   And then we're going to do our ICNR initialization of that pixel shuffle convolution.
+[00:54:38.820 --> 00:54:46.840]   So this is very, very boring code, I actually stole it from somebody else.
+[00:54:46.840 --> 00:54:53.500]   Literally all it does is just say, okay, you've got some weight tensor x that you want to
+[00:54:53.500 --> 00:55:01.300]   initialize, so we're going to treat it as if it had a number of number of features divided
+[00:55:01.300 --> 00:55:11.020]   by scale squared features in practice, so this might be 2 squared, it could be 4, because
+[00:55:11.020 --> 00:55:16.960]   we actually want to keep one set of them and then copy them 4 times.
+[00:55:16.960 --> 00:55:22.620]   So we divide it by 4, and we create something of that size, and we initialize that with
+[00:55:22.620 --> 00:55:31.460]   a default timing normal initialization, and then we just make scale squared copies of
+[00:55:31.460 --> 00:55:32.460]   it.
+[00:55:32.460 --> 00:55:36.220]   And the rest of it is just moving axes around a little bit.
+[00:55:36.220 --> 00:55:45.740]   So that's going to return a new weight matrix where each initialized subkernel is repeated
+[00:55:45.740 --> 00:55:49.780]   R squared or scale squared times.
+[00:55:49.780 --> 00:55:53.760]   So that details don't matter very much, all that matters here is that I just looked through
+[00:55:53.760 --> 00:56:00.820]   to find what was the actual layer, the conv layer just before the pixel shuffle, and stored
+[00:56:00.820 --> 00:56:07.100]   it away, and then I called ICNR on its weight matrix to get my new weight matrix, and then
+[00:56:07.100 --> 00:56:13.140]   I copied that new weight matrix back into that layer.
+[00:56:13.140 --> 00:56:20.660]   So as you can see, I went to quite a lot of trouble in this exercise to really try to
+[00:56:20.660 --> 00:56:25.900]   implement all the best practices, and I kind of tend to do things a bit one extreme or
+[00:56:25.900 --> 00:56:26.900]   the other.
+[00:56:26.900 --> 00:56:30.420]   I show you a really hacky version that only slightly works, or I go to the nth degree
+[00:56:30.420 --> 00:56:32.860]   to make it work really well.
+[00:56:32.860 --> 00:56:37.940]   So this is a version where I'm claiming that this is pretty much a state-of-the-art implementation,
+[00:56:37.940 --> 00:56:46.220]   it's a competition-winning approach, and the reason I'm doing that is because I think this
+[00:56:46.220 --> 00:56:51.180]   is one of those rare papers where they actually get a lot of the details right, and I kind
+[00:56:51.180 --> 00:56:56.580]   of want you to get a feel of what it feels like to get all the details right.
+[00:56:56.580 --> 00:57:02.220]   And remember, getting the details right is the difference between this hideous blurry
+[00:57:02.220 --> 00:57:14.780]   mess and this really pretty exquisite result.
+[00:57:14.780 --> 00:57:19.260]   So we're going to have to do theta parallel on that again, we're going to set our criterion
+[00:57:19.260 --> 00:57:25.500]   to be feature loss using our VGG model, grab the first few blocks, and these are sets of
+[00:57:25.500 --> 00:57:34.580]   layer weights that I found worked pretty well, do a learning rate finder, fit it for a while,
+[00:57:34.580 --> 00:57:40.700]   and I fit all around for a little while trying to get some of these details right.
+[00:57:40.700 --> 00:57:48.260]   But here's my favorite part of the paper, what happens next, now that we've done it
+[00:57:48.260 --> 00:57:55.180]   for scale=2, progressive resizing.
+[00:57:55.180 --> 00:58:00.540]   So progressive resizing is the trick that let us get the best single computer result
+[00:58:00.540 --> 00:58:02.740]   for ImageNet training on Dawnbench.
+[00:58:02.740 --> 00:58:07.860]   This idea is starting small, gradually making bigger, and in two papers that have used this
+[00:58:07.860 --> 00:58:15.220]   idea, one is the progressive resizing of GANs paper which allows training of very high-resolution
+[00:58:15.220 --> 00:58:19.620]   GANs, and the other one is the EDSR paper.
+[00:58:19.620 --> 00:58:26.700]   And the cool thing about progressive resizing is not only are your earlier epochs, assuming
+[00:58:26.700 --> 00:58:33.000]   you've got two by two smaller, four times faster, you can also make the batch size maybe
+[00:58:33.000 --> 00:58:39.060]   three or four times bigger, but more importantly, they're going to generalize better because
+[00:58:39.060 --> 00:58:44.980]   you're feeding your model different size images during training.
+[00:58:44.980 --> 00:58:51.000]   So we were able to train like half as many epochs for ImageNet as most people.
+[00:58:51.000 --> 00:58:54.620]   So our epochs were faster and there were fewer of them.
+[00:58:54.620 --> 00:59:01.140]   So progressive resizing is something that, particularly if you're training from scratch,
+[00:59:01.140 --> 00:59:04.780]   I'm not so sure if it's useful for fine-tuning transfer learning, but if you're training
+[00:59:04.780 --> 00:59:08.740]   from scratch, you probably want to do nearly all the time.
+[00:59:08.740 --> 00:59:16.140]   So the next step is to go all the way back to the top and change to 4-scale 32 batch
+[00:59:16.140 --> 00:59:21.780]   size, like restart, so I save the model before I do that, go back.
+[00:59:21.780 --> 00:59:29.340]   And that's why there's a little bit of fussing around in here with reloading, because what
+[00:59:29.340 --> 00:59:35.580]   I needed to do now is I needed to load my saved model back in, but there's a slight
+[00:59:35.580 --> 00:59:41.500]   issue, which is I now have one more up-sampling layer than I used to have.
+[00:59:41.500 --> 00:59:54.420]   To go from 2x2 to 4x4, my little loop here is now looping through twice, not once, and
+[00:59:54.420 --> 00:59:58.100]   therefore it's added an extra conv and an extra pixel shuffle.
+[00:59:58.100 --> 01:00:03.900]   So how am I going to load in weights through a different network?
+[01:00:03.900 --> 01:00:11.100]   And the answer is that I use a very handy thing in PyTorch, which is if I call -- this
+[01:00:11.100 --> 01:00:19.440]   is basically what learn.load calls behind the scenes, load state dict.
+[01:00:19.440 --> 01:00:26.780]   If I pass this parameter strict=false, if I pass in this parameter strict=false, then
+[01:00:26.780 --> 01:00:34.500]   it says if you can't fill in all of the layers, just fill in the layers you can.
+[01:00:34.500 --> 01:00:38.900]   So after loading the model back in this way, we're going to end up with something where
+[01:00:38.900 --> 01:00:44.460]   it's loaded in all the layers that it can, and that one conv layer that's new is going
+[01:00:44.460 --> 01:00:46.900]   to be randomly initialized.
+[01:00:46.900 --> 01:00:56.600]   And so then I freeze all my layers and then unfreeze that up-sampling part, and then use
+[01:00:56.600 --> 01:01:06.980]   ICNR on my newly added extra layer, and then I can go ahead and load again.
+[01:01:06.980 --> 01:01:08.820]   And so then the rest is the same.
+[01:01:08.820 --> 01:01:13.780]   So if you're trying to replicate this, don't just run this top to bottom, realize it involves
+[01:01:13.780 --> 01:01:21.220]   a bit of jumping around.
+[01:01:21.220 --> 01:01:24.460]   The longer you train, the better it gets.
+[01:01:24.460 --> 01:01:28.540]   I ended up training it for about 10 hours, but you'll still get very good results much
+[01:01:28.540 --> 01:01:32.020]   more quickly if you're less patient.
+[01:01:32.020 --> 01:01:35.160]   And so we can try it out, and here is the result.
+[01:01:35.160 --> 01:01:41.160]   Here is my pixelated bird, and look here, it's like totally randomly pixels.
+[01:01:41.160 --> 01:01:48.900]   And here's the up-sampled version, it's like it's literally invented coloration.
+[01:01:48.900 --> 01:01:55.300]   But it figured out what kind of bird it is, and it knows what these feathers are meant
+[01:01:55.300 --> 01:01:56.680]   to look like.
+[01:01:56.680 --> 01:02:03.620]   And so it has imagined a set of feathers which are compatible with these exact pixels, which
+[01:02:03.620 --> 01:02:04.920]   is like genius.
+[01:02:04.920 --> 01:02:10.940]   Like same here, there's no way you can tell what these blue dots are meant to represent,
+[01:02:10.940 --> 01:02:16.120]   but if you know that this kind of bird has an array of feathers here, you know that's
+[01:02:16.120 --> 01:02:17.120]   what they must be.
+[01:02:17.120 --> 01:02:20.320]   And then you can figure out where the feathers would have to be such that when they were
+[01:02:20.320 --> 01:02:23.080]   pixelated they'd end up in these spots.
+[01:02:23.080 --> 01:02:30.780]   So it's like literally reverse engineered, given its knowledge of this exact species
+[01:02:30.780 --> 01:02:36.640]   of bird, how it would have to have looked to create this output.
+[01:02:36.640 --> 01:02:39.440]   And so this is like so amazing.
+[01:02:39.440 --> 01:02:48.100]   It also knows from all the kind of signs around it that this area here was almost certainly
+[01:02:48.100 --> 01:02:49.580]   blurred out.
+[01:02:49.580 --> 01:02:55.520]   So it's actually reconstructed blurred vegetation.
+[01:02:55.520 --> 01:03:00.400]   And if it hadn't done all of those things, it wouldn't have got such a good loss function.
+[01:03:00.400 --> 01:03:08.440]   Because in the end, it had to match the activations saying like there's a feather over here and
+[01:03:08.440 --> 01:03:17.320]   it's kind of fluffy looking and it's in this direction and all that.
+[01:03:17.320 --> 01:03:22.460]   Alright, well that brings us to the end of super resolution.
+[01:03:22.460 --> 01:03:27.960]   Don't forget to check out the Ask Jeremy Anything thread and we will do some Ask Jeremy Anything
+[01:03:27.960 --> 01:03:28.960]   after the break.
+[01:03:28.960 --> 01:03:47.160]   Let's see you back here at quarter to eight.
+[01:03:47.160 --> 01:03:54.040]   Okay.
+[01:03:54.040 --> 01:04:04.960]   So we are going to do Ask Jeremy Anything, Rachel will tell me the most voted up of your
+[01:04:04.960 --> 01:04:05.960]   questions.
+[01:04:05.960 --> 01:04:06.960]   Yes, Rachel.
+[01:04:06.960 --> 01:04:15.080]   What are the future plans for Fast AI in this course?
+[01:04:15.080 --> 01:04:16.560]   Will there be a part three?
+[01:04:16.560 --> 01:04:19.480]   If there is a part three, I would really love to take it.
+[01:04:19.480 --> 01:04:20.480]   That's cool.
+[01:04:20.480 --> 01:04:25.400]   I'm not quite sure, it's always hard to guess.
+[01:04:25.400 --> 01:04:28.320]   I hope there will be some kind of follow-up.
+[01:04:28.320 --> 01:04:33.700]   Last year after part two, one of the students started up a weekly book club going through
+[01:04:33.700 --> 01:04:39.240]   the Ian Goodfellow deep learning book and Ian actually came in and presented quite a
+[01:04:39.240 --> 01:04:43.040]   few of the chapters and other people, like there was somebody, an expert, who presented
+[01:04:43.040 --> 01:04:44.040]   every chapter.
+[01:04:44.040 --> 01:04:46.440]   That was like a really cool part three.
+[01:04:46.440 --> 01:04:52.720]   To a large extent it will depend on you, the community, to come up with ideas and to help
+[01:04:52.720 --> 01:04:57.360]   make them happen and I'm definitely keen to help.
+[01:04:57.360 --> 01:05:01.160]   I've got a bunch of ideas, but I'm nervous about saying them because I'm not sure which
+[01:05:01.160 --> 01:05:07.080]   ones will happen and which ones won't, but the more support I have in making things happen
+[01:05:07.080 --> 01:05:13.800]   that you want to happen from you, the more likely they are to happen.
+[01:05:13.800 --> 01:05:17.440]   What was your experience like starting down the path of entrepreneurship?
+[01:05:17.440 --> 01:05:21.920]   Have you always been an entrepreneur or did you start out at a big company and transition
+[01:05:21.920 --> 01:05:22.920]   to a start-up?
+[01:05:22.920 --> 01:05:26.800]   Did you go from academia to start-ups or start-ups to academia?
+[01:05:26.800 --> 01:05:31.720]   I was definitely not in academia, I'm totally a fake academic.
+[01:05:31.720 --> 01:05:38.760]   I started at McKinsey & Company which is a strategy firm when I was 18, which meant I
+[01:05:38.760 --> 01:05:43.400]   couldn't really go to university, so I didn't really turn up and then I spent eight years
+[01:05:43.400 --> 01:05:47.240]   in business helping really big companies on strategic questions.
+[01:05:47.240 --> 01:05:53.380]   I always wanted to be an entrepreneur, I planned to already spend two years at McKinsey, the
+[01:05:53.380 --> 01:05:58.160]   only thing I really regret in my life was not sticking to that plan and wasting eight
+[01:05:58.160 --> 01:05:59.160]   years instead.
+[01:05:59.160 --> 01:06:04.480]   So two years would have been perfect, but then I went into entrepreneurship, started
+[01:06:04.480 --> 01:06:12.480]   two companies in Australia and the best part about that was that I didn't get any funding,
+[01:06:12.480 --> 01:06:19.540]   so all the money that I made was mine, all the decisions were mine and my partners.
+[01:06:19.540 --> 01:06:27.400]   I focused entirely on profit and product and customer and service, whereas I find in San
+[01:06:27.400 --> 01:06:38.040]   Francisco I'm glad I came here and so the two of us came here for Kaggle, Anthony and
+[01:06:38.040 --> 01:06:47.320]   I and raised a ridiculous amount of money, $11 million for this really new company.
+[01:06:47.320 --> 01:06:51.720]   That was really interesting but it's also really distracting, trying to worry about
+[01:06:51.720 --> 01:06:58.760]   scaling and VCs wanting to see what your business development plans are and also just not having
+[01:06:58.760 --> 01:07:02.840]   any real need to actually make a profit.
+[01:07:02.840 --> 01:07:11.240]   So I had a bit of the same problem at Inletic, where I again raised a lot of money, $15 million
+[01:07:11.240 --> 01:07:17.340]   pretty quickly and a lot of distractions.
+[01:07:17.340 --> 01:07:28.320]   So I think trying to bootstrap your own company and focus on making money by selling something
+[01:07:28.320 --> 01:07:37.000]   at a profit and then plowing that back into the company worked really well because within
+[01:07:37.000 --> 01:07:43.280]   like five years we were making a profit from three months in and within five years we were
+[01:07:43.280 --> 01:07:47.800]   making enough of a profit not just to pay all of us in their own wages but also to see
+[01:07:47.800 --> 01:07:52.680]   my bank account growing and after ten years sold it for a big chunk of money, not enough
+[01:07:52.680 --> 01:07:59.480]   that a VC would be excited but enough that I didn't have to worry about money again.
+[01:07:59.480 --> 01:08:05.440]   So I think bootstrapping a company is something which people in the Bay Area at least don't
+[01:08:05.440 --> 01:08:10.920]   seem to appreciate how good an idea that is.
+[01:08:10.920 --> 01:08:15.240]   If you are 25 years old today and still know what you know where, which you'd be looking
+[01:08:15.240 --> 01:08:21.600]   to use AI, what are you working on right now or looking to work on in the next two years?
+[01:08:21.600 --> 01:08:24.920]   You should ignore the last part of that, I won't even answer it, it doesn't matter where
+[01:08:24.920 --> 01:08:32.200]   I'm looking, what you should do is leverage your knowledge about your domain.
+[01:08:32.200 --> 01:08:39.120]   So one of the main reasons we do this is to get people who have backgrounds in whatever,
+[01:08:39.120 --> 01:08:53.000]   recruiting, oil field surveys, journalism, activism, whatever, and solve your problems.
+[01:08:53.000 --> 01:08:56.680]   It will be really obvious to you what your problems are and it will be really obvious
+[01:08:56.680 --> 01:09:00.000]   to you what data you have and where to find it.
+[01:09:00.000 --> 01:09:03.160]   Those are all the bits that for everybody else it's really hard, so people who start
+[01:09:03.160 --> 01:09:09.280]   out with "Oh I know deep learning" now go and find something to apply it to, basically
+[01:09:09.280 --> 01:09:16.240]   never succeed, whereas people who are like "Oh I've been spending 25 years doing specialized
+[01:09:16.240 --> 01:09:20.840]   recruiting for legal firms and I know that the key issue is this thing and I know that
+[01:09:20.840 --> 01:09:25.360]   this piece of data totally solves it and so I'm just going to do that now and I already
+[01:09:25.360 --> 01:09:31.720]   know who to call to actually start selling it to, they're the ones who tend to win.
+[01:09:31.720 --> 01:09:44.680]   So if you've done nothing but academic stuff then it's more about your hobbies and interests,
+[01:09:44.680 --> 01:09:47.720]   so everybody has hobbies.
+[01:09:47.720 --> 01:09:53.520]   The main thing I would say is please don't focus on building tools for data scientists
+[01:09:53.520 --> 01:10:00.280]   to use or for software engineers to use because every data scientist knows about the market
+[01:10:00.280 --> 01:10:08.920]   of data scientists, whereas only you know about the market for analyzing oil survey well logs
+[01:10:08.920 --> 01:10:19.560]   or understanding audiology studies or whatever it is that you do.
+[01:10:19.560 --> 01:10:23.360]   Given what you've shown us about applying transfer learning from image recognition to
+[01:10:23.360 --> 01:10:27.920]   NLP, there looks to be a lot of value in paying attention to all of the developments that
+[01:10:27.920 --> 01:10:32.000]   happen across the whole machine learning field and that if you were to focus in one area
+[01:10:32.000 --> 01:10:35.920]   you might miss out on some great advances in other concentrations.
+[01:10:35.920 --> 01:10:39.720]   How do you stay aware of all the advancements across the field while still having time to
+[01:10:39.720 --> 01:10:42.280]   dig in deep to your specific domains?
+[01:10:42.280 --> 01:10:46.640]   Yeah that's awesome, I mean that's kind of the message of this course, one of the key
+[01:10:46.640 --> 01:10:52.240]   messages of this course is like lots of good works being done in different places and people
+[01:10:52.240 --> 01:10:57.000]   are so specialized most people don't know about it, like if I can get state-of-the-art
+[01:10:57.000 --> 01:11:02.440]   results in NLP within six months of starting to look at NLP, then I think that says more
+[01:11:02.440 --> 01:11:06.720]   about NLP than it does about me.
+[01:11:06.720 --> 01:11:13.160]   So yeah it's kind of like the entrepreneurship thing, it's like you pick the areas that you
+[01:11:13.160 --> 01:11:17.800]   see that you know about and kind of transfer stuff like oh we could use deep learning to
+[01:11:17.800 --> 01:11:24.840]   solve this problem or in this case like we could use this idea of computer vision to
+[01:11:24.840 --> 01:11:27.380]   solve that problem.
+[01:11:27.380 --> 01:11:32.440]   So things like transfer learning, I'm sure there's like a thousand things, opportunities
+[01:11:32.440 --> 01:11:39.600]   for you to do in other fields to do what Sebastian and I did in NLP with NLP classification.
+[01:11:39.600 --> 01:11:43.600]   So the short answer to your question is the way to stay ahead of what's going on would
+[01:11:43.600 --> 01:11:50.440]   be to follow my feed of Twitter favorites and my approach is to follow lots and lots
+[01:11:50.440 --> 01:11:55.040]   of people on Twitter and put them into the Twitter favorites for you.
+[01:11:55.040 --> 01:11:59.080]   Every time I come across something interesting I click favorite and there are two reasons
+[01:11:59.080 --> 01:12:03.640]   I do it, the first is that when the next course comes along I go through my favorites to find
+[01:12:03.640 --> 01:12:11.480]   which things I want to study and the second is so that you can do the same thing.
+[01:12:11.480 --> 01:12:17.040]   And then which do you go deep into, it almost doesn't matter, like I find every time I look
+[01:12:17.040 --> 01:12:19.880]   at something it turns out to be super interesting and important.
+[01:12:19.880 --> 01:12:26.400]   So just pick something which is like, you feel like solving that problem would be actually
+[01:12:26.400 --> 01:12:31.480]   useful for some reason and it doesn't seem to be very popular, which is kind of the opposite
+[01:12:31.480 --> 01:12:36.720]   of what everybody else does, everybody else works on the problems which everybody else
+[01:12:36.720 --> 01:12:41.360]   is already working on because they're the ones that seem popular and I don't know.
+[01:12:41.360 --> 01:12:46.880]   I can't quite understand this kind of thinking but it seems to be very common.
+[01:12:46.880 --> 01:12:50.200]   Is deep learning an overkill to use on tabular data?
+[01:12:50.200 --> 01:12:59.320]   When is it better to use deep learning instead of machine learning on tabular data?
+[01:12:59.320 --> 01:13:03.280]   Is that a real question or did you just put that there so that I would point out that
+[01:13:03.280 --> 01:13:10.000]   Rachel Thomas just wrote an article?
+[01:13:10.000 --> 01:13:16.520]   Yes, so Rachel's just written about this and Rachel and I spent a long time talking about
+[01:13:16.520 --> 01:13:24.280]   it and the short answer is we think it's great to use deep learning on tabular data.
+[01:13:24.280 --> 01:13:30.520]   Actually of all the rich, complex, important and interesting things that appear in Rachel's
+[01:13:30.520 --> 01:13:37.680]   Twitter stream covering everything from the genocide of the Rohingya through to the latest
+[01:13:37.680 --> 01:13:44.540]   ethics violations in AI companies, the one by far that got the most attention and engagement
+[01:13:44.540 --> 01:13:51.920]   from the community was her question about is it called tabular data or structured data.
+[01:13:51.920 --> 01:13:57.200]   Ask computer people how to name things and you'll get plenty of interest.
+[01:13:57.200 --> 01:14:03.000]   There are some really good links here to stuff from Instacart and Pinterest and other folks
+[01:14:03.000 --> 01:14:05.520]   who have done some good work in this area.
+[01:14:05.520 --> 01:14:09.020]   Many of you that went to the Data Institute conference will have seen Jeremy Stanley's
+[01:14:09.020 --> 01:14:12.400]   presentation about the really cool work they did at Instacart.
+[01:14:12.400 --> 01:14:13.400]   Yes, Rachel?
+[01:14:13.400 --> 01:14:19.960]   I relied heavily on lessons three and four from part one in writing this post, so much
+[01:14:19.960 --> 01:14:23.520]   of it may be familiar to you.
+[01:14:23.520 --> 01:14:30.600]   Rachel asked me during the post how to tell whether you should use a decision tree ensemble
+[01:14:30.600 --> 01:14:37.320]   like GVM or random forest or neural net and my answer is I still don't know.
+[01:14:37.320 --> 01:14:42.480]   Nobody I'm aware of has done that research in any particularly meaningful way, so there's
+[01:14:42.480 --> 01:14:44.680]   a question to be answered there.
+[01:14:44.680 --> 01:14:49.920]   I guess my approach has been to try to make both of those things as accessible as possible
+[01:14:49.920 --> 01:14:54.480]   through the fastAI library so you can try them both and see what works.
+[01:14:54.480 --> 01:15:09.000]   That was it for the top three questions.
+[01:15:09.000 --> 01:15:15.600]   Just quickly to go from super resolution to style transfer is kind of --
+[01:15:15.600 --> 01:15:22.040]   I think I missed the one on reinforcement learning.
+[01:15:22.040 --> 01:15:26.920]   Reinforcement learning popularity has been on a gradual rise in the recent past.
+[01:15:26.920 --> 01:15:28.980]   What's your take on reinforcement learning?
+[01:15:28.980 --> 01:15:36.160]   Would fastAI consider covering some ground and popular RL techniques in the future?
+[01:15:36.160 --> 01:15:41.520]   I'm still not a believer in reinforcement learning.
+[01:15:41.520 --> 01:15:47.280]   I think it's an interesting problem to solve, but it's not at all clear that we have a good
+[01:15:47.280 --> 01:15:48.480]   way of solving this problem.
+[01:15:48.480 --> 01:15:53.000]   The problem really is the delayed credit problem.
+[01:15:53.000 --> 01:15:58.780]   I want to learn to play Pong, I move up or down, and three minutes later I find out whether
+[01:15:58.780 --> 01:16:05.520]   I won the game of Pong, which actions I took were actually useful.
+[01:16:05.520 --> 01:16:13.480]   To me the idea of calculating the gradients of the output with respect to those inputs,
+[01:16:13.480 --> 01:16:21.720]   the credit is so delayed that those derivatives don't seem very interesting.
+[01:16:21.720 --> 01:16:25.680]   I get this question quite regularly in every one of these four courses so far.
+[01:16:25.680 --> 01:16:28.360]   I've always said the same thing.
+[01:16:28.360 --> 01:16:33.520]   I'm rather pleased that finally recently there's been some results showing that basically random
+[01:16:33.520 --> 01:16:39.400]   search often does better than reinforcement learning.
+[01:16:39.400 --> 01:16:44.800]   Basically what's happened is very well-funded companies with vast amounts of computational
+[01:16:44.800 --> 01:16:51.120]   power throw all of it at reinforcement learning problems and get good results and people then
+[01:16:51.120 --> 01:16:56.880]   say it's because of the reinforcement learning rather than the vast amounts of compute power.
+[01:16:56.880 --> 01:17:04.600]   Or they use extremely thoughtful and clever algorithms like a combination of convolutional
+[01:17:04.600 --> 01:17:09.920]   neural nets and Monte Carlo tree search like they did with the AlphaGo stuff to get great
+[01:17:09.920 --> 01:17:15.800]   results and people incorrectly say that's because of reinforcement learning but it wasn't
+[01:17:15.800 --> 01:17:19.880]   really reinforcement learning at all.
+[01:17:19.880 --> 01:17:27.440]   I'm very interested in solving these kind of more generic optimization type problems
+[01:17:27.440 --> 01:17:33.880]   rather than just prediction problems and that's what these delayed credit problems look like.
+[01:17:33.880 --> 01:17:40.160]   But I don't think we've yet got good enough best practices that I have anything I'm ready
+[01:17:40.160 --> 01:17:44.080]   to teach and say like I'm going to teach you this thing because I think it's still going
+[01:17:44.080 --> 01:17:46.640]   to be useful next year.
+[01:17:46.640 --> 01:17:58.080]   So we'll keep watching and see what happens.
+[01:17:58.080 --> 01:18:05.040]   So we're going to now turn the super resolution network basically into a style transfer network
+[01:18:05.040 --> 01:18:07.160]   and we'll do this pretty quickly.
+[01:18:07.160 --> 01:18:11.940]   We basically already have something, so here's my input image and I'm going to have some
+[01:18:11.940 --> 01:18:16.960]   loss function and I've got some neural net again.
+[01:18:16.960 --> 01:18:20.600]   So instead of a neural net that does a whole lot of compute and then does upsampling at
+[01:18:20.600 --> 01:18:26.520]   the end, our input this time is just as big as our output so we're going to do some downsampling
+[01:18:26.520 --> 01:18:30.400]   first and then our compute and then our upsampling.
+[01:18:30.400 --> 01:18:34.200]   So that's the first change we're going to make is we're going to add some down sampling,
+[01:18:34.200 --> 01:18:37.680]   so some stride 2 convolution layers to the front of our network.
+[01:18:37.680 --> 01:18:43.160]   The second is rather than just comparing y, c and x to the same thing here.
+[01:18:43.160 --> 01:18:50.320]   So we're going to basically say our input image should look like itself by the end,
+[01:18:50.320 --> 01:18:54.120]   so specifically we're going to compare it by chucking it through VGG and comparing it
+[01:18:54.120 --> 01:18:58.360]   at one of the activation layers.
+[01:18:58.360 --> 01:19:04.600]   And then its style should look like some painting which we'll do just like we did with the Gatties
+[01:19:04.600 --> 01:19:10.360]   approach by looking at the grammatrix correspondence at a number of layers.
+[01:19:10.360 --> 01:19:16.600]   So that's basically it, and so that ought to be super straightforward, it's really just
+[01:19:16.600 --> 01:19:20.000]   combining two things we've already done.
+[01:19:20.000 --> 01:19:24.120]   And so all this code at the start is identical, except we don't have high res and low res,
+[01:19:24.120 --> 01:19:33.280]   we just have one size 256, all this is the same, my model's the same.
+[01:19:33.280 --> 01:19:41.760]   One thing I did here is I did not do any kind of fancy best practices for this one at all,
+[01:19:41.760 --> 01:19:47.360]   partly because there doesn't seem to be any, like there's been very little follow-up in
+[01:19:47.360 --> 01:19:55.000]   this approach compared to the super resolution stuff, and we'll talk about why in a moment.
+[01:19:55.000 --> 01:20:03.200]   So you'll see this is much more normal looking, I've got batch norm layers, I don't have the
+[01:20:03.200 --> 01:20:09.920]   scaling factor here, I don't have a pixel shuffle, it's just using a normal upsampling
+[01:20:09.920 --> 01:20:15.880]   followed by one by one conge, blah blah blah, so it's just more normal.
+[01:20:15.880 --> 01:20:22.260]   One thing they mentioned in the paper is they had a lot of problems with zero padding creating
+[01:20:22.260 --> 01:20:27.160]   artifacts, and the way they solved that was by adding 40 pixels of reflection padding
+[01:20:27.160 --> 01:20:34.120]   at the start, so I did the same thing, and then they used zero padding in their convolutions
+[01:20:34.120 --> 01:20:36.400]   in their res blocks.
+[01:20:36.400 --> 01:20:41.320]   Now if you've got zero padding in your convolution in your res blocks, then that means that the
+[01:20:41.320 --> 01:20:47.080]   two parts of your resnet won't add up anymore because you've lost a pixel from each side
+[01:20:47.080 --> 01:20:49.080]   on each of your two convolutions.
+[01:20:49.080 --> 01:20:56.240]   So my res sequential has become res sequential center, and I've removed the last two pixels
+[01:20:56.240 --> 01:20:59.000]   on each side of those good cells.
+[01:20:59.000 --> 01:21:03.720]   So other than that, this is basically the same as what we had before.
+[01:21:03.720 --> 01:21:10.680]   So then we can bring in our starry_night_picture, we can resize it, we can throw it through
+[01:21:10.680 --> 01:21:14.060]   our transformations.
+[01:21:14.060 --> 01:21:23.540]   Just to make the method a little bit easier for my brain to handle, I took my transform
+[01:21:23.540 --> 01:21:29.640]   style image, which after transformations is 3x256x256, and I made a mini-batch.
+[01:21:29.640 --> 01:21:32.680]   My batch size is 24, 24 copies of it.
+[01:21:32.680 --> 01:21:37.560]   That just makes it a little bit easier to do the batch arithmetic without worrying about
+[01:21:37.560 --> 01:21:45.720]   some of the broadcasting, they're not really 24 copies, I used np.broadcast to basically
+[01:21:45.720 --> 01:21:52.000]   fake 24 copies.
+[01:21:52.000 --> 01:21:58.240]   So just like before, we create our VGG, grab the last block, this time we're going to use
+[01:21:58.240 --> 01:22:05.600]   all of these layers so we keep everything up to the 43rd layer.
+[01:22:05.600 --> 01:22:12.040]   And so now our combined loss is going to add together a content loss for the 3rd block
+[01:22:12.040 --> 01:22:16.840]   plus the gram loss for all of our blocks with different weights.
+[01:22:16.840 --> 01:22:23.520]   And so the gram loss, and again, going back to everything being as normal as possible,
+[01:22:23.520 --> 01:22:26.800]   I've gone back to using MSE here.
+[01:22:26.800 --> 01:22:29.480]   Basically what happened is I had a lot of trouble getting this to train properly, so
+[01:22:29.480 --> 01:22:32.480]   I gradually removed trick after trick and eventually just went okay, I'm just going
+[01:22:32.480 --> 01:22:38.440]   to make it as bland as possible.
+[01:22:38.440 --> 01:22:44.920]   Last week's gram matrix was wrong, by the way, it only worked for a batch size of 1,
+[01:22:44.920 --> 01:22:48.680]   and we only had a batch size of 1, so that was fine.
+[01:22:48.680 --> 01:22:55.680]   I was using matrix multiply, which meant that every batch was being compared to every other
+[01:22:55.680 --> 01:22:56.680]   batch.
+[01:22:56.680 --> 01:23:03.840]   You actually need to use batch matrix multiply, which does a matrix multiply per batch.
+[01:23:03.840 --> 01:23:06.960]   So that's something to be aware of there.
+[01:23:06.960 --> 01:23:12.760]   So I've got my gram matrices, I do my MSE loss between the gram matrices, I weight them,
+[01:23:12.760 --> 01:23:20.240]   I style weights, so I create that resnet, so I create my style, my combined loss, passing
+[01:23:20.240 --> 01:23:29.180]   in the VGG network, passing in the block IDs, passing in the transformed starry night image,
+[01:23:29.180 --> 01:23:34.720]   and so you'll see at the very start here I do a forward pass through my VGG model with
+[01:23:34.720 --> 01:23:40.960]   that starry night image in order that I can save the features for it.
+[01:23:40.960 --> 01:23:46.040]   Now notice it's really important now that I don't do any data augmentation because I've
+[01:23:46.040 --> 01:23:55.240]   saved the style features for a particular non-augmented version, so if I augmented it
+[01:23:55.240 --> 01:24:00.960]   it might make some minor problems, but that's fine because I've got all of ImageNet to deal
+[01:24:00.960 --> 01:24:04.840]   with, I don't really need to do data augmentation anyway.
+[01:24:04.840 --> 01:24:12.120]   Okay, so I've got my loss function and I can go ahead and fit, and there's really nothing
+[01:24:12.120 --> 01:24:19.360]   clever here at all, at the end I have my sumLayers equals false so I can see what each part looks
+[01:24:19.360 --> 01:24:27.500]   like and see that they're reasonably balanced, and I can finally pop it out.
+[01:24:27.500 --> 01:24:35.480]   So I mentioned that should be pretty easy, and yet it took me about four days because
+[01:24:35.480 --> 01:24:42.680]   I just found this incredibly fiddly to actually get it to work.
+[01:24:42.680 --> 01:24:47.600]   So when I finally got up in the morning I said to Rachel, guess what, they're trained
+[01:24:47.600 --> 01:24:48.600]   correctly.
+[01:24:48.600 --> 01:24:54.980]   Rachel was like, I never thought that was going to happen.
+[01:24:54.980 --> 01:25:00.040]   It just looked awful all the time, and it was really about getting the exact right mix
+[01:25:00.040 --> 01:25:05.080]   of content loss versus style loss, the mix of the layers of the style loss, and the worst
+[01:25:05.080 --> 01:25:12.680]   part was it takes a really long time to train the damn CNN, and I didn't really know how
+[01:25:12.680 --> 01:25:17.840]   long to train it before I decided it wasn't doing well, like should I just train it for
+[01:25:17.840 --> 01:25:22.320]   longer or what?
+[01:25:22.320 --> 01:25:27.880]   And I don't know, all the little details didn't seem to slightly change it, but it would totally
+[01:25:27.880 --> 01:25:29.840]   fall apart all the time.
+[01:25:29.840 --> 01:25:39.400]   So I kind of mentioned this partly to say just remember the final answer you see here
+[01:25:39.400 --> 01:25:45.240]   is after me driving myself crazy all week, nearly always not working until finally at
+[01:25:45.240 --> 01:25:51.560]   the last minute, it finally does, even for things which just seem like they couldn't
+[01:25:51.560 --> 01:25:56.220]   possibly be difficult because they're just combining two things we already have working.
+[01:25:56.220 --> 01:26:11.280]   The other is to be careful about how we interpret what authors claim.
+[01:26:11.280 --> 01:26:20.640]   It was so fiddly getting this style transfer to work, and after doing it, it left me thinking,
+[01:26:20.640 --> 01:26:26.600]   why did I bother? Because now I've got something that takes hours to create a network that
+[01:26:26.600 --> 01:26:31.640]   can turn any kind of photo into one specific style.
+[01:26:31.640 --> 01:26:36.880]   It just seems very unlikely I would want that for anything, like the only reason I could
+[01:26:36.880 --> 01:26:43.400]   think that being useful would be to do some art stuff on a video to turn every frame into
+[01:26:43.400 --> 01:26:51.480]   some style. It's an incredibly niche thing to do, but when I looked at the paper, the
+[01:26:51.480 --> 01:26:59.880]   table was saying we're a thousand times faster than the Gatties approach, which is just such
+[01:26:59.880 --> 01:27:07.040]   an obviously meaningless thing to say and such an incredibly misleading thing to say
+[01:27:07.040 --> 01:27:14.380]   because it ignores all the hours of training for each individual style. I find this frustrating
+[01:27:14.380 --> 01:27:21.200]   because groups like this Stanford group clearly know better, or ought to know better, but still
+[01:27:21.200 --> 01:27:29.280]   I guess the academic community kind of encourages people to make these ridiculously grand claims.
+[01:27:29.280 --> 01:27:40.880]   It also completely ignores this incredibly sensitive, fiddly training process.
+[01:27:40.880 --> 01:27:45.800]   This paper was just so well-accepted when it came out. I remember everybody getting
+[01:27:45.800 --> 01:27:50.240]   on Twitter and being like, wow, these Stanford people have found this way of doing style
+[01:27:50.240 --> 01:27:58.600]   transfer a thousand times faster. And clearly, the people saying this were like all top researchers
+[01:27:58.600 --> 01:28:05.160]   in the field, but clearly none of them actually understood it because nobody said, you know,
+[01:28:05.160 --> 01:28:09.400]   I don't see why this is remotely useful and also I tried it and it was incredibly fiddly
+[01:28:09.400 --> 01:28:14.720]   to get it all to work. And so it's not until like, what is this now, like 18 months later
+[01:28:14.720 --> 01:28:19.320]   or something that I'm finally coming back to it and kind of thinking like, wait a minute,
+[01:28:19.320 --> 01:28:26.280]   this is kind of stupid. So this is the answer I think to the question of why haven't people
+[01:28:26.280 --> 01:28:30.440]   done follow-ups on this to like create really amazing best practices and better approaches
+[01:28:30.440 --> 01:28:36.760]   like with a super resolution part of the paper? And I think the answer is because it's done.
+[01:28:36.760 --> 01:28:44.400]   So I think this part of the paper is clearly not done, you know, and it's been improved
+[01:28:44.400 --> 01:28:49.840]   and improved and improved and now we have great super resolution and I think we can
+[01:28:49.840 --> 01:28:57.880]   derive from that great noise reduction, great colorization, great, you know, slant removal,
+[01:28:57.880 --> 01:29:06.280]   great interactive artifact removal, whatever else. So I think there's a lot of really cool
+[01:29:06.280 --> 01:29:10.560]   techniques here. It's also leveraging a lot of stuff that we've been learning and getting
+[01:29:10.560 --> 01:29:12.280]   better and better at.
+[01:29:12.280 --> 01:29:20.240]   Okay, so then finally let's talk about segmentation. This is from the famous CAMVID dataset which
+[01:29:20.240 --> 01:29:24.760]   is a classic example of an academic segmentation dataset. And basically you can see what we
+[01:29:24.760 --> 01:29:30.920]   do is we start with a picture, there are actually video frames in this dataset like here, and
+[01:29:30.920 --> 01:29:40.360]   we construct, we have some labels where they're not actually colors, each one has an ID and
+[01:29:40.360 --> 01:29:45.880]   the IDs are mapped colors, so like red might be one, purple might be two, like pink might
+[01:29:45.880 --> 01:29:54.760]   be three. And so all the buildings, you know, one class or the cars or another class, all
+[01:29:54.760 --> 01:29:59.560]   the people or another class, all the road is another class. And so what we're actually
+[01:29:59.560 --> 01:30:07.720]   doing here is multi-class classification for every pixel, okay? And so you can see sometimes
+[01:30:07.720 --> 01:30:13.560]   that multi-class classification really is quite tricky, you know, like these branches.
+[01:30:13.560 --> 01:30:19.000]   Although sometimes the labels are really not that great, you know, this is very coarse,
+[01:30:19.000 --> 01:30:25.920]   as you can see. So here are traffic lights and so forth. So that's what we're going to
+[01:30:25.920 --> 01:30:32.160]   do. We're going to do, this is segmentation. And so it's a lot like bounding boxes, right?
+[01:30:32.160 --> 01:30:38.480]   But rather than just finding a box around each thing, we're actually going to label
+[01:30:38.480 --> 01:30:47.160]   every single pixel with its class. And really that's actually a lot easier because it fits
+[01:30:47.160 --> 01:30:54.240]   our CNN style so nicely that we basically, we can create any CNN where the output is
+[01:30:54.240 --> 01:31:02.240]   an n by m grid containing the integers from 0 to c where there are c categories, and then
+[01:31:02.240 --> 01:31:07.920]   we can use cross-entropy loss with a softmax activation and we're done. So I could actually
+[01:31:07.920 --> 01:31:12.320]   stop the class there and you can go and use exactly the approaches you've learned in like
+[01:31:12.320 --> 01:31:18.800]   lessons 1 and 2 and you'll get a perfectly okay result. So the first thing to say is
+[01:31:18.800 --> 01:31:22.800]   like this is not actually a terribly hard thing to do, but we're going to try and do
+[01:31:22.800 --> 01:31:30.320]   it really well. And so let's start by doing it the really simple way. And we're going
+[01:31:30.320 --> 01:31:35.240]   to use the Kaggle Carvana competition, so you Google Kaggle Carvana to find it. You
+[01:31:35.240 --> 01:31:40.880]   can download it with the Kaggle API as per usual. And basically there's a train folder
+[01:31:40.880 --> 01:31:45.920]   containing a bunch of images which is the independent variable and a train_masks folder
+[01:31:45.920 --> 01:31:50.760]   that contains the dependent variable and they look like this. Here's one of the independent
+[01:31:50.760 --> 01:31:59.280]   variable and here's one of the dependent variable.
+[01:31:59.280 --> 01:32:04.960]   So in this case, just like cats and dogs, we're going simple. Rather than doing multi-class
+[01:32:04.960 --> 01:32:10.040]   classification, we're going to do binary classification, but of course multi-class is just the more
+[01:32:10.040 --> 01:32:16.320]   general version, you know, categorical cross-entropy or binary cross-entropy. So there's no differences
+[01:32:16.320 --> 01:32:24.560]   conceptually. So we've got this is just zeros and ones, whereas this is a regular image.
+[01:32:24.560 --> 01:32:31.400]   So in order to do this well, it would really help to know what cars look like because really
+[01:32:31.400 --> 01:32:35.560]   what we just want to do is figure out this is the car and this is its orientation and
+[01:32:35.560 --> 01:32:41.440]   then put white pixels where we expect the car to be based on the picture and our understanding
+[01:32:41.440 --> 01:32:45.080]   of what cars look like.
+[01:32:45.080 --> 01:32:49.640]   The original data set came with these CSV files as well. I don't really use them for
+[01:32:49.640 --> 01:33:02.760]   very much other than getting a list of images from them. Each image after the car ID has
+[01:33:02.760 --> 01:33:08.680]   a 01, 02, et cetera of which I've printed out all 16 of them for one car and as you
+[01:33:08.680 --> 01:33:16.600]   can see basically those numbers are the 16 orientations of one car. So there that is.
+[01:33:16.600 --> 01:33:21.400]   I don't think anybody in this competition actually used this orientation information.
+[01:33:21.400 --> 01:33:28.160]   I believe they all kept the car's images, just treated them separately. These images
+[01:33:28.160 --> 01:33:37.160]   are pretty big, like over 1,000 by 1,000 in size and just opening the JPEGs and resizing
+[01:33:37.160 --> 01:33:47.600]   them is slow. So I processed them all. Also OpenCV can't handle GIF files, so I converted
+[01:33:47.600 --> 01:33:48.600]   them.
+[01:33:48.600 --> 01:33:49.600]   Yes, Rachel?
+[01:33:49.600 --> 01:33:53.400]   Question, how would somebody get these masks for training initially, Mechanical Turk or
+[01:33:53.400 --> 01:33:54.400]   something?
+[01:33:54.400 --> 01:34:03.360]   Yeah, just a lot of boring work. Probably some tools that help you with a bit of edge
+[01:34:03.360 --> 01:34:07.740]   snapping and stuff so that the human can kind of do it roughly and then just fine-tune the
+[01:34:07.740 --> 01:34:14.120]   bits that gets wrong.
+[01:34:14.120 --> 01:34:19.920]   These kinds of labels are expensive. One of the things I really want to work on is deep
+[01:34:19.920 --> 01:34:27.760]   learning enhanced interactive labeling tools because that's clearly something that would
+[01:34:27.760 --> 01:34:29.000]   help a lot of people.
+[01:34:29.000 --> 01:34:34.280]   I've got a little section here that you can run if you want to. You probably want to,
+[01:34:34.280 --> 01:34:40.160]   which converts the GIFs into PNGs. So just open it up with a PIL and then save it as
+[01:34:40.160 --> 01:34:45.960]   PNG because OpenCV doesn't have GIF support. And as per usual for this kind of stuff I
+[01:34:45.960 --> 01:34:51.680]   do it with a thread pool so I can take advantage of parallel processing, and then also create
+[01:34:51.680 --> 01:34:58.800]   a separate directory, train-128 and train-masks-128, which contains the 128x128 resized versions
+[01:34:58.800 --> 01:35:04.800]   of them. And this is the kind of stuff that keeps you sane if you do it early in the process.
+[01:35:04.800 --> 01:35:11.880]   So anytime you get a new data set, seriously think about creating a smaller version to
+[01:35:11.880 --> 01:35:17.320]   make life fast. Anytime you find yourself waiting on your computer, try and think of
+[01:35:17.320 --> 01:35:20.280]   a way to create a smaller version.
+[01:35:20.280 --> 01:35:24.080]   So after you grab it from Kaggle you probably want to run this stuff, go away, have lunch,
+[01:35:24.080 --> 01:35:28.680]   come back, and when you're done you'll have these smaller directories which we're going
+[01:35:28.680 --> 01:35:34.240]   to use here, 128x128 pixel versions to start with.
+[01:35:34.240 --> 01:35:42.280]   So here's a cool trick, if you use the same axis object to plot an image twice, and the
+[01:35:42.280 --> 01:35:46.760]   second time you use alpha, which as you might know means transparency in the computer vision
+[01:35:46.760 --> 01:35:53.240]   world, then you can actually plot the mask over the top of the photo. And so here's a
+[01:35:53.240 --> 01:35:59.520]   nice way to see all the masks on top of the photos for all of the cars in one group. This
+[01:35:59.520 --> 01:36:04.240]   is the same matched files data set we've seen twice already, this is all the same code we
+[01:36:04.240 --> 01:36:10.520]   used to, and here's something important though, if we had something that was in the training
+[01:36:10.520 --> 01:36:17.320]   set good at this image, and then the validation had that image, that would kind of be cheating
+[01:36:17.320 --> 01:36:19.440]   because it's the same car.
+[01:36:19.440 --> 01:36:29.320]   So we use a contiguous set of car IDs, and since each set is a set of 16, we make sure
+[01:36:29.320 --> 01:36:35.160]   it's evenly divisible by 16, so we make sure that our validation set contains different
+[01:36:35.160 --> 01:36:41.120]   car IDs to our training set. This is the kind of stuff which you've got to be careful of.
+[01:36:41.120 --> 01:36:45.280]   On Kaggle it's not so bad, you'll know about it because you'll submit your result and you'll
+[01:36:45.280 --> 01:36:51.160]   get a very different result on your leaderboard compared to your validation set, but in the
+[01:36:51.160 --> 01:36:57.000]   real world you won't know until you put it in production and send your company bankrupt
+[01:36:57.000 --> 01:37:04.760]   and lose your job, so you might want to think carefully about your validation set.
+[01:37:04.760 --> 01:37:11.040]   So here we're going to use transform_type.classification, it's basically the same as transform_type.pixel,
+[01:37:11.040 --> 01:37:16.040]   but if you think about it, with the pixel version if we rotate a little bit, then we
+[01:37:16.040 --> 01:37:20.720]   probably want to average the pixels in between the two, but for classification obviously
+[01:37:20.720 --> 01:37:27.240]   we don't, we use nearest_neighbor, so there's a slight difference there. Also for classification,
+[01:37:27.240 --> 01:37:35.440]   lighting doesn't kick in, normalization doesn't kick in to the dependent variable.
+[01:37:35.440 --> 01:37:43.360]   There are already square images, so we don't have to do any cropping. So here you can see
+[01:37:43.360 --> 01:37:47.560]   different versions of the augmented, you know, they're moving around a bit and they're rotating
+[01:37:47.560 --> 01:37:52.040]   a bit and so forth.
+[01:37:52.040 --> 01:37:58.760]   I get a lot of questions during our study group and stuff about how do I debug things
+[01:37:58.760 --> 01:38:04.760]   and fix things that aren't working, and I never have a great answer other than every
+[01:38:04.760 --> 01:38:11.720]   time I fix a problem it's because of stuff like this that I do all the time. I just always
+[01:38:11.720 --> 01:38:17.880]   print out everything as I go and then the one thing that I screw up always turns out
+[01:38:17.880 --> 01:38:22.680]   to be the one thing that I forgot to check along the way. The more of this kind of thing
+[01:38:22.680 --> 01:38:26.600]   you can do the better. If you're not looking at all of your intermediate results you're
+[01:38:26.600 --> 01:38:30.800]   going to have troubles.
+[01:38:30.800 --> 01:38:36.120]   So given that we want something that knows what cars look like, we probably want to start
+[01:38:36.120 --> 01:38:44.360]   with a pre-trained ImageNet network. So we're going to start with ResNet34 and so with ConvNetBuilder
+[01:38:44.360 --> 01:38:50.640]   we can grab our ResNet34 and we can add a custom head. And so the custom head is going
+[01:38:50.640 --> 01:38:55.680]   to be something that upsamples a bunch of times. And we're going to do things really
+[01:38:55.680 --> 01:39:07.480]   dumb for now. We're just going to do Conv transpose 2D batch norm value. This is what I'm saying.
+[01:39:07.480 --> 01:39:14.040]   Any of you could have built this without looking at any of this notebook, or at least you have
+[01:39:14.040 --> 01:39:19.800]   the information from previous classes. There's nothing new at all.
+[01:39:19.800 --> 01:39:29.040]   And so at the very end we have a single filter. And now that's going to give us something
+[01:39:29.040 --> 01:39:36.200]   which is batch size by 1, by 128, by 128. But we want something which is batch size
+[01:39:36.200 --> 01:39:42.560]   by 128 by 128. So we have to remove that unit axis. So I've got a lambda layer here. Lambda
+[01:39:42.560 --> 01:39:48.320]   layers are incredibly helpful, because without the lambda layer here, which is simply removing
+[01:39:48.320 --> 01:39:53.840]   that unit axis by just indexing into it at zero, without the lambda layer I would have
+[01:39:53.840 --> 01:40:00.520]   to have created a custom class with a custom forward method and so forth. But by creating
+[01:40:00.520 --> 01:40:05.280]   a lambda layer that does like the one custom bit, I can now just chuck it in the sequential.
+[01:40:05.280 --> 01:40:07.440]   And so that just makes life easier.
+[01:40:07.440 --> 01:40:13.880]   So the PyTorch people are kind of snooty about this approach. Lambda layer is actually something
+[01:40:13.880 --> 01:40:18.760]   that's part of the fast AI library, not part of the PyTorch library. And literally people
+[01:40:18.760 --> 01:40:24.880]   on the PyTorch discussion board are like, yes, we could give people this, yes, it is
+[01:40:24.880 --> 01:40:30.360]   only a single line of code, but then it would encourage them to use sequential too often.
+[01:40:30.360 --> 01:40:37.240]   So there you go.
+[01:40:37.240 --> 01:40:41.800]   So this is our custom head. So we're going to have a Resbit34 that goes down sample and
+[01:40:41.800 --> 01:40:46.520]   then a really simple custom head that very quickly upsamples and that hopefully will
+[01:40:46.520 --> 01:40:52.800]   do something. And we're going to use accuracy with a threshold of 0.5 to print out metrics.
+[01:40:52.800 --> 01:40:56.520]   And so after a few epochs we've got 96% accurate.
+[01:40:56.520 --> 01:41:04.520]   So is that good? Is 96% accurate? Good. And hopefully the answer to your question is it
+[01:41:04.520 --> 01:41:11.500]   depends. What's it for? And the answer is Kavana wanted this because they wanted to be able
+[01:41:11.500 --> 01:41:21.620]   to take their car images and cut them out and paste them on exotic Monte Carlo backgrounds
+[01:41:21.620 --> 01:41:27.520]   or whatever. That's Monte Carlo the place, not the simulation.
+[01:41:27.520 --> 01:41:34.720]   So to do that, you need a really good mask. You don't want to leave the rearview mirrors
+[01:41:34.720 --> 01:41:43.500]   behind or have one wheel missing or include background or something that would look stupid.
+[01:41:43.500 --> 01:41:48.760]   So you would need something very good. So only having 96% of the pixels correct doesn't
+[01:41:48.760 --> 01:41:55.300]   sound great, but we won't really know until we look at it. So let's look at it.
+[01:41:55.300 --> 01:42:03.400]   So there's the correct version that we want to cut out. That's the 96% accurate version.
+[01:42:03.400 --> 01:42:09.480]   So when you look at it, you realize, oh yeah, getting 96% of the pixels accurate is actually
+[01:42:09.480 --> 01:42:14.000]   easy because all the outside bits are not car and all the inside bits are car and really
+[01:42:14.000 --> 01:42:20.120]   the interesting bit is the edge. So we need to do better.
+[01:42:20.120 --> 01:42:25.400]   So let's unfreeze because all we've done so far is train the custom head. And let's do
+[01:42:25.400 --> 01:42:33.080]   more. And so after a bit more we've got 99.1%. So is that good? I don't know. Let's take
+[01:42:33.080 --> 01:42:41.920]   a look. And so actually no, it's totally missed the rearview vision mirror here and missed
+[01:42:41.920 --> 01:42:46.520]   a lot of it here and it's clearly got an edge wrong here and these things are totally going
+[01:42:46.520 --> 01:42:52.400]   to matter when we try to cut it out. So it's still not good enough. So let's try upscaling.
+[01:42:52.400 --> 01:42:56.360]   And the nice thing is that when we upscale to 512x512, make sure you decrease the batch
+[01:42:56.360 --> 01:43:05.960]   size because you'll run out of memory. Here's the true ones. This is all identical. There's
+[01:43:05.960 --> 01:43:11.560]   quite a lot more information there for it to go on. So our accuracy increases to 99.4%
+[01:43:11.560 --> 01:43:17.360]   and things keep getting better. But we've still got quite a few little black blocky bits.
+[01:43:17.360 --> 01:43:24.480]   So let's go to 124x124 down to batch size of 4. This is pretty high res now. And train
+[01:43:24.480 --> 01:43:37.080]   a bit more, 99.6, 99.8. And so now if we look at the masks, they're actually looking not
+[01:43:37.080 --> 01:43:47.680]   bad. That's looking pretty good. So can we do better? And the answer is yes we can. So
+[01:43:47.680 --> 01:43:52.080]   we're moving from the Carvana notebook to the Carvana UNet notebook now. And the UNet
+[01:43:52.080 --> 01:44:00.000]   network is quite magnificent. You see, with that previous approach, our pre-trained ImageNet
+[01:44:00.000 --> 01:44:05.360]   network was being squished down all the way down to 7x7 and then expanded out all the way
+[01:44:05.360 --> 01:44:15.640]   back up to, well it's 224 and then expanded out again all this way, which means it has
+[01:44:15.640 --> 01:44:21.860]   to somehow store all the information about the much bigger version in the small version.
+[01:44:21.860 --> 01:44:26.040]   And actually most of the information about the bigger version was really in the original
+[01:44:26.040 --> 01:44:33.360]   picture anyway. So it doesn't seem like a great approach, this squishing and unsquishing.
+[01:44:33.360 --> 01:44:41.280]   So the UNet idea comes from this fantastic paper where it was literally invented in this
+[01:44:41.280 --> 01:44:46.680]   very domain-specific area of biomedical image segmentation. But in fact, basically every
+[01:44:46.680 --> 01:44:53.960]   Kaggle winner in anything even vaguely related to segmentation has ended up using UNet. It's
+[01:44:53.960 --> 01:44:57.880]   one of these things that like everybody in Kaggle knows is the best practice, but in
+[01:44:57.880 --> 01:45:03.560]   more of academic circles, like even now, this has been around for a couple of years at least,
+[01:45:03.560 --> 01:45:11.200]   a lot of people still don't realize. This is by far the best approach.
+[01:45:11.200 --> 01:45:22.240]   And here's the basic idea. Here's the downward path where we basically start at 572x532 in
+[01:45:22.240 --> 01:45:26.420]   this case and then kind of half the grid size, half the grid size, half the grid size, half
+[01:45:26.420 --> 01:45:36.160]   the grid size. And then here's the upward path where we double the grid size, double-double-double-double.
+[01:45:36.160 --> 01:45:44.600]   But the thing that we also do is we take at every point where we've halved the grid size,
+[01:45:44.600 --> 01:45:53.780]   we actually copy those activations over to the upward path and concatenate them together.
+[01:45:53.780 --> 01:45:59.720]   And so you can see here these red blobs are max pooling operations, the green blobs are
+[01:45:59.720 --> 01:46:08.260]   upward sampling, and then these gray bits here are copying. So we copy and concat. So
+[01:46:08.260 --> 01:46:14.160]   basically in other words, the input image after a couple of columns is copied over to
+[01:46:14.160 --> 01:46:20.600]   the output, concatenated together, and so now we get to use all of the information that's
+[01:46:20.600 --> 01:46:24.840]   gone through all the down and all the up, plus also a slightly modified version of the
+[01:46:24.840 --> 01:46:30.640]   input pixels, and a slightly modified version of one thing down from the input pixels because
+[01:46:30.640 --> 01:46:36.720]   they came out through here. So we have like all of the richness of going all the way down
+[01:46:36.720 --> 01:46:41.960]   and up, but also like a slightly less coarse version and a slightly less coarse version
+[01:46:41.960 --> 01:46:47.320]   and then this really kind of simple version and they can all be combined together. And
+[01:46:47.320 --> 01:46:55.320]   so that's UNET, such a cool idea. So here we are in the Kavana UNET notebook, all this
+[01:46:55.320 --> 01:47:05.320]   is the same code as before. And at the start I've got a simple upsample version just to
+[01:47:05.320 --> 01:47:10.120]   kind of show you again the non-UNET version. This time I'm going to add in something called
+[01:47:10.120 --> 01:47:18.360]   the dice metric. Dice is very similar, as you see, to Jacquard, or A over U. It's just a
+[01:47:18.360 --> 01:47:27.800]   minor difference, it's basically intersection over union with a minor tweak. And the reason
+[01:47:27.800 --> 01:47:34.560]   we're going to use dice is that's the metric that the Kaggle competition used. And it's
+[01:47:34.560 --> 01:47:39.480]   a little bit harder to get a high dice score than a high accuracy because it's really looking
+[01:47:39.480 --> 01:47:46.960]   at like what the overlap of the correct pixels are with your pixels. But it's pretty similar.
+[01:47:46.960 --> 01:47:53.320]   So in the Kaggle competition, people that were doing okay were getting about 99.6 dice
+[01:47:53.320 --> 01:48:01.440]   and the winners were about 99.7 dice. So here's our standard upsample, this is all as before.
+[01:48:01.440 --> 01:48:06.960]   And so now we can check our dice metric. And so you can see on dice metric we're getting
+[01:48:06.960 --> 01:48:20.000]   like 9.6.8 at 128x128. And so that's not great. So let's try UNET. And I'm calling it UNET-ish
+[01:48:20.000 --> 01:48:26.200]   because as per usual I'm creating my own somewhat hacky version, kind of trying to keep things
+[01:48:26.200 --> 01:48:31.840]   similar to what you're used to as possible and doing things that I think make sense.
+[01:48:31.840 --> 01:48:36.600]   And so there should be plenty of opportunity for you to at least make this more authentically
+[01:48:36.600 --> 01:48:42.640]   UNET by looking at the exact kind of grid sizes. And like see how here the size is going
+[01:48:42.640 --> 01:48:47.960]   down a little bit so they're obviously not adding any padding and then they're doing
+[01:48:47.960 --> 01:48:54.920]   here they've got some cropping going on. There's a few differences. But one of the things is
+[01:48:54.920 --> 01:49:00.640]   because I want to take advantage of transfer learning, that means I can't quite use UNET.
+[01:49:00.640 --> 01:49:10.120]   So here's another big opportunity is what if you create the UNET downpath and then add
+[01:49:10.120 --> 01:49:16.800]   a classifier on the end and then train that on ImageNet. And you've now got an ImageNet
+[01:49:16.800 --> 01:49:23.560]   trained classifier which is specifically designed to be a good backbone for UNET. And then you
+[01:49:23.560 --> 01:49:34.040]   should be able to now come back and get pretty close to winning this old competition. Because
+[01:49:34.040 --> 01:49:41.040]   that pre-trained network didn't exist before. But if you think about what YOLOv3 did, it's
+[01:49:41.040 --> 01:49:45.840]   basically that. They created DarkNet, they pre-trained it on ImageNet and then they used
+[01:49:45.840 --> 01:49:55.200]   it as the basis for their founding boxes. So again, this kind of idea of pre-training things
+[01:49:55.200 --> 01:50:00.960]   which are designed not just for classification but for other things is just something that
+[01:50:00.960 --> 01:50:15.720]   nobody's done yet. But as we've shown, you can train ImageNet for 25 bucks in 3 hours.
+[01:50:15.720 --> 01:50:21.400]   So and if people in the community are interested in doing this, hopefully I'll have credits
+[01:50:21.400 --> 01:50:25.720]   I can help you with as well. So if you do the work to get it set up and give me a script,
+[01:50:25.720 --> 01:50:30.320]   I can probably run it for you.
+[01:50:30.320 --> 01:50:38.800]   So for now though, we don't have that. So we're going to use ResNet. So we're basically
+[01:50:38.800 --> 01:50:47.760]   going to start with this, let's see, with getBase. And so base is our base network and that was
+[01:50:47.760 --> 01:50:53.920]   defined back up in this first section. So getBase is going to be something that calls whatever
+[01:50:53.920 --> 01:50:59.640]   this is and this is ResNet 34. So we're going to grab our ResNet 34 and cutModel is the
+[01:50:59.640 --> 01:51:04.400]   first thing that our ConvNet builder does. It basically removes everything from the adaptive
+[01:51:04.400 --> 01:51:10.860]   pulling onwards and so that gives us back the backbone of ResNet 34. So getBase is going
+[01:51:10.860 --> 01:51:17.960]   to give us back our ResNet 34 backbone.
+[01:51:17.960 --> 01:51:25.520]   And then we're going to take that ResNet 34 backbone and turn it into a unit 34. So what
+[01:51:25.520 --> 01:51:33.200]   that's going to do is it's going to save that ResNet that we passed in and then we're going
+[01:51:33.200 --> 01:51:38.440]   to use a forward hook, just like before, to save the results at the second, fourth, fifth
+[01:51:38.440 --> 01:51:45.600]   and sixth blocks, which as before is basically before each stride 2 convolution.
+[01:51:45.600 --> 01:51:50.200]   Then we're going to create a bunch of these things we're calling unit blocks. And the
+[01:51:50.200 --> 01:51:57.720]   unit block basically says, so these unit blocks are these things. These are unit blocks.
+[01:51:57.720 --> 01:52:04.640]   So the unit block tells us, we have to tell it, how many things are coming from the kind
+[01:52:04.640 --> 01:52:10.400]   of previous layer that we're upsampling, how many are coming across, and then how many
+[01:52:10.400 --> 01:52:20.440]   do we want to come at. And so the amount coming across is entirely defined by whatever the
+[01:52:20.440 --> 01:52:28.360]   base network was. Whatever the downward path was, we need that many layers.
+[01:52:28.360 --> 01:52:33.800]   And so this is a little bit awkward. And actually one of our master's students here, Karim, has
+[01:52:33.800 --> 01:52:41.960]   actually created something called dynamic unit that you'll find in fastai.unit.dynamic_unit.
+[01:52:41.960 --> 01:52:46.760]   And it actually calculates this all for you and automatically creates the whole unit from
+[01:52:46.760 --> 01:52:52.480]   your base model. It's got some minor quirks still that I want to fix. By the time the
+[01:52:52.480 --> 01:52:57.820]   video is out, it'll definitely be working and I will at least have a notebook showing
+[01:52:57.820 --> 01:53:04.640]   how to use it and possibly an additional video. But for now, you'll just have to go through
+[01:53:04.640 --> 01:53:08.960]   and do it yourself. You can easily see it just by once you've got a resnet, you can
+[01:53:08.960 --> 01:53:16.080]   just go type in its name and it'll print out all the layers and you can see how many activations
+[01:53:16.080 --> 01:53:24.720]   there are in each block. Or you could even have it printed out for you for each block
+[01:53:24.720 --> 01:53:25.720]   automatically.
+[01:53:25.720 --> 01:53:35.400]   Anyway, I just did this manually. And so the unit block works like this. So you said, "Okay,
+[01:53:35.400 --> 01:53:39.240]   I've got this many coming up from the previous layer, I've got this many coming across this
+[01:53:39.240 --> 01:53:45.440]   x." I'm using across from the downward path. This is the amount I want coming out.
+[01:53:45.440 --> 01:53:50.880]   Now what I do is I then say, "Okay, we're going to create a certain amount of convolutions
+[01:53:50.880 --> 01:53:55.120]   from the upward path and a certain amount from the cross path and so I'm going to be
+[01:53:55.120 --> 01:54:01.660]   concatenating them together. So let's divide the number we want out by 2. And so we're
+[01:54:01.660 --> 01:54:08.520]   going to have our cross convolution take our cross path and create number out divided by
+[01:54:08.520 --> 01:54:16.400]   2. And then the upward path is going to be a conv transpose 2D because we want to increase
+[01:54:16.400 --> 01:54:23.200]   up sample. And again, here we've got the number n divided by 2. And then at the end, I just
+[01:54:23.200 --> 01:54:30.480]   concatenate those together. So I've got an upward sample, I've got a cross convolution,
+[01:54:30.480 --> 01:54:33.080]   I concatenate the two together.
+[01:54:33.080 --> 01:54:40.960]   And so that's all a unit block is. And so that's actually a pretty easy module to create.
+[01:54:40.960 --> 01:54:47.800]   And so then in my forward path, I need to pass to the forward of the unit block the
+[01:54:47.800 --> 01:54:55.160]   upward path and the cross path. So the upward path is just wherever I'm up to so far. But
+[01:54:55.160 --> 01:55:01.240]   then the cross path is whatever the value is of whatever the activations are that I
+[01:55:01.240 --> 01:55:04.600]   stored on the way down.
+[01:55:04.600 --> 01:55:09.900]   So as I come up, it's the last set of saved features that I need first. And as I gradually
+[01:55:09.900 --> 01:55:16.700]   keep going up further and further and further, eventually it's the first set of features.
+[01:55:16.700 --> 01:55:21.640]   And so there are some more tricks we can do to make this a little bit better, but this
+[01:55:21.640 --> 01:55:24.880]   is a good start.
+[01:55:24.880 --> 01:55:35.280]   So the simple upsampling approach looked horrible and had a dice of 968. A unit with everything
+[01:55:35.280 --> 01:55:44.600]   else identical, except we've now got these unit blocks, has a dice of 985. So that's
+[01:55:44.600 --> 01:55:51.720]   like we've kind of halved the error with everything else exactly the same. And more to the point,
+[01:55:51.720 --> 01:55:57.360]   you can look at it. This is actually looking somewhat car-like compared to our non-unet
+[01:55:57.360 --> 01:56:04.920]   equivalent, which is just a blob. Because trying to do this through down and up paths,
+[01:56:04.920 --> 01:56:12.300]   it's just asking too much. Whereas when we actually provide the downward path pixels
+[01:56:12.300 --> 01:56:16.600]   at every point, it can actually start to create something car-ish.
+[01:56:16.600 --> 01:56:24.560]   So at the end of that, we'll go .close to again remove those SFS features that are taking
+[01:56:24.560 --> 01:56:31.880]   up GPU memory, go to a smaller batch size, a higher size, and you can see the dice coefficient
+[01:56:31.880 --> 01:56:42.120]   is really going up. So notice here I'm loading in the 128x128 version of the network. So we're
+[01:56:42.120 --> 01:56:48.160]   doing this progressive resizing trick again. So that gets us 99.3, and then unfreeze to
+[01:56:48.160 --> 01:56:57.200]   get to 99.4. And you can see it's now looking pretty good. Go down to a batch size of 4,
+[01:56:57.200 --> 01:57:07.760]   size of 102.4, load in what we just did with the 512, takes us to 99.5, unfreeze, takes
+[01:57:07.760 --> 01:57:26.360]   us to 99. And as you can see, that actually looks good. Accuracy terms, 99.82. You can
+[01:57:26.360 --> 01:57:33.600]   see this is looking like something you could just about use to cut out. I think at this
+[01:57:33.600 --> 01:57:40.200]   point there's a couple of minor tweaks we can do to get up to 99.7, but really the key thing
+[01:57:40.200 --> 01:57:45.920]   then I think is just maybe to do a little bit of smoothing maybe, or a little bit of
+[01:57:45.920 --> 01:57:53.560]   post-processing. You can go and have a look at the Carvana winner's blogs and see some
+[01:57:53.560 --> 01:57:59.840]   of these tricks. But as I say, the difference between where we're at 99.6 and what the winner's
+[01:57:59.840 --> 01:58:15.400]   got of 99.7 is not heaps. And so really the unit on its own pretty much solves that problem.
+[01:58:15.400 --> 01:58:21.160]   Okay so that's it. The last thing I wanted to mention is now to come all the way back
+[01:58:21.160 --> 01:58:28.880]   to bounding boxes. Because you might remember I said our bounding box model was still not
+[01:58:28.880 --> 01:58:34.800]   doing very well on small objects, so hopefully you might be able to guess where I'm going
+[01:58:34.800 --> 01:58:44.360]   to go with this. Which is that for the bounding box model, remember how we had at different
+[01:58:44.360 --> 01:58:54.200]   grid cells, we spat out outputs of our model, and it was those earlier ones with the small
+[01:58:54.200 --> 01:59:03.520]   grid sizes that weren't very good. How do we fix it? Unet it. Let's have an upward path
+[01:59:03.520 --> 01:59:10.120]   with cross-connections. And so then we're just going to do a unet and then spit them
+[01:59:10.120 --> 01:59:17.960]   out of that. Because now those finer grid cells have all of the information of that path and
+[01:59:17.960 --> 01:59:25.600]   that path and that path and that path to leverage. Now of course, this is deep learning, so that
+[01:59:25.600 --> 01:59:32.080]   means you can't write a paper saying we just used unet for bounding boxes. You have to
+[01:59:32.080 --> 01:59:42.040]   invent a new word. So this is called feature pyramid networks, or FPMs. And literally this
+[01:59:42.040 --> 01:59:49.200]   is part of the retina net paper, which is used in the retina net paper. It was created
+[01:59:49.200 --> 01:59:55.200]   in earlier papers specifically about FPMs. If memory says correctly, they did briefly
+[01:59:55.200 --> 02:00:01.800]   cite the unet paper, but they kind of made it sound like it was this vaguely slightly
+[02:00:01.800 --> 02:00:09.040]   connected thing that maybe some people could consider slightly useful. But it really, FPMs
+[02:00:09.040 --> 02:00:17.360]   is units. I don't have an implementation of it to show you, but it'll be a fun thing maybe
+[02:00:17.360 --> 02:00:24.400]   for some of us to try. I know some of the students have been trying to get it working
+[02:00:24.400 --> 02:00:32.400]   well on the forums. Interesting thing to try. So I think a couple of things to look at after
+[02:00:32.400 --> 02:00:39.560]   this class, as well as the other things I mentioned, would be playing around with FPMs and also
+[02:00:39.560 --> 02:00:46.360]   maybe trying Caram's dynamic unet. They would both be interesting things to look at.
+[02:00:46.360 --> 02:00:53.400]   So you guys have all been through 14 lessons of me talking at you now, so I'm sorry about
+[02:00:53.400 --> 02:01:05.880]   that. Thanks for putting up with me. You're going to find it hard to find people who actually
+[02:01:05.880 --> 02:01:12.360]   know as much about training neural networks in practice as you do. It'll be really easy
+[02:01:12.360 --> 02:01:19.400]   for you to overestimate how capable all these other people are and underestimate how capable
+[02:01:19.400 --> 02:01:28.920]   you are. The main thing to say is please practice. Please, just because you don't have this constant
+[02:01:28.920 --> 02:01:34.700]   thing getting you to come back here every Monday night now, it's very easy to kind of
+[02:01:34.700 --> 02:01:45.040]   lose that momentum. So find ways to keep it, organize a study group or a book reading group
+[02:01:45.040 --> 02:01:52.740]   or get together with some friends and work on a project. Do something more than just
+[02:01:52.740 --> 02:01:59.320]   deciding I want to keep working on X. Unless you're the kind of person who's super motivated
+[02:01:59.320 --> 02:02:06.360]   and you know that whenever you decide to do something, it happens, that's not me. I know
+[02:02:06.360 --> 02:02:11.360]   something to happen. I have to say, "Yes, David, in October I will absolutely teach
+[02:02:11.360 --> 02:02:17.640]   that course." And then it's like, "Okay, I better actually write some material." That's
+[02:02:17.640 --> 02:02:22.160]   the only way I can get stuff to happen. We've got a great community there on the forums.
+[02:02:22.160 --> 02:02:27.240]   If people have ideas for ways to make it better, please tell me. If you think you can help
+[02:02:27.240 --> 02:02:32.980]   with, if you want to create some new forum or moderate it in some different way or whatever,
+[02:02:32.980 --> 02:02:39.200]   just let me know. You can always PM me. There's a lot of projects going on through GitHub
+[02:02:39.200 --> 02:02:44.560]   as well, lots of stuff. I hope to see you all back here at Something Else. Thanks so much
+[02:02:44.560 --> 02:02:45.800]   for joining me on this journey.
+[02:02:45.800 --> 02:02:49.140]   [APPLAUSE]
+

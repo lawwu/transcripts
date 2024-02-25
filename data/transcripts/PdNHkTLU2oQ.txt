@@ -1,0 +1,1651 @@
+
+[00:00:00.000 --> 00:00:10.000]   Hi and welcome to lesson 20. In the last lesson we were about to learn about implementing mixed precision training. Let's dive into it.
+[00:00:10.000 --> 00:00:17.000]   And I'm going to fiddle with other things just because I want to really experiment. I just love fiddling around.
+[00:00:17.000 --> 00:00:26.000]   So one thing I wanted to do is I wanted to get rid of the DDPMCB entirely.
+[00:00:26.000 --> 00:00:34.000]   We made it pretty small here, but I wanted to remove it. So much as Janice said, isn't it great the callbacks make everything so cool.
+[00:00:34.000 --> 00:00:38.000]   I wanted to show we can actually make things so cool without callbacks at all.
+[00:00:38.000 --> 00:00:46.000]   And so to do that, I realized what we could do is we could put noisify inside a collation function.
+[00:00:46.000 --> 00:00:57.000]   So the collation function, if you remember back to our datasets notebook, which was going back to notebook five and you've probably forgotten that by now.
+[00:00:57.000 --> 00:01:10.000]   So go and reread that to remind yourself. It's the function that runs to take all of the, you know, you've basically each kind of row of data.
+[00:01:10.000 --> 00:01:17.000]   It will be a separate tuple, but then it hits the collation function and the collation function turns that into tensors.
+[00:01:17.000 --> 00:01:24.000]   You know, one tensor representing the independent variable, one tensor representing the dependent variable, something like that.
+[00:01:24.000 --> 00:01:28.000]   And the default collation function is called, not surprisingly, default collate.
+[00:01:28.000 --> 00:01:39.000]   So if our collation function calls that on our batch and then grabs the X part, which is it's always been the same for the last few things.
+[00:01:39.000 --> 00:01:42.000]   That's the image because we use because datasets uses dictionaries.
+[00:01:42.000 --> 00:01:44.000]   So we're going to grab the image.
+[00:01:44.000 --> 00:01:52.000]   Then we can call noisify on that collated batch.
+[00:01:52.000 --> 00:02:01.000]   Then that's exactly the same thing as Tunis before batch did because before batch is operating on the thing that came out of the default collect function.
+[00:02:01.000 --> 00:02:03.000]   So we could just do it in a click function.
+[00:02:03.000 --> 00:02:19.000]   So if we do it here and then we create a DDPM data loader function, which just creates a data loader from some dataset that we pass in with some batch size with that collation function.
+[00:02:19.000 --> 00:02:35.000]   Then we can create our DL's not using data loaders from data loaders from DD. But instead of that, the original, you know, the plane in it that we created for data loaders.
+[00:02:35.000 --> 00:02:37.000]   And again, you should go back and remind yourself of this.
+[00:02:37.000 --> 00:02:40.000]   You just pass in the data loaders for training and test.
+[00:02:40.000 --> 00:02:43.000]   So there's our two data loaders.
+[00:02:43.000 --> 00:02:48.000]   So with that, we don't need a DDPM callback anymore.
+[00:02:48.000 --> 00:02:52.000]   All right. So now that we've, you know, and again, this is this is not required for mixed precision.
+[00:02:52.000 --> 00:02:58.000]   This is just because I wanted to experiment and flex our muscles a little bit of trying things out.
+[00:02:58.000 --> 00:03:01.000]   So here's our mixed precision callback.
+[00:03:01.000 --> 00:03:03.000]   And this is a training callback.
+[00:03:03.000 --> 00:03:30.000]   And basically, if you Google for PyTorch mixed precision, you'll see that the docs show the typical mixed precision basically says with autocast, device equals CUDA, type equals float 16, get your predictions and core your loss.
+[00:03:30.000 --> 00:03:40.000]   So, again, remind yourself if you've forgotten that this is called a context manager and context managers when they start call something called done to enter.
+[00:03:40.000 --> 00:03:43.000]   And when they finish, they call something called done to exit.
+[00:03:43.000 --> 00:03:55.000]   So we could therefore put the torch autocast into an attribute and call done to enter before the batch begins.
+[00:03:55.000 --> 00:04:03.000]   And then after we've calculated the loss, we want to finish that context manager.
+[00:04:03.000 --> 00:04:08.000]   So after loss, we call autocast done to exit.
+[00:04:08.000 --> 00:04:10.000]   And so I had to add this.
+[00:04:10.000 --> 00:04:32.000]   So you'll find now in the 09 learner that there's a section called updated version since the lesson where I've added an after predict, an after loss, an after backward and an after step.
+[00:04:32.000 --> 00:04:39.000]   And that means that a callback can now insert code at any point of the training loop.
+[00:04:39.000 --> 00:04:46.000]   And so we haven't used all of those different things here, but we certainly do want.
+[00:04:46.000 --> 00:04:50.000]   Yeah, after loss, it better do that.
+[00:04:50.000 --> 00:04:59.000]   And then, yeah, this is just code that has to be run according to it, to the PyTorch docs.
+[00:04:59.000 --> 00:05:04.000]   So instead of calling lost dot backwards, you have to call scalar dot scale, lost dot backward.
+[00:05:04.000 --> 00:05:11.000]   So we replace our backward in the train callback with something called scalar dot scale, lost dot backward.
+[00:05:11.000 --> 00:05:20.000]   And then it says that finally, when you do the step, you don't call optimizer dot step, you call scalar dot step optimizer scalar dot update.
+[00:05:20.000 --> 00:05:26.000]   So we've replaced step with scalar dot step scalar dot update.
+[00:05:26.000 --> 00:05:29.000]   So that does all of the things in here.
+[00:05:29.000 --> 00:05:34.000]   And the nice thing is now that this exists, we don't have to think about any of that.
+[00:05:34.000 --> 00:05:41.000]   We can add mixed precision to anything, which is really nice.
+[00:05:41.000 --> 00:05:51.000]   And so we now, as you'll see, CB is no longer has a DDPM CB, but we do have the mixed precision.
+[00:05:51.000 --> 00:05:52.000]   And that's a train callback.
+[00:05:52.000 --> 00:05:55.000]   So we just need a normal learner, not a train learner.
+[00:05:55.000 --> 00:05:57.000]   And we initialize our DDPM.
+[00:05:57.000 --> 00:06:03.000]   Now, to get benefit from mixed precision, you need to do quite a bit at a time.
+[00:06:03.000 --> 00:06:07.000]   You know, your GPU needs to be busy.
+[00:06:07.000 --> 00:06:11.000]   And on something as small as fashion MNIST, it's not easy to keep a GPU busy.
+[00:06:11.000 --> 00:06:16.000]   So that's why I've increased the batch size by four times.
+[00:06:16.000 --> 00:06:24.000]   Now, that means that each epoch, it's going to have four times less batches because they're bigger.
+[00:06:24.000 --> 00:06:27.000]   That means it's got four times less opportunities to update.
+[00:06:27.000 --> 00:06:35.000]   And that's going to be a problem because if I want to have as good a result as to niche CAD and as I had here in less time,
+[00:06:35.000 --> 00:06:45.000]   that's the whole purpose of this is to do it in less time, then I'm going to need to, you know, increase the learning rate
+[00:06:45.000 --> 00:06:47.000]   and maybe also increase the epoch.
+[00:06:47.000 --> 00:06:54.000]   So I increase the epochs up to eight from five and I increase the learning rate up to one in egg two.
+[00:06:54.000 --> 00:07:02.000]   And yeah, I've found I could train it fine with that once I use the proper initialization and most importantly,
+[00:07:02.000 --> 00:07:07.000]   use the optimization function that has epsilon of one in egg five.
+[00:07:07.000 --> 00:07:16.000]   And so this trains, even though it's doing more epochs, this trains about twice as fast.
+[00:07:16.000 --> 00:07:22.000]   And gets the same result.
+[00:07:22.000 --> 00:07:25.000]   Does that make sense so far?
+[00:07:25.000 --> 00:07:26.000]   Yeah, it was great.
+[00:07:26.000 --> 00:07:37.000]   Cool. Now, the good news is actually we don't even need to write all this because there's a nice library from Hugging Face,
+[00:07:37.000 --> 00:07:44.000]   originally created by Silver, who used to work with me at FastAI and went to Hugging Face and kept on doing awesome work.
+[00:07:44.000 --> 00:07:51.000]   And he started this project called Accelerator, which he now works on with another FastAI alum named Zach Riele,
+[00:07:51.000 --> 00:07:58.000]   and accelerates a library that provides this in-court accelerator that does things to accelerate your training loops.
+[00:07:58.000 --> 00:08:06.000]   And one of the things it does is mix precision training and it basically handles these things for you.
+[00:08:06.000 --> 00:08:08.000]   It also lets you train on multiple GPUs.
+[00:08:08.000 --> 00:08:11.000]   It also lets you train on TPUs.
+[00:08:11.000 --> 00:08:17.000]   So by adding a train_cb subclass that will allow us to use Accelerate,
+[00:08:17.000 --> 00:08:24.000]   that means we can now hopefully use TPUs and multi-GPU training and all that kind of thing.
+[00:08:24.000 --> 00:08:35.000]   So the Accelerate docs show that what you have to do to use Accelerate is to create an accelerator,
+[00:08:35.000 --> 00:08:43.000]   tell it what kind of mixed precision you want to use. So we're going to use 16-bit floating point FP16.
+[00:08:43.000 --> 00:08:53.000]   And then you have to basically call Accelerator.Prepare and you pass in your model, your optimizer,
+[00:08:53.000 --> 00:08:56.000]   and your training and validation data loaders.
+[00:08:56.000 --> 00:09:01.000]   And it returns you back a model, an optimizer, and training and validation data loaders,
+[00:09:01.000 --> 00:09:11.000]   but they've been wrapped up in Accelerate. And Accelerate is going to now do all the things we saw you have to do automatically.
+[00:09:11.000 --> 00:09:14.000]   And that's why that's almost all the code we need.
+[00:09:14.000 --> 00:09:21.000]   The only other thing we need is we didn't tell it how to change our loss function to use Accelerate,
+[00:09:21.000 --> 00:09:25.000]   so we actually have to change backward. That's why we inherit from train_cb.
+[00:09:25.000 --> 00:09:34.000]   We have to change backward to not call loss.backward, but self.accelerate.backward and pass in loss.
+[00:09:34.000 --> 00:09:41.000]   OK. And then I had another idea of something I wanted to do, which is I like the idea that Noisify,
+[00:09:41.000 --> 00:09:49.000]   I've copied Noisify here, but rather than returning a tuple of tuples, I just return a tuple with three things.
+[00:09:49.000 --> 00:09:54.000]   I think this is neater to me. I would like to just have three things in the tuple.
+[00:09:54.000 --> 00:10:00.000]   I don't want to have to modify my model. I don't want to have to modify my training callback.
+[00:10:00.000 --> 00:10:12.000]   I don't want to do anything tricky. I don't even want to have a custom collation function.
+[00:10:12.000 --> 00:10:16.000]   Sorry, I want to have a custom collation function, but I don't want to have a modified model.
+[00:10:16.000 --> 00:10:20.000]   So I'm going to go back to using a UNet2D model.
+[00:10:20.000 --> 00:10:25.000]   So how can we use a UNet2D model when we've now got three things?
+[00:10:25.000 --> 00:10:39.000]   And what I did in my modified ladder, just underneath it, sorry, actually what I did is I modified train_cb
+[00:10:39.000 --> 00:10:43.000]   to add one parameter, which is number of inputs.
+[00:10:43.000 --> 00:10:51.000]   And so this tells you how many inputs are there to the model.
+[00:10:51.000 --> 00:10:57.000]   Normally you would expect one input, but our model has two inputs.
+[00:10:57.000 --> 00:11:13.000]   So here we say, okay, so accelerate_cb is a train_cb. So when we call it, we say we're going to have two inputs.
+[00:11:13.000 --> 00:11:18.000]   And so what that's going to do is it's just going to remember how many you asked for.
+[00:11:18.000 --> 00:11:30.000]   And so when you call predict, it's not going to pass learn.batch0. It's going to call star learn.batch colon self.name_inputs.
+[00:11:30.000 --> 00:11:37.000]   And ditto, when you call the loss function, it's going to be the rest. So it's star learn.batch self.add_imp onwards.
+[00:11:37.000 --> 00:11:43.000]   So this way you can have one, two, three, four, five inputs, one, two, three, four, five outputs, whatever you like.
+[00:11:43.000 --> 00:11:49.000]   And it's just up to you then to make sure that your model and your loss function take the number of parameters.
+[00:11:49.000 --> 00:12:00.000]   So the loss function is going to first of all take your creds and then, yeah, however many non-inputs you have.
+[00:12:00.000 --> 00:12:14.000]   So that way, yeah, we now don't need to replace anything except that we did need to do the thing to make sure that we get the dot sample out.
+[00:12:14.000 --> 00:12:20.000]   So I just had a little, this is the whole DDPMCB callback now, DDPMCB2.
+[00:12:20.000 --> 00:12:26.000]   So after the predictions are done, replace them with the dot sample.
+[00:12:26.000 --> 00:12:31.000]   Right. So that's nice and easy, you know.
+[00:12:31.000 --> 00:12:36.000]   So we end up with quite a bit of pieces, but they're all very decoupled, you know.
+[00:12:36.000 --> 00:12:49.000]   So with mini AI, you know, with and with AccelerateCB and whatever, I guess we should export these actually into a nice module.
+[00:12:49.000 --> 00:13:01.000]   Well, if you had all those, then, yeah, you wouldn't have AccelerateCB. The only thing you would need would be the noisify and the collation function and this tiny callback.
+[00:13:01.000 --> 00:13:10.000]   And then, yeah, use our learner and fit and we get the same result as usual.
+[00:13:10.000 --> 00:13:19.000]   And this takes basically an identical amount of time because at this point I'm not using all the GPU or TPU or whatever. I'm just using mixed precision.
+[00:13:19.000 --> 00:13:25.000]   So this is just a shortcut for this. It's not a huge shortcut.
+[00:13:25.000 --> 00:13:32.000]   The main purpose of it really is to allow us to use other types of accelerators or multiple accelerators or whatever.
+[00:13:32.000 --> 00:13:37.000]   So we'll look at those later. Does that make sense so far?
+[00:13:37.000 --> 00:13:42.000]   Yeah. Yeah. Accelerator is really powerful and pretty amazing.
+[00:13:42.000 --> 00:13:52.000]   Yeah, it is. And I know like a lot of, yeah, like I know Kat Carlson uses it in all her K diffusion code, for example.
+[00:13:52.000 --> 00:13:55.000]   Yeah, it's used a lot out there in the real world.
+[00:13:55.000 --> 00:13:56.000]   Yeah.
+[00:13:56.000 --> 00:14:06.000]   I've got one more thing I just want to mention briefly. Just a sneaky trick. I haven't even bothered training anything with it because it's just a sneaky trick.
+[00:14:06.000 --> 00:14:17.000]   But sometimes thinking about speed, loading the data is the slow bit.
+[00:14:17.000 --> 00:14:26.000]   And so particularly if you use Kaggle, for example, on Kaggle, you get two GPUs, which is amazing, but trying to get two CPUs, which is crazy.
+[00:14:26.000 --> 00:14:36.000]   So it's really hard to take advantage of them because the amount of time it takes to open a PNG or a JPEG, your GPU is sitting there waiting for you.
+[00:14:36.000 --> 00:14:50.000]   So if your data loading and transformation process is slow and it's difficult to keep your GPUs busy, there's a trick you can do,
+[00:14:50.000 --> 00:15:00.000]   which is you could create a new data loader class, which wraps your existing data loader and it replaces DunderIdder.
+[00:15:00.000 --> 00:15:08.000]   Now, DunderIdder is the thing that gets called when you use a for loop, right? Or when you use NextIdder, it calls this.
+[00:15:08.000 --> 00:15:12.000]   And when you call this, you just go through the data loader as per usual.
+[00:15:12.000 --> 00:15:26.000]   So that's what DunderIdder would normally do. But then you also go through I from zero to by default two and then you spit out the batch.
+[00:15:26.000 --> 00:15:33.000]   And what this is going to do is it's going to go through the data loader and spit out the batch twice.
+[00:15:33.000 --> 00:15:48.000]   Why is that interesting? Because it means every epoch is going to be twice as long, but it's going to only load and augment the data as often as one epoch, but it's going to give you two epochs worth of updates.
+[00:15:48.000 --> 00:15:54.000]   And basically, there's no reason to have a whole new batch every time.
+[00:15:54.000 --> 00:16:00.000]   You know, looking at the same batch two or three or four times at a row is totally fine.
+[00:16:00.000 --> 00:16:12.000]   And what happens in practice is you look at that batch, you do an update, get 20 part of the weight space, look at exactly the same batch and find out now where to go in the in the weight space.
+[00:16:12.000 --> 00:16:17.000]   It's still, yeah, basically equally useful.
+[00:16:17.000 --> 00:16:31.000]   So I just wanted to add this little sneaky trick here, particularly because if we start doing more stuff on Kaggle, we'll probably want to surprise all the Kagglers with how fast our mini AI solutions are.
+[00:16:31.000 --> 00:16:46.000]   And they'll be like, how is that possible? We'll be like, oh, we're using our, you know, two GPUs, six to accelerate. Thinking about how do we use the two GPUs and like, oh, and we're, you know, using, you know, getting out, loading, flying through using multi L.
+[00:16:46.000 --> 00:16:52.000]   I think that'd be pretty sweet.
+[00:16:52.000 --> 00:16:54.000]   So that's that.
+[00:16:54.000 --> 00:16:56.000]   Nice.
+[00:16:56.000 --> 00:17:09.000]   Yeah, it's great to see the various different ways that we can use mini AI to do to do the same thing, I guess, or, you know, however you feel like doing it or whatever works best for you.
+[00:17:09.000 --> 00:17:10.000]   Yeah.
+[00:17:10.000 --> 00:17:20.000]   And I'll be curious to see if other people find other ways to, you know, I'm sure there's so many different ways to to handle this problem. I think it's an interesting, interesting problem to solve.
+[00:17:20.000 --> 00:17:43.000]   And I think for the homework, it'd be useful for people to run some of their own experiments, maybe either use these techniques on other data sets or see if you can come up with other variants of these approaches or come up with some different noise schedules to try.
+[00:17:43.000 --> 00:17:51.000]   It would all be useful. Any other thoughts of exercises people could try?
+[00:17:51.000 --> 00:18:03.000]   Yeah, I mean, getting away with less than a thousand steps. Yeah, a thousand steps happening in the final 200. So why not just train with only 200 steps? Yeah, that steps would be good.
+[00:18:03.000 --> 00:18:10.000]   Yeah, because the sampling is actually pretty slow. So that's a good point.
+[00:18:10.000 --> 00:18:26.000]   Yeah, yeah, I was gonna say something similar in terms of like, yeah, many, I guess, work with less number of steps. You know, you have to adjust the noise schedule appropriately and you have to, I guess there's maybe a little bit more thought into some of these things.
+[00:18:26.000 --> 00:18:41.000]   Or, you know, another aspect is like, when you're selecting the time step during training, right now we select it randomly, kind of uniformly, each time step has equal probability of being selected.
+[00:18:41.000 --> 00:18:50.000]   Maybe different probabilities are better and some papers do analyze that more carefully. So that's another thing to play around with as well.
+[00:18:50.000 --> 00:19:14.000]   That's almost kind of like, I guess there are almost two ways of doing the same thing in a sense, right? If you change that mapping from t to beta, then you could reduce t and have different betas would kind of give you a similar result as changing the probabilities of the t's, I think.
+[00:19:14.000 --> 00:19:41.000]   Yeah, I think there's definitely, they're kind of similar, but potentially something complementary happening there as well. And I think those could be some interesting experiments to study that and also the sort of noise levels that you do choose affect the sort of behavior of the sampling process.
+[00:19:41.000 --> 00:19:58.000]   And of course, what features you focus on. And so maybe as people play around with that, maybe they'll start to notice how using different noise levels or different noise schedules affect maybe some of the features that you see in the final image.
+[00:19:58.000 --> 00:20:04.000]   And that could be something very interesting to study as well.
+[00:20:04.000 --> 00:20:16.000]   Right. Well, let me also say it's been really fun doing something a bit different, which is doing a lesson with you guys rather than all on my lonesome. I hope we can do this again because I've really enjoyed it.
+[00:20:16.000 --> 00:20:17.000]   Yeah, it was great.
+[00:20:17.000 --> 00:20:33.000]   So, of course, now we're, you know, strictly speaking in the recording, we'll next up see Johnno, who's actually already recorded his thanks to the Zoom mess up, but stick around. So I've already seen it. Johnno's thing is amazing. So you definitely don't want to miss that.
+[00:20:33.000 --> 00:20:49.000]   Hello, everyone. So today, depending on the order that this ends up happening, you've probably seen Denise a DDPM implementation where we're taking the default training call back and doing some more interesting things with preparing the data for the learner or interpreting the results.
+[00:20:49.000 --> 00:21:01.000]   So in these two notebooks that I'm going to show, we're going to be doing something similar, just exploring like what else can we do besides just the classic kind of classification model or where we have some inputs and a label.
+[00:21:01.000 --> 00:21:05.000]   And what else can we do with this mini AI setup that we have.
+[00:21:05.000 --> 00:21:26.000]   And so in the first one, we're going to approach a kind of classic AI art approach called style transfer. And so the idea here is that we're going to want to somehow create an artistic combination of two images where we have the structure and layout of one image and the style of another.
+[00:21:26.000 --> 00:21:34.000]   So we'll look at how we do that. And then we'll also talk along the way in terms of like, why is this actually useful beyond just making pretty pictures.
+[00:21:34.000 --> 00:21:45.000]   So to start with, I've got a couple of URLs for images. You're welcome to go and slip in your own as well and definitely recommend trying this notebook with some different ones just to see what effects you can get.
+[00:21:45.000 --> 00:21:54.000]   And we're going to download the image and load it up as a tensor. So we have here a three channel image 256 by 256 pixels.
+[00:21:54.000 --> 00:22:03.000]   And so this is the kind of base image that we're going to start working with. So before we talk about styles or anything, let's just think what is our goal here.
+[00:22:03.000 --> 00:22:11.000]   We'd like to do some sort of training or optimization. We'd like to get to a point where we can match some aspect of this image.
+[00:22:11.000 --> 00:22:21.000]   And so maybe a good place to start is to just try and do what can we start from a random image and optimize it until it matches pixel for pixel exactly.
+[00:22:21.000 --> 00:22:23.000]   And that's going to help us get this. Yeah.
+[00:22:23.000 --> 00:22:37.000]   I think that might be helpful is if you type style transfer deep learning into Google images, you could maybe show some examples so that people will see what their goal is.
+[00:22:37.000 --> 00:22:44.000]   Yeah, that's a very good point. So let's see. This is a good one here. We've got the Mona Lisa as our our base.
+[00:22:44.000 --> 00:22:50.000]   But we've managed to apply some how some different artistic styles to that same base structure.
+[00:22:50.000 --> 00:22:57.000]   So we have the Great Wave by Psaki. We have Starry Night by Vincent Mango. This is some sort of Kandinsky or something.
+[00:22:57.000 --> 00:23:05.000]   Yeah. So this is our end goal to be able to take the overall structure and layout of one image and the style from some different reference image.
+[00:23:05.000 --> 00:23:15.000]   And in fact, this was the first ever I think fast AI generative modeling lesson looked at style transfer.
+[00:23:15.000 --> 00:23:19.000]   It's it's been around for a few years. It's kind of a classic technique.
+[00:23:19.000 --> 00:23:34.000]   And it's really I think a lot of the students when we first did it found it extremely useful way of better understanding, like, you know, flexing their deep learning muscles, understanding what's going on.
+[00:23:34.000 --> 00:23:40.000]   And also created some really interesting new approaches. So hopefully we'll see the same thing again.
+[00:23:40.000 --> 00:23:47.000]   Maybe some students will be able to show some really interesting results from this.
+[00:23:47.000 --> 00:23:51.000]   Yeah. And I mean, today we're going to focus on kind of the classic approach.
+[00:23:51.000 --> 00:24:02.000]   But I know one of the previous students from fast AI did a whole different way of doing that style loss that we'll maybe post in the forums or, you know, I've got some comparisons that we can look at.
+[00:24:02.000 --> 00:24:11.000]   So, yeah, definitely a fruitful field still. And I think after the initial hype of like everyone was excited about style transfer apps and things five years ago.
+[00:24:11.000 --> 00:24:14.000]   I feel like there's still some things to explore there.
+[00:24:14.000 --> 00:24:20.000]   Very creative and fun little and divergent in the deep learning world.
+[00:24:20.000 --> 00:24:25.000]   OK, so our first step in getting to that point is being able to optimize an image.
+[00:24:25.000 --> 00:24:29.000]   And so up until now, we've been optimizing like the weights of a neural network.
+[00:24:29.000 --> 00:24:33.000]   But now you want to go to something a bit more simple and we just want to optimize the raw pixels of an image.
+[00:24:33.000 --> 00:24:37.000]   Do you mind if you scroll up a bit to the previous code just so we can have a look at it?
+[00:24:37.000 --> 00:24:43.000]   So there's a couple of interesting points about this code here is, you know, we're not we're not cheating.
+[00:24:43.000 --> 00:24:50.000]   Well, not really. So we're so yeah, we've seen how to download things in the network before.
+[00:24:50.000 --> 00:24:53.000]   So we're using fastcodes URL read because we're allowed to.
+[00:24:53.000 --> 00:24:57.000]   And then I think we decided we weren't going to write our own JPEG parser.
+[00:24:57.000 --> 00:25:03.000]   So TorchVision actually has a pretty good one, which a lot of people don't realize exists.
+[00:25:03.000 --> 00:25:11.000]   And a lot of people tend to use PIL, but actually TorchVision has a more performant option.
+[00:25:11.000 --> 00:25:19.000]   And it's actually quite difficult to find any examples of how to use it like this.
+[00:25:19.000 --> 00:25:22.000]   Here's some code you can borrow.
+[00:25:22.000 --> 00:25:27.000]   Yeah, actually, Google load image from a URL in PyTorch. All of the examples are going to use PIL.
+[00:25:27.000 --> 00:25:37.000]   And that's what I've done historically is use the requests library to download the URL and then feed that into PIL's image.open function.
+[00:25:37.000 --> 00:25:40.000]   So yeah, that was fun when I was working with Jeremy on this notebook.
+[00:25:40.000 --> 00:25:43.000]   Like that's how I was doing it. It's with me breaking the rules.
+[00:25:43.000 --> 00:25:51.000]   And let's see if we can do this directly into a tensor without this intermediate step of loading it with with pillow.
+[00:25:51.000 --> 00:25:56.000]   Cool. Okay. So how are we going to do this image optimization?
+[00:25:56.000 --> 00:26:00.000]   Well, first thing is we don't really have a data set of lots of training examples.
+[00:26:00.000 --> 00:26:04.000]   We just have a single target and a single thing we're optimizing.
+[00:26:04.000 --> 00:26:09.000]   And so we built this linked data set here, which is just going to follow the PyTorch data set standard.
+[00:26:09.000 --> 00:26:14.000]   We're going to tell it how to get a particular item and what our length is.
+[00:26:14.000 --> 00:26:18.000]   But in this case, we're just always going to return zero zero.
+[00:26:18.000 --> 00:26:21.000]   We're not actually going to care about the results from this data set.
+[00:26:21.000 --> 00:26:25.000]   We just want something that we can pass to the learner to do some number of training iterations.
+[00:26:25.000 --> 00:26:32.000]   So we create like a thick dummy data set with a hundred items and then we create our data loaders from that.
+[00:26:32.000 --> 00:26:39.000]   And that's going to give us a way to train for some number of steps without really caring about what this data is.
+[00:26:39.000 --> 00:26:41.000]   So does that make sense?
+[00:26:41.000 --> 00:26:44.000]   Yeah. So just to clarify the reason we're doing this.
+[00:26:44.000 --> 00:26:54.000]   So basically, the idea is we're going to start with that photo you downloaded and I guess you're going to be downloading another photo.
+[00:26:54.000 --> 00:26:56.000]   So that photo is going to be like the content.
+[00:26:56.000 --> 00:26:59.000]   We're going to try to make it continue to look like that lady.
+[00:26:59.000 --> 00:27:04.000]   And then we're going to try to change the style so that the style looks like the style of some other picture.
+[00:27:04.000 --> 00:27:13.000]   And the way we're going to be doing that is by doing an optimization loop with like SGD or whatever.
+[00:27:13.000 --> 00:27:22.000]   So the idea is that each step of that, we're going to be moving the style somehow of the image closer and closer to one of those images you downloaded.
+[00:27:22.000 --> 00:27:32.000]   So it's not that we're going to be looping through lots of different images, but we're just going to be looping through steps of a optimization loop.
+[00:27:32.000 --> 00:27:34.000]   Is that the idea?
+[00:27:34.000 --> 00:27:39.000]   Exactly. And so, yeah, we can create this data loader.
+[00:27:39.000 --> 00:27:50.000]   And then in terms of the actual model that we're optimizing and passing to the learner, we created this tensor model class, which just has whatever tensor we pass in as its parameter.
+[00:27:50.000 --> 00:27:52.000]   So there's no actual neural network necessarily.
+[00:27:52.000 --> 00:27:59.000]   We're just going to pass in a random image or some image-shaped thing, a set of numbers that we can then optimize.
+[00:27:59.000 --> 00:28:06.000]   So just in case people have forgotten that, so to remind people, when you put something in an n-end or parameter, it doesn't change it in any way.
+[00:28:06.000 --> 00:28:14.000]   It's just a normal tensor, but it's stored inside the module as being something as being a tensor to optimize.
+[00:28:14.000 --> 00:28:20.000]   So what you're doing here, Jono, I guess, is to say I'm not actually optimizing a model at all.
+[00:28:20.000 --> 00:28:26.000]   I'm optimizing an image, the pixels of an image directly.
+[00:28:26.000 --> 00:28:40.000]   Exactly. And because it's in a parameter, if we look at our model, we can see that, for example, model.t, it does require grad, right?
+[00:28:40.000 --> 00:28:44.000]   Because that's already set up, because this n-end module is going to look for any parameters.
+[00:28:44.000 --> 00:28:54.000]   And if our optimizer is looking at, let's look at the shape of the parameters.
+[00:28:54.000 --> 00:28:57.000]   So this is the shape of the parameters that we're optimizing.
+[00:28:57.000 --> 00:29:01.000]   This is just that tensor that we passed in, the same shape as our image.
+[00:29:01.000 --> 00:29:06.000]   And this is what's going to be optimized if we pass this into any sort of learner fit method.
+[00:29:06.000 --> 00:29:12.000]   OK, so this model does have a thing being passed to forward, which is x, which we're ignoring.
+[00:29:12.000 --> 00:29:15.000]   And I guess that's just because our learner passes something in.
+[00:29:15.000 --> 00:29:21.000]   So we're making life a bit easier for ourselves by making the model look the way our learner expects.
+[00:29:21.000 --> 00:29:25.000]   Yeah. And we could do that using like train_cb or something if we wanted to.
+[00:29:25.000 --> 00:29:30.000]   But this seems like a nice, nice, easy way to do it.
+[00:29:30.000 --> 00:29:32.000]   Yeah, so I mean, this is the way I've done it.
+[00:29:32.000 --> 00:29:43.000]   If you do want to use train_cb, you can set it up with a custom predict method that is just going to call the model forward method with no parameters.
+[00:29:43.000 --> 00:29:48.000]   And if you want, likewise, just calling the loss function on just the predictions.
+[00:29:48.000 --> 00:29:55.000]   But if you want to skip this because we take this argument x equals zero and never use it, that should also work without this callback.
+[00:29:55.000 --> 00:29:57.000]   So either way is fine.
+[00:29:57.000 --> 00:30:03.000]   This is a nice approach if you have something that you're using an existing model, which expects some number of parameters or something.
+[00:30:03.000 --> 00:30:09.000]   Yeah, you can just modify that training callback, but we almost don't need to in this case.
+[00:30:09.000 --> 00:30:11.000]   OK, so let's see.
+[00:30:11.000 --> 00:30:12.000]   Let's put this in a learner.
+[00:30:12.000 --> 00:30:14.000]   Let's optimize it with some loss function.
+[00:30:14.000 --> 00:30:20.000]   Oh, just to clarify, I get it. So the get_loss you had to change because normally we pass a target to the loss function.
+[00:30:20.000 --> 00:30:23.000]   Yes, it's learner.prids and then learner.batch.
+[00:30:23.000 --> 00:30:34.000]   And again, we could avoid, we could remove that as well if we wanted to by having our loss function take a target that we then ignore.
+[00:30:34.000 --> 00:30:36.000]   Yeah, exactly.
+[00:30:36.000 --> 00:30:46.000]   So both other approaches, I like this because we're going to kind of be building on this idea of modifying the training callback in the DDPM example and the other examples.
+[00:30:46.000 --> 00:30:48.000]   But in this case, it's just these two lines change.
+[00:30:48.000 --> 00:30:49.000]   This is how we get our model predictions.
+[00:30:49.000 --> 00:30:54.000]   We just call the forward method, which returns this image that we're optimizing.
+[00:30:54.000 --> 00:31:00.000]   And we're going to evaluate this according to some loss function that just takes in an image.
+[00:31:00.000 --> 00:31:12.000]   So for our first loss function, we're just going to use the mean squared error between the image that we are generating, like this output of our model and that content image that's our target.
+[00:31:12.000 --> 00:31:16.000]   Right. So we're going to set up our model, start it out with a random image like this above.
+[00:31:16.000 --> 00:31:22.000]   We're going to create a learner with a dummy data loader for 100 steps.
+[00:31:22.000 --> 00:31:29.000]   Our loss function is going to be this mean squared error loss function, set a learning rate and an optimizer function.
+[00:31:29.000 --> 00:31:32.000]   The default would probably also work.
+[00:31:32.000 --> 00:31:34.000]   And if we run this, something's going to happen.
+[00:31:34.000 --> 00:31:39.000]   Our loss is going to go from a non-zero number to close this error.
+[00:31:39.000 --> 00:31:48.000]   And we can look at the final result, like if we call learn.model and show that as an image versus the actual image, we'll see that they look pretty much identical.
+[00:31:48.000 --> 00:31:55.000]   So just to clarify, this is like a pointless example, but what we did, we started with that noisy image she showed above.
+[00:31:55.000 --> 00:32:03.000]   And then we used SGD to make those pixels get closer and closer to the lady in the sunglasses.
+[00:32:03.000 --> 00:32:12.000]   Not for any particular purpose, but just to show that we can turn noisy pixels into something else by having it follow a loss function.
+[00:32:12.000 --> 00:32:18.000]   Make the pixels look as much as possible, like that idea in the sunglasses.
+[00:32:18.000 --> 00:32:20.000]   Exactly. And so in this case, it's a very simple loss.
+[00:32:20.000 --> 00:32:27.000]   There's like a one direction that you update, so it's almost trivial to solve, but it still helps us get the framework in place.
+[00:32:27.000 --> 00:32:32.000]   But just seeing this final result is not very instructive because you almost think, well, did I get a bug in my code?
+[00:32:32.000 --> 00:32:33.000]   Did I just duplicate the image?
+[00:32:33.000 --> 00:32:36.000]   How do I know this is actually doing what we expect?
+[00:32:36.000 --> 00:32:45.000]   And so before we even move on to any more complicated loss functions, I thought it was important to have some sort of more obvious way of doing progress.
+[00:32:45.000 --> 00:32:57.000]   So I've created a little logging callback here that is just after every batch, it's going to store the output as an image.
+[00:32:57.000 --> 00:32:59.000]   I guess after every 10 batches here by default.
+[00:32:59.000 --> 00:33:10.000]   Oh, yes. Yeah. Sorry. So we can set how often it's going to update and then every 10 iterations or 50 iterations, whatever we set the log every argument to, it's going to store that in a list.
+[00:33:10.000 --> 00:33:15.000]   And then after the training is done, after that, we're just going to show those images.
+[00:33:15.000 --> 00:33:23.000]   And so everything else the same as before, but passing in this extra logging callback, it's going to give us the kind of progress.
+[00:33:23.000 --> 00:33:26.000]   And so now you can see, OK, there is actually something happening.
+[00:33:26.000 --> 00:33:29.000]   We're starting from this noise after a few iterations.
+[00:33:29.000 --> 00:33:31.000]   Already, most of it is gone.
+[00:33:31.000 --> 00:33:35.000]   And by the end of this process, it looks exactly like the content image.
+[00:33:35.000 --> 00:33:54.000]   So I really like this because what you've basically done here is you've now already got all the pooling and infrastructure in place you need to basically create a really wide variety of interesting outputs that could either be artistic
+[00:33:54.000 --> 00:34:05.000]   or like, you know, there could be more like image reconstruction, super resolution, colorization, whatever.
+[00:34:05.000 --> 00:34:09.000]   And you just have to modify the loss function.
+[00:34:09.000 --> 00:34:18.000]   And I really like the way you've created the absolute easiest possible first and fully checked it.
+[00:34:18.000 --> 00:34:29.000]   And before you start doing the fancy stuff and now you kind of, I guess, feel really comfortable doing the fancy stuff because you know that's all in place.
+[00:34:29.000 --> 00:34:30.000]   Yeah, exactly.
+[00:34:30.000 --> 00:34:32.000]   And we know that we're going to see some tracking.
+[00:34:32.000 --> 00:34:36.000]   Hopefully it'll be visually obvious if things are going wrong and we know exactly what we need to modify.
+[00:34:36.000 --> 00:34:45.000]   If we can now express some desired property that's more interesting than just like mean squared error to a target image, then we could have everything in place to optimize.
+[00:34:45.000 --> 00:34:50.000]   And so this is now really fun to like, OK, let's think about what other loss functions we could do.
+[00:34:50.000 --> 00:34:54.000]   Maybe we wanted to match an image, but also have a particular overall color.
+[00:34:54.000 --> 00:34:57.000]   Maybe we want some some more complicated thing.
+[00:34:57.000 --> 00:35:07.000]   And so towards that, like towards starting to get a more richer like measure of what this output image looks like, we're going to talk about extracting features from a pre-trained network.
+[00:35:07.000 --> 00:35:14.000]   And this is kind of like the core idea of this notebook is that we have these big convolutional neural networks.
+[00:35:14.000 --> 00:35:17.000]   This one is a much older architecture.
+[00:35:17.000 --> 00:35:21.000]   And it's a relatively simple compared to some of the big, you know, dense nets and so on used today.
+[00:35:21.000 --> 00:35:27.000]   It's actually a model like our Pre-ResNet Fashioned MNIST model.
+[00:35:27.000 --> 00:35:31.000]   It's basically almost the same as VGG16.
+[00:35:31.000 --> 00:35:33.000]   Yeah, yeah, exactly.
+[00:35:33.000 --> 00:35:43.000]   And so we're feeding in an image and then we have these like convolutional layers, downsampling, convolution, you know, downsampling with max pooling up until some final prediction.
+[00:35:43.000 --> 00:35:45.000]   Oh, but can I just point something out?
+[00:35:45.000 --> 00:35:51.000]   There's one big difference here, which is that seven by seven by five twelve, if you can point at that.
+[00:35:51.000 --> 00:36:01.000]   Normally nowadays and in our models, we tried, you know, using an adaptive or global pooling to get down to a one by one by five twelve.
+[00:36:01.000 --> 00:36:10.000]   VGG16 does something which is very unusual by today's standards, which is it just flattens that out into a one by one by four or nine six.
+[00:36:10.000 --> 00:36:16.000]   Which actually might be a really interesting feature of VGG.
+[00:36:16.000 --> 00:36:25.000]   And I've always felt like people might want to consider training, you know, res nets and stuff without the global pooling and instead do the flattening.
+[00:36:25.000 --> 00:36:35.000]   The reason we don't do the flattening nowadays is that that very last linear layer that goes from one by one by four or nine six to one by one by a thousand, because this is an image net model,
+[00:36:35.000 --> 00:36:40.000]   is going to need an awfully big weight matrix.
+[00:36:40.000 --> 00:36:51.000]   You've got a four or nine six by a thousand weight matrix as a result of which this is actually horrifically memory intensive for a reasonably poor performing model by modern standards.
+[00:36:51.000 --> 00:36:58.000]   But yeah, I think that doing that actually also has some some benefits potentially as well.
+[00:36:58.000 --> 00:37:04.000]   Yeah. And in this case, we are not even really interested in the classification side.
+[00:37:04.000 --> 00:37:10.000]   We're more excited about the capacity of this to extract different features.
+[00:37:10.000 --> 00:37:25.000]   And so the idea here and maybe I should pull up this classic article looking at like what do neural networks learn and trying to visualize some of these features.
+[00:37:25.000 --> 00:37:37.000]   And this is something we've mentioned before with these big pre-trained networks is that the early layers tend to pick up on very simple features, edges and shapes and textures and those get mixed together into more complicated textures.
+[00:37:37.000 --> 00:37:45.000]   And by the way, this is just trying to visualize like what what kind of input maximally activates a particular like output on each of these layers.
+[00:37:45.000 --> 00:37:56.000]   And so it's a great way to see like what kinds of things that's learning. And so you can see as we move deeper and deeper into the into the network, we're getting more and more complicated, like hierarchical features.
+[00:37:56.000 --> 00:38:05.000]   And so we've looked at the Zeiler and Fergus paper before that which is an earlier version doing something like this to see what kind of features were available.
+[00:38:05.000 --> 00:38:19.000]   So we'll link to this distill paper from the forum and the course lesson page because it's actually a more modern and fancy version kind of the same thing.
+[00:38:19.000 --> 00:38:32.000]   Yeah. Also note the names here. All of these people are worth following. Chris does amazing work on interpretability and Alexander Modvinsov we'll see in the second notebook that I look at today and doing all sorts of other cool stuff as well.
+[00:38:32.000 --> 00:38:43.000]   And anyway, so we want to think about like let's extract the outputs of these layers in the hope that they give us a representation of our image that's richer than just the raw pixels.
+[00:38:43.000 --> 00:39:05.000]   So we can list the idea being there that if we had another if we were able to change our image to have the same features at those various types that you were just showing us that then it would like have similar textures or similar kind of higher level concepts or whatever.
+[00:39:05.000 --> 00:39:16.000]   Exactly. So if you think of this like 14 by 14 feature map over here, maybe it's capturing that there's an eye in the top left and some hair on the top right, these kind of abstract things.
+[00:39:16.000 --> 00:39:29.000]   And if you change the brightness of the image, it's unlikely that it's going to change what features are stored there because the networks learned to be somewhat invariant to these like rough transformations, a bit of noise, a bit of changing texture early on.
+[00:39:29.000 --> 00:39:37.000]   It's not going to affect the fact that it still thinks this looks like a dog and a few layers before that, that it still thinks that part looks like a nose and that part looks like an ear.
+[00:39:37.000 --> 00:39:55.000]   Maybe the more interesting bits then for what you're doing are those earlier layers where it's going to be like there's a whole bunch of kind of diagonal lines here or there's a kind of a loopy bit here because then if you replicate those, you're going to get similar textures without changing the semantics.
+[00:39:55.000 --> 00:40:07.000]   Exactly. Yeah. So, I mean, I guess let's load the model and look at what the layers are. And then in the next section, we can try and like see what kinds of images work when we optimize towards different layers in there.
+[00:40:07.000 --> 00:40:15.000]   And so this is the network we have, revolutions, relu, max pooling, all of this we should be familiar with by now.
+[00:40:15.000 --> 00:40:27.000]   And it's all just in one big and in dot sequential. This doesn't have the head. So we said dot features. If you did this without you'd have then the this is like the features sub sub sub network.
+[00:40:27.000 --> 00:40:33.000]   That's everything up until some point. And then you have the flattening and the classification, which we are kind of just throwing away.
+[00:40:33.000 --> 00:40:40.000]   So this is the body of the network. And we're going to try and tag into various layers here and extract the outputs.
+[00:40:40.000 --> 00:40:52.000]   But before we do that, there's one more bit of admin we need to handle. And this was trained on a normalized version of ImageNet, right, where you took the data set me and the data set standard deviation and use that to normalize your images.
+[00:40:52.000 --> 00:41:02.000]   So if we want to match what the data looked like during training, we need to match that normalization step. And we've done this on grayscale images where we just subtract the mean divide by the standard deviation.
+[00:41:02.000 --> 00:41:11.000]   But with three channel images, these RGB images, we can't get away with just saying, let's subtract our mean from our image and divide by the standard deviation.
+[00:41:11.000 --> 00:41:21.000]   You're going to get an error that's going to pop up. And this is because we now need to think about broadcasting and these shapes a little bit more carefully than we can with just a scalar value.
+[00:41:21.000 --> 00:41:35.000]   So if we look at the mean here, we just have three values, right, one for each channel, the red, green and blue channels, whereas our content image has three channels and then 256 by 256 for the spatial dimensions.
+[00:41:35.000 --> 00:41:51.000]   So if we try and say content image divided by the mean or minus the mean, it's going to go from right to left and find the first non-unit axis. So anything with a size greater than one.
+[00:41:51.000 --> 00:41:57.000]   And it's going to try and line those up. And in this case, the three and the 256, those aren't going to match. And so we're going to get an error.
+[00:41:57.000 --> 00:42:02.000]   More perniciously, if the shape did happen to match, that might still not be what you intended.
+[00:42:02.000 --> 00:42:12.000]   So what we'd like is to have these three channels map to the three channels of our image and then somehow expand those values out across the two other dimensions.
+[00:42:12.000 --> 00:42:18.000]   And the way we do that is we just add two additional dimensions on the right for our image.net.mean.
+[00:42:18.000 --> 00:42:22.000]   And you could also do the unsqueezed minus one, the unsqueezed minus one.
+[00:42:22.000 --> 00:42:26.000]   But this is the kind of syntax that we're using in this course.
+[00:42:26.000 --> 00:42:36.000]   And now our shapes are going to match because we're going to go from right to left if it's a unit dimension size one, we're going to expand it out to match the other tensor.
+[00:42:36.000 --> 00:42:40.000]   And if it's a non-unit dimension, then the shapes have to match. And that looks like it's the case.
+[00:42:40.000 --> 00:42:48.000]   And so now with this reshaping operation, we can write a little normalized function, which we can then apply to our content image.
+[00:42:48.000 --> 00:42:53.000]   And I'm just checking the min and the max to make sure that this roughly makes sense.
+[00:42:53.000 --> 00:43:02.000]   And we could check the mean as well to make sure that the mean is somewhat close to zero.
+[00:43:02.000 --> 00:43:08.000]   OK, in this case, less maybe because it's a darker image than average, but at least we are doing the operation.
+[00:43:08.000 --> 00:43:14.000]   It seems like the math is correct. And now the sharing the channel wise mean would be interesting.
+[00:43:14.000 --> 00:43:20.000]   Oh, yes. So that would be the mean over the dimensions.
+[00:43:20.000 --> 00:43:29.000]   One and two, I think. I think you have to type all one comma to this.
+[00:43:29.000 --> 00:43:35.000]   I wasn't sure which way around. Yeah, I always forget to say.
+[00:43:35.000 --> 00:43:49.000]   OK, so our blue channel is brighter than the others. And if you go back and look at our image, maybe believe that the image interest is going to be blue and red and the face is going to be just blue.
+[00:43:49.000 --> 00:43:55.000]   Yeah, OK, so that seems to be working. We can double check because now that we've implemented ourselves,
+[00:43:55.000 --> 00:43:59.000]   TorchVision dot transforms has a normalized function that you can pass the mean and standard deviation to.
+[00:43:59.000 --> 00:44:04.000]   And it's going to handle making sure that the devices match, that the shapes match, et cetera.
+[00:44:04.000 --> 00:44:07.000]   And you can see if we check them in a max, it's exactly the same.
+[00:44:07.000 --> 00:44:13.000]   Just a little bit of reassurance that our function is doing the same thing as this normalized transform.
+[00:44:13.000 --> 00:44:18.000]   I appreciate you not cheating by implementing that, Jono. Thank you.
+[00:44:18.000 --> 00:44:21.000]   You're welcome. Got to follow the rules. Got to follow that. OK.
+[00:44:21.000 --> 00:44:27.000]   So with that bit of admin out the way, we can finally say, how do we extract the features from this network?
+[00:44:27.000 --> 00:44:33.000]   Now, if you remember the previous lesson on hooks, that might be something that springs to mind.
+[00:44:33.000 --> 00:44:36.000]   I'm going to leave that as an exercise for the reader.
+[00:44:36.000 --> 00:44:45.000]   And what we're going to do is we're just going to normalize our input and then we're going to run through the layers one by one in this sequential stack.
+[00:44:45.000 --> 00:44:48.000]   We're going to pass our X through that layer.
+[00:44:48.000 --> 00:44:54.000]   And then if we're in one of the target layers, which we can specify, we're going to store the outputs of that layer.
+[00:44:54.000 --> 00:44:58.000]   And I can't remember if I've used the term features before or not.
+[00:44:58.000 --> 00:45:06.000]   So apologies if I have, but just to clarify here, when we say features, we just mean the activations of a layer.
+[00:45:06.000 --> 00:45:12.000]   And in this case, Jono has picked out two particular layers, 18 and 25.
+[00:45:12.000 --> 00:45:17.000]   I mean, I'm not sure it matters in this particular case, but there's a bit of a gotcha you've got here, Jono,
+[00:45:17.000 --> 00:45:24.000]   which is you should change that default 18, 25 from a list to a tuple.
+[00:45:24.000 --> 00:45:34.000]   And the reason for that is that when you use a mutable type like a list in a Python default parameter,
+[00:45:34.000 --> 00:45:38.000]   it does this really weird thing where it actually keeps it around.
+[00:45:38.000 --> 00:45:42.000]   And if you change it at all later, then it actually kind of modifies your function.
+[00:45:42.000 --> 00:45:51.000]   So I would suggest, yeah, never using a list as a default parameter because at some point it will create the weirdest bug you've ever had.
+[00:45:51.000 --> 00:45:53.000]   I say this from experience.
+[00:45:53.000 --> 00:45:57.000]   Yeah, that sounds like something that was hard one.
+[00:45:57.000 --> 00:45:58.000]   All right. I'll change that.
+[00:45:58.000 --> 00:46:01.000]   And by the time you see this notebook, that change should be there.
+[00:46:01.000 --> 00:46:07.000]   All right. So this is one way to do it, just manually running through the layers one by one up until whatever the latest layer we're interested in.
+[00:46:07.000 --> 00:46:11.000]   But you could do this just as easily by adding hooks to the specific layers
+[00:46:11.000 --> 00:46:17.000]   and then just feeding your data through the whole network at once and relying on the hooks to store those intermediates.
+[00:46:17.000 --> 00:46:21.000]   Yeah. So let's make that homework, actually, not just an exercise you can do.
+[00:46:21.000 --> 00:46:24.000]   But yeah, I want let's make sure everybody does that.
+[00:46:24.000 --> 00:46:30.000]   Use one of the hooks callbacks we had or the hooks context managers we had,
+[00:46:30.000 --> 00:46:36.000]   or you can use the register forward hook PyTorch directly.
+[00:46:36.000 --> 00:46:42.000]   Yeah. And so what we get out here, we're feeding in an image that's 256 by 256.
+[00:46:42.000 --> 00:46:45.000]   And the first layer that we're looking at is this one here.
+[00:46:45.000 --> 00:46:50.000]   And so it's getting half to 128, then to 64.
+[00:46:50.000 --> 00:46:56.000]   These ones are just different because it's a different starting size and then to 32 by 32 by 512.
+[00:46:56.000 --> 00:47:00.000]   And so those are the features that we're talking about for that layer 18.
+[00:47:00.000 --> 00:47:07.000]   It's this thing of shape 512 by 32 by 32. For every kind of spatial location in that 32 by 32 grid,
+[00:47:07.000 --> 00:47:11.000]   we have the output from 512 different filters.
+[00:47:11.000 --> 00:47:14.000]   And so those are going to be the features that we're talking about.
+[00:47:14.000 --> 00:47:20.000]   So there's purpose being that the channels in a single convolution.
+[00:47:20.000 --> 00:47:24.000]   Yeah. Okay. So what's the point of this?
+[00:47:24.000 --> 00:47:29.000]   Well, like I said, we're hoping that we can capture different things at different layers.
+[00:47:29.000 --> 00:47:35.000]   And so to kind of first get a feel for this, like what if we just compared these feature maps,
+[00:47:35.000 --> 00:47:41.000]   we can institute what I'm calling a content loss, or you might see it as a perceptual loss.
+[00:47:41.000 --> 00:47:44.000]   And we're going to focus on a couple of later layers.
+[00:47:44.000 --> 00:47:49.000]   Again, make sure that this is as I've learned.
+[00:47:49.000 --> 00:47:54.000]   And what we're going to do is we're going to pass in a target image, in this case our content image.
+[00:47:54.000 --> 00:48:00.000]   And we're going to calculate those features in those target layers.
+[00:48:00.000 --> 00:48:10.000]   And then in the forward method when we're comparing to our inputs,
+[00:48:10.000 --> 00:48:13.000]   we're going to calculate the features of our inputs.
+[00:48:13.000 --> 00:48:18.000]   And we're going to do the mean squared error between those and our target features.
+[00:48:18.000 --> 00:48:24.000]   So maybe there's a bad way of explaining it. But the idea is that I can maybe read it back to you to make sure you understand.
+[00:48:24.000 --> 00:48:26.000]   Yeah. Good idea.
+[00:48:26.000 --> 00:48:29.000]   Okay. So this is a loss function you've created.
+[00:48:29.000 --> 00:48:33.000]   It has a done to call method, which means you can pretend that it's a function.
+[00:48:33.000 --> 00:48:38.000]   It's a callable in Python language.
+[00:48:38.000 --> 00:48:46.000]   Your forward, so yeah, any module would call it forward, but in normal Python, we just use done to call.
+[00:48:46.000 --> 00:48:55.000]   It's taking one input, which is the way you set up your image training callback earlier.
+[00:48:55.000 --> 00:49:00.000]   It's just going to pass in the input, which is this is the image as it's been optimized to so far.
+[00:49:00.000 --> 00:49:03.000]   So initially it's going to be that random noise.
+[00:49:03.000 --> 00:49:17.000]   And then the loss you're calculating is the mean squared error of how far away is this input image from the target image,
+[00:49:17.000 --> 00:49:26.000]   the mean squared error for each of the layers by default 18 and 25.
+[00:49:26.000 --> 00:49:33.000]   And so you're literally actually it's a bit weird. You're actually calling a different neural network.
+[00:49:33.000 --> 00:49:38.000]   Tap features actually call the neural network, but not because that's the model we're optimizing,
+[00:49:38.000 --> 00:49:46.000]   but because it's actually the loss function is how far away are we.
+[00:49:46.000 --> 00:49:48.000]   Yeah. So that's the last reaction.
+[00:49:48.000 --> 00:49:56.000]   And so if we with SGD optimize that loss function, you're not going to get the same pixels.
+[00:49:56.000 --> 00:49:59.000]   You're going to get I don't even know what this is going to look like.
+[00:49:59.000 --> 00:50:07.000]   You're going to get some pixels which have the same activations of those features.
+[00:50:07.000 --> 00:50:13.000]   Yeah. And so if we run that, we see you can see the sort of shape of our person there,
+[00:50:13.000 --> 00:50:20.000]   but it definitely doesn't match on like a color and style basis.
+[00:50:20.000 --> 00:50:26.000]   So 18 and 25 remind us how deep they are in the scheme of things.
+[00:50:26.000 --> 00:50:29.000]   So these are fairly close towards the end.
+[00:50:29.000 --> 00:50:35.000]   OK. So I guess color often doesn't have much of a semantic kind of property.
+[00:50:35.000 --> 00:50:39.000]   So that's probably why it doesn't care much about color because it's still going to be an eyeball,
+[00:50:39.000 --> 00:50:43.000]   whether it's green or blue or brown.
+[00:50:43.000 --> 00:50:50.000]   Yeah. There's something else I should mention, which is we aren't constraining our tensor
+[00:50:50.000 --> 00:50:54.000]   that we're optimizing to be in the same bounds as a normal image.
+[00:50:54.000 --> 00:50:58.000]   And so some of these will also be less than zero or greater than one,
+[00:50:58.000 --> 00:51:03.000]   as kind of like almost hacking the neural network to get the same features at those deep layers
+[00:51:03.000 --> 00:51:06.000]   by passing in something that it's never seen during training.
+[00:51:06.000 --> 00:51:09.000]   And so for display, we're clipping it to the same bounds as an image,
+[00:51:09.000 --> 00:51:12.000]   but you might want to have either some sort of sigmoid function
+[00:51:12.000 --> 00:51:16.000]   or some other way that you'd clamp your tensor model
+[00:51:16.000 --> 00:51:20.000]   and to have outputs that are like within the allowed range for.
+[00:51:20.000 --> 00:51:25.000]   Oh, good point. Also, it's interesting to note the background hasn't changed much.
+[00:51:25.000 --> 00:51:29.000]   And I guess the reason for that would be that the VGG model you were using in the lost function
+[00:51:29.000 --> 00:51:31.000]   was trained on ImageNet.
+[00:51:31.000 --> 00:51:37.000]   And ImageNet is specifically about recognizing generally as a single big object,
+[00:51:37.000 --> 00:51:40.000]   like a dog or a boat or whatever.
+[00:51:40.000 --> 00:51:43.000]   So it's not going to care about the background,
+[00:51:43.000 --> 00:51:47.000]   and the background probably isn't going to have much in the way of features at all,
+[00:51:47.000 --> 00:51:52.000]   which is why it hasn't really changed the background.
+[00:51:52.000 --> 00:51:57.000]   Yeah, exactly. And so, I mean, this is kind of interesting to see how little it looks like the image,
+[00:51:57.000 --> 00:52:01.000]   while at the same time still being like, if you squint, you can recognize it.
+[00:52:01.000 --> 00:52:06.000]   But we can also try passing in earlier layers
+[00:52:06.000 --> 00:52:08.000]   and comparing on those earlier layers
+[00:52:08.000 --> 00:52:10.000]   and see that we get a completely different result
+[00:52:10.000 --> 00:52:17.000]   because now we're optimizing to some image that is a lot closer to the original.
+[00:52:17.000 --> 00:52:19.000]   It still doesn't look exactly the same.
+[00:52:19.000 --> 00:52:21.000]   And so there's a few things that I thought were worth noting,
+[00:52:21.000 --> 00:52:23.000]   just potentially of interest.
+[00:52:23.000 --> 00:52:27.000]   One is that we're looking into these ready layers,
+[00:52:27.000 --> 00:52:31.000]   which might mean, for example, that if you're looking at the very early layers,
+[00:52:31.000 --> 00:52:33.000]   you're missing out on some kinds of features.
+[00:52:33.000 --> 00:52:39.000]   That was one of my guesses as to why this didn't have as dark a darks as the input image.
+[00:52:39.000 --> 00:52:43.000]   And then also we still have this thing where we might be going out of bounds
+[00:52:43.000 --> 00:52:45.000]   to get the same kinds of features.
+[00:52:45.000 --> 00:52:48.000]   So yeah, you can see how by looking at really deep layers,
+[00:52:48.000 --> 00:52:50.000]   we really don't care about the color or texture at all.
+[00:52:50.000 --> 00:52:54.000]   We're just getting some glossy bits and nosy bits there.
+[00:52:54.000 --> 00:52:56.000]   And by looking at the earlier layers,
+[00:52:56.000 --> 00:53:01.000]   we have much more rigid adherence to the lower-level features as well.
+[00:53:01.000 --> 00:53:02.000]   And so this is nice.
+[00:53:02.000 --> 00:53:05.000]   It gives you a very tunable way to compare two images.
+[00:53:05.000 --> 00:53:08.000]   You can say, do I care that they match exactly on pixels?
+[00:53:08.000 --> 00:53:09.000]   I could use mean to get error.
+[00:53:09.000 --> 00:53:12.000]   But do I care quite a lot about the exact match?
+[00:53:12.000 --> 00:53:14.000]   Then I can use maybe some early layers.
+[00:53:14.000 --> 00:53:17.000]   But do I only care about the overall semantics?
+[00:53:17.000 --> 00:53:19.000]   In that case, I can go to some deeper layers.
+[00:53:19.000 --> 00:53:21.000]   And you can experiment with--
+[00:53:21.000 --> 00:53:25.000]   If I remember correctly, this is also something like the kind of technique
+[00:53:25.000 --> 00:53:30.000]   that Zyler and Fergus and the Distill.pub papers used to just identify
+[00:53:30.000 --> 00:53:34.000]   what do filters look at, which is you can optimize an image
+[00:53:34.000 --> 00:53:37.000]   to try and maximize a particular filter.
+[00:53:37.000 --> 00:53:40.000]   For example, that would be a similar loss function to the one you've built here.
+[00:53:40.000 --> 00:53:45.000]   And that would show you what they're looking at.
+[00:53:45.000 --> 00:53:47.000]   Yeah, and that would be a really fun little project, actually.
+[00:53:47.000 --> 00:53:50.000]   So do it where you calculate these feature maps
+[00:53:50.000 --> 00:53:55.000]   and then just pick one of those 512 features
+[00:53:55.000 --> 00:54:00.000]   and optimize the image to maximize that activation.
+[00:54:00.000 --> 00:54:03.000]   By default, you might get quite a noisy, weird result,
+[00:54:03.000 --> 00:54:05.000]   like almost an adversarial input.
+[00:54:05.000 --> 00:54:07.000]   And so what these feature visualization people do
+[00:54:07.000 --> 00:54:10.000]   is they add things like augmentations
+[00:54:10.000 --> 00:54:13.000]   so that you're optimizing an image that even under some augmentations
+[00:54:13.000 --> 00:54:16.000]   still activates that feature.
+[00:54:16.000 --> 00:54:19.000]   But yeah, that might be a good one to play with.
+[00:54:19.000 --> 00:54:22.000]   Cool, OK. So we have a lot of our infrastructure in place.
+[00:54:22.000 --> 00:54:24.000]   We know how to optimize an image.
+[00:54:24.000 --> 00:54:26.000]   We know how to extract features from this neural network.
+[00:54:26.000 --> 00:54:28.000]   And we're saying this is great for comparing
+[00:54:28.000 --> 00:54:33.000]   at these different types of feature, how similar two images are.
+[00:54:33.000 --> 00:54:38.000]   The final piece that we need for our full style transfer artistic application
+[00:54:38.000 --> 00:54:41.000]   is to say I'd like to keep the structure of this image,
+[00:54:41.000 --> 00:54:44.000]   but I'd like to have the style come from a different image.
+[00:54:44.000 --> 00:54:46.000]   And you might think, oh, well, that's easy.
+[00:54:46.000 --> 00:54:49.000]   We just look at the early layers, like you've shown us.
+[00:54:49.000 --> 00:54:52.000]   But there's a problem, which is that these feature maps, by default,
+[00:54:52.000 --> 00:54:55.000]   we feed in our image and we get these feature maps.
+[00:54:55.000 --> 00:54:58.000]   They have a spatial component, right?
+[00:54:58.000 --> 00:55:03.000]   We said we had a 32 by 32 by 512 feature map out.
+[00:55:03.000 --> 00:55:07.000]   And each of those locations in that 32 by 32 grid
+[00:55:07.000 --> 00:55:10.000]   are going to correspond to some part of the input image.
+[00:55:10.000 --> 00:55:13.000]   And so if we just said let's do mean squared error
+[00:55:13.000 --> 00:55:15.000]   for the activations from some early layers,
+[00:55:15.000 --> 00:55:18.000]   what we'd be saying is I want the same types of feature,
+[00:55:18.000 --> 00:55:20.000]   like the same style, the same textures,
+[00:55:20.000 --> 00:55:23.000]   and I want them in the same location, right?
+[00:55:23.000 --> 00:55:26.000]   And so we can't just get like Van Gogh brush strokes.
+[00:55:26.000 --> 00:55:29.000]   We're going to try and have the same colors in the same place
+[00:55:29.000 --> 00:55:31.000]   and the same textures in the same place.
+[00:55:31.000 --> 00:55:34.000]   And so we're going to get something that just matches our image.
+[00:55:34.000 --> 00:55:37.000]   What we'd like is something that has the same colors and textures,
+[00:55:37.000 --> 00:55:39.000]   but they might be in different parts of the image.
+[00:55:39.000 --> 00:55:43.000]   So we want to get rid of this spatial aspect.
+[00:55:43.000 --> 00:55:46.000]   Just to clarify, when we're saying to it, for example,
+[00:55:46.000 --> 00:55:50.000]   give it to us in the style of Van Gogh's Starry Night,
+[00:55:50.000 --> 00:55:54.000]   we're not saying in this part of the image
+[00:55:54.000 --> 00:55:56.000]   there should be something with this texture,
+[00:55:56.000 --> 00:55:58.000]   but we're saying that the kinds of textures
+[00:55:58.000 --> 00:56:00.000]   that are used anywhere in that image
+[00:56:00.000 --> 00:56:02.000]   should also appear in our version,
+[00:56:02.000 --> 00:56:05.000]   but not necessarily in the same place.
+[00:56:05.000 --> 00:56:07.000]   Exactly.
+[00:56:07.000 --> 00:56:11.000]   And so the solution that Siler-Werksen proposed
+[00:56:11.000 --> 00:56:13.000]   is this thing called a Gram Matrix.
+[00:56:13.000 --> 00:56:17.000]   So what we want is some measure of what kinds of styles are present
+[00:56:17.000 --> 00:56:19.000]   without worrying about where they are.
+[00:56:19.000 --> 00:56:22.000]   And so there's always a trouble trying to represent
+[00:56:22.000 --> 00:56:25.000]   more than two-dimensional things on a 2D grid.
+[00:56:25.000 --> 00:56:28.000]   But what I've done here is I've made our feature map,
+[00:56:28.000 --> 00:56:31.000]   where we have our height and our width that might be 32 by 32
+[00:56:31.000 --> 00:56:32.000]   and some number of features,
+[00:56:32.000 --> 00:56:35.000]   but instead of having those be like a third dimension,
+[00:56:35.000 --> 00:56:38.000]   I've just represented those features as these little colored dots.
+[00:56:38.000 --> 00:56:41.000]   And so what we're going to do with the Gram Matrix
+[00:56:41.000 --> 00:56:44.000]   is we're going to flatten out our spatial dimension.
+[00:56:44.000 --> 00:56:45.000]   So we're going to reshape this
+[00:56:45.000 --> 00:56:49.000]   so that we have the width times the height
+[00:56:49.000 --> 00:56:51.000]   so that like the spatial location on one axis
+[00:56:51.000 --> 00:56:54.000]   and the feature dimension on the other.
+[00:56:54.000 --> 00:56:57.000]   So each of these rows is like this is the location here.
+[00:56:57.000 --> 00:56:59.000]   There's no yellow dots, so we get a zero.
+[00:56:59.000 --> 00:57:03.000]   There's no green, so we get a zero.
+[00:57:03.000 --> 00:57:05.000]   There is a red and a blue, so we get ones.
+[00:57:05.000 --> 00:57:09.000]   So we've kind of flattened out this feature map into a 2D thing.
+[00:57:09.000 --> 00:57:13.000]   And then instead of caring about the spatial dimension at all,
+[00:57:13.000 --> 00:57:16.000]   all we care about is which features do we have in general,
+[00:57:16.000 --> 00:57:20.000]   which types of features, and do they occur with each other.
+[00:57:20.000 --> 00:57:23.000]   And so we're going to get effectively the dot products
+[00:57:23.000 --> 00:57:27.000]   of this row with itself
+[00:57:27.000 --> 00:57:30.000]   and then this row with the next row and this row with the next row.
+[00:57:30.000 --> 00:57:34.000]   We're saying like for these feature vectors,
+[00:57:34.000 --> 00:57:37.000]   how correlated are they with each other?
+[00:57:37.000 --> 00:57:39.000]   And so we'll see this in code just now.
+[00:57:39.000 --> 00:57:43.000]   I think you might have said,
+[00:57:43.000 --> 00:57:45.000]   I might have misheard you,
+[00:57:45.000 --> 00:57:49.000]   but I just want to make sure I got the citation here.
+[00:57:49.000 --> 00:57:51.000]   So this idea came from,
+[00:57:51.000 --> 00:57:56.000]   it was first invented in the Gattis et al paper.
+[00:57:56.000 --> 00:58:00.000]   So a neural algorithm or test of artistic style?
+[00:58:00.000 --> 00:58:04.000]   Yeah, I mean Gattis, that's the style transfer one.
+[00:58:04.000 --> 00:58:06.000]   Cider in Ferguson is the feature visualization one.
+[00:58:06.000 --> 00:58:09.000]   Yeah, sorry, I got the switch. Thanks, Jeremy.
+[00:58:09.000 --> 00:58:12.000]   Okay, so we are ending up with this kind of like,
+[00:58:12.000 --> 00:58:15.000]   this grand matrix, this correlation of features.
+[00:58:15.000 --> 00:58:18.000]   And the way you can read this in this example is to say,
+[00:58:18.000 --> 00:58:21.000]   okay, there are seven reds, right?
+[00:58:21.000 --> 00:58:24.000]   Red with red, there's seven in total.
+[00:58:24.000 --> 00:58:26.000]   And if you go and count them, there's seven there.
+[00:58:26.000 --> 00:58:29.000]   And then if I look at any other one in this row,
+[00:58:29.000 --> 00:58:33.000]   like here, there's only one red that occurs alongside a green, right?
+[00:58:33.000 --> 00:58:37.000]   This is the only location where there's one red cell and one green cell.
+[00:58:37.000 --> 00:58:41.000]   There's three reds that occur with the yellow, there, there, and there.
+[00:58:41.000 --> 00:58:45.000]   And so this grand matrix here has no spatial component at all.
+[00:58:45.000 --> 00:58:48.000]   It's just the feature dimension by the feature dimension.
+[00:58:48.000 --> 00:58:52.000]   But it has a measure of how common these features are,
+[00:58:52.000 --> 00:58:57.000]   like what's an uncommon one here.
+[00:58:57.000 --> 00:59:03.000]   Yeah, maybe there's only three greens in total, right?
+[00:59:03.000 --> 00:59:06.000]   And all of them occur alongside a yellow.
+[00:59:06.000 --> 00:59:09.000]   One of them occurs alongside a red, one of them occurs alongside a blue.
+[00:59:09.000 --> 00:59:10.000]   Yeah, so this is exactly what we want.
+[00:59:10.000 --> 00:59:13.000]   This is some measure of what features are present,
+[00:59:13.000 --> 00:59:16.000]   where if they occur together with other features often,
+[00:59:16.000 --> 00:59:18.000]   that's a useful thing.
+[00:59:18.000 --> 00:59:19.000]   But it doesn't have the spatial component.
+[00:59:19.000 --> 00:59:21.000]   We've gotten rid of that.
+[00:59:21.000 --> 00:59:28.000]   This is the first clear explanation I've ever seen of how a grand matrix works.
+[00:59:28.000 --> 00:59:31.000]   This is such a cool picture.
+[00:59:31.000 --> 00:59:34.000]   I also want to maybe you can open up the original paper,
+[00:59:34.000 --> 00:59:37.000]   because I'd also like to encourage people to look at the original paper,
+[00:59:37.000 --> 00:59:40.000]   because this is something we're trying to practice at this point,
+[00:59:40.000 --> 00:59:42.000]   is reading papers.
+[00:59:42.000 --> 00:59:50.000]   And so hopefully you can take Jono's fantastic explanation and bring it back
+[00:59:50.000 --> 00:59:58.000]   to understanding the paper as well.
+[00:59:58.000 --> 01:00:01.000]   That's crazy that it's put so far down.
+[01:00:01.000 --> 01:00:05.000]   Oh, yeah, it's a different search engine that I'm trying out that has some AI magic,
+[01:00:05.000 --> 01:00:08.000]   but they use Bing for their actual searching, which...
+[01:00:08.000 --> 01:00:10.000]   Right, that's smart.
+[01:00:10.000 --> 01:00:12.000]   List, yeah.
+[01:00:12.000 --> 01:00:15.000]   And yeah, so we can quickly check the paper.
+[01:00:15.000 --> 01:00:18.000]   I don't know if I've actually read this paper as horrific as that sounds.
+[01:00:18.000 --> 01:00:20.000]   Not horrific at all.
+[01:00:20.000 --> 01:00:22.000]   It was a while ago.
+[01:00:22.000 --> 01:00:28.000]   But I think it's got some nice pictures, and I'm going to zoom in a bit.
+[01:00:28.000 --> 01:00:31.000]   Oh, good idea.
+[01:00:31.000 --> 01:00:33.000]   Okay, there are the examples.
+[01:00:33.000 --> 01:00:35.000]   It's great examples.
+[01:00:35.000 --> 01:00:36.000]   Yeah.
+[01:00:36.000 --> 01:00:39.000]   Love for Kandinsky.
+[01:00:39.000 --> 01:00:44.000]   Sorry about the doorbell.
+[01:00:44.000 --> 01:00:48.000]   Okay, yeah, ground matrix, inner product between the vectorized feature map.
+[01:00:48.000 --> 01:00:51.000]   And so those kinds of wordings kind of put me off.
+[01:00:51.000 --> 01:00:54.000]   For a while, the way I explained ground matrices when I had to deal with them at all
+[01:00:54.000 --> 01:00:58.000]   was to say it's magic that measures what features are there without worrying
+[01:00:58.000 --> 01:01:02.000]   about where they are, and lifted at that.
+[01:01:02.000 --> 01:01:05.000]   But it is worth trying to decode this back.
+[01:01:05.000 --> 01:01:07.000]   They talk about which layers they're looking into.
+[01:01:07.000 --> 01:01:09.000]   I think in TensorFlow, they have names.
+[01:01:09.000 --> 01:01:12.000]   We're just using the index.
+[01:01:12.000 --> 01:01:15.000]   Okay, yeah, so it doesn't really explain how the ground matrix works,
+[01:01:15.000 --> 01:01:20.000]   but it's something that people use historically in some other contexts as well
+[01:01:20.000 --> 01:01:22.000]   for the same kind of measure.
+[01:01:22.000 --> 01:01:27.000]   Nowadays, actually PyTorch has named parameters,
+[01:01:27.000 --> 01:01:29.000]   and I don't know if they've updated VGG yet,
+[01:01:29.000 --> 01:01:35.000]   but you can name layers of a sequential model as well.
+[01:01:35.000 --> 01:01:37.000]   Yeah.
+[01:01:37.000 --> 01:01:41.000]   Okay, so just quickly, I wanted to implement this diagram in code.
+[01:01:41.000 --> 01:01:44.000]   I should mention these are like zero or one for simplicity,
+[01:01:44.000 --> 01:01:47.000]   but you could have obviously different size activations and things.
+[01:01:47.000 --> 01:01:50.000]   The correlation idea is still going to be there,
+[01:01:50.000 --> 01:01:52.000]   just not as easy to represent visually.
+[01:01:52.000 --> 01:01:54.000]   And so we're going to do it with an ironsome
+[01:01:54.000 --> 01:01:59.000]   because it makes it easy to add later the bash dimension and so on.
+[01:01:59.000 --> 01:02:02.000]   But I wanted to also highlight that this is just this matrix
+[01:02:02.000 --> 01:02:07.000]   multiplied with its own transpose, and you're going to get the same result.
+[01:02:07.000 --> 01:02:11.000]   So, yeah, that's our ground matrix calculation.
+[01:02:11.000 --> 01:02:15.000]   There's no magic involved there as much as it might seem like it.
+[01:02:15.000 --> 01:02:19.000]   And so we can now use this, like can we create this measure and then...
+[01:02:19.000 --> 01:02:22.000]   When you look later at things like Word2Vec,
+[01:02:22.000 --> 01:02:25.000]   I think it's got some similarities, this idea of kind of co-occurrence of features.
+[01:02:25.000 --> 01:02:34.000]   And it also reminds me of the clip loss similar idea of like basically a dot product,
+[01:02:34.000 --> 01:02:35.000]   but in this case with itself.
+[01:02:35.000 --> 01:02:40.000]   I mean, we've seen how covariance is basically that as well.
+[01:02:40.000 --> 01:02:43.000]   So this idea of kind of like multiplying with your own transpose
+[01:02:43.000 --> 01:02:46.000]   is a really common mathematical technique.
+[01:02:46.000 --> 01:02:51.000]   We've come across three or four times a ring in this course.
+[01:02:51.000 --> 01:02:53.000]   Yeah. And it comes up all over the place.
+[01:02:53.000 --> 01:02:59.000]   Even, yeah, you'll see that in like protein folding stuff as well.
+[01:02:59.000 --> 01:03:03.000]   They have a big covariance matrix for like...
+[01:03:03.000 --> 01:03:06.000]   So the difference in each case is like, yeah,
+[01:03:06.000 --> 01:03:09.000]   the difference in each case is the matrix that we're multiplying by its own transpose.
+[01:03:09.000 --> 01:03:15.000]   So for covariance, the matrix is the matrix of differences to the mean, for example.
+[01:03:15.000 --> 01:03:23.000]   And yeah, in this case, the matrix is this flattened picture thing.
+[01:03:23.000 --> 01:03:27.000]   Cool. So I have here the calculate grams function
+[01:03:27.000 --> 01:03:30.000]   that's going to do exactly that operation we did above,
+[01:03:30.000 --> 01:03:32.000]   but we're going to add some scaling.
+[01:03:32.000 --> 01:03:35.000]   And the reason we're adding the scaling is that we have this feature map
+[01:03:35.000 --> 01:03:37.000]   and we might pass in images of different sizes.
+[01:03:37.000 --> 01:03:40.000]   And so what this gives us is the absolute like...
+[01:03:40.000 --> 01:03:44.000]   You can see there's a relation to the number of spatial locations here.
+[01:03:44.000 --> 01:03:47.000]   And so by scaling by this width times height,
+[01:03:47.000 --> 01:03:51.000]   we're going to get like a relative measure as opposed to like an absolute measure.
+[01:03:51.000 --> 01:03:54.000]   It just means that the comparisons are going to be valid
+[01:03:54.000 --> 01:03:56.000]   even for images of different sizes.
+[01:03:56.000 --> 01:03:59.000]   And so that's the only extra complexity here,
+[01:03:59.000 --> 01:04:03.000]   but we have channels by height by width, image in,
+[01:04:03.000 --> 01:04:05.000]   and we're going to pass in...
+[01:04:05.000 --> 01:04:06.000]   Oh, sorry.
+[01:04:06.000 --> 01:04:09.000]   So this is like channels being the number of features.
+[01:04:09.000 --> 01:04:15.000]   We're going to pass it in two versions of that, right?
+[01:04:15.000 --> 01:04:18.000]   Because it's the same image in both times.
+[01:04:18.000 --> 01:04:23.000]   But we're going to map this down to just the features by features,
+[01:04:23.000 --> 01:04:25.000]   but you can't repeat variables and items.
+[01:04:25.000 --> 01:04:27.000]   So that's why it's C and D.
+[01:04:27.000 --> 01:04:33.000]   And if we run this on our style image,
+[01:04:33.000 --> 01:04:36.000]   you can see I'm targeting five different layers.
+[01:04:36.000 --> 01:04:40.000]   And for each one, the first layer has 64 features.
+[01:04:40.000 --> 01:04:43.000]   And so we get a 64 by 64 gram matrix.
+[01:04:43.000 --> 01:04:45.000]   The second one has 128 features.
+[01:04:45.000 --> 01:04:47.000]   We can get 120 by 128 gram matrix.
+[01:04:47.000 --> 01:04:51.000]   So this is doing, it seems like, what we want.
+[01:04:51.000 --> 01:04:52.000]   There's a...
+[01:04:52.000 --> 01:04:57.000]   Because this is a list, we can use this Atrogot method, which I...
+[01:04:57.000 --> 01:05:01.000]   Well, actually, it's a fast call capital L, not a list.
+[01:05:01.000 --> 01:05:02.000]   Oh, sorry.
+[01:05:02.000 --> 01:05:03.000]   Yeah.
+[01:05:03.000 --> 01:05:05.000]   A magic list.
+[01:05:05.000 --> 01:05:07.000]   And so I like to think of it.
+[01:05:07.000 --> 01:05:10.000]   Yeah, so either works.
+[01:05:10.000 --> 01:05:12.000]   Okay, so let's use this as a loss.
+[01:05:12.000 --> 01:05:16.000]   Just like with the content loss before,
+[01:05:16.000 --> 01:05:18.000]   we're going to take in a target image,
+[01:05:18.000 --> 01:05:19.000]   which is going to be our style.
+[01:05:19.000 --> 01:05:21.000]   We're going to calculate these gram matrices for that.
+[01:05:21.000 --> 01:05:26.000]   And then when we get in an input to our loss function,
+[01:05:26.000 --> 01:05:29.000]   we're going to calculate the gram matrices for that
+[01:05:29.000 --> 01:05:32.000]   and do the mean squared error between the gram matrices.
+[01:05:32.000 --> 01:05:35.000]   So these are the no spatial components,
+[01:05:35.000 --> 01:05:37.000]   just what features are there,
+[01:05:37.000 --> 01:05:39.000]   comparing the two to make sure that they're ideally
+[01:05:39.000 --> 01:05:41.000]   have the same kinds of features
+[01:05:41.000 --> 01:05:44.000]   and the same kinds of correlations between features.
+[01:05:44.000 --> 01:05:46.000]   So we can set that up.
+[01:05:46.000 --> 01:05:48.000]   We can evaluate it on my image.
+[01:05:48.000 --> 01:05:51.000]   So our content image at the moment has quite a high loss
+[01:05:51.000 --> 01:05:54.000]   when we compare it to our style image.
+[01:05:54.000 --> 01:05:56.000]   And that means that the content image doesn't look anything
+[01:05:56.000 --> 01:05:59.000]   like a spider web in terms of its textures and whatever.
+[01:05:59.000 --> 01:06:01.000]   Exactly.
+[01:06:01.000 --> 01:06:04.000]   So we're going to set up an optimization thing here.
+[01:06:04.000 --> 01:06:06.000]   One difference is that at the moment,
+[01:06:06.000 --> 01:06:09.000]   I'm starting from the content image itself
+[01:06:09.000 --> 01:06:12.000]   rather than optimizing from random noise.
+[01:06:12.000 --> 01:06:13.000]   You can choose either way.
+[01:06:13.000 --> 01:06:16.000]   For style transfer, it's quite nice to use the content image
+[01:06:16.000 --> 01:06:18.000]   as a starting point.
+[01:06:18.000 --> 01:06:19.000]   And so you can see at the beginning,
+[01:06:19.000 --> 01:06:21.000]   it just looks like our content image.
+[01:06:21.000 --> 01:06:23.000]   But as we do more and more steps,
+[01:06:23.000 --> 01:06:27.000]   we maintain the structure because we're still using
+[01:06:27.000 --> 01:06:31.000]   the content loss as one component of our loss function.
+[01:06:31.000 --> 01:06:34.000]   But now we also have more and more of the style
+[01:06:34.000 --> 01:06:38.000]   because of the early layers, we're evaluating that style loss.
+[01:06:38.000 --> 01:06:41.000]   And you can see this doesn't have the same layout
+[01:06:41.000 --> 01:06:44.000]   as our spider web, but it has the same kinds of textures
+[01:06:44.000 --> 01:06:48.000]   and the same types of structure there.
+[01:06:48.000 --> 01:06:50.000]   And so we can check out the final result.
+[01:06:50.000 --> 01:06:53.000]   And you can see it's done ostensibly what our goal is.
+[01:06:53.000 --> 01:06:57.000]   It's taken one image and it's done it in the style of another.
+[01:06:57.000 --> 01:06:59.000]   And to me, this is quite satisfying.
+[01:06:59.000 --> 01:07:02.000]   And it's actually done it in a particularly clever way
+[01:07:02.000 --> 01:07:04.000]   because look at her arm.
+[01:07:04.000 --> 01:07:07.000]   Her arm has the spider web nicely laid out on it.
+[01:07:07.000 --> 01:07:13.000]   And she's almost picking it out with her fingers.
+[01:07:13.000 --> 01:07:17.000]   And her face, which is quite important or very important
+[01:07:17.000 --> 01:07:20.000]   in terms of object recognition,
+[01:07:20.000 --> 01:07:24.000]   the model didn't want to mess with the face much at all.
+[01:07:24.000 --> 01:07:27.000]   So it's kept the spider webs away from that.
+[01:07:27.000 --> 01:07:31.000]   I think the more you look at it, the more impressive it is
+[01:07:31.000 --> 01:07:35.000]   in how it's managed to find a way to add spider webs
+[01:07:35.000 --> 01:07:42.000]   without messing up the overall semantics of the image.
+[01:07:42.000 --> 01:07:46.000]   Yeah, so this is really fun to play with.
+[01:07:46.000 --> 01:07:48.000]   If you've been running the notebook with the demo images,
+[01:07:48.000 --> 01:07:51.000]   please right now go and find your own pictures.
+[01:07:51.000 --> 01:07:53.000]   Make sure you're not stealing someone's licensed work,
+[01:07:53.000 --> 01:07:56.000]   but there's lots of Creative Commons images out there.
+[01:07:56.000 --> 01:07:57.000]   And try bash them together.
+[01:07:57.000 --> 01:07:59.000]   Do it at a larger size.
+[01:07:59.000 --> 01:08:03.000]   Get some higher resolution stylus going.
+[01:08:03.000 --> 01:08:05.000]   And then there's so much that you can experiment with.
+[01:08:05.000 --> 01:08:08.000]   So for example, you can change the content loss
+[01:08:08.000 --> 01:08:13.000]   to focus on maybe an earlier layer as well.
+[01:08:13.000 --> 01:08:15.000]   You can start from a random image
+[01:08:15.000 --> 01:08:17.000]   instead of the content image.
+[01:08:17.000 --> 01:08:18.000]   Or you can start from a style image
+[01:08:18.000 --> 01:08:20.000]   and optimize towards the content image.
+[01:08:20.000 --> 01:08:23.000]   You can change how you scale these two components
+[01:08:23.000 --> 01:08:24.000]   of the loss function.
+[01:08:24.000 --> 01:08:26.000]   You can change how long you train for,
+[01:08:26.000 --> 01:08:28.000]   what your learning rate is.
+[01:08:28.000 --> 01:08:32.000]   All of this is up for grabs in terms of what you can optimize
+[01:08:32.000 --> 01:08:35.000]   and what you can explore.
+[01:08:35.000 --> 01:08:38.000]   And you get different results with different scalings
+[01:08:38.000 --> 01:08:40.000]   and different focus layers.
+[01:08:40.000 --> 01:08:43.000]   So there's a whole lot of fun experimentation to be done
+[01:08:43.000 --> 01:08:45.000]   in terms of finding a set of parameters
+[01:08:45.000 --> 01:08:49.000]   that gives you a pleasing result for a given style content pair
+[01:08:49.000 --> 01:08:53.000]   and for a given effect that you want on the output.
+[01:08:53.000 --> 01:08:55.000]   Yeah, on that note, I wanted to--
+[01:08:55.000 --> 01:08:57.000]   one of the really interesting things about this
+[01:08:57.000 --> 01:09:01.000]   is just how well VGG works as a network,
+[01:09:01.000 --> 01:09:03.000]   even though it's a very old network.
+[01:09:03.000 --> 01:09:05.000]   And I think it's also worth playing around
+[01:09:05.000 --> 01:09:07.000]   with other networks as well.
+[01:09:07.000 --> 01:09:11.000]   I think there's definitely some special properties of VGG
+[01:09:11.000 --> 01:09:14.000]   that allow for it to do well for style transfer.
+[01:09:14.000 --> 01:09:16.000]   And there are a few papers on that.
+[01:09:16.000 --> 01:09:18.000]   And there are also some papers that explore
+[01:09:18.000 --> 01:09:21.000]   how we can use maybe other networks for style transfer
+[01:09:21.000 --> 01:09:24.000]   that maintain maybe some of these nice properties of VGG.
+[01:09:24.000 --> 01:09:27.000]   So I think that could be interesting
+[01:09:27.000 --> 01:09:29.000]   to explore some of these papers.
+[01:09:29.000 --> 01:09:31.000]   And of course, we have this very nice framework
+[01:09:31.000 --> 01:09:34.000]   that allows us to easily plug and play different networks
+[01:09:34.000 --> 01:09:37.000]   and try that aspect out as well.
+[01:09:37.000 --> 01:09:40.000]   Yeah, and in particular, I think
+[01:09:40.000 --> 01:09:43.000]   taking a ConvNext or a ResNet or something
+[01:09:43.000 --> 01:09:46.000]   and replacing its head with a VGG head
+[01:09:46.000 --> 01:09:50.000]   would be an interesting thing to try.
+[01:09:50.000 --> 01:09:52.000]   Yeah.
+[01:09:52.000 --> 01:09:54.000]   The niche on the experimentation version--
+[01:09:54.000 --> 01:09:56.000]   one of the things that when we were developing this,
+[01:09:56.000 --> 01:09:58.000]   I said to Jeremy, was like, ah, we're doing all this work
+[01:09:58.000 --> 01:10:00.000]   setting up these callbacks and things.
+[01:10:00.000 --> 01:10:02.160]   Isn't it nicer to just have like, here's my image
+[01:10:02.160 --> 01:10:03.120]   that I'm optimizing.
+[01:10:03.120 --> 01:10:04.580]   Set up an optimizer.
+[01:10:04.580 --> 01:10:05.880]   Set up my loss function.
+[01:10:05.880 --> 01:10:07.800]   And do this optimization loop.
+[01:10:07.800 --> 01:10:12.400]   And the answer is that it is theoretically easier
+[01:10:12.400 --> 01:10:14.000]   when you just want to do this once.
+[01:10:14.000 --> 01:10:16.600]   And that's why you see in a tutorial or something,
+[01:10:16.600 --> 01:10:18.120]   you keep this as minimal as possible.
+[01:10:18.120 --> 01:10:20.400]   You just want to show what style loss is.
+[01:10:20.400 --> 01:10:24.600]   But as soon as you say, OK, I'd like to try this again
+[01:10:24.600 --> 01:10:25.760]   but adding a different layer.
+[01:10:25.760 --> 01:10:27.720]   So maybe let me do another cell.
+[01:10:27.720 --> 01:10:30.080]   And you're copying and pasting over a bunch.
+[01:10:30.080 --> 01:10:33.940]   And then you say, oh, let me add some progress stuff, so images.
+[01:10:33.940 --> 01:10:35.880]   It gets messy really quickly.
+[01:10:35.880 --> 01:10:38.640]   As soon as you want to save images for a video
+[01:10:38.640 --> 01:10:40.600]   and you want to mess with the loss function
+[01:10:40.600 --> 01:10:43.520]   and you want to do some sort of annealing on your learning
+[01:10:43.520 --> 01:10:45.880]   rate, each of these things is going to grow this loop
+[01:10:45.880 --> 01:10:48.160]   into something messier and messier.
+[01:10:48.160 --> 01:10:49.360]   And so I thought it was fun.
+[01:10:49.360 --> 01:10:51.360]   I was very quickly a convert to being
+[01:10:51.360 --> 01:10:56.160]   able to experiment with a completely new version
+[01:10:56.160 --> 01:10:59.400]   with minimal lines of code, minimal changes,
+[01:10:59.400 --> 01:11:03.200]   and having everything in its own piece, like the image logging.
+[01:11:03.200 --> 01:11:06.480]   Or if you wanted to make a little movie showing the progress,
+[01:11:06.480 --> 01:11:08.200]   that goes in a separate callback.
+[01:11:08.200 --> 01:11:09.480]   You want to tweak the model.
+[01:11:09.480 --> 01:11:12.500]   You're just tweaking one thing, but all the other infrastructure
+[01:11:12.500 --> 01:11:14.440]   can stay the same.
+[01:11:14.440 --> 01:11:15.440]   So that was pretty cool.
+[01:11:15.440 --> 01:11:20.320]   I mean, this is one answer, right?
+[01:11:20.320 --> 01:11:23.240]   Use the right layer of abstraction
+[01:11:23.240 --> 01:11:25.080]   for what you're doing at the right time.
+[01:11:25.080 --> 01:11:32.480]   Something I actually think that Paul do too much of when
+[01:11:32.480 --> 01:11:36.600]   they use the fast AI library is jumping straight into data
+[01:11:36.600 --> 01:11:42.240]   blocks, for example, even though they
+[01:11:42.240 --> 01:11:44.520]   might be working on a slightly more custom thing
+[01:11:44.520 --> 01:11:49.080]   where there isn't a data block already written for them.
+[01:11:49.080 --> 01:11:52.040]   And so then step one is like, oh, write a data block.
+[01:11:52.040 --> 01:11:53.440]   That's not at all easy.
+[01:11:53.440 --> 01:11:57.360]   And you actually want to be focusing on building your model.
+[01:11:57.360 --> 01:12:03.400]   So I say to people, I will go down a layer of abstraction.
+[01:12:03.400 --> 01:12:07.000]   Now, I will say I don't very often
+[01:12:07.000 --> 01:12:08.920]   start at the very lowest level of abstraction.
+[01:12:08.920 --> 01:12:11.380]   So something like the very last thing that you showed, Jono,
+[01:12:11.380 --> 01:12:15.480]   just because in my experience, I'm not good enough
+[01:12:15.480 --> 01:12:17.000]   to do that, right?
+[01:12:17.000 --> 01:12:21.440]   And so most of the time, yeah, I'll forget zero grad,
+[01:12:21.440 --> 01:12:24.360]   or I'll just mess up something, especially
+[01:12:24.360 --> 01:12:26.680]   if I want to have it run reasonably quickly
+[01:12:26.680 --> 01:12:30.640]   by using like, you know, FP16, mixed precision,
+[01:12:30.640 --> 01:12:34.400]   or I'll be like, oh, now I've got
+[01:12:34.400 --> 01:12:37.360]   to think about how to put a metrics in so that I can
+[01:12:37.360 --> 01:12:38.520]   see it's trading properly.
+[01:12:38.520 --> 01:12:40.320]   And I always mess that up.
+[01:12:40.320 --> 01:12:43.760]   And so I don't often go to that level,
+[01:12:43.760 --> 01:12:48.100]   but I do quite often start at a reasonably low level.
+[01:12:48.100 --> 01:12:51.160]   And I think with mini AI now, we all
+[01:12:51.160 --> 01:12:56.280]   have this tool where we fully understand all the layers,
+[01:12:56.280 --> 01:12:58.200]   and there aren't that many.
+[01:12:58.200 --> 01:13:02.920]   And yeah, you could like write your own train cb or whatever.
+[01:13:02.920 --> 01:13:04.920]   And at least you've got something that makes sure,
+[01:13:04.920 --> 01:13:07.720]   for example, that, oh, OK, you remember to use torch.nograd
+[01:13:07.720 --> 01:13:10.000]   here, and you remember to put it in, you know,
+[01:13:10.000 --> 01:13:13.200]   put it in eval mode there, but, you know,
+[01:13:13.200 --> 01:13:15.880]   those things will be done correctly.
+[01:13:15.880 --> 01:13:17.980]   And you'll be able to easily run a learning rate
+[01:13:17.980 --> 01:13:22.800]   finder and easily have it run on CUDA or whatever device
+[01:13:22.800 --> 01:13:23.320]   you're on.
+[01:13:23.320 --> 01:13:27.400]   So I think hopefully this is a good place for people
+[01:13:27.400 --> 01:13:32.760]   now to have a framework that they can call their own,
+[01:13:32.760 --> 01:13:36.900]   you know, and use as much or as little as it makes sense.
+[01:13:36.900 --> 01:13:38.560]   The other nice thing is, of course,
+[01:13:38.560 --> 01:13:41.120]   like there are multiple ways of doing the same thing.
+[01:13:41.120 --> 01:13:43.960]   And it's like, whatever way maybe works better for you,
+[01:13:43.960 --> 01:13:45.200]   you can implement that.
+[01:13:45.200 --> 01:13:48.020]   Like, for example, Jonathan showed with the image opt
+[01:13:48.020 --> 01:13:50.600]   callback, you could implement that in different ways,
+[01:13:50.600 --> 01:13:55.040]   and whichever one, I guess, is easier for you to understand
+[01:13:55.040 --> 01:13:58.480]   or easier for you to work with, you can implement it that way.
+[01:13:58.480 --> 01:14:02.800]   And yeah, Mini-AI is flexible in multiple ways.
+[01:14:02.800 --> 01:14:05.640]   So that's the especially one thing
+[01:14:05.640 --> 01:14:06.980]   I really enjoy about it.
+[01:14:06.980 --> 01:14:09.320]   Yeah, and this is one extreme of like weirdness,
+[01:14:09.320 --> 01:14:13.120]   I think, which is like, John is like using Mini-AI for something
+[01:14:13.120 --> 01:14:16.080]   that we never really considered making it for,
+[01:14:16.080 --> 01:14:20.680]   which is like it's not even looping through data.
+[01:14:20.680 --> 01:14:23.480]   It's just looping through loops.
+[01:14:23.480 --> 01:14:25.840]   So, you know, this is about as weird as it's going to get,
+[01:14:25.840 --> 01:14:26.800]   I guess.
+[01:14:26.800 --> 01:14:28.920]   Yeah, well, the next notebook is about as weird
+[01:14:28.920 --> 01:14:30.300]   as it's going to get, I think.
+[01:14:30.300 --> 01:14:33.160]   Oh, great.
+[01:14:33.160 --> 01:14:34.920]   OK, so before we move on to--
+[01:14:34.920 --> 01:14:37.200]   what we're going to do next is use this kind of style loss
+[01:14:37.200 --> 01:14:40.940]   in an even funkier way to train a different kind of thing.
+[01:14:40.940 --> 01:14:42.480]   But before we do that, I did want
+[01:14:42.480 --> 01:14:45.040]   to just call out like using these pre-trained networks
+[01:14:45.040 --> 01:14:48.760]   as very smart feature extractors is pretty powerful.
+[01:14:48.760 --> 01:14:50.840]   And unlike the kind of fun, crazy example
+[01:14:50.840 --> 01:14:52.460]   that we're going to look at just now,
+[01:14:52.460 --> 01:14:54.040]   they also have very valid uses.
+[01:14:54.040 --> 01:14:57.480]   So if you're doing like a super resolution or even something
+[01:14:57.480 --> 01:15:00.560]   like a fusion, adding in a perceptual loss
+[01:15:00.560 --> 01:15:03.440]   or even a style loss to your target image,
+[01:15:03.440 --> 01:15:04.360]   it can improve things.
+[01:15:04.360 --> 01:15:07.520]   We've played around with using perceptual loss for diffusion.
+[01:15:07.520 --> 01:15:10.840]   Or even during like say you want to generate an image that
+[01:15:10.840 --> 01:15:13.040]   matches effects in some kind of image-to-image thing
+[01:15:13.040 --> 01:15:16.160]   with stable diffusion, maybe you have an extra guidance
+[01:15:16.160 --> 01:15:18.360]   function that makes sure that structurally it matches,
+[01:15:18.360 --> 01:15:20.280]   but maybe it texturally it doesn't.
+[01:15:20.280 --> 01:15:22.320]   Maybe you want to pass in a style image
+[01:15:22.320 --> 01:15:24.280]   and have that guide to the diffusion process
+[01:15:24.280 --> 01:15:26.040]   to be a particular style without having
+[01:15:26.040 --> 01:15:30.240]   to say in the style of it's a Van Gogh starry night.
+[01:15:30.240 --> 01:15:33.960]   And for all sorts of like image-to-image tasks,
+[01:15:33.960 --> 01:15:37.720]   this idea of using the features from a network like VGG,
+[01:15:37.720 --> 01:15:39.680]   it does actually have lots of practical uses
+[01:15:39.680 --> 01:15:44.720]   apart from just this artistic fiddling.
+[01:15:44.720 --> 01:15:47.080]   So speaking of artistic fiddling, we're
+[01:15:47.080 --> 01:15:49.240]   going to look at something a little bit more niche now
+[01:15:49.240 --> 01:15:51.440]   called neural cellular automata.
+[01:15:51.440 --> 01:15:53.480]   And so try and spend about half an hour on this
+[01:15:53.480 --> 01:15:55.800]   before we move on to the next section.
+[01:15:55.800 --> 01:15:59.000]   And so this is off the beaten track.
+[01:15:59.000 --> 01:16:04.120]   It's a really fun domain of combining
+[01:16:04.120 --> 01:16:05.760]   a lot of different fields, all of which
+[01:16:05.760 --> 01:16:06.840]   I'm quite excited about.
+[01:16:06.840 --> 01:16:11.600]   And so you may be familiar with classic cellular automata.
+[01:16:11.600 --> 01:16:13.680]   So if we look at Conway's Game of Life--
+[01:16:13.680 --> 01:16:19.240]   oops, I misspelled it.
+[01:16:19.240 --> 01:16:24.600]   But you've probably seen this kind of classic Conway's
+[01:16:24.600 --> 01:16:26.160]   Game of Life.
+[01:16:26.160 --> 01:16:29.040]   I was still not like Edward Lively there when I was a kid.
+[01:16:29.040 --> 01:16:31.120]   Yeah, so the idea here is that you
+[01:16:31.120 --> 01:16:33.400]   have all of these independent cells,
+[01:16:33.400 --> 01:16:35.840]   and each cell can only see its neighbors.
+[01:16:35.840 --> 01:16:38.160]   And you have some sort of update rule
+[01:16:38.160 --> 01:16:40.560]   that says if a cell has three neighbors,
+[01:16:40.560 --> 01:16:42.760]   it's going to remain the same state for the next one.
+[01:16:42.760 --> 01:16:44.760]   If it has only one neighbor, it's
+[01:16:44.760 --> 01:16:47.760]   going to die in the next iteration.
+[01:16:47.760 --> 01:16:49.920]   And so this is a really cool example
+[01:16:49.920 --> 01:16:54.800]   of a distributed system, a self-organizing system,
+[01:16:54.800 --> 01:16:58.000]   where there's no global communication or anything.
+[01:16:58.000 --> 01:17:00.160]   Each cell can only look at its immediate neighbors.
+[01:17:00.160 --> 01:17:03.640]   And typically, the rules are really small and simple.
+[01:17:03.640 --> 01:17:06.520]   And so we can use these to model these complex systems.
+[01:17:06.520 --> 01:17:08.320]   It's very much inspired by biology,
+[01:17:08.320 --> 01:17:12.240]   where we actually do have huge arrangements of cells, each
+[01:17:12.240 --> 01:17:13.880]   of which is only seeing its neighborhood,
+[01:17:13.880 --> 01:17:16.320]   like sensing chemicals in the bloodstream next to it
+[01:17:16.320 --> 01:17:17.120]   and so on.
+[01:17:17.120 --> 01:17:19.720]   And yet somehow, they're able to coordinate together.
+[01:17:19.720 --> 01:17:24.600]   I watched a really cool Hergizak video the other day about ants.
+[01:17:24.600 --> 01:17:25.880]   And I didn't know this before.
+[01:17:25.880 --> 01:17:26.960]   Maybe everybody else does.
+[01:17:26.960 --> 01:17:29.520]   But ants, like huge ant colonies,
+[01:17:29.520 --> 01:17:33.000]   were organized by having little chemical signals
+[01:17:33.000 --> 01:17:35.680]   that the ants around can smell.
+[01:17:35.680 --> 01:17:41.080]   And yeah, it can organize the entire massive ant colony
+[01:17:41.080 --> 01:17:42.080]   just using that.
+[01:17:42.080 --> 01:17:45.360]   I thought it was crazy, but it sounds really similar.
+[01:17:45.360 --> 01:17:47.280]   Yeah, yeah.
+[01:17:47.280 --> 01:17:49.880]   And you could do--
+[01:17:49.880 --> 01:17:53.360]   sorry, I'm doing tangent.
+[01:17:53.360 --> 01:17:55.720]   You could do very similar things where you have--
+[01:17:55.720 --> 01:17:58.160]   yeah, the chemical trails being left
+[01:17:58.160 --> 01:18:00.840]   are just like pixel values in some grid.
+[01:18:00.840 --> 01:18:02.680]   And your ants are just little tiny agents
+[01:18:02.680 --> 01:18:03.920]   that have some rules.
+[01:18:03.920 --> 01:18:05.600]   And so I should probably link this here.
+[01:18:05.600 --> 01:18:07.640]   But this is exactly that kind of system, right?
+[01:18:07.640 --> 01:18:10.480]   Each little tiny dot, which are almost too small to see,
+[01:18:10.480 --> 01:18:12.280]   is leaving behind these different trails.
+[01:18:12.280 --> 01:18:14.320]   And then that determines the behavior.
+[01:18:14.320 --> 01:18:17.360]   The difference between this and what we're going to do today
+[01:18:17.360 --> 01:18:17.880]   is that--
+[01:18:17.880 --> 01:18:19.760]   Just to clarify, I think you've told me before
+[01:18:19.760 --> 01:18:22.600]   that actual slime molds kind of do this, right?
+[01:18:22.600 --> 01:18:23.720]   They're another example.
+[01:18:23.720 --> 01:18:24.960]   Yes.
+[01:18:24.960 --> 01:18:25.960]   Yeah, exactly.
+[01:18:25.960 --> 01:18:27.680]   There's some limited signaling.
+[01:18:27.680 --> 01:18:29.320]   Each one is like, oh, I'm by food.
+[01:18:29.320 --> 01:18:31.680]   And then after that, that signal is going to propagate.
+[01:18:31.680 --> 01:18:34.360]   And anything that's moving is going to follow.
+[01:18:34.360 --> 01:18:36.600]   And so yeah, if you play with this kind of simulation,
+[01:18:36.600 --> 01:18:39.680]   you often get patterns that look exactly like emergent
+[01:18:39.680 --> 01:18:44.680]   patterns in nature, like ants moving to food or corals
+[01:18:44.680 --> 01:18:47.120]   coordinating and that sort of thing.
+[01:18:47.120 --> 01:18:50.640]   So it's a very biological field.
+[01:18:50.640 --> 01:18:52.840]   The difference with our cellular automata
+[01:18:52.840 --> 01:18:55.200]   is that there's nothing moving.
+[01:18:55.200 --> 01:18:59.240]   Each grid cell has its own little agent.
+[01:18:59.240 --> 01:19:02.160]   And so there's no wandering around.
+[01:19:02.160 --> 01:19:04.320]   It's just each individual cell looking at its neighbors
+[01:19:04.320 --> 01:19:05.400]   and then updating.
+[01:19:05.400 --> 01:19:07.040]   And just to clarify, when you say agent,
+[01:19:07.040 --> 01:19:08.200]   that can be really simple.
+[01:19:08.200 --> 01:19:09.480]   I don't really remember, but I vaguely
+[01:19:09.480 --> 01:19:11.120]   remember that Conway's gain of life,
+[01:19:11.120 --> 01:19:14.280]   it's kind of like a single kind of if statement.
+[01:19:14.280 --> 01:19:15.920]   It's like if there's--
+[01:19:15.920 --> 01:19:17.720]   I don't know, what is it, two cells around,
+[01:19:17.720 --> 01:19:19.640]   you get another one or something?
+[01:19:19.640 --> 01:19:21.720]   Yeah, yeah, if there's two or three nearby,
+[01:19:21.720 --> 01:19:23.040]   you stay alive in the next one.
+[01:19:23.040 --> 01:19:25.000]   If you're overcrowded with four or five,
+[01:19:25.000 --> 01:19:27.160]   or there's no one there, you with zero or one neighbors,
+[01:19:27.160 --> 01:19:28.200]   then you're going to die.
+[01:19:28.200 --> 01:19:29.880]   So it's a very, very simple rule.
+[01:19:29.880 --> 01:19:31.400]   But what we're going to do today is
+[01:19:31.400 --> 01:19:35.880]   replace that hard-coded if statement with a neural network,
+[01:19:35.880 --> 01:19:39.360]   and in particular, a very small neural network.
+[01:19:39.360 --> 01:19:41.480]   So I should start with the paper that
+[01:19:41.480 --> 01:19:44.760]   inspired me to even begin looking at this.
+[01:19:44.760 --> 01:19:47.760]   So this is by Alexander Morvinsov and a team
+[01:19:47.760 --> 01:19:49.120]   with him at Google Brain.
+[01:19:49.120 --> 01:19:51.000]   And they built these neural cellular automata.
+[01:19:51.000 --> 01:19:53.240]   So this is a pixel grid.
+[01:19:53.240 --> 01:19:55.680]   Every pixel is a cellular automata
+[01:19:55.680 --> 01:19:57.360]   that's looking at its neighbors.
+[01:19:57.360 --> 01:19:59.160]   And they can't see the global structure at all.
+[01:19:59.160 --> 01:20:01.960]   And it starts out with a single black pixel in the middle.
+[01:20:01.960 --> 01:20:04.160]   And if you run this simulation, you
+[01:20:04.160 --> 01:20:06.680]   can see it builds this little lizard structure,
+[01:20:06.680 --> 01:20:07.920]   this little emoji.
+[01:20:07.920 --> 01:20:12.000]   So that's wild to me that a bunch of pixels that only
+[01:20:12.000 --> 01:20:14.960]   know about their neighbor can actually
+[01:20:14.960 --> 01:20:20.400]   create such a large and sophisticated image.
+[01:20:20.400 --> 01:20:22.520]   Yeah, they can self-assemble into this.
+[01:20:22.520 --> 01:20:25.120]   And what's more, the way that they train them,
+[01:20:25.120 --> 01:20:26.680]   they are robust.
+[01:20:26.680 --> 01:20:28.600]   They're able to repair damage.
+[01:20:28.600 --> 01:20:31.120]   And so it's not perfect.
+[01:20:31.120 --> 01:20:32.880]   But there's no global signaling.
+[01:20:32.880 --> 01:20:35.560]   No little agent here knows what the full picture looks like.
+[01:20:35.560 --> 01:20:37.560]   It doesn't know where in the picture it is.
+[01:20:37.560 --> 01:20:40.480]   All it knows is that its neighbors have certain values.
+[01:20:40.480 --> 01:20:44.400]   And so it's going to update itself to match those values.
+[01:20:44.400 --> 01:20:45.720]   And so you can see after this one.
+[01:20:45.720 --> 01:20:47.820]   I mean, this does seem like something
+[01:20:47.820 --> 01:20:54.000]   that ought to have a lot of use in the real world with--
+[01:20:54.000 --> 01:20:58.000]   I don't know-- having a bunch of drones working together
+[01:20:58.000 --> 01:21:00.400]   when they can't contact some kind of central base.
+[01:21:00.400 --> 01:21:04.000]   So I'm thinking about work that some Australian folks have
+[01:21:04.000 --> 01:21:07.680]   been involved in, where they were doing subterranean,
+[01:21:07.680 --> 01:21:09.840]   automated subterranean rescue operations.
+[01:21:09.840 --> 01:21:11.640]   And you literally can't communicate
+[01:21:11.640 --> 01:21:15.800]   through thousands of meters of rock, stuff like that.
+[01:21:15.800 --> 01:21:16.880]   Yeah.
+[01:21:16.880 --> 01:21:20.520]   Yeah, so this idea of self-organizing systems,
+[01:21:20.520 --> 01:21:23.120]   there's a lot of promise for nanotechnology
+[01:21:23.120 --> 01:21:26.560]   and things like that that can do pretty amazing things.
+[01:21:26.560 --> 01:21:28.440]   This is the blog post that's linked.
+[01:21:28.440 --> 01:21:30.080]   The future of artificial intelligence
+[01:21:30.080 --> 01:21:31.820]   is self-organizing and self-assembling.
+[01:21:31.820 --> 01:21:32.320]   Oh, cool.
+[01:21:32.320 --> 01:21:35.560]   And definitely, yeah, that's a pattern that's
+[01:21:35.560 --> 01:21:37.600]   worked really well in nature.
+[01:21:37.600 --> 01:21:40.080]   Lots of loosely coordinated cells coming together
+[01:21:40.080 --> 01:21:43.720]   and talking about deep learning is quite a miracle.
+[01:21:43.720 --> 01:21:48.920]   And so I think, yeah, that's an interesting pattern to explore.
+[01:21:48.920 --> 01:21:51.520]   OK, so how do we train something like this?
+[01:21:51.520 --> 01:21:54.920]   How on earth do you set up your structure
+[01:21:54.920 --> 01:21:57.420]   so that you can get something that not only builds out
+[01:21:57.420 --> 01:21:59.720]   an image or builds out something like a texture,
+[01:21:59.720 --> 01:22:01.800]   but then is robust and able to maintain that
+[01:22:01.800 --> 01:22:04.040]   and keep it going?
+[01:22:04.040 --> 01:22:07.760]   So the sort of base is that we're
+[01:22:07.760 --> 01:22:11.000]   going to set up a neural network with some learnable weights
+[01:22:11.000 --> 01:22:14.720]   that's going to apply our little update rule.
+[01:22:14.720 --> 01:22:20.000]   And this is just going to be a little dense MLP.
+[01:22:20.000 --> 01:22:21.560]   We can get our inputs, which is just
+[01:22:21.560 --> 01:22:24.200]   the neighborhood of the cell.
+[01:22:24.200 --> 01:22:26.360]   And they sometimes have additional channels
+[01:22:26.360 --> 01:22:30.560]   that aren't shown that the agents can use as communication
+[01:22:30.560 --> 01:22:32.760]   with their neighbors.
+[01:22:32.760 --> 01:22:34.920]   So we can set this up in code.
+[01:22:34.920 --> 01:22:37.680]   We'll be able to get our neighbors using maybe convolution
+[01:22:37.680 --> 01:22:40.080]   or some other method, flatten those out
+[01:22:40.080 --> 01:22:43.520]   and feed them through a little MLP, and take our outputs
+[01:22:43.520 --> 01:22:44.880]   and use that as our updates.
+[01:22:44.880 --> 01:22:47.220]   And just to clarify something that I missed originally
+[01:22:47.220 --> 01:22:50.480]   is this is not a simplified picture of it.
+[01:22:50.480 --> 01:22:52.520]   This is it.
+[01:22:52.520 --> 01:22:54.080]   It's literally three by three.
+[01:22:54.080 --> 01:22:57.560]   You're only allowed to see the little things right next to you.
+[01:22:57.560 --> 01:23:00.800]   Or they can be in a different channel.
+[01:23:00.800 --> 01:23:01.320]   Exactly.
+[01:23:01.320 --> 01:23:03.120]   And this paper has this additional step
+[01:23:03.120 --> 01:23:05.280]   of cells being alive or dead.
+[01:23:05.280 --> 01:23:07.400]   But we're going to do one that doesn't even have that.
+[01:23:07.400 --> 01:23:10.420]   So it's even simpler than this diagram.
+[01:23:10.420 --> 01:23:11.920]   OK, so to train this, what we could do
+[01:23:11.920 --> 01:23:14.200]   is we could start from our initial state,
+[01:23:14.200 --> 01:23:16.940]   apply our network over some number of steps,
+[01:23:16.940 --> 01:23:19.640]   look at the final output and compare it to our targets,
+[01:23:19.640 --> 01:23:21.080]   and calculate our loss.
+[01:23:21.080 --> 01:23:23.080]   And you might think, OK, well, that's pretty cool.
+[01:23:23.080 --> 01:23:24.680]   We can maybe do that.
+[01:23:24.680 --> 01:23:27.840]   And if you run this, you do indeed
+[01:23:27.840 --> 01:23:30.000]   get something that after some number of steps
+[01:23:30.000 --> 01:23:31.760]   can learn to grow into something that
+[01:23:31.760 --> 01:23:34.220]   looks like your target image.
+[01:23:34.220 --> 01:23:36.560]   But there's this problem, which is that you're
+[01:23:36.560 --> 01:23:38.720]   applying some number of steps, and then you're
+[01:23:38.720 --> 01:23:40.840]   applying your loss after that.
+[01:23:40.840 --> 01:23:43.960]   But that doesn't guarantee that it's going to be stable--
+[01:23:43.960 --> 01:23:47.600]   Hubspool, I think is my phone-- stable longer term.
+[01:23:47.600 --> 01:23:49.480]   And so we need some additional way to say, OK,
+[01:23:49.480 --> 01:23:51.600]   I don't just want to grow into this image.
+[01:23:51.600 --> 01:23:55.080]   I'd like to then maintain that shape once I have it.
+[01:23:55.080 --> 01:23:58.120]   And the solution that this paper proposes
+[01:23:58.120 --> 01:24:02.720]   is to have a pool of training examples.
+[01:24:02.720 --> 01:24:04.560]   And we'll see this in code just now.
+[01:24:04.560 --> 01:24:06.160]   So the idea here is that sometimes we'll
+[01:24:06.160 --> 01:24:08.600]   start from a random state.
+[01:24:08.600 --> 01:24:10.560]   And we'll apply some number of updates.
+[01:24:10.560 --> 01:24:13.440]   We'll apply our loss function and update our network.
+[01:24:13.440 --> 01:24:16.140]   And then most of the time, we'll take that final output,
+[01:24:16.140 --> 01:24:18.160]   and we'll put it back into the pool
+[01:24:18.160 --> 01:24:19.720]   to be used again as a starting point
+[01:24:19.720 --> 01:24:22.360]   for another round of training.
+[01:24:22.360 --> 01:24:23.880]   And so this means that the network
+[01:24:23.880 --> 01:24:27.360]   might see the initial state and have to produce the lizard.
+[01:24:27.360 --> 01:24:29.960]   Or it might see a lizard that's already been produced.
+[01:24:29.960 --> 01:24:31.400]   And after some number of steps, it still
+[01:24:31.400 --> 01:24:33.000]   needs to look like that lizard.
+[01:24:33.000 --> 01:24:35.480]   And so this is adding an additional constraint that
+[01:24:35.480 --> 01:24:38.720]   says even after much more steps, we'd still
+[01:24:38.720 --> 01:24:42.160]   like you to look like this final output.
+[01:24:42.160 --> 01:24:46.360]   And so, yeah, it's also nice because, like I mentioned here,
+[01:24:46.360 --> 01:24:48.480]   initially, the model ends up in various incorrect states
+[01:24:48.480 --> 01:24:49.800]   that don't look like a lizard, but also
+[01:24:49.800 --> 01:24:51.480]   don't look like the starting point.
+[01:24:51.480 --> 01:24:53.840]   And it then has to learn to correct those as well.
+[01:24:53.840 --> 01:24:55.940]   So we get this nice additional robustness
+[01:24:55.940 --> 01:24:58.160]   from this in addition.
+[01:24:58.160 --> 01:25:00.120]   And you can see here, now they have a thing that
+[01:25:00.120 --> 01:25:03.240]   is able to grow into the lizard and then maintain
+[01:25:03.240 --> 01:25:06.600]   that structure indefinitely.
+[01:25:06.600 --> 01:25:08.380]   And in this paper, they do this final step
+[01:25:08.380 --> 01:25:12.240]   where they sometimes chop off half of the image
+[01:25:12.240 --> 01:25:14.120]   as additional augmentation.
+[01:25:14.120 --> 01:25:16.200]   So you could have a bunch of drones
+[01:25:16.200 --> 01:25:20.200]   or something that can only see the ones nearby.
+[01:25:20.200 --> 01:25:22.200]   And they don't have GPS or something.
+[01:25:22.200 --> 01:25:26.360]   And a gust of wind could come along and set them off path.
+[01:25:26.360 --> 01:25:29.420]   And they still reconfigure themselves.
+[01:25:29.420 --> 01:25:29.920]   Yeah.
+[01:25:29.920 --> 01:25:30.460]   Yeah, exactly.
+[01:25:30.460 --> 01:25:32.380]   Half of them go offline and run out of battery.
+[01:25:32.380 --> 01:25:34.080]   That's fine.
+[01:25:34.080 --> 01:25:35.740]   So very, very cool paper.
+[01:25:35.740 --> 01:25:37.360]   But you can see this kind of training
+[01:25:37.360 --> 01:25:40.000]   is a little bit more complicated than we just
+[01:25:40.000 --> 01:25:43.680]   have a network and some target outputs and we optimize it.
+[01:25:43.680 --> 01:25:45.600]   So we're not going to follow that paper exactly,
+[01:25:45.600 --> 01:25:48.200]   although it should be fairly easy to tweak what
+[01:25:48.200 --> 01:25:49.800]   we have to match that.
+[01:25:49.800 --> 01:25:53.320]   We're instead going to go for a slightly different one
+[01:25:53.320 --> 01:25:56.440]   by the same authors where they train even smaller
+[01:25:56.440 --> 01:25:58.480]   networks to match textures.
+[01:25:58.480 --> 01:26:00.080]   And so you can imagine our style loss
+[01:26:00.080 --> 01:26:01.600]   is going to come in useful here.
+[01:26:01.600 --> 01:26:04.160]   We'd like to produce a texture without necessarily worrying
+[01:26:04.160 --> 01:26:06.160]   about the overall structure.
+[01:26:06.160 --> 01:26:08.680]   We just want the style.
+[01:26:08.680 --> 01:26:11.480]   And so the same sort of idea, the same sort of training,
+[01:26:11.480 --> 01:26:12.900]   we're going to start from random.
+[01:26:12.900 --> 01:26:14.400]   And then after some of our steps,
+[01:26:14.400 --> 01:26:17.200]   we'd like it to look like our target style image.
+[01:26:17.200 --> 01:26:18.840]   And in fact, there she's a spider whip,
+[01:26:18.840 --> 01:26:21.000]   which I hadn't noticed until now.
+[01:26:21.000 --> 01:26:23.480]   And something that makes a texture a texture in this case,
+[01:26:23.480 --> 01:26:26.400]   is it something you can tile nicely?
+[01:26:26.400 --> 01:26:27.240]   Is that--
+[01:26:27.240 --> 01:26:28.520]   Yes, yeah.
+[01:26:28.520 --> 01:26:30.800]   And so that tiling is going to come almost for free.
+[01:26:30.800 --> 01:26:31.840]   So we're going to have our input.
+[01:26:31.840 --> 01:26:33.280]   We're going to look at our neighbors.
+[01:26:33.280 --> 01:26:34.440]   We're going to feed that through a network
+[01:26:34.440 --> 01:26:35.800]   and produce an output.
+[01:26:35.800 --> 01:26:38.960]   And every cell is going to do the same rule, which
+[01:26:38.960 --> 01:26:41.760]   will work fine by default if we set this up
+[01:26:41.760 --> 01:26:44.080]   without thinking about tiling at all,
+[01:26:44.080 --> 01:26:46.480]   except that at the edges, when we do,
+[01:26:46.480 --> 01:26:48.240]   like, say, a convolution to get our neighbors,
+[01:26:48.240 --> 01:26:50.960]   we need to think about what happens for the neighbors
+[01:26:50.960 --> 01:26:52.300]   of the cells on the edge.
+[01:26:52.300 --> 01:26:53.720]   Which ones should those be?
+[01:26:53.720 --> 01:26:55.920]   And by default, those will just be padding of 0.
+[01:26:55.920 --> 01:26:57.640]   And so those cells on the edge, A,
+[01:26:57.640 --> 01:26:59.300]   they'll know they're on the edge.
+[01:26:59.300 --> 01:27:02.120]   And B, they won't necessarily have any communication
+[01:27:02.120 --> 01:27:03.440]   with the other side.
+[01:27:03.440 --> 01:27:05.320]   If we want this to tile, what we're going to do
+[01:27:05.320 --> 01:27:08.280]   is we're going to set our padding mode to circular.
+[01:27:08.280 --> 01:27:10.560]   Or in other words, the neighbors of this top right cell
+[01:27:10.560 --> 01:27:13.400]   are going to be these cells next to it here and these cells
+[01:27:13.400 --> 01:27:14.920]   down in the bottom corner.
+[01:27:14.920 --> 01:27:19.040]   And then for free, we're going to get tiling.
+[01:27:19.040 --> 01:27:20.320]   So enough waffle.
+[01:27:20.320 --> 01:27:22.280]   Let's get into code.
+[01:27:22.280 --> 01:27:24.200]   We're going to download our style image.
+[01:27:24.200 --> 01:27:25.800]   Oops, I need to do my imports.
+[01:27:25.800 --> 01:27:30.440]   This is going to be our target style image.
+[01:27:30.440 --> 01:27:33.280]   And again, feel free to experiment with your own, please.
+[01:27:33.280 --> 01:27:34.940]   We're going to set up a style loss just
+[01:27:34.940 --> 01:27:37.400]   like we did in lesson 17a.
+[01:27:37.400 --> 01:27:38.920]   The difference being that we're going
+[01:27:38.920 --> 01:27:41.040]   to have a batch dimension to our inputs
+[01:27:41.040 --> 01:27:44.760]   to this calculate grams function, which I didn't do
+[01:27:44.760 --> 01:27:46.760]   in the style transfer example because you're always
+[01:27:46.760 --> 01:27:48.560]   dealing with a single image.
+[01:27:48.560 --> 01:27:51.040]   Everything else is going to be pretty much the same.
+[01:27:51.040 --> 01:27:53.920]   So we can set up our style loss with the target image.
+[01:27:53.920 --> 01:27:56.080]   And then we can feed in a new image, or in this case,
+[01:27:56.080 --> 01:27:57.380]   batch of images.
+[01:27:57.380 --> 01:28:00.120]   And we're going to get back loss.
+[01:28:00.120 --> 01:28:03.620]   So we're setting up our evaluation.
+[01:28:03.620 --> 01:28:05.800]   We would like, after some number of steps,
+[01:28:05.800 --> 01:28:09.720]   our output to look like a spider web.
+[01:28:09.720 --> 01:28:10.700]   Let's define our model.
+[01:28:10.700 --> 01:28:12.760]   And here, I'm making a very small model
+[01:28:12.760 --> 01:28:13.960]   with only four channels.
+[01:28:13.960 --> 01:28:16.800]   And our number of hidden neurons in the brain
+[01:28:16.800 --> 01:28:18.400]   is just going to be eight.
+[01:28:18.400 --> 01:28:20.040]   You can increase these.
+[01:28:20.040 --> 01:28:22.000]   Something I would be inclined to do,
+[01:28:22.000 --> 01:28:25.320]   people might want to play with in style loss to target,
+[01:28:25.320 --> 01:28:28.440]   is you're giving all the layers the same weight.
+[01:28:28.440 --> 01:28:33.880]   A nice addition would be to have a vector of weights
+[01:28:33.880 --> 01:28:37.520]   you could pass in and experiment with that.
+[01:28:37.520 --> 01:28:39.260]   Definitely.
+[01:28:39.260 --> 01:28:41.600]   So the world in which these cellular automata
+[01:28:41.600 --> 01:28:43.440]   are going to live is going to be a grid.
+[01:28:43.440 --> 01:28:45.060]   We're going to have some number of them,
+[01:28:45.060 --> 01:28:48.800]   if we call this function, number of channels, and the size.
+[01:28:48.800 --> 01:28:51.920]   You could make it non-square if you cared about that.
+[01:28:51.920 --> 01:28:54.840]   For our perception, in this little diagram here,
+[01:28:54.840 --> 01:28:58.160]   we're going to use some hard-coded filters.
+[01:28:58.160 --> 01:28:59.920]   And you could have these be learned.
+[01:28:59.920 --> 01:29:02.760]   There would be additional weights in the neural network.
+[01:29:02.760 --> 01:29:05.880]   The reason they're hard-coded is because the people who
+[01:29:05.880 --> 01:29:07.760]   are working behind this paper, they
+[01:29:07.760 --> 01:29:10.840]   wanted to keep the parameter counts really low.
+[01:29:10.840 --> 01:29:13.360]   Literally like a few hundred parameters total.
+[01:29:13.360 --> 01:29:14.960]   And also, they were kind of inspired by--
+[01:29:14.960 --> 01:29:15.800]   A few hundred.
+[01:29:15.800 --> 01:29:18.160]   That's crazy, because we've been--
+[01:29:18.160 --> 01:29:19.760]   even our little fashion feminist models
+[01:29:19.760 --> 01:29:22.260]   have had quite a few million parameters.
+[01:29:22.260 --> 01:29:22.760]   Yeah.
+[01:29:22.760 --> 01:29:24.080]   So this is a totally--
+[01:29:24.080 --> 01:29:25.280]   So I should have mentioned, that's
+[01:29:25.280 --> 01:29:27.360]   one of the coolest things about these systems
+[01:29:27.360 --> 01:29:30.840]   is they really can do a lot with very little parameters.
+[01:29:30.840 --> 01:29:33.040]   And so these filters that we're just going to hard-code
+[01:29:33.040 --> 01:29:36.720]   are going to be the identity, just looking at itself.
+[01:29:36.720 --> 01:29:40.160]   And then a couple that are looking at gradients.
+[01:29:40.160 --> 01:29:42.760]   Again, inspired by biology, where even simple cells
+[01:29:42.760 --> 01:29:45.680]   can sense gradients of chemical concentration.
+[01:29:45.680 --> 01:29:47.240]   So we're going to have these filters.
+[01:29:47.240 --> 01:29:50.240]   We're going to have a way to apply these filters
+[01:29:50.240 --> 01:29:50.840]   individually.
+[01:29:50.840 --> 01:29:53.280]   Just to help people understand that that first one,
+[01:29:53.280 --> 01:29:55.760]   for example, that's a 3 by 3 that's
+[01:29:55.760 --> 01:29:57.840]   being kind of like visually flattened out.
+[01:29:57.840 --> 01:29:59.560]   But if you were to kind of lay it out,
+[01:29:59.560 --> 01:30:01.760]   you could see it's a identity matrix.
+[01:30:01.760 --> 01:30:05.300]   Yeah.
+[01:30:05.300 --> 01:30:06.800]   Anyway, so you can see these filters.
+[01:30:06.800 --> 01:30:09.960]   This one is going to sense a horizontal gradient.
+[01:30:09.960 --> 01:30:12.480]   This one is going to sense a vertical gradient.
+[01:30:12.480 --> 01:30:15.840]   And the final one is called a Sobel filter.
+[01:30:15.840 --> 01:30:16.320]   Yeah.
+[01:30:16.320 --> 01:30:17.960]   So we've got some hard-coded filters.
+[01:30:17.960 --> 01:30:19.840]   We're going to apply them individually
+[01:30:19.840 --> 01:30:21.360]   to each channel of the input.
+[01:30:21.360 --> 01:30:25.600]   And rather than having a kernel that has separate weights
+[01:30:25.600 --> 01:30:28.640]   for each channel on the input.
+[01:30:28.640 --> 01:30:30.360]   And so we can make a grid.
+[01:30:30.360 --> 01:30:32.640]   We can apply our evolution--
+[01:30:32.640 --> 01:30:34.800]   I didn't know circular was a padding mode before.
+[01:30:34.800 --> 01:30:36.320]   So that just does the thing you said,
+[01:30:36.320 --> 01:30:40.960]   where it's basically going to circle around and kind of copy
+[01:30:40.960 --> 01:30:43.440]   in the thing from the other side when you reach the edge.
+[01:30:43.440 --> 01:30:44.520]   Yeah.
+[01:30:44.520 --> 01:30:47.200]   Yeah, and this is very useful for avoiding
+[01:30:47.200 --> 01:30:48.480]   issues on the edges with zeros.
+[01:30:48.480 --> 01:30:51.320]   You'll see a lot of limitations just deal with the fact
+[01:30:51.320 --> 01:30:53.440]   that they have slightly weird pixels around the edge
+[01:30:53.440 --> 01:30:55.440]   and they don't really look into it.
+[01:30:55.440 --> 01:30:57.920]   So this is one way to deal with that.
+[01:30:57.920 --> 01:30:58.440]   Yeah, OK.
+[01:30:58.440 --> 01:30:59.520]   So we can make a grid.
+[01:30:59.520 --> 01:31:02.800]   We can apply our filters to get our model inputs.
+[01:31:02.800 --> 01:31:05.320]   And this is going to be 16 inputs,
+[01:31:05.320 --> 01:31:07.840]   because we have four channels and four filters.
+[01:31:07.840 --> 01:31:10.560]   16 inputs, that's going to be the input to our little brain.
+[01:31:10.560 --> 01:31:13.640]   And we have this for every location in the grid.
+[01:31:13.640 --> 01:31:17.200]   So now, how do we implement that little neural network
+[01:31:17.200 --> 01:31:18.720]   that we saw?
+[01:31:18.720 --> 01:31:20.160]   The way it's shown in the diagram
+[01:31:20.160 --> 01:31:22.720]   is the dense linear network.
+[01:31:22.720 --> 01:31:23.720]   And we can set that up.
+[01:31:23.720 --> 01:31:27.280]   We have a linear layer with number of channels
+[01:31:27.280 --> 01:31:28.960]   by four, which is the number of filters
+[01:31:28.960 --> 01:31:31.720]   as its number of inputs, some hidden number of neurons.
+[01:31:31.720 --> 01:31:34.880]   We have a relu, and then we have a second linear layer
+[01:31:34.880 --> 01:31:39.440]   that's outputting one output per channel as the update.
+[01:31:39.440 --> 01:31:42.000]   And so if we wanted to use this as our brain, what we'd have to do
+[01:31:42.000 --> 01:31:46.000]   is we'd have to deal with these extra dimensions.
+[01:31:46.000 --> 01:31:48.760]   So we take our batch by channel by height and width.
+[01:31:48.760 --> 01:31:51.040]   We're going to map the batch and the height and the width
+[01:31:51.040 --> 01:31:54.280]   all to one dimension and the channels to the second dimension.
+[01:31:54.280 --> 01:31:58.280]   So now we have a big grid of 16 inputs and lots of examples.
+[01:31:58.280 --> 01:32:01.440]   I know we've seen Inops to rearrange before.
+[01:32:01.440 --> 01:32:04.520]   So let's put a bit of bookmark to come back
+[01:32:04.520 --> 01:32:07.120]   to teach people about that, and then maybe in the next case.
+[01:32:07.120 --> 01:32:10.120]   Yeah, very, very useful function.
+[01:32:10.120 --> 01:32:12.800]   But it is a little complicated, because we
+[01:32:12.800 --> 01:32:14.560]   have to rearrange our inputs into something
+[01:32:14.560 --> 01:32:17.760]   that has just 16 features, feed that through the linear layer,
+[01:32:17.760 --> 01:32:19.560]   and then rearrange the outputs back
+[01:32:19.560 --> 01:32:22.760]   to match the shape of our grid.
+[01:32:22.760 --> 01:32:25.080]   So you can totally do that, and you
+[01:32:25.080 --> 01:32:26.920]   can see what parameters we have on our brain.
+[01:32:26.920 --> 01:32:31.680]   We have an 8 by 16 inputs and 8 biases for the first layer.
+[01:32:31.680 --> 01:32:35.040]   And then we just have a 4 by 8 weight matrix
+[01:32:35.040 --> 01:32:36.200]   for the second linear layer.
+[01:32:36.200 --> 01:32:39.640]   And I've said bias equals false, because we're
+[01:32:39.640 --> 01:32:42.360]   having these networks propose an update.
+[01:32:42.360 --> 01:32:43.840]   And if we want them to be stable,
+[01:32:43.840 --> 01:32:46.960]   the update is usually going to be 0 or close to it.
+[01:32:46.960 --> 01:32:48.800]   And so there's no need for the bias,
+[01:32:48.800 --> 01:32:50.680]   and we want to keep the number of parameters
+[01:32:50.680 --> 01:32:51.520]   as low as possible.
+[01:32:51.520 --> 01:32:53.680]   That's kind of the name of the game.
+[01:32:53.680 --> 01:32:56.560]   And so that's why we're setting bias equals false.
+[01:32:56.560 --> 01:32:58.520]   So this is one way to implement this.
+[01:32:58.520 --> 01:32:59.760]   It's not particularly fast.
+[01:32:59.760 --> 01:33:01.080]   We have to do this reshaping, and then we're
+[01:33:01.080 --> 01:33:03.680]   feeding these examples through the linear layer.
+[01:33:03.680 --> 01:33:06.960]   We can cheat by using convolution.
+[01:33:06.960 --> 01:33:11.200]   So this might seem like, wait, but isn't this a linear layer?
+[01:33:11.200 --> 01:33:15.720]   We're going to apply this linear network
+[01:33:15.720 --> 01:33:19.440]   on top of each set of inputs.
+[01:33:19.440 --> 01:33:23.080]   But we can do that by having a filter size of 1,
+[01:33:23.080 --> 01:33:25.640]   a kernel size of 1 in our convolutional layer.
+[01:33:25.640 --> 01:33:31.560]   So I have 16 input channels in my model inputs here.
+[01:33:31.560 --> 01:33:33.880]   And I'm going to have 8 output channels
+[01:33:33.880 --> 01:33:35.720]   from this first convolutional layer.
+[01:33:35.720 --> 01:33:38.160]   And my kernel size is going to be 1 by 1.
+[01:33:38.160 --> 01:33:39.480]   And then I have ready, and then I
+[01:33:39.480 --> 01:33:43.600]   have another 1 by 1 convolutional layer.
+[01:33:43.600 --> 01:33:46.000]   And so we can see this gives me the right shape output.
+[01:33:46.000 --> 01:33:49.360]   And if I look at the parameters, my first convolutional layer
+[01:33:49.360 --> 01:33:54.600]   has 8 by 16 by 1 by 1 parameters in its filters.
+[01:33:54.600 --> 01:33:58.240]   And so maybe spend a little bit of time convincing yourself
+[01:33:58.240 --> 01:34:00.720]   that these two are doing the same operation.
+[01:34:00.720 --> 01:34:02.400]   Yeah, this stuff is used in cheating.
+[01:34:02.400 --> 01:34:04.520]   I mean, this is quite elegant.
+[01:34:04.520 --> 01:34:07.760]   And in languages like APL, actually, there's
+[01:34:07.760 --> 01:34:09.840]   an operation called stenciling, which
+[01:34:09.840 --> 01:34:13.280]   is basically the same idea as this idea of applying
+[01:34:13.280 --> 01:34:15.640]   some computation over a grid.
+[01:34:15.640 --> 01:34:16.560]   Yeah.
+[01:34:16.560 --> 01:34:19.640]   And I should mention that convolutions are very efficient.
+[01:34:19.640 --> 01:34:21.640]   All of our GPUs and things are set up
+[01:34:21.640 --> 01:34:23.680]   for this kind of operation.
+[01:34:23.680 --> 01:34:26.200]   And what makes neural cellular automata quite exciting
+[01:34:26.200 --> 01:34:29.560]   is that because we're doing this convolution,
+[01:34:29.560 --> 01:34:33.320]   you have an operation for every pixel that we're applying.
+[01:34:33.320 --> 01:34:34.720]   There's just looking at the neighborhood
+[01:34:34.720 --> 01:34:35.720]   and reducing an output.
+[01:34:35.720 --> 01:34:38.760]   There's no global thing that we need to handle.
+[01:34:38.760 --> 01:34:41.960]   And so this is actually exactly what GPUs were designed for.
+[01:34:41.960 --> 01:34:44.240]   They're designed for running some operation for every pixel
+[01:34:44.240 --> 01:34:46.200]   on your screen to render graphics
+[01:34:46.200 --> 01:34:48.280]   or show you your video game or make your website
+[01:34:48.280 --> 01:34:50.160]   scroll nice and slick.
+[01:34:50.160 --> 01:34:52.840]   And so we can take advantage of that kind of built-in bias
+[01:34:52.840 --> 01:34:56.160]   of the hardware from doing lots of little operations in parallel
+[01:34:56.160 --> 01:34:57.960]   to make these go really, really fast.
+[01:34:57.960 --> 01:35:00.480]   And I'll show you just now we can run these real time
+[01:35:00.480 --> 01:35:03.640]   in the browser, which is quite satisfying.
+[01:35:03.640 --> 01:35:06.000]   OK, so now that we have all that infrastructure in place,
+[01:35:06.000 --> 01:35:07.560]   I'm just going to put it into a class.
+[01:35:07.560 --> 01:35:10.120]   My simple CA is my cellular automata.
+[01:35:10.120 --> 01:35:12.600]   We have our little brain, two convolutional layers
+[01:35:12.600 --> 01:35:14.120]   and a value.
+[01:35:14.120 --> 01:35:16.240]   Optionally, we can set the weights of the second layer
+[01:35:16.240 --> 01:35:18.120]   to zero again because we want to start
+[01:35:18.120 --> 01:35:19.880]   by being very conservative in terms
+[01:35:19.880 --> 01:35:22.560]   of what updates we produce.
+[01:35:22.560 --> 01:35:25.720]   Not necessarily necessary, but it does help the training.
+[01:35:25.720 --> 01:35:27.080]   And then in our forward pass--
+[01:35:27.080 --> 01:35:28.080]   I would be inclined--
+[01:35:28.080 --> 01:35:30.600]   I don't know if it matters, but I'd be inclined to put that--
+[01:35:30.600 --> 01:35:37.680]   I would be inclined to do nn.init constant zero
+[01:35:37.680 --> 01:35:41.840]   or put that in a nograd, like often initializing things
+[01:35:41.840 --> 01:35:45.120]   without nograd can cause problems.
+[01:35:45.120 --> 01:35:49.000]   OK, I'll look into that.
+[01:35:49.000 --> 01:35:51.320]   In the forward method, we're going to apply our filters
+[01:35:51.320 --> 01:35:52.400]   to get our model inputs.
+[01:35:52.400 --> 01:35:54.400]   Oh, you've got .data.zero.
+[01:35:54.400 --> 01:35:56.600]   OK, so that's fine.
+[01:35:56.600 --> 01:35:58.680]   Yeah, I think this is the built-in method.
+[01:35:58.680 --> 01:35:59.320]   All right.
+[01:35:59.320 --> 01:36:01.640]   Oh, it's the .data, which is the thing that makes it--
+[01:36:01.640 --> 01:36:06.000]   yeah, you don't need torch.nograd because you've got .data.
+[01:36:06.000 --> 01:36:08.120]   Yeah, it's all good.
+[01:36:08.120 --> 01:36:09.040]   Cool, OK.
+[01:36:09.040 --> 01:36:11.640]   And so the forward is applying the filters.
+[01:36:11.640 --> 01:36:14.120]   It's feeding it through the first convolutional layer,
+[01:36:14.120 --> 01:36:16.800]   then the ready, then the second layer.
+[01:36:16.800 --> 01:36:19.320]   And then it's doing this final step, which again goes back
+[01:36:19.320 --> 01:36:21.720]   to the original paper.
+[01:36:21.720 --> 01:36:23.040]   Somewhere in here, they mentioned
+[01:36:23.040 --> 01:36:26.280]   that they are inspired by biology.
+[01:36:26.280 --> 01:36:28.860]   And one thing that you don't have in a biological system
+[01:36:28.860 --> 01:36:30.900]   is some sort of global clock where everything updates
+[01:36:30.900 --> 01:36:32.960]   at exactly the same second.
+[01:36:32.960 --> 01:36:34.280]   It's much more random and organic.
+[01:36:34.280 --> 01:36:36.280]   Each one is almost independent.
+[01:36:36.280 --> 01:36:38.760]   And so to mirror that, what we do here
+[01:36:38.760 --> 01:36:41.320]   is we create a random update mask.
+[01:36:41.320 --> 01:36:43.440]   And if you go in-- let's just actually write this out.
+[01:36:43.440 --> 01:36:50.360]   Let's just make a cell and check that this is what we're doing.
+[01:36:50.360 --> 01:36:59.080]   So I'm going to just go the hw1, just to visualize.
+[01:36:59.080 --> 01:37:03.640]   Update rate-- there we go.
+[01:37:03.640 --> 01:37:05.680]   Yeah, so this is creating this random mask,
+[01:37:05.680 --> 01:37:07.740]   some zeros and some ones, according
+[01:37:07.740 --> 01:37:10.160]   to what our update rate is.
+[01:37:10.160 --> 01:37:13.320]   And this is going to determine whether we apply this update
+[01:37:13.320 --> 01:37:16.000]   to our original input or not.
+[01:37:16.000 --> 01:37:18.240]   [INTERPOSING VOICES]
+[01:37:18.240 --> 01:37:20.580]   Yeah, it's like dropout, exactly.
+[01:37:20.580 --> 01:37:22.280]   And why this is nice, if you imagine
+[01:37:22.280 --> 01:37:24.440]   we start from a perfectly uniform grid,
+[01:37:24.440 --> 01:37:26.920]   and then every cell is running the exact same rule,
+[01:37:26.920 --> 01:37:29.840]   after one update, we'll still have a perfectly uniform grid.
+[01:37:29.840 --> 01:37:32.000]   There's no way for there to be any randomness.
+[01:37:32.000 --> 01:37:34.720]   And so we can never break out of that.
+[01:37:34.720 --> 01:37:36.760]   Whereas once we add this random updates,
+[01:37:36.760 --> 01:37:38.720]   only a subset of cells are going to be updated.
+[01:37:38.720 --> 01:37:39.760]   And now there's some differences.
+[01:37:39.760 --> 01:37:42.120]   They have different neighborhoods and things.
+[01:37:42.120 --> 01:37:44.600]   And so then we get this added randomness in.
+[01:37:44.600 --> 01:37:46.600]   And this is very much like in a biological system,
+[01:37:46.600 --> 01:37:49.160]   no cell is going to be identical.
+[01:37:49.160 --> 01:37:51.240]   So that's a little bit of additional complexity.
+[01:37:51.240 --> 01:37:55.680]   But again, inspired by nature and inspired by paper.
+[01:37:55.680 --> 01:37:58.520]   With all of this in place, we can do our training.
+[01:37:58.520 --> 01:38:03.280]   We're going to use the same dummy data set idea as before.
+[01:38:03.280 --> 01:38:07.320]   We are going to have a progress callback, which is a lot of code.
+[01:38:07.320 --> 01:38:09.640]   But it's all just basically sitting around
+[01:38:09.640 --> 01:38:11.040]   for doing some plotting.
+[01:38:11.040 --> 01:38:13.800]   And so I'm not going to spend too much time on that.
+[01:38:13.800 --> 01:38:15.960]   And then the fun stuff is going to happen in our training
+[01:38:15.960 --> 01:38:16.720]   callback.
+[01:38:16.720 --> 01:38:19.000]   And so now we are actually getting deep into the weeds.
+[01:38:19.000 --> 01:38:21.480]   We're modifying our prediction function.
+[01:38:21.480 --> 01:38:23.680]   This is much more complicated than just feeding a batch
+[01:38:23.680 --> 01:38:25.520]   of data through our model.
+[01:38:25.520 --> 01:38:31.720]   We are setting up a pool of grids, 256 examples.
+[01:38:31.720 --> 01:38:35.640]   And these are all going to start out as just uniform zeros.
+[01:38:35.640 --> 01:38:37.840]   But every time we call predicts, we're
+[01:38:37.840 --> 01:38:41.960]   going to pick some random samples from that pool.
+[01:38:41.960 --> 01:38:44.000]   We are occasionally going to reset those samples
+[01:38:44.000 --> 01:38:46.720]   to the initial state.
+[01:38:46.720 --> 01:38:49.240]   And then we're going to apply the model a number of times.
+[01:38:49.240 --> 01:38:53.240]   And it's worth thinking here, if we
+[01:38:53.240 --> 01:38:56.760]   are applying this model 50 steps,
+[01:38:56.760 --> 01:38:59.680]   this is like a 50-layer deep model all of a sudden.
+[01:38:59.680 --> 01:39:00.840]   And so we start to get some--
+[01:39:00.840 --> 01:39:05.240]   Is that going to be a learn.model rather than self.learn.model?
+[01:39:05.240 --> 01:39:08.000]   Oh, yes, because I already have learned.
+[01:39:08.000 --> 01:39:09.880]   Nice.
+[01:39:09.880 --> 01:39:12.840]   Yeah, so we've got to just be aware
+[01:39:12.840 --> 01:39:15.000]   that by applying this a large number of times,
+[01:39:15.000 --> 01:39:16.880]   we could get something like gradient exploding
+[01:39:16.880 --> 01:39:19.480]   and things like that, which we'll deal with a little bit
+[01:39:19.480 --> 01:39:20.360]   later.
+[01:39:20.360 --> 01:39:23.360]   But we apply the model a large number of steps.
+[01:39:23.360 --> 01:39:25.520]   Then we put those final outputs back
+[01:39:25.520 --> 01:39:27.760]   in the pool for the next round of training,
+[01:39:27.760 --> 01:39:28.960]   and we store our predictions.
+[01:39:28.960 --> 01:39:32.720]   These are the outputs after we've applied a number of steps.
+[01:39:32.720 --> 01:39:36.240]   And in the loss, we're going to use a style loss saying,
+[01:39:36.240 --> 01:39:39.000]   does this match the style of my target image?
+[01:39:39.000 --> 01:39:41.440]   And we're going to add an overflow loss that penalizes it
+[01:39:41.440 --> 01:39:43.880]   if the values are out of bounds, just to try and--
+[01:39:43.880 --> 01:39:46.880]   Take self.learn here, too.
+[01:39:46.880 --> 01:39:48.560]   Yes, thank you.
+[01:39:48.560 --> 01:39:50.680]   I think I read this before we changed the--
+[01:39:50.680 --> 01:39:52.520]   no, because I've got the code back there.
+[01:39:52.520 --> 01:39:54.160]   OK, my bad.
+[01:39:54.160 --> 01:39:58.560]   One more self.learn.pred.clamp and the overflow loss one.
+[01:39:58.560 --> 01:40:00.320]   Yes, thank you.
+[01:40:00.320 --> 01:40:01.320]   There we go.
+[01:40:01.320 --> 01:40:05.520]   And yeah, so get loss is doing a style loss
+[01:40:05.520 --> 01:40:07.680]   plus this overflow loss, just to keep things
+[01:40:07.680 --> 01:40:09.680]   from growing exponentially out of bounds.
+[01:40:09.680 --> 01:40:12.120]   Again, something that's quite likely to happen
+[01:40:12.120 --> 01:40:14.040]   when you're applying a large number of steps,
+[01:40:14.040 --> 01:40:17.520]   and so we really want to penalize that.
+[01:40:17.520 --> 01:40:21.080]   And the final thing is in learn.backward,
+[01:40:21.080 --> 01:40:23.040]   I've added a technique that is probably
+[01:40:23.040 --> 01:40:25.560]   going to be quite useful in some other places as well,
+[01:40:25.560 --> 01:40:27.680]   called gradient normalization.
+[01:40:27.680 --> 01:40:29.520]   And so we're just running through the parameters
+[01:40:29.520 --> 01:40:33.320]   of our model, and we are normalizing them.
+[01:40:33.320 --> 01:40:35.600]   And this means that even if they're really, really tiny,
+[01:40:35.600 --> 01:40:37.960]   really, really large at the end of that multiple number
+[01:40:37.960 --> 01:40:40.640]   of update steps, this is kind of a hack
+[01:40:40.640 --> 01:40:44.040]   to bring this back under control.
+[01:40:44.040 --> 01:40:44.540]   Jeremy--
+[01:40:44.540 --> 01:40:47.800]   Now, let's put a bookmark to come back to that as well
+[01:40:47.800 --> 01:40:49.320]   in more detail.
+[01:40:49.320 --> 01:40:52.920]   And I guess that before fit, maybe we don't need anymore.
+[01:40:52.920 --> 01:40:56.640]   Oh, right, because this is now a default.
+[01:40:56.640 --> 01:40:59.120]   So I should have set this running before we started talking.
+[01:40:59.120 --> 01:41:01.400]   It is going to take a little while.
+[01:41:01.400 --> 01:41:03.120]   But you can see my progress callback here
+[01:41:03.120 --> 01:41:05.920]   is scatter plotting the loss.
+[01:41:05.920 --> 01:41:09.720]   And the reason I'm-- you'll see in the callback here,
+[01:41:09.720 --> 01:41:16.280]   I'm setting the y limits to the minimum
+[01:41:16.280 --> 01:41:17.820]   of the initial set of losses.
+[01:41:17.820 --> 01:41:19.820]   It's just because the overflow loss is sometimes
+[01:41:19.820 --> 01:41:22.880]   so much larger than the rest of the loss ones
+[01:41:22.880 --> 01:41:26.000]   that you get this really bad scaling.
+[01:41:26.000 --> 01:41:28.580]   So using a log scaling and clipping the bounds
+[01:41:28.580 --> 01:41:30.960]   tends to help just visualize what's actually important,
+[01:41:30.960 --> 01:41:32.320]   like the overall trend.
+[01:41:32.320 --> 01:41:33.080]   I guess the last--
+[01:41:33.080 --> 01:41:34.080]   They're not just not run.
+[01:41:34.080 --> 01:41:36.200]   Then we can see it without you running it.
+[01:41:36.200 --> 01:41:37.320]   Oh, right, yeah.
+[01:41:37.320 --> 01:41:39.160]   Yeah, so you can see the outputs here.
+[01:41:39.160 --> 01:41:41.120]   So what I'm visualizing is the examples
+[01:41:41.120 --> 01:41:42.520]   that we've drawn from the pool.
+[01:41:42.520 --> 01:41:43.960]   Every time we're drawing--
+[01:41:43.960 --> 01:41:46.040]   in this case, I've got a fixed batch size.
+[01:41:46.040 --> 01:41:48.720]   That should probably be an argument.
+[01:41:48.720 --> 01:41:50.920]   But you can take a look at them and kind of compare them
+[01:41:50.920 --> 01:41:52.360]   to the style last and see initially
+[01:41:52.360 --> 01:41:54.840]   that I really look too similar.
+[01:41:54.840 --> 01:42:00.160]   After some training, we get some definite webby tendencies.
+[01:42:00.160 --> 01:42:02.080]   And we can take this model and then apply it
+[01:42:02.080 --> 01:42:07.600]   to a random grid and log the images every 100 steps
+[01:42:07.600 --> 01:42:08.600]   or whatever.
+[01:42:08.600 --> 01:42:11.080]   And you can see that starting from this random position,
+[01:42:11.080 --> 01:42:13.600]   it quite quickly builds this pattern.
+[01:42:13.600 --> 01:42:16.240]   It doesn't look perfectly spiderweby.
+[01:42:16.240 --> 01:42:21.440]   But in its defense, this model has 168 parameters.
+[01:42:21.440 --> 01:42:22.280]   And the tiles.
+[01:42:22.280 --> 01:42:24.520]   That to me is the magic of these models
+[01:42:24.520 --> 01:42:26.960]   is that even with very few parameters,
+[01:42:26.960 --> 01:42:29.920]   they're able to do something pretty impressive.
+[01:42:29.920 --> 01:42:31.680]   And if you would like, go back up
+[01:42:31.680 --> 01:42:35.240]   to where we define number of channels and number of layers.
+[01:42:35.240 --> 01:42:38.480]   If you give it more channels to work with, 8 or 16,
+[01:42:38.480 --> 01:42:42.080]   and more hidden neurons, 32 or 64,
+[01:42:42.080 --> 01:42:44.240]   you still have a tiny model.
+[01:42:44.240 --> 01:42:48.040]   But it's able to capture some much nicer--
+[01:42:48.040 --> 01:42:49.880]   so I would say, please, on the forums,
+[01:42:49.880 --> 01:42:51.480]   try some larger sizes.
+[01:42:51.480 --> 01:42:54.000]   I'll also maybe post some results.
+[01:42:54.000 --> 01:42:57.400]   And just to give you a little preview of what's possible,
+[01:42:57.400 --> 01:43:01.640]   so I did a project before using MiniAI.
+[01:43:01.640 --> 01:43:05.520]   So the codes are a little messy and hacky.
+[01:43:05.520 --> 01:43:09.960]   But what I did was I logged the cellular automata.
+[01:43:09.960 --> 01:43:11.320]   Well, maybe I should show this.
+[01:43:11.320 --> 01:43:16.720]   We-- this is way outside of the bounds for this course.
+[01:43:16.720 --> 01:43:19.520]   But you can write something called a fragment shader
+[01:43:19.520 --> 01:43:20.760]   in WebGL.
+[01:43:20.760 --> 01:43:22.920]   So this is designed to run in the browser.
+[01:43:22.920 --> 01:43:26.520]   It's a little program that runs once for every pixel.
+[01:43:26.520 --> 01:43:28.160]   And so you can see here, I have the weights
+[01:43:28.160 --> 01:43:29.720]   of my neural network.
+[01:43:29.720 --> 01:43:33.560]   I have sampling the neighborhood of each cell.
+[01:43:33.560 --> 01:43:35.000]   We have our filters.
+[01:43:35.000 --> 01:43:36.960]   We have our activation function.
+[01:43:36.960 --> 01:43:39.560]   This is in a language called GLSL.
+[01:43:39.560 --> 01:43:41.480]   We're running through the layers of our network
+[01:43:41.480 --> 01:43:44.000]   and proposing our updates.
+[01:43:44.000 --> 01:43:47.240]   And this one here, I just had more--
+[01:43:47.240 --> 01:43:49.880]   I think more hidden neurons, more channels--
+[01:43:49.880 --> 01:43:52.000]   and optimized with a slightly different loss function.
+[01:43:52.000 --> 01:43:54.640]   So it was a style loss plus clip to the prompt,
+[01:43:54.640 --> 01:43:57.920]   I think, dragon scales or glowing dragon scales.
+[01:43:57.920 --> 01:44:00.720]   And you can see this is running in real time or near real time
+[01:44:00.720 --> 01:44:02.800]   because I'm recording.
+[01:44:02.800 --> 01:44:03.720]   And it's interactive.
+[01:44:03.720 --> 01:44:06.040]   So you can click to zero out the grid
+[01:44:06.040 --> 01:44:08.840]   and then see it rebuild within that.
+[01:44:08.840 --> 01:44:11.200]   And so in a similar way, in this weights and biases report,
+[01:44:11.200 --> 01:44:14.120]   I'm logging these interactive HTML previews.
+[01:44:14.120 --> 01:44:17.000]   We've got some videos.
+[01:44:17.000 --> 01:44:21.440]   And just logging the grids from the different things.
+[01:44:21.440 --> 01:44:23.680]   And so you can see these are still pretty small
+[01:44:23.680 --> 01:44:25.040]   as far as these networks go.
+[01:44:25.040 --> 01:44:26.520]   I think they only have four channels
+[01:44:26.520 --> 01:44:31.120]   because I'm working with RGBA shaders.
+[01:44:31.120 --> 01:44:33.560]   But quite fun to see what you can do with these.
+[01:44:33.560 --> 01:44:35.280]   And if you pick the right style images
+[01:44:35.280 --> 01:44:38.080]   and train for a bit longer and use a few more channels,
+[01:44:38.080 --> 01:44:39.520]   you can do some really fun stuff.
+[01:44:39.520 --> 01:44:41.320]   And you can get really creative applying them
+[01:44:41.320 --> 01:44:42.120]   at different scales.
+[01:44:42.120 --> 01:44:47.040]   Or I did some messing around with video, which, again,
+[01:44:47.040 --> 01:44:49.920]   is just like messing with the inputs to different cells
+[01:44:49.920 --> 01:44:52.040]   to try and get some cool patterns.
+[01:44:52.040 --> 01:44:55.760]   So yeah, to me, this is a really exciting, fun--
+[01:44:55.760 --> 01:44:57.640]   amazing niche.
+[01:44:57.640 --> 01:45:00.100]   Yeah, I don't know if there's too many practical applications
+[01:45:00.100 --> 01:45:00.640]   at this stage.
+[01:45:00.640 --> 01:45:03.000]   But I'm already thinking of denoising
+[01:45:03.000 --> 01:45:06.760]   cellular automata and stylizing or image restoration
+[01:45:06.760 --> 01:45:07.840]   cellular automata.
+[01:45:07.840 --> 01:45:10.880]   And you can really have a lot of fun with this structure.
+[01:45:10.880 --> 01:45:14.240]   And I also thought it was just a good demo of how far can we
+[01:45:14.240 --> 01:45:17.000]   push what you can do with the training callback
+[01:45:17.000 --> 01:45:21.640]   to have this pool training and the gradient normalization
+[01:45:21.640 --> 01:45:24.160]   and all these extra things added in.
+[01:45:24.160 --> 01:45:26.440]   Very, very different from here's a batch of images
+[01:45:26.440 --> 01:45:27.680]   and a batch of labels.
+[01:45:27.680 --> 01:45:29.080]   So I hope you found that interesting.
+[01:45:29.080 --> 01:45:30.360]   And I'll stop sharing my screen.
+[01:45:30.360 --> 01:45:33.640]   And then, Jeremy, if you have any questions or follow-ups?
+[01:45:33.640 --> 01:45:35.120]   No, that's amazing.
+[01:45:35.120 --> 01:45:35.960]   Thank you so much.
+[01:45:35.960 --> 01:45:37.160]   I actually have to go.
+[01:45:37.160 --> 01:45:42.160]   But that's just one of the coolest things I've seen.
+

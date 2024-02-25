@@ -1,0 +1,1210 @@
+
+[00:00:00.000 --> 00:00:07.740]   I'm just going to start by going back to clustering.
+[00:00:07.740 --> 00:00:12.320]   We're going to talk about clustering again in the next lesson or two in terms of an application
+[00:00:12.320 --> 00:00:15.800]   of it.
+[00:00:15.800 --> 00:00:29.720]   But specifically what I wanted to do was show you k-means clustering in TensorFlow.
+[00:00:29.720 --> 00:00:33.600]   There are some things which are easier to do in TensorFlow than PyTorch, mainly because
+[00:00:33.600 --> 00:00:40.040]   TensorFlow has a more complete API so far.
+[00:00:40.040 --> 00:00:45.040]   So there are some things that are just like, oh, there's already a method that does that,
+[00:00:45.040 --> 00:00:47.360]   but there isn't one in PyTorch.
+[00:00:47.360 --> 00:00:53.020]   And some things are just a bit neater in TensorFlow than in PyTorch.
+[00:00:53.020 --> 00:00:55.720]   And I actually found k-means quite easy to do.
+[00:00:55.720 --> 00:01:00.560]   But what I want to do is I'm going to try and show you a way to write custom TensorFlow
+[00:01:00.560 --> 00:01:06.840]   code in a kind of a really PyTorch-y way, in a kind of an interactive-y way, and we're
+[00:01:06.840 --> 00:01:18.040]   going to try and avoid all of the fancy, session-y, graph-y, scope-y business as much as possible.
+[00:01:18.040 --> 00:01:24.760]   So to remind you, the way we initially came at clustering was to say, Hey, what if we
+[00:01:24.760 --> 00:01:35.760]   were doing lung cancer detection in CT scans, and these were like 512x512x200 volumetric
+[00:01:35.760 --> 00:01:42.560]   things which is too big to really run a whole CNN over conveniently.
+[00:01:42.560 --> 00:01:48.120]   So one of the thoughts to fix that was to run some kind of heuristic that found all
+[00:01:48.120 --> 00:01:53.280]   of the things that looked like they could vaguely be nodules, and then create a new
+[00:01:53.280 --> 00:01:57.720]   data set where you basically zoomed into each of those maybe nodules and created a small
+[00:01:57.720 --> 00:02:06.360]   little 20x20x20 cube or something, and you could then use a 3D CNN on that, or try Planar
+[00:02:06.360 --> 00:02:07.520]   CNN.
+[00:02:07.520 --> 00:02:13.840]   And this general concept I wanted to remind you about because I feel like it's something
+[00:02:13.840 --> 00:02:17.360]   which maybe I haven't stressed enough.
+[00:02:17.360 --> 00:02:19.360]   I've kind of kept on showing you ways of doing this.
+[00:02:19.360 --> 00:02:23.760]   Going back to lesson 7 with the fish, I showed you the bounding boxes, and I showed you the
+[00:02:23.760 --> 00:02:24.760]   heat maps.
+[00:02:24.760 --> 00:02:28.640]   The reason for all of that was basically to show you how to zoom into things and then
+[00:02:28.640 --> 00:02:33.000]   create new models based on those zoomed in things.
+[00:02:33.000 --> 00:02:41.440]   So in the fisheries case, we could really just use a lower-res CNN to find the fish
+[00:02:41.440 --> 00:02:44.600]   and then zoom into those.
+[00:02:44.600 --> 00:02:49.680]   In the CT scan case, maybe we can't even do that, so maybe we need to use this kind of
+[00:02:49.680 --> 00:02:51.080]   mean shift clustering approach.
+[00:02:51.080 --> 00:02:53.480]   I'm not saying we necessarily do.
+[00:02:53.480 --> 00:02:57.880]   It would be interesting to see what the winners use, but certainly particularly if you don't
+[00:02:57.880 --> 00:03:04.520]   have lots of time or you have a lot of data, heuristics become more and more interesting.
+[00:03:04.520 --> 00:03:11.200]   The reason a heuristic is interesting is you can do something quickly, an approximate that
+[00:03:11.200 --> 00:03:16.800]   could have lots and lots and lots of false positives, and that doesn't really matter.
+[00:03:16.800 --> 00:03:24.200]   Those false positives means just extra data that you're feeding to your real model.
+[00:03:24.200 --> 00:03:29.280]   So you can always tune it as to how much time have I got to train my real model, and then
+[00:03:29.280 --> 00:03:33.040]   I can decide how many false positives I can handle.
+[00:03:33.040 --> 00:03:39.900]   So as long as your preprocessing model is better than nothing, you can use it to get
+[00:03:39.900 --> 00:03:44.900]   rid of some of the stuff that is clearly not a nodule, for example.
+[00:03:44.900 --> 00:03:50.120]   For example, anything that is in the middle of the lung wall is not a nodule, anything
+[00:03:50.120 --> 00:03:57.600]   that is all white space is not a nodule, and so forth.
+[00:03:57.600 --> 00:04:06.360]   So we talked about mean shift clustering and how the big benefit of it is that it allows
+[00:04:06.360 --> 00:04:13.680]   us to build clusters without knowing how many clusters there are at a time.
+[00:04:13.680 --> 00:04:21.160]   Also without any special extra work, it allows us to find clusters which aren't kind of Gaussian
+[00:04:21.160 --> 00:04:24.560]   or spherical if you like in shape.
+[00:04:24.560 --> 00:04:27.600]   That's really important for something like a CT scan, where a cluster will often be like
+[00:04:27.600 --> 00:04:33.240]   a vessel, which is this really skinny long thing.
+[00:04:33.240 --> 00:04:42.340]   So k-means on the other hand is faster, I think it's n^2 rather than n^3 time.
+[00:04:42.340 --> 00:04:46.840]   We have talked particularly on the forum about dramatically speeding up mean shift clustering
+[00:04:46.840 --> 00:04:50.600]   using approximate nearest neighbors, which is something which we started making some
+[00:04:50.600 --> 00:04:55.800]   progress on today, so hopefully we'll have results from that maybe by next week.
+[00:04:55.800 --> 00:05:02.140]   But the basic naive algorithm certainly should be a lot faster for k-means, so there's one
+[00:05:02.140 --> 00:05:03.720]   good reason to use it.
+[00:05:03.720 --> 00:05:12.200]   So as per usual, we can start with some data, and we're going to try and figure out where
+[00:05:12.200 --> 00:05:15.680]   the cluster centers are.
+[00:05:15.680 --> 00:05:24.280]   So one quick way to avoid hassles in TensorFlow is to create an interactive session.
+[00:05:24.280 --> 00:05:32.340]   So an interactive session basically means that you can call .run() on a computation graph
+[00:05:32.340 --> 00:05:39.000]   which doesn't return something, or .eval() on a computation graph that does return something,
+[00:05:39.000 --> 00:05:44.600]   and you don't have to worry about creating a graph or a session or having a session with
+[00:05:44.600 --> 00:05:49.140]   clause or anything like that, it just works.
+[00:05:49.140 --> 00:05:56.220]   So that's basically what happens when you call tf.interactive_session.
+[00:05:56.220 --> 00:06:08.200]   So by creating an interactive session, we can then do things one step at a time.
+[00:06:08.200 --> 00:06:15.780]   So in this case, the first step in k-means is to pick some initial centroids.
+[00:06:15.780 --> 00:06:19.960]   So you basically start out and say, okay, if we're going to create however many clusters
+[00:06:19.960 --> 00:06:29.440]   -- in this case, n clusters is 6 -- then start out by saying, okay, where might those 6 clusters
+[00:06:29.440 --> 00:06:30.440]   be?
+[00:06:30.440 --> 00:06:35.960]   And for a long time with k-means, people picked them randomly.
+[00:06:35.960 --> 00:06:40.480]   But most practitioners realized that was a dumb idea soon enough, and a lot of people
+[00:06:40.480 --> 00:06:42.560]   had various heuristics for picking them.
+[00:06:42.560 --> 00:06:46.480]   In 2007, finally, a paper was published actually suggesting a heuristic.
+[00:06:46.480 --> 00:06:53.720]   I tend to use a very simple heuristic, which is what I use here in find_initial_centroids.
+[00:06:53.720 --> 00:07:00.640]   So to describe this heuristic, I will show you the code.
+[00:07:00.640 --> 00:07:04.960]   So find_initial_centroids looks like this.
+[00:07:04.960 --> 00:07:08.560]   Basically -- and I'm going to run through it quickly, and then I'll run through it slowly.
+[00:07:08.560 --> 00:07:17.280]   Basically the idea is we first of all pick a single data point index, and then we select
+[00:07:17.280 --> 00:07:19.280]   that single data point.
+[00:07:19.280 --> 00:07:25.560]   So we have one randomly selected data point, and then we find what is the distance from
+[00:07:25.560 --> 00:07:30.720]   that randomly selected data point to every other data point.
+[00:07:30.720 --> 00:07:38.520]   And then we say, okay, what is the data point that is the furthest away from that randomly
+[00:07:38.520 --> 00:07:43.320]   selected data point, the index of it and the point itself.
+[00:07:43.320 --> 00:07:47.960]   And then we say, okay, we're going to append that to the initial centroids.
+[00:07:47.960 --> 00:07:54.480]   So say I picked at random this point as my random initial point, the furthest point away
+[00:07:54.480 --> 00:07:58.080]   from that is probably somewhere around here.
+[00:07:58.080 --> 00:08:03.000]   So that would be the first centroid we picked.
+[00:08:03.000 --> 00:08:07.600]   Okay we're now inside a loop, and we now go back and we repeat the process.
+[00:08:07.600 --> 00:08:15.000]   So we now replace our random point with the actual first centroid, and we go through the
+[00:08:15.000 --> 00:08:16.800]   loop once more.
+[00:08:16.800 --> 00:08:24.000]   So if we had our first centroid here, our second one now might be somewhere over here.
+[00:08:24.000 --> 00:08:27.200]   Okay so we now have two centroids.
+[00:08:27.200 --> 00:08:30.480]   The next time through the loop, therefore, this is slightly more interesting.
+[00:08:30.480 --> 00:08:38.520]   All distances, we're now going to have the distance between every one of our initial centroids
+[00:08:38.520 --> 00:08:41.160]   and every other data point.
+[00:08:41.160 --> 00:08:47.120]   So we've got a matrix, in this case it's going to be 2 by the number of data points.
+[00:08:47.120 --> 00:08:55.120]   So then we say, okay, for every data point, find the closest cluster.
+[00:08:55.120 --> 00:09:00.360]   So what's its distance to the closest initial centroid?
+[00:09:00.360 --> 00:09:07.240]   And then tell me which data point is the furthest away from its closest initial centroid.
+[00:09:07.240 --> 00:09:13.680]   So in other words, which data point is the furthest away from any centroid?
+[00:09:13.680 --> 00:09:18.560]   So that's the basic algorithm.
+[00:09:18.560 --> 00:09:23.200]   So let's look and see how we actually do that in TensorFlow.
+[00:09:23.200 --> 00:09:31.200]   So it looks a lot like NumPy, except in places you would expect to see np, we see tf, and
+[00:09:31.200 --> 00:09:37.160]   then we see the API is a little different, but not too different.
+[00:09:37.160 --> 00:09:43.680]   So to get a random number, we can just use random uniform.
+[00:09:43.680 --> 00:09:46.960]   We can tell it what type of random number we want, so we want a random int because we're
+[00:09:46.960 --> 00:09:51.240]   trying to get a random index, which is a random data point.
+[00:09:51.240 --> 00:09:56.640]   That's going to be between 0 and the amount of data points we have.
+[00:09:56.640 --> 00:10:01.880]   So that gives us some random index.
+[00:10:01.880 --> 00:10:06.200]   We can now go ahead and index into our data.
+[00:10:06.200 --> 00:10:08.120]   Now you'll notice I've created something called vdata.
+[00:10:08.120 --> 00:10:10.960]   So what is vdata?
+[00:10:10.960 --> 00:10:17.040]   When we set up this k-means in the first place, the data was sent in as a NumPy array, and
+[00:10:17.040 --> 00:10:19.840]   then I called tf.variable on it.
+[00:10:19.840 --> 00:10:26.920]   Now this is the critical thing that lets us make TensorFlow feel more like PyTorch.
+[00:10:26.920 --> 00:10:34.360]   Once I do this, data is now basically copied to the GPU, and so when I'm calling something
+[00:10:34.360 --> 00:10:41.280]   using vdata, I'm calling this GPU object.
+[00:10:41.280 --> 00:10:46.720]   Now there's one thing problematic to be aware of, which is that the copying does not actually
+[00:10:46.720 --> 00:10:50.000]   occur when you write this.
+[00:10:50.000 --> 00:10:56.440]   The copying occurs when you write this.
+[00:10:56.440 --> 00:11:04.800]   So any time you call tf.variable, if you then try to run something using that variable,
+[00:11:04.800 --> 00:11:09.800]   you'll get back an uninitialized variable error unless you call this in the meantime.
+[00:11:09.800 --> 00:11:17.840]   This is kind of like performance stuff in TensorFlow where they try to say you can set up lots
+[00:11:17.840 --> 00:11:25.440]   of variables at once and then call this initializer and we'll do it all at once for you.
+[00:11:25.440 --> 00:11:33.900]   So earlier on we created this k-means object.
+[00:11:33.900 --> 00:11:39.200]   We know that in Python when you create an object, it calls _init__ (that's just how
+[00:11:39.200 --> 00:11:45.980]   Python works), inside that we copied the data to the GPU by using tf.variable, and then
+[00:11:45.980 --> 00:11:52.160]   inside find_initial_centroids, we can now access that in order to basically do calculations
+[00:11:52.160 --> 00:11:58.200]   involving data on the GPU.
+[00:11:58.200 --> 00:12:02.480]   In TensorFlow, pretty much everything takes and returns a tensor.
+[00:12:02.480 --> 00:12:08.160]   So when you call random_uniform, it's giving us a tensor, an array of random numbers.
+[00:12:08.160 --> 00:12:13.200]   In this case, we just wanted one of them, so we have to use tf.squeeze to take that
+[00:12:13.200 --> 00:12:17.960]   tensor and turn it into a scalar, because then we're just indexing it into here to get
+[00:12:17.960 --> 00:12:22.080]   a single item back.
+[00:12:22.080 --> 00:12:29.160]   So now that we've got that single item back, we then expand it back again into a tensor
+[00:12:29.160 --> 00:12:34.360]   because inside our loop, remember, this is going to be a list of initial centroids.
+[00:12:34.360 --> 00:12:40.980]   It's just that this list happens to be of length 1 at the moment.
+[00:12:40.980 --> 00:12:49.880]   So one of these tricks in making TensorFlow feel more like PyTorch is to use standard
+[00:12:49.880 --> 00:12:51.920]   Python loops.
+[00:12:51.920 --> 00:12:57.440]   So in a lot of TensorFlow code where it's more serious performance intensive stuff,
+[00:12:57.440 --> 00:13:05.200]   you'll see people use TensorFlow-specific loops like tf.while or tf.scan or map or so forth.
+[00:13:05.200 --> 00:13:09.480]   The challenge with using those kind of loops is it's basically creating a computation graph
+[00:13:09.480 --> 00:13:10.480]   of that loop.
+[00:13:10.480 --> 00:13:16.760]   You can't step through it, you can't use it in the normal Pythonic kind of ways.
+[00:13:16.760 --> 00:13:21.960]   So we can just use normal Python loops if we're careful about how we do it.
+[00:13:21.960 --> 00:13:27.720]   So inside our normal Python loop, we can use normal Python functions.
+[00:13:27.720 --> 00:13:33.480]   So here's a function I created which calculates the distance between everything in this tensor
+[00:13:33.480 --> 00:13:35.760]   compared to everything in this tensor.
+[00:13:35.760 --> 00:13:45.160]   So all distances, it looks very familiar because it looks a lot like the PyTorch code we had.
+[00:13:45.160 --> 00:13:54.560]   So for the first array, for the first tensor, we add an additional axis to axis 0, and for
+[00:13:54.560 --> 00:13:58.720]   the second we add an additional axis to axis 1.
+[00:13:58.720 --> 00:14:03.320]   So the reason this works is because of broadcasting.
+[00:14:03.320 --> 00:14:15.280]   So A, when it starts out, is a vector, and B is a vector.
+[00:14:15.280 --> 00:14:19.400]   Now is A a column or is A a row?
+[00:14:19.400 --> 00:14:21.800]   What's the orientation of it?
+[00:14:21.800 --> 00:14:24.360]   Well the answer is it's both and it's neither.
+[00:14:24.360 --> 00:14:30.040]   It's one-dimensional, so it has no concept of what direction it's looking.
+[00:14:30.040 --> 00:14:37.400]   So then what we do is we set expandims on axis 0, so that's rows.
+[00:14:37.400 --> 00:14:42.960]   So that basically says to A, you are now definitely a row vector.
+[00:14:42.960 --> 00:14:48.960]   You now have one row and however many columns, same as before.
+[00:14:48.960 --> 00:14:54.360]   And then where else with B, we add an axis at the end.
+[00:14:54.360 --> 00:15:01.640]   So B is now definitely a column vector, it now has one column and however many rows we
+[00:15:01.640 --> 00:15:03.960]   had before.
+[00:15:03.960 --> 00:15:12.880]   So with broadcasting, what happens is that this one gets broadcast to this length, and
+[00:15:12.880 --> 00:15:17.520]   this one gets broadcast to this length.
+[00:15:17.520 --> 00:15:24.320]   So we end up with a matrix containing the difference between every one of these items
+[00:15:24.320 --> 00:15:27.320]   and every one of these items.
+[00:15:27.320 --> 00:15:36.040]   So that's like this simple but powerful concept of how we can do very fast GPU-accelerated
+[00:15:36.040 --> 00:15:40.800]   loops and less code than it would have taken to actually write the loop.
+[00:15:40.800 --> 00:15:44.680]   And we don't have to worry about out-of-bounds conditions or anything like that, it's all
+[00:15:44.680 --> 00:15:47.280]   done for us.
+[00:15:47.280 --> 00:15:48.760]   So that's the trick here.
+[00:15:48.760 --> 00:15:54.440]   And once we've got that matrix, because in TensorFlow everything is a tensor, we can
+[00:15:54.440 --> 00:15:59.920]   call square difference rather than just regular difference, and it gives us the squares of
+[00:15:59.920 --> 00:16:04.140]   those differences, and then we can sum over the last axis.
+[00:16:04.140 --> 00:16:12.360]   So the last axis is the dimensions, so we're just creating a Euclidean distance here.
+[00:16:12.360 --> 00:16:15.680]   And so that's all this code does.
+[00:16:15.680 --> 00:16:23.240]   So this gives us every distance between every element of A and every element of B.
+[00:16:23.240 --> 00:16:28.420]   So that's how we get to this point.
+[00:16:28.420 --> 00:16:32.760]   So then let's say we've gone through a couple of loops.
+[00:16:32.760 --> 00:16:38.680]   So after a couple of loops, R is going to contain a few initial centroids.
+[00:16:38.680 --> 00:16:48.440]   So we now want to basically find out for every point how far away is it from its nearest initial
+[00:16:48.440 --> 00:16:50.360]   centroid.
+[00:16:50.360 --> 00:17:00.680]   So when we go reduce min with axis=0, then we know that that's going over the axis here
+[00:17:00.680 --> 00:17:03.960]   because that's what we put into our all-distances function.
+[00:17:03.960 --> 00:17:10.320]   So it's going to go through, well actually it's reducing across into that axis, so it's
+[00:17:10.320 --> 00:17:13.160]   actually reducing across our centroids.
+[00:17:13.160 --> 00:17:20.200]   So at the end of this, it says, alright, this is for every piece of our data how far it
+[00:17:20.200 --> 00:17:26.200]   is away from its nearest centroid.
+[00:17:26.200 --> 00:17:31.440]   And that returns the actual distance, because we said do the actual min.
+[00:17:31.440 --> 00:17:35.880]   So there's a difference between min and arg, the arg version.
+[00:17:35.880 --> 00:17:41.680]   So argmax then says, okay, now go through all of the points.
+[00:17:41.680 --> 00:17:48.080]   We now know how far away they are from their closest centroid, and tell me the index of
+[00:17:48.080 --> 00:17:51.240]   the one which is furthest away.
+[00:17:51.240 --> 00:17:53.700]   So argmax is a super handy function.
+[00:17:53.700 --> 00:17:59.400]   We used it quite a bit in part 1 of the course, but it's well worth making sure we understand
+[00:17:59.400 --> 00:18:01.040]   how it works.
+[00:18:01.040 --> 00:18:07.600]   I think IntensorFlow, I think they're getting rid of these reduce_ prefixes.
+[00:18:07.600 --> 00:18:08.600]   I'm not sure.
+[00:18:08.600 --> 00:18:10.700]   I think I read that somewhere.
+[00:18:10.700 --> 00:18:16.000]   So in some version you may find this is called min rather than reduce_min.
+[00:18:16.000 --> 00:18:18.520]   I certainly hope they are.
+[00:18:18.520 --> 00:18:22.880]   For those of you who don't have such a computer science background, a reduction basically
+[00:18:22.880 --> 00:18:26.400]   means taking something in a higher dimension and squishing it down into something that's
+[00:18:26.400 --> 00:18:32.000]   a lower dimension, for example, summing a vector and turning it into a scalar is called
+[00:18:32.000 --> 00:18:33.000]   a reduction.
+[00:18:33.000 --> 00:18:37.640]   So this is a very TensorFlow API assuming that everybody is a computer scientist and
+[00:18:37.640 --> 00:18:43.800]   that you wouldn't look for min, you would look for reduce_min.
+[00:18:43.800 --> 00:18:46.880]   So that's how we got that index.
+[00:18:46.880 --> 00:18:54.600]   So generally speaking, you have to be a bit careful of data types.
+[00:18:54.600 --> 00:18:58.240]   I generally don't really notice about data type problems until I get the error, but if
+[00:18:58.240 --> 00:19:04.360]   you get an error that says you passed an int64 into something that expected an int32, you
+[00:19:04.360 --> 00:19:07.000]   can always just cast things like this.
+[00:19:07.000 --> 00:19:11.120]   So we need to index something with an int32, so we just have to cast it.
+[00:19:11.120 --> 00:19:18.460]   And so this returns the actual point, append, and then this is very similar to NumPy stacking
+[00:19:18.460 --> 00:19:25.680]   together the initial centroids to create a tensor of them.
+[00:19:25.680 --> 00:19:34.000]   So the code doesn't look at all weird or different, but it's important to remember that when we
+[00:19:34.000 --> 00:19:40.580]   run this code, nothing happens, other than that it creates a computation graph.
+[00:19:40.580 --> 00:19:49.120]   So when we call k.find_initial_centroids, nothing happens.
+[00:19:49.120 --> 00:19:55.200]   But because we're in an interactive session, we can now call .eval, and that actually runs
+[00:19:55.200 --> 00:19:56.360]   it.
+[00:19:56.360 --> 00:20:01.520]   And it runs it, and it actually takes the data that's returned from that and copies
+[00:20:01.520 --> 00:20:08.120]   it off the GPU and puts it back in the CPU as a NumPy array.
+[00:20:08.120 --> 00:20:13.920]   So it's important to remember that if you call eval, we now have an actual genuine regular
+[00:20:13.920 --> 00:20:16.180]   NumPy array here.
+[00:20:16.180 --> 00:20:23.200]   And this is the thing that makes us be able to write code that looks a lot like PyTorch
+[00:20:23.200 --> 00:20:26.960]   code, because we now know that we can take something that's a NumPy array and turn it
+[00:20:26.960 --> 00:20:34.060]   into a GPU tensor like that, and we can take something that's a GPU tensor and turn it
+[00:20:34.060 --> 00:20:39.000]   into a NumPy array like that.
+[00:20:39.000 --> 00:20:50.120]   I suspect this might make TensorFlow developers shake at how horrible this is.
+[00:20:50.120 --> 00:20:56.200]   It's not really quite the way you're meant to do things I think, but it's super easy
+[00:20:56.200 --> 00:21:00.080]   and it seems to work pretty well.
+[00:21:00.080 --> 00:21:06.000]   This approach where we're calling .eval, you do need to be a bit careful.
+[00:21:06.000 --> 00:21:11.240]   If this was inside a loop that we were calling eval and we were copying back a really big
+[00:21:11.240 --> 00:21:16.560]   chunk of data to the GPU and the CPU again and again and again, that would be a performance
+[00:21:16.560 --> 00:21:17.560]   nightmare.
+[00:21:17.560 --> 00:21:22.040]   So you do need to think about what's going on as you do it.
+[00:21:22.040 --> 00:21:25.840]   So we'll look inside the inner loop in a moment and just check.
+[00:21:25.840 --> 00:21:29.720]   Anyway, the result's pretty fantastic.
+[00:21:29.720 --> 00:21:37.000]   As you can see, this little hackyheuristic does a great job.
+[00:21:37.000 --> 00:21:42.660]   It's a hackyheuristic I've been using for decades now, and it's a kind of thing which
+[00:21:42.660 --> 00:21:44.480]   often doesn't appear in papers.
+[00:21:44.480 --> 00:21:48.280]   In this case, a similar hackyheuristic did actually appear in a paper in 2007 and an
+[00:21:48.280 --> 00:21:52.760]   even better one appeared just last year.
+[00:21:52.760 --> 00:21:59.700]   But it's always worth thinking about how can I pre-process my data to get it close to where
+[00:21:59.700 --> 00:22:00.920]   I might want it to be.
+[00:22:00.920 --> 00:22:05.740]   And often these kind of approaches are useful.
+[00:22:05.740 --> 00:22:08.440]   There's actually -- I don't know if we'll have time to maybe talk about it someday -- but
+[00:22:08.440 --> 00:22:13.840]   there's an approach to doing PCA, Principle Components Analysis, which has a similar flavor,
+[00:22:13.840 --> 00:22:19.200]   basically finding random numbers and finding the furthest numbers away from them.
+[00:22:19.200 --> 00:22:22.800]   So it's a good general technique actually.
+[00:22:22.800 --> 00:22:25.560]   So we've got our initial centroids.
+[00:22:25.560 --> 00:22:26.560]   What do we do next?
+[00:22:26.560 --> 00:22:29.760]   Well, what we do next is we're going to be doing more computation in TensorFlow with
+[00:22:29.760 --> 00:22:34.800]   them, so we want to copy them back to the GPU.
+[00:22:34.800 --> 00:22:41.240]   And so because we copied them to the GPU, before we do an eval or anything later on,
+[00:22:41.240 --> 00:22:45.080]   we're going to have to make sure we go global variable initializers dot run.
+[00:22:45.080 --> 00:22:46.080]   Question.
+[00:22:46.080 --> 00:22:52.760]   Can you explain what happens if you don't create interactive session?
+[00:22:52.760 --> 00:22:58.560]   So what the TensorFlow authors decided to do in their wisdom was to generate their own
+[00:22:58.560 --> 00:23:04.200]   whole concept of namespaces and variables and whatever else.
+[00:23:04.200 --> 00:23:10.040]   So rather than using Python's, there's TensorFlow.
+[00:23:10.040 --> 00:23:17.400]   And so a session is basically kind of like a namespace that holds the computation graphs
+[00:23:17.400 --> 00:23:21.360]   and the variables and so forth.
+[00:23:21.360 --> 00:23:26.680]   You can, and then there's this concept of a context manager, which is basically where
+[00:23:26.680 --> 00:23:31.600]   you have a with clause in Python and you say with this session, now you're going to do
+[00:23:31.600 --> 00:23:34.760]   this bunch of stuff in this namespace.
+[00:23:34.760 --> 00:23:36.120]   And then there's a concept of a graph.
+[00:23:36.120 --> 00:23:39.600]   You can have multiple computation graphs, so you can say with this graph, create these
+[00:23:39.600 --> 00:23:42.920]   various computations.
+[00:23:42.920 --> 00:23:50.560]   Where it comes in very handy is if you want to say run this graph on this GPU, or stick
+[00:23:50.560 --> 00:23:56.160]   this variable on that GPU.
+[00:23:56.160 --> 00:24:01.640]   So without an interactive session, you basically have to create that session, you have to say
+[00:24:01.640 --> 00:24:06.480]   which session to use using a with clause, and then there's many layers of that.
+[00:24:06.480 --> 00:24:11.200]   So within that you can then create namescopes and variablescopes and blah blah blah.
+[00:24:11.200 --> 00:24:17.360]   So the annoying thing is the vast majority of tutorial code out there uses all of these
+[00:24:17.360 --> 00:24:18.360]   concepts.
+[00:24:18.360 --> 00:24:26.040]   It's as if all of Python's OO and variables and modules doesn't exist, and you use TensorFlow
+[00:24:26.040 --> 00:24:27.040]   for everything.
+[00:24:27.040 --> 00:24:31.560]   So I wanted to show you that you don't have to use any of these concepts, pretty much.
+[00:24:31.560 --> 00:24:34.520]   Thank you for the question.
+[00:24:34.520 --> 00:24:51.200]   I haven't quite finished thinking through this, but have you tried?
+[00:24:51.200 --> 00:24:56.600]   If you had initially said I have seven clusters, or eight clusters, what you would find after
+[00:24:56.600 --> 00:25:01.640]   you hit your six is you'd all of a sudden start getting centroids that were very close
+[00:25:01.640 --> 00:25:04.000]   to various existing centroids.
+[00:25:04.000 --> 00:25:12.960]   So it seems like you could somehow intelligently define a width of a cluster, or kind of look
+[00:25:12.960 --> 00:25:17.940]   for a jump in things dropping down and how far apart they are from some other cluster,
+[00:25:17.940 --> 00:25:22.520]   and programmatically come up with a way to decide the number of clusters.
+[00:25:22.520 --> 00:25:26.680]   Yeah, I think you could.
+[00:25:26.680 --> 00:25:31.080]   Maybe then you're using TK means, I don't know.
+[00:25:31.080 --> 00:25:33.840]   I think it's a fascinating question.
+[00:25:33.840 --> 00:25:36.760]   I haven't seen that done.
+[00:25:36.760 --> 00:25:44.720]   There are certainly papers about figuring out the number of clusters in K-means.
+[00:25:44.720 --> 00:25:50.520]   So maybe during the week you'd check one out, put it to TensorFlow, that would be really
+[00:25:50.520 --> 00:25:51.520]   interesting.
+[00:25:51.520 --> 00:25:57.400]   And I just wanted to follow up what you said about sessions to emphasize that with a lot
+[00:25:57.400 --> 00:26:02.520]   of tutorials, you could make the code simpler by using an interactive session in a Jupyter
+[00:26:02.520 --> 00:26:04.200]   notebook instead.
+[00:26:04.200 --> 00:26:08.440]   I remember when Rachel was going through a TensorFlow course a while ago and she kept
+[00:26:08.440 --> 00:26:14.400]   on banging her head against a desk with sessions and variable scopes and whatever else.
+[00:26:14.400 --> 00:26:19.680]   That was part of what led us to think, "Okay, let's simplify all that."
+[00:26:19.680 --> 00:26:23.840]   So step one was to take our initial centroids and copy them onto the GPU.
+[00:26:23.840 --> 00:26:27.960]   So we now have a symbol representing those.
+[00:26:27.960 --> 00:26:34.280]   So the next step in the K-means algorithm is to take every point and assign them to
+[00:26:34.280 --> 00:26:45.120]   a cluster, which is basically to say for every point which of the centroids is the closest.
+[00:26:45.120 --> 00:26:47.840]   So that's what assigned to nearest does.
+[00:26:47.840 --> 00:26:50.460]   We'll get to that in a moment, but let's pretend we've done it.
+[00:26:50.460 --> 00:26:58.620]   This will now be a list of which centroid is the closest for every data point.
+[00:26:58.620 --> 00:27:13.000]   So then we need one more piece of TensorFlow concepts, which is we want to update an existing
+[00:27:13.000 --> 00:27:15.760]   variable with some new data.
+[00:27:15.760 --> 00:27:22.240]   And so we can actually call updateCentroids to basically do that updating, and I'll show
+[00:27:22.240 --> 00:27:24.760]   you how that works as well.
+[00:27:24.760 --> 00:27:33.480]   So basically the idea is we're going to loop through doing this again and again and again.
+[00:27:33.480 --> 00:27:39.520]   But when we just do it once, you can actually see it's nearly perfect already.
+[00:27:39.520 --> 00:27:47.120]   So it's a pretty powerful idea as long as your initial cluster centers are good.
+[00:27:47.120 --> 00:27:52.960]   So let's see how this works, assigned to nearest.
+[00:27:52.960 --> 00:27:59.960]   There's a single line of code.
+[00:27:59.960 --> 00:28:04.740]   The reason there's a single line of code is we already have the code to find the distance
+[00:28:04.740 --> 00:28:10.880]   between every piece of data and its centroid.
+[00:28:10.880 --> 00:28:16.880]   Now rather than calling tf.reduceMin, which returned the distance to its nearest centroid,
+[00:28:16.880 --> 00:28:23.280]   we call tf.argmin to get the index of its nearest centroid.
+[00:28:23.280 --> 00:28:28.840]   So generally speaking, the hard bit of doing this kind of highly vectorized code is figuring
+[00:28:28.840 --> 00:28:33.600]   out this number, which is what axis we're working with.
+[00:28:33.600 --> 00:28:39.220]   And so it's a good idea to actually write down on a piece of paper for each of your
+[00:28:39.220 --> 00:28:40.220]   tensors.
+[00:28:40.220 --> 00:28:43.800]   It's like it's time by batch, by row, by column, or whatever.
+[00:28:43.800 --> 00:28:48.880]   Make sure you know what every axis represents.
+[00:28:48.880 --> 00:28:57.480]   When I'm creating these algorithms, I'm constantly printing out the shape of things.
+[00:28:57.480 --> 00:29:01.720]   Another really simple trick, but a lot of people don't do this, is make sure that your
+[00:29:01.720 --> 00:29:05.540]   different dimensions actually have different sizes.
+[00:29:05.540 --> 00:29:08.600]   So when you're playing around with testing things, don't have a batch size of 10 and
+[00:29:08.600 --> 00:29:13.320]   an n of 10 and a number of dimensions of 10.
+[00:29:13.320 --> 00:29:18.560]   I find it much easier to think of real numbers, so have a batch size of 8 and an n of 10 and
+[00:29:18.560 --> 00:29:19.560]   a dimensionality of 4.
+[00:29:19.560 --> 00:29:24.960]   Because every time you print out the shape, you'll find out exactly what everything is.
+[00:29:24.960 --> 00:29:32.040]   So this is going to return the nearest indices.
+[00:29:32.040 --> 00:29:35.280]   So then we can go ahead and update the centroids.
+[00:29:35.280 --> 00:29:37.080]   So here is update-centroids.
+[00:29:37.080 --> 00:29:41.680]   And suddenly we have some crazy function.
+[00:29:41.680 --> 00:29:46.120]   And this is where TensorFlow is super handy.
+[00:29:46.120 --> 00:29:48.320]   It's full of crazy functions.
+[00:29:48.320 --> 00:29:56.960]   And if you know the computer science term for the thing you're trying to do, it's generally
+[00:29:56.960 --> 00:30:00.640]   called that.
+[00:30:00.640 --> 00:30:04.840]   The only other way to find it is just to do lots and lots of searching through the documentation.
+[00:30:04.840 --> 00:30:15.780]   So in general, taking a set of data and sticking it into multiple chunks of data according
+[00:30:15.780 --> 00:30:20.920]   to some kind of criteria is called partitioning in computer science.
+[00:30:20.920 --> 00:30:22.800]   So I got a bit lucky when I first looked for this.
+[00:30:22.800 --> 00:30:27.660]   I googled for TensorFlow partition and bang, this thing popped up.
+[00:30:27.660 --> 00:30:35.100]   So let's take a look at it.
+[00:30:35.100 --> 00:30:41.520]   And this is where reading about GPU programming in general is very helpful.
+[00:30:41.520 --> 00:30:46.760]   Because in GPU programming there's this kind of smallish subset of things which everything
+[00:30:46.760 --> 00:30:56.640]   else is built on, and one of them is partitioning.
+[00:30:56.640 --> 00:31:04.800]   So here we have tf.dynamic_partition.
+[00:31:04.800 --> 00:31:10.600]   Partition is the data into some number of partitions using some indices.
+[00:31:10.600 --> 00:31:14.380]   And generally speaking, it's easiest to just look at some code.
+[00:31:14.380 --> 00:31:16.480]   So here's our data.
+[00:31:16.480 --> 00:31:22.720]   We're going to create two partitions, we're calling them clusters, and it's going to go
+[00:31:22.720 --> 00:31:23.720]   like this.
+[00:31:23.720 --> 00:31:28.000]   0th partition, 0th, 1st, 1st, 0th.
+[00:31:28.000 --> 00:31:34.400]   So 10 will go to the 0th partition, 20 will go to the 0th partition, 30 will go to the
+[00:31:34.400 --> 00:31:35.400]   1st partition.
+[00:31:35.400 --> 00:31:38.280]   Okay, this is exactly what we want.
+[00:31:38.280 --> 00:31:42.720]   So this is the nice thing is that there's a lot of these, you can see all this stuff.
+[00:31:42.720 --> 00:31:47.980]   There's so many functions available, often there's the exact function you need.
+[00:31:47.980 --> 00:31:48.980]   And here it is.
+[00:31:48.980 --> 00:31:55.360]   So we just take our list of indices, convert it to a list of int32s, pass it out data,
+[00:31:55.360 --> 00:32:00.040]   the indices and the number of clusters, and we're done.
+[00:32:00.040 --> 00:32:10.600]   This is now a separate array, basically a separate tensor for each of our clusters.
+[00:32:10.600 --> 00:32:19.440]   So now that we've done that, we can then figure out what is the mean of each of those clusters.
+[00:32:19.440 --> 00:32:22.760]   So the mean of each of those clusters is our new centroid.
+[00:32:22.760 --> 00:32:31.200]   So what we're doing is we're saying which points are the closest to this one, and these
+[00:32:31.200 --> 00:32:36.280]   points are the closest to this one, okay, what's the average of those points?
+[00:32:36.280 --> 00:32:40.160]   That's all that happened from here to here.
+[00:32:40.160 --> 00:32:44.280]   So that's taking the mean of those points.
+[00:32:44.280 --> 00:32:52.000]   And then we can basically say, okay, that's our new clusters.
+[00:32:52.000 --> 00:33:04.380]   So then just join them all together, concatenate them together.
+[00:33:04.380 --> 00:33:08.960]   Except for that dynamic partitions, well in fact including that dynamic partitions, that
+[00:33:08.960 --> 00:33:11.880]   was incredibly simple, but it was incredibly simple because we had a function that did
+[00:33:11.880 --> 00:33:13.720]   exactly what we wanted.
+[00:33:13.720 --> 00:33:20.120]   So because we assigned a variable up here, we have to call initializer.run.
+[00:33:20.120 --> 00:33:26.520]   And then of course before we can do anything with this tensor, we have to call .eval to
+[00:33:26.520 --> 00:33:33.060]   actually call the computation graph and copy it back to our CPU.
+[00:33:33.060 --> 00:33:38.000]   So that's all those steps.
+[00:33:38.000 --> 00:33:44.920]   So then we want to replace the contents of current centroids with the contents of updated
+[00:33:44.920 --> 00:33:47.680]   centroids.
+[00:33:47.680 --> 00:33:54.560]   And so to do that, we can't just say equals, everything is different in TensorFlow, you
+[00:33:54.560 --> 00:33:57.080]   have to call .assign.
+[00:33:57.080 --> 00:34:01.840]   So this is the same as basically saying current centroids equals updated centroids, but it's
+[00:34:01.840 --> 00:34:07.880]   creating a computation graph that basically does that assignment on the GPU.
+[00:34:07.880 --> 00:34:17.800]   How can we extrapolate this to other non-numeric data types such as words, images?
+[00:34:17.800 --> 00:34:26.600]   Well they're all numeric data types really, so an image is absolutely a numeric data type.
+[00:34:26.600 --> 00:34:34.240]   So it's just a bunch of pixels, you just have to decide what distance measure you want,
+[00:34:34.240 --> 00:34:37.680]   which generally just means deciding you're probably using Euclidean distance, but are
+[00:34:37.680 --> 00:34:44.000]   you doing it in pixel space, or are you picking one of the activation layers in a neural net?
+[00:34:44.000 --> 00:34:52.800]   For words, you would create a word vector for your words.
+[00:34:52.800 --> 00:34:56.160]   There's nothing specifically two-dimensional about this.
+[00:34:56.160 --> 00:35:00.240]   This works in as many dimensions as we like.
+[00:35:00.240 --> 00:35:03.360]   That's really the whole point, and I'm hoping that maybe during the week, some people will
+[00:35:03.360 --> 00:35:08.560]   start to play around with some higher dimensional data sets to get a feel for how this works.
+[00:35:08.560 --> 00:35:12.280]   Particularly if you can get it working on CT scans, that would be fascinating using
+[00:35:12.280 --> 00:35:17.600]   the five-dimensional clustering we talked about.
+[00:35:17.600 --> 00:35:23.960]   So here's what it looks like in total if we weren't using an interactive session.
+[00:35:23.960 --> 00:35:30.960]   You basically say with tf.session, that creates a session, but as default, that sets it to
+[00:35:30.960 --> 00:35:36.520]   the current session, and then within the with block, we can now run things.
+[00:35:36.520 --> 00:35:45.640]   And then k.run does all the stuff we just saw, so if we go to k.run, here it is.
+[00:35:45.640 --> 00:35:48.600]   So k.run does all of those steps.
+[00:35:48.600 --> 00:35:54.820]   So this is how you can create a complete computation graph in TensorFlow using a notebook.
+[00:35:54.820 --> 00:35:56.800]   You do each one, one step at a time.
+[00:35:56.800 --> 00:35:59.280]   Once you've got it working, you put it all together.
+[00:35:59.280 --> 00:36:08.480]   So you can see find_initial_centroids.eval, put it back into a variable again, assigned
+[00:36:08.480 --> 00:36:13.140]   to nearest, update_centroids.
+[00:36:13.140 --> 00:36:21.120]   Because we created a variable in the process there, we then have to rerun global_variable_initializer.
+[00:36:21.120 --> 00:36:28.560]   We could have avoided this I guess by not calling eval and just treating this as a variable
+[00:36:28.560 --> 00:36:34.420]   the whole time, but it doesn't matter, this works fine.
+[00:36:34.420 --> 00:36:50.440]   And then we just loop through a bunch of times, calling centroids.assign_updated_centroids.
+[00:36:50.440 --> 00:37:01.360]   What we should be doing after that is then calling update_centroids each time.
+[00:37:01.360 --> 00:37:08.520]   Then the nice thing is, because I've used a normal Python for loop here and I'm calling
+[00:37:08.520 --> 00:37:20.080]   dot eval each time, it means I can check, "Oh, have any of the cluster centroids moved?"
+[00:37:20.080 --> 00:37:24.040]   And if they haven't, then I will stop working.
+[00:37:24.040 --> 00:37:29.600]   So it makes it very easy to create dynamic for loops, which could be quite tricky sometimes
+[00:37:29.600 --> 00:37:35.960]   with TensorFlow otherwise.
+[00:37:35.960 --> 00:37:48.000]   So that is the TensorFlow algorithm from end to end.
+[00:37:48.000 --> 00:37:53.820]   Rachel, do you want to pick out an AMA question?
+[00:37:53.820 --> 00:38:04.280]   So actually I kind of am helping start a company, I don't know if you've seen my talk on ted.com,
+[00:38:04.280 --> 00:38:12.360]   but I kind of show this demo of this interactive labelling tool, a friend of mine said that
+[00:38:12.360 --> 00:38:15.240]   he wanted to start a company to actually make that and commercialize it.
+[00:38:15.240 --> 00:38:19.480]   So I guess my short answer is I'm helping somebody do that because I think that's pretty
+[00:38:19.480 --> 00:38:20.480]   cool.
+[00:38:20.480 --> 00:38:26.680]   More generally, I've mentioned before I think that the best thing to do is always to scratch
+[00:38:26.680 --> 00:38:32.280]   an itch, so pick whatever you've been passionate about or something that's just driven you
+[00:38:32.280 --> 00:38:36.840]   crazy and fix it.
+[00:38:36.840 --> 00:38:40.580]   If you have the benefit of being able to take enough time to do absolutely anything you
+[00:38:40.580 --> 00:38:48.880]   want, I felt like the three most important areas for applying deep learning when I last
+[00:38:48.880 --> 00:38:55.440]   looked, which was two or three years ago, were medicine, robotics, and satellite imagery.
+[00:38:55.440 --> 00:39:02.280]   Because at that time, computer vision was the only area that was remotely mature for
+[00:39:02.280 --> 00:39:09.160]   machine learning, deep learning, and those three areas all were areas that very heavily
+[00:39:09.160 --> 00:39:14.480]   used computer vision or could heavily use computer vision and were potentially very
+[00:39:14.480 --> 00:39:17.040]   large markets.
+[00:39:17.040 --> 00:39:20.480]   Medicine is probably the largest industry in the world, I think it's $3 trillion in
+[00:39:20.480 --> 00:39:26.760]   America alone, robotics isn't currently that large, but at some point it probably will
+[00:39:26.760 --> 00:39:32.720]   become the largest industry in the world if everything we do manually is replaced with
+[00:39:32.720 --> 00:39:34.720]   automated approaches.
+[00:39:34.720 --> 00:39:39.880]   And satellite imagery is massively used by military intelligence, so we have some of
+[00:39:39.880 --> 00:39:44.840]   the biggest budgets in the world, so I guess those three areas.
+[00:39:44.840 --> 00:40:02.920]   I'm going to take a break soon, before I do, I might just introduce what we're going to
+[00:40:02.920 --> 00:40:05.440]   be looking at next.
+[00:40:05.440 --> 00:40:14.680]   So we're going to start on our NLP, and specifically translation deep dive, and we're going to
+[00:40:14.680 --> 00:40:23.600]   be really following on from the end-to-end memory networks from last week.
+[00:40:23.600 --> 00:40:28.080]   One of the things that I find kind of most interesting and most challenging in setting
+[00:40:28.080 --> 00:40:35.420]   up this course is coming up with good problem sets which are hard enough to be interesting
+[00:40:35.420 --> 00:40:40.440]   and easy enough to be possible.
+[00:40:40.440 --> 00:40:44.360]   And often other people have already done that, so I was lucky enough that somebody else had
+[00:40:44.360 --> 00:40:53.120]   already shown an example of using sequence-to-sequence learning for what they called Spelling Bee.
+[00:40:53.120 --> 00:40:58.000]   Basically we start with this thing called the CMU Pronouncing Dictionary, which has
+[00:40:58.000 --> 00:41:10.440]   things that look like this, Zwicky, followed by a phonetic description of how to read Zweki.
+[00:41:10.440 --> 00:41:16.680]   So the way these work, this is actually specifically an American pronunciation dictionary.
+[00:41:16.680 --> 00:41:21.600]   The consonants are pretty straightforward.
+[00:41:21.600 --> 00:41:26.600]   The vowel sounds have a number at the end showing how much stress is on each one.
+[00:41:26.600 --> 00:41:28.440]   So 0, 1, or 2.
+[00:41:28.440 --> 00:41:32.080]   So in this case you can see that the middle one is where most of the stress is, so it's
+[00:41:32.080 --> 00:41:35.340]   Zwicky.
+[00:41:35.340 --> 00:41:42.200]   So here is the letter A, and it is pronounced A.
+[00:41:42.200 --> 00:41:48.680]   So the goal that we're going to be looking at after the break is to do the other direction,
+[00:41:48.680 --> 00:41:56.000]   which is to start with how do you say it and turn it into how do you spell it.
+[00:41:56.000 --> 00:42:01.960]   This is quite a difficult question because English is really weird to spell.
+[00:42:01.960 --> 00:42:10.640]   And the number of phonemes doesn't necessarily match the number of letters.
+[00:42:10.640 --> 00:42:12.720]   So this is going to be where we're going to start.
+[00:42:12.720 --> 00:42:15.840]   And then we're going to try and solve this puzzle, and then we'll use a solution from
+[00:42:15.840 --> 00:42:22.800]   this puzzle to try and learn to translate French into English using the same basic idea.
+[00:42:22.800 --> 00:42:29.040]   So let's have a 10 minute break and we'll come back at 7.40.
+[00:42:29.040 --> 00:42:33.320]   So just to clarify, I just want to make sure everybody understands the problem we're solving
+[00:42:33.320 --> 00:42:34.320]   here.
+[00:42:34.320 --> 00:42:39.280]   So the problem we're solving is we're going to be told here is how to pronounce something,
+[00:42:39.280 --> 00:42:42.000]   and then we have to say here is how to spell it.
+[00:42:42.000 --> 00:42:46.160]   So this is going to be our input, and this is going to be our target.
+[00:42:46.160 --> 00:42:52.140]   So this is like a translation problem, but it's a bit simpler.
+[00:42:52.140 --> 00:42:58.960]   So we don't have pre-trained phoneme vectors or pre-trained letter vectors.
+[00:42:58.960 --> 00:43:01.920]   So we're going to have to do this by building a model, and we're going to have to create
+[00:43:01.920 --> 00:43:05.200]   some embeddings of our own.
+[00:43:05.200 --> 00:43:13.600]   So in general, the first steps necessary to create an NLP model tends to look very, very
+[00:43:13.600 --> 00:43:14.600]   similar.
+[00:43:14.600 --> 00:43:19.560]   I feel like I've done them in a thousand different ways now, and at some point I really need
+[00:43:19.560 --> 00:43:25.560]   to abstract this all out into a simple set of functions that we use again and again and
+[00:43:25.560 --> 00:43:26.560]   again.
+[00:43:26.560 --> 00:43:32.560]   But let's go through it, and if you've got any questions about any of the code or steps
+[00:43:32.560 --> 00:43:36.200]   or anything, let me know.
+[00:43:36.200 --> 00:43:45.360]   So the basic pronunciation dictionary is just a text file, and I'm going to just grab the
+[00:43:45.360 --> 00:43:52.360]   lines which are actual words so they have to start with a letter.
+[00:43:52.360 --> 00:44:06.200]   Now something which I have, so we're going to go through every line in the text file.
+[00:44:06.200 --> 00:44:09.960]   Here's a handy thing that a lot of people don't realize you can do in Python.
+[00:44:09.960 --> 00:44:14.860]   When you call open, that returns a generator which lists all of the lines.
+[00:44:14.860 --> 00:44:23.120]   So if you just go for l in openblah, that's now looping through every line in that file.
+[00:44:23.120 --> 00:44:38.120]   So I can then say filter those which start with a lowercase letter, and then strip off
+[00:44:38.120 --> 00:44:44.120]   any white space and split it on white space.
+[00:44:44.120 --> 00:44:52.200]   So that's basically the steps necessary to separate out the word from the pronunciation.
+[00:44:52.200 --> 00:44:59.040]   And then the pronunciation is just white space delimited, so we can then split that.
+[00:44:59.040 --> 00:45:05.480]   And that's the steps necessary to get the word and the pronunciation as a set of phonemes.
+[00:45:05.480 --> 00:45:09.980]   So as we tend to pretty much always do with these language models, we next need to get
+[00:45:09.980 --> 00:45:13.200]   a list of what are all of the vocabulary items.
+[00:45:13.200 --> 00:45:17.360]   So in this case, the vocabulary items are all the possible phonemes.
+[00:45:17.360 --> 00:45:27.160]   So we can create a set of every possible phoneme, and then we can sort it.
+[00:45:27.160 --> 00:45:37.160]   And what we always like to do is get an extra character or an extra object in position 0,
+[00:45:37.160 --> 00:45:40.120]   because remember we use 0 for padding.
+[00:45:40.120 --> 00:45:44.880]   So that's why I'm going to use underscore as our special padding letter here.
+[00:45:44.880 --> 00:45:46.840]   So I'll stick an underscore at the front.
+[00:45:46.840 --> 00:45:50.560]   So here are the first 5 phonemes.
+[00:45:50.560 --> 00:45:54.080]   This is our special padding one, which is going to be index 0.
+[00:45:54.080 --> 00:46:00.520]   And then there's r, r and r with 3 different levels of stress, and so forth.
+[00:46:00.520 --> 00:46:06.200]   Now the next thing that we tend to do anytime we've got a list of vocabulary items is to
+[00:46:06.200 --> 00:46:08.560]   create a list in the opposite direction.
+[00:46:08.560 --> 00:46:15.680]   So we go from phoneme to index, which is just a dictionary where we enumerate through all
+[00:46:15.680 --> 00:46:19.480]   of our phonemes and put it in the opposite order.
+[00:46:19.480 --> 00:46:21.840]   So from phoneme to index.
+[00:46:21.840 --> 00:46:27.000]   I know we've used this approach a thousand times before, but I just want to make sure
+[00:46:27.000 --> 00:46:29.400]   everybody understands it.
+[00:46:29.400 --> 00:46:34.400]   When you use enumerate in Python, it doesn't just return each phoneme, but it returns a
+[00:46:34.400 --> 00:46:39.200]   tuple that contains the index of the phoneme and then the phoneme itself.
+[00:46:39.200 --> 00:46:41.700]   So that's the key and the value.
+[00:46:41.700 --> 00:46:47.120]   So then if we go value,key, that's now the phoneme followed by the index.
+[00:46:47.120 --> 00:46:50.640]   So if we turn that into a dictionary, we now have a dictionary which you can give it a
+[00:46:50.640 --> 00:46:55.000]   phoneme and return it an index.
+[00:46:55.000 --> 00:46:56.720]   Here's all the letters of English.
+[00:46:56.720 --> 00:47:00.760]   Again with our special underscore at the front.
+[00:47:00.760 --> 00:47:04.160]   We've got one extra thing we'll talk about later, which is an asterisk.
+[00:47:04.160 --> 00:47:07.120]   So that's a list of letters.
+[00:47:07.120 --> 00:47:12.760]   And so again, to go from letter to letter index, we just create a dictionary which reverses
+[00:47:12.760 --> 00:47:17.280]   it again.
+[00:47:17.280 --> 00:47:25.280]   So now that we've got our phoneme to index and letter to index, we can use that to convert
+[00:47:25.280 --> 00:47:31.080]   this data into numeric data, which is what we always do with these language models.
+[00:47:31.080 --> 00:47:35.120]   We end up with just a list of indices.
+[00:47:35.120 --> 00:47:41.240]   We can pick some maximum length word, so I'm just going to say 15.
+[00:47:41.240 --> 00:47:49.000]   So we're going to create a dictionary which maps from each word to a list of phonemes,
+[00:47:49.000 --> 00:47:51.360]   and we're going to get the indexes for them.
+[00:47:51.360 --> 00:47:54.880]   Yes Rachel.
+[00:47:54.880 --> 00:48:00.520]   So this dictionary comprehension is a little bit awkward, so I thought this would be a good
+[00:48:00.520 --> 00:48:06.160]   opportunity to talk about dictionary comprehensions and list comprehensions for a moment.
+[00:48:06.160 --> 00:48:10.440]   So we're going to pause this in a moment, but first of all, let's look at a couple of examples
+[00:48:10.440 --> 00:48:12.880]   of list comprehensions.
+[00:48:12.880 --> 00:48:17.520]   So the first thing to note is when you go something like this, a string x, y, z or this
+[00:48:17.520 --> 00:48:22.600]   string here, Python is perfectly happy to consider that a list of letters.
+[00:48:22.600 --> 00:48:26.920]   So Python considers this the same as being a list of x, y, z.
+[00:48:26.920 --> 00:48:32.040]   So you can think of this as two lists, a list of x, y, z and a list of a, b, c.
+[00:48:32.040 --> 00:48:37.640]   So here is the simplest possible list comprehension.
+[00:48:37.640 --> 00:48:42.600]   So go through every element of a and put that into a list.
+[00:48:42.600 --> 00:48:46.760]   So if I call that, that returns exactly what I started with.
+[00:48:46.760 --> 00:48:50.080]   So that's not very interesting.
+[00:48:50.080 --> 00:48:59.680]   What if now we replaced 'o' with another list comprehension?
+[00:48:59.680 --> 00:49:08.240]   So what that's going to do is it's now going to return a list for each list.
+[00:49:08.240 --> 00:49:12.760]   So this is one way of pulling things out of sub-lists, is to basically take the thing
+[00:49:12.760 --> 00:49:17.040]   that was here and replace it with a new list comprehension, and that's going to give you
+[00:49:17.040 --> 00:49:20.520]   a list of lists.
+[00:49:20.520 --> 00:49:23.920]   Now the reason I wanted to talk about this is because it's quite confusing.
+[00:49:23.920 --> 00:49:28.680]   In Python you can also write this, which is different.
+[00:49:28.680 --> 00:49:37.000]   So in this case, I'm going for each object in our a list, and then for each object in
+[00:49:37.000 --> 00:49:38.000]   that sub-list.
+[00:49:38.000 --> 00:49:39.760]   And do you see what's different here?
+[00:49:39.760 --> 00:49:44.340]   I don't have square brackets, it's just all laid out next to each other.
+[00:49:44.340 --> 00:49:49.240]   So I find this really confusing, but the idea is you're meant to think of this as just being
+[00:49:49.240 --> 00:49:52.800]   like a normal for loop inside a for loop.
+[00:49:52.800 --> 00:49:58.720]   And so what this does is it goes through x, y, z and then a, b, c, and then in x, y, z
+[00:49:58.720 --> 00:50:02.840]   it goes through each of x and y and z, but because there's no embedded set of square
+[00:50:02.840 --> 00:50:08.020]   brackets, that actually ends up flattening the list.
+[00:50:08.020 --> 00:50:23.000]   So we're about to see an example of the square bracket version, and pretty soon we'll be seeing
+[00:50:23.000 --> 00:50:25.120]   an example of this version as well.
+[00:50:25.120 --> 00:50:26.280]   These are both useful, right?
+[00:50:26.280 --> 00:50:31.160]   It's very useful to be able to flatten a list, it's very useful to be able to do things with
+[00:50:31.160 --> 00:50:32.160]   sub-lists.
+[00:50:32.160 --> 00:50:38.080]   And then just to be aware that any time you have any kind of expression like this, you
+[00:50:38.080 --> 00:50:45.000]   can replace the thing here with any expression you like.
+[00:50:45.000 --> 00:51:05.160]   So we could say, for example, we could say o.upper, so you can basically map different
+[00:51:05.160 --> 00:51:10.680]   computations to each element of a list, and then the second thing you can do is put an
+[00:51:10.680 --> 00:51:35.760]   if here to filter it, if o0=x.
+[00:51:35.760 --> 00:51:38.720]   So that's basically the idea.
+[00:51:38.720 --> 00:51:43.040]   You can create any list comprehension you like by putting computations here, filters
+[00:51:43.040 --> 00:51:48.920]   here and optionally multiple lists of lists here.
+[00:51:48.920 --> 00:51:53.720]   The other thing you can do is replace the square brackets with curly brackets, in which
+[00:51:53.720 --> 00:51:58.440]   case you need to put something before a colon and something after a colon, the thing before
+[00:51:58.440 --> 00:52:01.520]   is your key and the thing after is your value.
+[00:52:01.520 --> 00:52:05.920]   So here we're going for, oh, and then there's another thing you can do, which is if the
+[00:52:05.920 --> 00:52:10.800]   thing you're looping through is a bunch of lists or tuples or anything like that, you
+[00:52:10.800 --> 00:52:14.880]   can pull them out into two pieces, like so.
+[00:52:14.880 --> 00:52:18.840]   So this is the word, and this is the list of phonemes.
+[00:52:18.840 --> 00:52:26.200]   So we're going to have the lower case word will be our keys in our dictionary, and the
+[00:52:26.200 --> 00:52:32.280]   values will be lists, so we're doing it just like we did down here.
+[00:52:32.280 --> 00:52:40.280]   And the list will be, let's go through each phoneme and go phoneme to index.
+[00:52:40.280 --> 00:52:53.360]   So now we have something that maps from every word to its list of phoneme indexes.
+[00:52:53.360 --> 00:52:59.360]   We can find out what the maximum length of anything is in terms of how many phonemes
+[00:52:59.360 --> 00:53:02.000]   there are, and we can do that by again.
+[00:53:02.000 --> 00:53:08.120]   We can just go through every one of those dictionary items, calling length on each one
+[00:53:08.120 --> 00:53:10.640]   and then doing a max on that.
+[00:53:10.640 --> 00:53:12.800]   So there is the maximum length.
+[00:53:12.800 --> 00:53:22.400]   So you can see combining list comprehensions with other functions is also powerful.
+[00:53:22.400 --> 00:53:31.280]   So finally we're going to create our nice square arrays.
+[00:53:31.280 --> 00:53:36.920]   Normally we do this with Keras.pad sequences, just for a change, we're going to do this
+[00:53:36.920 --> 00:53:40.440]   manually this time.
+[00:53:40.440 --> 00:53:47.560]   So the key is that we start out by creating two arrays of zeros, because all the padding
+[00:53:47.560 --> 00:53:48.560]   is going to be zero.
+[00:53:48.560 --> 00:53:52.680]   So if we start off with all zeros, then we can just fill in the non-zeros.
+[00:53:52.680 --> 00:53:56.360]   So this is going to be all of our phonemes.
+[00:53:56.360 --> 00:54:00.220]   This is going to be our actual spelling, that's our target labels.
+[00:54:00.220 --> 00:54:04.880]   So then we go through all of our, and we've permitted them randomly, so randomly ordered
+[00:54:04.880 --> 00:54:15.480]   things in the pronunciation dictionary, and we put inside input all of the items from
+[00:54:15.480 --> 00:54:22.800]   that pronunciation dictionary, and into labels we go letter to index.
+[00:54:22.800 --> 00:54:28.360]   So we now have one thing called input, one thing called labels that contains nice rectangular
+[00:54:28.360 --> 00:54:36.480]   arrays padded with zeros containing exactly what we want.
+[00:54:36.480 --> 00:54:39.240]   I'm not going to worry about this line yet because we're not going to use it for the
+[00:54:39.240 --> 00:54:42.560]   starting point.
+[00:54:42.560 --> 00:54:49.080]   So anywhere you see DEC something, just ignore that for now, we'll get back to that later.
+[00:54:49.080 --> 00:54:55.800]   Train test split is a very handy function from sklearn that takes all of these lists
+[00:54:55.800 --> 00:55:01.680]   and splits them all in the same way with this proportion in the test set.
+[00:55:01.680 --> 00:55:08.760]   And so input becomes input_train and input_test, labels becomes labels_train and labels_test.
+[00:55:08.760 --> 00:55:11.120]   So that's pretty handy.
+[00:55:11.120 --> 00:55:15.640]   We've often written that manually, but this is a nice quick way to do it when you've got
+[00:55:15.640 --> 00:55:20.280]   lots of lists to do.
+[00:55:20.280 --> 00:55:25.720]   So just to have a look at how many phonemes we have in our vocabulary, there are 70, how
+[00:55:25.720 --> 00:55:29.080]   many letters in our vocabulary, there's 28, that's because we've got that underscore and
+[00:55:29.080 --> 00:55:33.200]   the star as well.
+[00:55:33.200 --> 00:55:42.080]   So let's go ahead and create the model.
+[00:55:42.080 --> 00:55:47.640]   Here's the basic idea.
+[00:55:47.640 --> 00:55:52.320]   The model has three parts.
+[00:55:52.320 --> 00:55:55.620]   The first is an embedding.
+[00:55:55.620 --> 00:56:00.240]   So the embedding is going to take every one of our phonemes.
+[00:56:00.240 --> 00:56:07.200]   Max_len_p is the maximum number of phonemes we have in any pronunciation.
+[00:56:07.200 --> 00:56:13.400]   And each one of those phonemes is going to go into an embedding.
+[00:56:13.400 --> 00:56:21.880]   And the lookup for that embedding is the vocab size for phonemes, which I think was 70.
+[00:56:21.880 --> 00:56:26.600]   And then the output is whatever we decide, what dimensionality we want.
+[00:56:26.600 --> 00:56:30.840]   And in experimentation, I found 120 seems to work pretty well.
+[00:56:30.840 --> 00:56:37.600]   I was surprised by how high that number is, but there you go, it is.
+[00:56:37.600 --> 00:56:50.280]   We started out with a list of phonemes, and then after we go through this embedding, we
+[00:56:50.280 --> 00:56:52.840]   now have a list of embeddings.
+[00:56:52.840 --> 00:57:02.640]   So this is like 70, and this is like 120.
+[00:57:02.640 --> 00:57:11.320]   So the basic idea is to take this big thing, which is all of our phonemes embedded, and
+[00:57:11.320 --> 00:57:19.600]   we want to turn it into a single distributed representation which contains all of the richness
+[00:57:19.600 --> 00:57:22.440]   of what this pronunciation says.
+[00:57:22.440 --> 00:57:27.000]   Later on we're going to be doing the same thing with an English sentence.
+[00:57:27.000 --> 00:57:34.040]   And so we know that when you have a sequence and you want to turn it into a representation,
+[00:57:34.040 --> 00:57:39.360]   one great way of doing that is with an RNN.
+[00:57:39.360 --> 00:57:41.920]   Now why an RNN?
+[00:57:41.920 --> 00:57:47.320]   Because an RNN we know is good at dealing with things like state and memory.
+[00:57:47.320 --> 00:57:54.280]   So when we're looking at translation, we really want something which can remember where are
+[00:57:54.280 --> 00:57:55.280]   we.
+[00:57:55.280 --> 00:58:03.000]   So let's say we were doing this simple phonetic translation, the idea of have we just had
+[00:58:03.000 --> 00:58:04.000]   a C?
+[00:58:04.000 --> 00:58:08.080]   Because if we just had a C, then the H is going to make a totally different sound to
+[00:58:08.080 --> 00:58:13.360]   if we haven't just had a C.
+[00:58:13.360 --> 00:58:17.640]   So an RNN we think is a good way to do this kind of thing.
+[00:58:17.640 --> 00:58:25.360]   And in general, this whole class of models remember is called Seek-to-Seek, sequence-to-sequence
+[00:58:25.360 --> 00:58:30.680]   models, which is where we start with some arbitrary length sequence and we produce some
+[00:58:30.680 --> 00:58:32.600]   arbitrary length sequence.
+[00:58:32.600 --> 00:58:37.280]   And so the general idea here is taking that arbitrary length sequence and turning it into
+[00:58:37.280 --> 00:58:53.560]   a fixed size representation using an RNN is probably a good first step.
+[00:58:53.560 --> 00:59:03.040]   So looking ahead, I'm actually going to be using quite a few layers of RNN.
+[00:59:03.040 --> 00:59:15.280]   So to make that easier, we've created a getRNN function.
+[00:59:15.280 --> 00:59:19.640]   You can put anything you like here, GRU or LSTM or whatever.
+[00:59:19.640 --> 00:59:24.880]   And yes indeed, I am using dropout.
+[00:59:24.880 --> 00:59:29.760]   The kind of dropout that you use in an RNN is slightly different to normal dropout.
+[00:59:29.760 --> 00:59:36.760]   It turns out that if the particular things you dropout, it's best to have them the same
+[00:59:36.760 --> 00:59:41.240]   things at every time step in an RNN.
+[00:59:41.240 --> 00:59:45.520]   There's a really good paper that explains why this is the case and shows that this is
+[00:59:45.520 --> 00:59:46.560]   the case.
+[00:59:46.560 --> 00:59:52.920]   So this is why there's a special dropout parameter inside the RNN in Keras because it does this
+[00:59:52.920 --> 00:59:56.960]   proper RNN-style dropout.
+[00:59:56.960 --> 01:00:05.320]   So I put in a tiny bit of dropout here, and if it turns out that we overfit, we can always
+[01:00:05.320 --> 01:00:07.400]   increase it.
+[01:00:07.400 --> 01:00:12.920]   If we don't, we can always turn it to zero.
+[01:00:12.920 --> 01:00:16.840]   So what we're going to do is -- yes, Rachel?
+[01:00:16.840 --> 01:00:36.840]   I don't know if you remember, but when we looked at doing RNNs from scratch last year,
+[01:00:36.840 --> 01:00:41.960]   we learned that you could actually combine the matrices together and do a single matrix
+[01:00:41.960 --> 01:00:42.960]   computation.
+[01:00:42.960 --> 01:00:49.600]   If you do that, it's going to use up more memory, but it allows the GPU to be more highly parallel.
+[01:00:49.600 --> 01:00:53.560]   So if you look at the Keras documentation, it will tell you the different things you
+[01:00:53.560 --> 01:01:03.200]   can use, but since we're using a GPU, you probably always want to say consume less equals GPU.
+[01:01:03.200 --> 01:01:09.760]   The other thing that we learned about last year is bidirectional RNNs.
+[01:01:09.760 --> 01:01:14.160]   And maybe the best way to come at this is actually to go all the way back and remind
+[01:01:14.160 --> 01:01:19.320]   you how RNNs work.
+[01:01:19.320 --> 01:01:23.680]   We haven't done much revision, but it's been a while since we've looked at RNNs in much
+[01:01:23.680 --> 01:01:24.680]   detail.
+[01:01:24.680 --> 01:01:31.520]   So just to remind you, this is kind of our drawing of a totally basic neural net.
+[01:01:31.520 --> 01:01:40.000]   Square is input, circle is intermediate activations, hidden, and triangle is output, and arrows
+[01:01:40.000 --> 01:01:47.880]   represent affine transformations with non-linearities.
+[01:01:47.880 --> 01:01:57.160]   We can then have multiple copies of those to create deeper convolutions, for example.
+[01:01:57.160 --> 01:02:03.740]   And so the other thing we can do is actually have inputs going in at different places.
+[01:02:03.740 --> 01:02:08.040]   So in this case, if we were trying to predict the third character from first two characters,
+[01:02:08.040 --> 01:02:12.720]   we can use a totally standard neural network and actually have input coming in at two different
+[01:02:12.720 --> 01:02:17.920]   places.
+[01:02:17.920 --> 01:02:22.560]   And then we realized that we could kind of make this arbitrarily large, but what we should
+[01:02:22.560 --> 01:02:27.240]   probably do then is make everything where an input is going to a hidden state be the
+[01:02:27.240 --> 01:02:28.240]   same matrix.
+[01:02:28.240 --> 01:02:33.040]   So this color coding, remember, represents the same weight matrix.
+[01:02:33.040 --> 01:02:37.440]   So hidden to hidden would be the same weight matrix and hidden to output, and it's a separate
+[01:02:37.440 --> 01:02:40.760]   weight matrix.
+[01:02:40.760 --> 01:02:46.160]   So then to remind you, we realized that we could draw that more simply like this.
+[01:02:46.160 --> 01:02:53.440]   So RNNs, when they're unrolled, just look like a normal neural network in which some
+[01:02:53.440 --> 01:02:55.940]   of the weight matrices are tied together.
+[01:02:55.940 --> 01:03:03.160]   And if this is not ringing a bell, go back to lesson 5 where we actually build these
+[01:03:03.160 --> 01:03:10.640]   weight matrices from scratch and tie them together manually so that will hopefully remind
+[01:03:10.640 --> 01:03:12.840]   you of what's going on.
+[01:03:12.840 --> 01:03:22.720]   Now importantly, we can then take one of those RNNs and have the output go to the input of
+[01:03:22.720 --> 01:03:24.860]   another RNN.
+[01:03:24.860 --> 01:03:26.360]   And these are stacked RNNs.
+[01:03:26.360 --> 01:03:35.280]   And stacked RNNs basically give us richer computations in our recurrent neural nets.
+[01:03:35.280 --> 01:03:39.160]   And this is what it looks like when we unroll it.
+[01:03:39.160 --> 01:03:44.720]   So you can see here that we've got multiple inputs coming in, going through multiple layers
+[01:03:44.720 --> 01:03:47.020]   and creating multiple outputs.
+[01:03:47.020 --> 01:03:51.680]   But of course we don't have to create multiple outputs.
+[01:03:51.680 --> 01:04:01.440]   You could also get rid of these two triangles here and have just one output.
+[01:04:01.440 --> 01:04:08.760]   And remember in Keras, the difference is whether or not we say return_sequences=true or return_sequences=false.
+[01:04:08.760 --> 01:04:15.320]   This one you're seeing here is return_sequences=true.
+[01:04:15.320 --> 01:04:19.680]   This one here is return_sequences=false.
+[01:04:19.680 --> 01:04:34.000]   So what we've got is input_train has 97,000 words.
+[01:04:34.000 --> 01:04:36.600]   Each one is of length 16.
+[01:04:36.600 --> 01:05:00.520]   It's 15 characters long plus the padding, and then labels is 15 because we chose earlier
+[01:05:00.520 --> 01:05:04.700]   on that our max length would be a 15 long spelling.
+[01:05:04.700 --> 01:05:10.200]   So phonemes don't match to letters exactly.
+[01:05:10.200 --> 01:05:19.640]   So after the embedding, so if we take one of those tens of thousands of words, remember
+[01:05:19.640 --> 01:05:33.720]   it was of length for phonemes, length 16.
+[01:05:33.720 --> 01:05:45.720]   And then we're putting it into an embedding matrix which is 70 by 120.
+[01:05:45.720 --> 01:05:57.360]   And the reason it's 70 is that each of these phonemes contains a number between 0 to 69.
+[01:05:57.360 --> 01:06:01.720]   So basically we go through and we get each one of these indexes and we look up to find
+[01:06:01.720 --> 01:06:02.720]   it.
+[01:06:02.720 --> 01:06:07.280]   So this is 5 here, then we find number 5 here.
+[01:06:07.280 --> 01:06:15.720]   And so we end up with 16 by 120.
+[01:06:15.720 --> 01:06:26.080]   "Are we then taking a sequence of these phonemes represented as 120 dimensional floating point
+[01:06:26.080 --> 01:06:32.080]   vectors and using an RNN to create a sequence of word2vec embeddings which we will then
+[01:06:32.080 --> 01:06:33.960]   reverse to actual words?"
+[01:06:33.960 --> 01:06:36.320]   So we're not going to use word2vec here, right?
+[01:06:36.320 --> 01:06:39.760]   Word2vec is a particular set of pre-trained embeddings.
+[01:06:39.760 --> 01:06:45.640]   We're not using pre-trained embeddings, we have to create our own embeddings.
+[01:06:45.640 --> 01:06:47.960]   We're creating phoneme embeddings.
+[01:06:47.960 --> 01:06:53.360]   So if somebody else later on wanted to do something else with phonemes, and we saved
+[01:06:53.360 --> 01:06:56.960]   the result of this, we could provide phoneme2vec.
+[01:06:56.960 --> 01:07:03.000]   And you could download them and use the fast.ai pre-trained phoneme2vec embeddings.
+[01:07:03.000 --> 01:07:05.760]   This is how embeddings basically get created.
+[01:07:05.760 --> 01:07:11.560]   It's people build models starting with random embeddings and then save those embeddings
+[01:07:11.560 --> 01:07:13.720]   and make them available for other people to use.
+[01:07:13.720 --> 01:07:20.800]   "I may be misinterpreting it, but I thought the question was getting at the second set
+[01:07:20.800 --> 01:07:25.600]   of embeddings when you want to get back to your words."
+[01:07:25.600 --> 01:07:31.720]   So let's wait until we get there, because we're going to create letters, not words,
+[01:07:31.720 --> 01:07:33.840]   and then we'll just join the letters together.
+[01:07:33.840 --> 01:07:35.560]   So there won't be any word2vec here.
+[01:07:35.560 --> 01:07:44.860]   So we've got, as far as creating our embeddings, we've then got an RNN which is going to take
+[01:07:44.860 --> 01:07:52.760]   our embeddings and attempt to turn it into a single vector.
+[01:07:52.760 --> 01:07:55.040]   That's kind of what an RNN does.
+[01:07:55.040 --> 01:08:06.020]   So we've got here return sequences by default is true, so this first RNN returns something
+[01:08:06.020 --> 01:08:08.800]   which is just as long as we started with.
+[01:08:08.800 --> 01:08:12.880]   And so if you want to stack RNNs on top of each other, every one of them is return sequences
+[01:08:12.880 --> 01:08:15.720]   equals true until the last one isn't.
+[01:08:15.720 --> 01:08:18.440]   So that's why we have false here.
+[01:08:18.440 --> 01:08:25.800]   So at the end of this one, this gives us a single vector which is the final state.
+[01:08:25.800 --> 01:08:28.980]   The other important piece is bidirectional.
+[01:08:28.980 --> 01:08:32.440]   And bidirectional, you can totally do this manually yourself.
+[01:08:32.440 --> 01:08:39.760]   You take your input and feed it into an RNN, and then you reverse your input and feed it
+[01:08:39.760 --> 01:08:44.480]   into a different RNN, and then just concatenate the two together.
+[01:08:44.480 --> 01:08:50.420]   So Keras has something which does that for you, which is called bidirectional.
+[01:08:50.420 --> 01:08:58.000]   Bidirectional actually requires you to pass it an RNN, so it takes an RNN and returns two
+[01:08:58.000 --> 01:09:03.000]   copies of that RNN stacked on top of each other, one of which reverses its input.
+[01:09:03.000 --> 01:09:05.480]   And so why is that interesting?
+[01:09:05.480 --> 01:09:12.660]   That's interesting because often in language, what happens later influences what comes before.
+[01:09:12.660 --> 01:09:21.320]   For example, in French, the gender of your definite article depends on the noun that it
+[01:09:21.320 --> 01:09:22.320]   refers to.
+[01:09:22.320 --> 01:09:27.060]   So you need to be able to look backwards or forwards in both directions to figure out
+[01:09:27.060 --> 01:09:28.880]   how to match those two together.
+[01:09:28.880 --> 01:09:37.080]   Or in any language with tense, what verb do you use depends on the tense and often also
+[01:09:37.080 --> 01:09:40.280]   depends on the details about the subject and the object.
+[01:09:40.280 --> 01:09:44.440]   So we want to be able to both look forwards and look backwards.
+[01:09:44.440 --> 01:09:49.560]   So that's why we want two copies of the RNN, one which goes from left to right and one
+[01:09:49.560 --> 01:09:51.680]   which goes from right to left.
+[01:09:51.680 --> 01:09:55.720]   And indeed, we could assume that when you spell things, I'm not exactly sure how this
+[01:09:55.720 --> 01:10:00.440]   would work, but when you spell things depending on what the latest dresses might be or the
+[01:10:00.440 --> 01:10:07.120]   later details of the phonetics might be might change how you pronounce things earlier on.
+[01:10:07.120 --> 01:10:24.760]   Does the bidirectional RNN can cat two RNNs or does it stack them?
+[01:10:24.760 --> 01:10:32.240]   You end up with the same number of dimensions that you had before, but it basically doubles
+[01:10:32.240 --> 01:10:34.840]   the number of features that you have.
+[01:10:34.840 --> 01:10:47.720]   So in this case, we have 240, so it just doubles those, and I think we had one question here.
+[01:10:47.720 --> 01:11:17.040]   Okay, so let's simplify this down a little bit.
+[01:11:17.040 --> 01:11:30.240]   Basically, we started out with a set of embeddings, and we've gone through two layers, we've gone
+[01:11:30.240 --> 01:11:39.320]   through a bidirectional RNN, and then we feed that to a second RNN to create a representation
+[01:11:39.320 --> 01:11:43.200]   of this ordered list of phonemes.
+[01:11:43.200 --> 01:11:46.820]   And specifically, this is a vector.
+[01:11:46.820 --> 01:11:53.400]   So x at this point is a vector, because return sequence is equals false.
+[01:11:53.400 --> 01:12:00.800]   That vector, once we've trained this thing, the idea is it represents everything important
+[01:12:00.800 --> 01:12:04.480]   there is to know about this ordered list of phonemes, everything that we could possibly
+[01:12:04.480 --> 01:12:08.520]   need to know in order to spell it.
+[01:12:08.520 --> 01:12:16.800]   So the idea is we could now take that vector and feed it into a new RNN, or even a few
+[01:12:16.800 --> 01:12:24.560]   layers of RNN, and that RNN could basically go through and with return sequence equals
+[01:12:24.560 --> 01:12:27.360]   true this time.
+[01:12:27.360 --> 01:12:32.240]   It could spit out at every time step what it thinks the next letter in this spelling
+[01:12:32.240 --> 01:12:34.000]   is.
+[01:12:34.000 --> 01:12:36.200]   And so this is how a sequence-to-sequence works.
+[01:12:36.200 --> 01:12:48.160]   One part, which is called the encoder, takes our initial sequence and turns it into a distributed
+[01:12:48.160 --> 01:12:56.080]   representation into a vector using, generally speaking, some stacked RNNs.
+[01:12:56.080 --> 01:13:04.720]   Then the second piece, called the decoder, takes the output of the encoder and passes
+[01:13:04.720 --> 01:13:10.400]   that into a separate stack of RNNs with return sequence equals true.
+[01:13:10.400 --> 01:13:17.240]   And those RNNs are taught to then generate the labels, in this case the spellings, or
+[01:13:17.240 --> 01:13:22.080]   in our later case the English sentences.
+[01:13:22.080 --> 01:13:34.040]   Now in Keras, it's not convenient to create an RNN by handing it some initial state, some
+[01:13:34.040 --> 01:13:35.720]   initial hidden state.
+[01:13:35.720 --> 01:13:38.680]   That's not really how Keras likes to do things.
+[01:13:38.680 --> 01:13:45.960]   Keras expects to be handed a list of inputs.
+[01:13:45.960 --> 01:13:47.320]   Problem number one.
+[01:13:47.320 --> 01:13:53.120]   Problem number two, if you do hand it to an RNN just at the start, it's quite hard for
+[01:13:53.120 --> 01:13:58.520]   the RNN to remember the whole time what is this word I'm meant to be translating.
+[01:13:58.520 --> 01:14:00.400]   It has to keep two things in its head.
+[01:14:00.400 --> 01:14:06.040]   One is what's the word I'm meant to be spelling, and the second is what's the letter I'm trying
+[01:14:06.040 --> 01:14:07.780]   to spell right now.
+[01:14:07.780 --> 01:14:18.840]   So what we do with Keras is we actually take this whole state and we copy it.
+[01:14:18.840 --> 01:14:28.440]   So in this case we're trying to create a word that could be up to 15 letters long, so in
+[01:14:28.440 --> 01:14:33.400]   other words 15 time steps.
+[01:14:33.400 --> 01:14:46.040]   So we take this and we actually make 15 copies of it.
+[01:14:46.040 --> 01:14:54.760]   And those 15 copies of our final encoder state becomes the input to our decoder RNN.
+[01:14:54.760 --> 01:14:58.000]   So it seems kind of clunky, but it's actually not difficult to do.
+[01:14:58.000 --> 01:15:01.480]   In Keras we just go like this.
+[01:15:01.480 --> 01:15:11.840]   We take the output from our encoder and we repeat it 15 times.
+[01:15:11.840 --> 01:15:16.320]   So we literally have 15 identical copies of the same vector.
+[01:15:16.320 --> 01:15:22.080]   And so that's how Keras expects to see things, and it also turns out that you get better
+[01:15:22.080 --> 01:15:27.000]   results when you pass into the RNN the state that it needs again and again at every time
+[01:15:27.000 --> 01:15:28.000]   step.
+[01:15:28.000 --> 01:15:32.280]   So we're basically passing in something saying we're trying to spell this word, we're trying
+[01:15:32.280 --> 01:15:35.740]   to spell this word, we're trying to spell this word, we're trying to spell this word.
+[01:15:35.740 --> 01:15:42.760]   And then as the RNN goes along, it's generating its own internal state, figuring out what
+[01:15:42.760 --> 01:15:45.440]   have we spelt so far and what are we going to have to spell next.
+[01:15:45.440 --> 01:15:55.400]   Why can't we have return_sequences=true for the second bidirectional LSTM?
+[01:15:55.400 --> 01:16:02.000]   Not bidirectional for the second LSTM, we only have one bidirectional LSTM.
+[01:16:02.000 --> 01:16:08.200]   We don't want return_sequences=true here because we're trying to create a representation of
+[01:16:08.200 --> 01:16:11.880]   the whole word we're trying to spell.
+[01:16:11.880 --> 01:16:19.080]   So there's no point having something saying here's a representation of the first phoneme,
+[01:16:19.080 --> 01:16:24.200]   of the first 2, of the first 3, of the first 4, of the first 5, because we don't really
+[01:16:24.200 --> 01:16:29.360]   know exactly which letter of the output is going to correspond to which phoneme of the
+[01:16:29.360 --> 01:16:30.360]   input.
+[01:16:30.360 --> 01:16:33.440]   And particularly when we get to translation, it can get much harder, like some languages
+[01:16:33.440 --> 01:16:37.640]   totally reverse the subject and object order or put the verb somewhere else.
+[01:16:37.640 --> 01:16:43.760]   So that's why we try to package up the whole thing into a single piece of state which has
+[01:16:43.760 --> 01:16:49.160]   all of the information necessary to build our target sequence.
+[01:16:49.160 --> 01:16:57.760]   So remember, these sequence-to-sequence models are also used for things like image captioning.
+[01:16:57.760 --> 01:17:04.600]   So with image captioning, you wouldn't want to have something that created a representation
+[01:17:04.600 --> 01:17:08.240]   separately for every pixel.
+[01:17:08.240 --> 01:17:14.440]   You want a single representation, which is like this is something that somehow contains
+[01:17:14.440 --> 01:17:18.000]   all of the information about what this is a picture of.
+[01:17:18.000 --> 01:17:24.560]   Or if you're doing neural language translation, here's my English sentence, I've turned it
+[01:17:24.560 --> 01:17:29.140]   into a representation of everything that it means so that I can generate my French sentence.
+[01:17:29.140 --> 01:17:35.080]   We're going to be seeing later how we can use return sequences equals true when we look
+[01:17:35.080 --> 01:17:37.040]   at attention models.
+[01:17:37.040 --> 01:17:40.280]   But for now, we're just going to keep things simple.
+[01:17:40.280 --> 01:18:05.520]   Well, it does, it absolutely does.
+[01:18:05.520 --> 01:18:08.720]   And indeed we can use convolutional models.
+[01:18:08.720 --> 01:18:18.600]   But if you remember back to Lesson 5, we talked about some of the challenges with that.
+[01:18:18.600 --> 01:18:27.280]   So if you're trying to create something which can parse some kind of markup block like this,
+[01:18:27.280 --> 01:18:31.960]   it has to both remember that you've just opened up a piece of markup, you're in the middle
+[01:18:31.960 --> 01:18:35.360]   of it, and then in here you have to remember that you're actually inside a comment block
+[01:18:35.360 --> 01:18:38.860]   so that at the end you're able to close it.
+[01:18:38.860 --> 01:18:44.760]   This kind of long-term dependency and memory and stateful representation becomes increasingly
+[01:18:44.760 --> 01:18:49.320]   difficult to do with CNNs as they get longer.
+[01:18:49.320 --> 01:18:57.800]   It's not impossible by any means, but RNNs are one good way of doing this.
+[01:18:57.800 --> 01:19:03.680]   But it is critical that we start with an embedding, because where else in image we're already
+[01:19:03.680 --> 01:19:10.660]   given float-valued numbers that really represent the image, that's not true with text.
+[01:19:10.660 --> 01:19:17.680]   So with text we have to use embeddings to turn it into these nice numeric representations.
+[01:19:17.680 --> 01:19:37.540]   RNN is a kind of generic term here, so a specific network we use is LSTM, but there are other
+[01:19:37.540 --> 01:19:38.540]   types we can use.
+[01:19:38.540 --> 01:19:39.540]   >> GRU, remember?
+[01:19:39.540 --> 01:19:40.540]   >> Yeah.
+[01:19:40.540 --> 01:19:41.540]   >> Simple RNN?
+[01:19:41.540 --> 01:19:42.540]   >> So Keras supports a couple of things.
+[01:19:42.540 --> 01:19:43.540]   >> Yeah, with all the ones we did in the last part of the course.
+[01:19:43.540 --> 01:19:44.540]   So we looked in Simple RNN, GRU, and LSTM.
+[01:19:44.540 --> 01:19:46.280]   >> So is that like the LSTM would be the best for that task?
+[01:19:46.280 --> 01:19:50.920]   >> No, not at all.
+[01:19:50.920 --> 01:19:58.480]   The GRUs and LSTMs are pretty similar, so it's not worth thinking about too much.
+[01:19:58.480 --> 01:20:21.300]   So at this point here, we now have 15 copies of x.
+[01:20:21.300 --> 01:20:27.040]   And so we now pass that into two more layers of RNN.
+[01:20:27.040 --> 01:20:33.300]   So this here is our encoder, and this here is our decoder.
+[01:20:33.300 --> 01:20:37.760]   There's nothing we did particularly in Keras to say this is an encoder, this is a decoder.
+[01:20:37.760 --> 01:20:44.820]   The important thing is the return sequence equals false here, and the repeat vector here.
+[01:20:44.820 --> 01:20:46.320]   So what does it have to do?
+[01:20:46.320 --> 01:20:54.880]   Well somehow it has to take this single summary and create some layers of RNNs until then
+[01:20:54.880 --> 01:21:01.480]   at the end we say, okay, here's a dense layer, and it's time distributed.
+[01:21:01.480 --> 01:21:08.320]   So remember that means that we actually have 15 dense layers.
+[01:21:08.320 --> 01:21:16.160]   And so each of these dense layers now has a softmax activation, which means that we
+[01:21:16.160 --> 01:21:22.080]   basically can then do an argmax on that to create our final list of letters.
+[01:21:22.080 --> 01:21:29.400]   So this is kind of our reverse embedding, if you like.
+[01:21:29.400 --> 01:21:38.080]   So the model is very little code, and once we've built it, and again, if things like
+[01:21:38.080 --> 01:21:47.560]   this are mysterious to you, go back and re-look at lessons 4, 5 and 6, remind you how these
+[01:21:47.560 --> 01:21:52.640]   embeddings work and how these kind of time distributed dense works to give us effectively
+[01:21:52.640 --> 01:21:56.460]   a kind of reverse embedding.
+[01:21:56.460 --> 01:21:58.480]   So that's our model.
+[01:21:58.480 --> 01:22:04.560]   It starts with our phoneme input, ends with our time distributed dense output.
+[01:22:04.560 --> 01:22:07.560]   We can then compile that.
+[01:22:07.560 --> 01:22:11.480]   Our targets are just indexes, remember we turn them into indexes.
+[01:22:11.480 --> 01:22:18.160]   So we use this handy sparse categorical cross entropy, just the same as our normal categorical
+[01:22:18.160 --> 01:22:22.620]   cross entropy, but rather than one hot encoding, we just skip the whole one hot encoding and
+[01:22:22.620 --> 01:22:26.360]   just leave it as an index.
+[01:22:26.360 --> 01:22:30.800]   We can go ahead and fit passing in our training data.
+[01:22:30.800 --> 01:22:40.760]   So that was our rectangular data of the phoneme indexes, our labels, and then we can use some
+[01:22:40.760 --> 01:22:45.360]   valid test set data that we set aside as well.
+[01:22:45.360 --> 01:22:48.040]   So we've hit that for a while.
+[01:22:48.040 --> 01:22:52.280]   I found that the first three epochs, the loss went down like this.
+[01:22:52.280 --> 01:22:54.880]   The second three epochs it went down like this.
+[01:22:54.880 --> 01:22:59.600]   It seemed to be flattening out, so that's as far as I stopped it.
+[01:22:59.600 --> 01:23:05.680]   So we can now see how well that worked.
+[01:23:05.680 --> 01:23:11.560]   Now what I wanted to do was not just say what percentage of letters are correct, because
+[01:23:11.560 --> 01:23:14.480]   that doesn't really give you the right sense at all.
+[01:23:14.480 --> 01:23:18.640]   What I really want to know is what percentage of words are correct.
+[01:23:18.640 --> 01:23:22.860]   So that's what this little eval_keras function does.
+[01:23:22.860 --> 01:23:31.960]   It takes the thing that I'm trying to evaluate, calls.predict on it, it then does the argmax
+[01:23:31.960 --> 01:23:37.360]   as per usual to take that softmax and turn it into a specific number, which character
+[01:23:37.360 --> 01:23:39.440]   is this.
+[01:23:39.440 --> 01:23:46.120]   And then I want to check whether it's true for all of the characters that the real character
+[01:23:46.120 --> 01:23:49.380]   equals the predicted character.
+[01:23:49.380 --> 01:23:56.600]   So this is going to return true only if every single item in the word is correct.
+[01:23:56.600 --> 01:24:00.520]   And so then taking the mean of that is going to tell us what percentage of the words did
+[01:24:00.520 --> 01:24:03.520]   it get totally right.
+[01:24:03.520 --> 01:24:08.840]   And unfortunately the answer is not very many, 26%.
+[01:24:08.840 --> 01:24:11.800]   So let's look at some examples.
+[01:24:11.800 --> 01:24:19.160]   So we can go through 20 words at random, and we can print out all of the phonemes with
+[01:24:19.160 --> 01:24:20.160]   dashes between.
+[01:24:20.160 --> 01:24:23.260]   So here's an example of some phonemes.
+[01:24:23.260 --> 01:24:30.920]   We can print out the actual word, and we can print out our prediction.
+[01:24:30.920 --> 01:24:38.040]   So here is a whole bunch of words that I don't really recognize, perturbations.
+[01:24:38.040 --> 01:24:46.960]   It should be spelled like that, slightly wrong.
+[01:24:46.960 --> 01:24:51.220]   So you can see some of the time the mistakes it makes are pretty clear.
+[01:24:51.220 --> 01:24:58.680]   So "larrow" could be spelled like that, but this seems perfectly reasonable.
+[01:24:58.680 --> 01:25:02.840]   Sometimes on the other hand it's "way off."
+[01:25:02.840 --> 01:25:10.080]   And interestingly, what you find is that most of the time when it's way off, I found it
+[01:25:10.080 --> 01:25:15.040]   tends to be with the longer words.
+[01:25:15.040 --> 01:25:23.520]   And the reason for that is that the longer the word, this one where it's terrible, is
+[01:25:23.520 --> 01:25:31.080]   by far the most phonemes, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 phonemes.
+[01:25:31.080 --> 01:25:40.080]   So we had to somehow create a single representation that contained all of the information of all
+[01:25:40.080 --> 01:25:43.280]   of those 11 phonemes in a single vector.
+[01:25:43.280 --> 01:25:45.380]   And that's hard to do, right?
+[01:25:45.380 --> 01:25:54.200]   And then that single vector got passed to the decoder, and that was everything it had
+[01:25:54.200 --> 01:25:58.400]   to try to create this output.
+[01:25:58.400 --> 01:26:06.280]   So that's the problem with this basic encoder-decoder method.
+[01:26:06.280 --> 01:26:23.040]   And indeed, here is a graph from the paper which originally introduced attentional models.
+[01:26:23.040 --> 01:26:24.960]   And this is for neural translation.
+[01:26:24.960 --> 01:26:36.080]   What it showed is that as the sentence length got bigger, the standard approach which we're
+[01:26:36.080 --> 01:26:43.880]   talking about, the standard encoder or decoder approach, the accuracy absolutely died.
+[01:26:43.880 --> 01:26:50.600]   So what these researchers did was that they built a new kind of RNN model, called an attentional
+[01:26:50.600 --> 01:26:51.960]   model.
+[01:26:51.960 --> 01:26:59.080]   And with the attentional model, the accuracy actually stayed pretty good.
+[01:26:59.080 --> 01:27:08.720]   So goal number 1 for the next couple of lessons is for me not to have a cold anymore.
+[01:27:08.720 --> 01:27:15.440]   So basically we're going to finish our deep dive into neural translation, and then we're
+[01:27:15.440 --> 01:27:16.440]   going to look at time series.
+[01:27:16.440 --> 01:27:20.080]   Although we're not specifically looking at time series, it turns out that the best way
+[01:27:20.080 --> 01:27:30.440]   that I found for time series is not specific to time series at all.
+[01:27:30.440 --> 01:27:38.040]   Reinforcement learning was something I was planning to cover, but I just haven't found
+[01:27:38.040 --> 01:27:44.720]   almost any good examples of it actually being used in practice to solve important real problems.
+[01:27:44.720 --> 01:27:50.720]   And indeed, when you look at the -- have you guys seen the paper in the last week or two
+[01:27:50.720 --> 01:27:54.600]   about using evolutionary strategies for reinforcement learning?
+[01:27:54.600 --> 01:28:03.120]   Basically it turns out that using random search is better than reinforcement learning.
+[01:28:03.120 --> 01:28:05.960]   This paper, by the way, is ridiculously overhyped.
+[01:28:05.960 --> 01:28:12.760]   These evolutionary strategies is something that I was working on over 20 years ago, and
+[01:28:12.760 --> 01:28:18.600]   in those days, these are genetic algorithms, as we called them, used much more sophisticated
+[01:28:18.600 --> 01:28:22.680]   methods than DeepMind's brand new evolutionary strategies.
+[01:28:22.680 --> 01:28:28.800]   So people are like rediscovering these randomized metaheuristics, which is great, but they're
+[01:28:28.800 --> 01:28:36.280]   still far behind where they were 20 years ago, but far ahead of reinforcement learning
+[01:28:36.280 --> 01:28:37.280]   approaches.
+[01:28:37.280 --> 01:28:42.680]   So given I try to teach things which I think are actually going to stand the test of time,
+[01:28:42.680 --> 01:28:45.840]   I'm not at all convinced that any current technique for reinforcement learning is going
+[01:28:45.840 --> 01:28:50.880]   to stand the test of time, so I don't think we're going to touch that.
+[01:28:50.880 --> 01:29:01.880]   Part 3, yeah, I think before that we might have a part 0 where we do practical machine
+[01:29:01.880 --> 01:29:07.560]   learning for coders, talk about decision tree ensembles and training test splits and stuff
+[01:29:07.560 --> 01:29:11.920]   like that.
+[01:29:11.920 --> 01:29:14.000]   And then we'll see where we are.
+[01:29:14.000 --> 01:29:20.160]   I'm sure Rachel and I are not going to stop doing this in a hurry, it's really fun and
+[01:29:20.160 --> 01:29:27.360]   interesting and we're really interested in your ideas about how to keep this going.
+[01:29:27.360 --> 01:29:38.320]   By the end of part 2, you guys have put in hundreds of hours, on average maybe 140 hours,
+[01:29:38.320 --> 01:29:45.200]   put together your own box, written blog posts, done hackathons, you're seriously in this
+[01:29:45.200 --> 01:29:46.200]   now.
+[01:29:46.200 --> 01:29:51.920]   And in fact, I've got to say, this week's kind of been special for me.
+[01:29:51.920 --> 01:29:56.240]   This week's been the week where again and again I've spoken to various folks of you
+[01:29:56.240 --> 01:30:04.480]   guys and heard about how many of you have implemented projects at your workplace that
+[01:30:04.480 --> 01:30:10.000]   have worked and are now running and making your business money, or that you've achieved
+[01:30:10.000 --> 01:30:17.600]   the career thing that you've been aiming for, or that you've won yet another GPU at a hackathon,
+[01:30:17.600 --> 01:30:23.080]   or of course the social impact thing where it's like all these transformative and inspirational
+[01:30:23.080 --> 01:30:27.120]   things.
+[01:30:27.120 --> 01:30:36.120]   When Rachel and I started this, we had no idea if it was possible to teach people with no
+[01:30:36.120 --> 01:30:41.040]   specific required math background other than high school math, deep learning to the point
+[01:30:41.040 --> 01:30:44.260]   that you could use it to build cool things.
+[01:30:44.260 --> 01:30:50.960]   We thought we probably could because I don't have that background and I've been able to.
+[01:30:50.960 --> 01:30:55.240]   But I've been kind of playing around with similar things for a couple of decades.
+[01:30:55.240 --> 01:31:00.900]   So it was a bit of an experiment, and this week's been the week that for me it's been
+[01:31:00.900 --> 01:31:02.560]   clear that the experiments worked.
+[01:31:02.560 --> 01:31:06.280]   So I don't know what part 3 is going to look like.
+[01:31:06.280 --> 01:31:11.840]   I think it will be a bit different because it'll be more of a meeting of minds amongst
+[01:31:11.840 --> 01:31:15.920]   a group of people who are kind of at the same level and thinking about the same kinds of
+[01:31:15.920 --> 01:31:16.920]   things.
+[01:31:16.920 --> 01:31:26.440]   So maybe it's more of an ongoing keypad knowledge up-to-date kind of thing, it might be more
+[01:31:26.440 --> 01:31:36.960]   of us teaching each other, I'm not sure, I'm certainly interested to hear your ideas.
+[01:31:36.960 --> 01:31:40.040]   We don't normally have two breaks, but I think I need one today and we're covering a lot
+[01:31:40.040 --> 01:31:41.040]   of territories.
+[01:31:41.040 --> 01:31:50.740]   Why don't we have a short break, let's have a short break and we'll go for the last 20
+[01:31:50.740 --> 01:31:51.740]   minutes.
+[01:31:51.740 --> 01:31:56.760]   Let's come back at 8.40.
+[01:31:56.760 --> 01:32:03.880]   Okay, thank you.
+[01:32:03.880 --> 01:32:13.440]   So attention models, attention models.
+[01:32:13.440 --> 01:32:20.520]   So I actually really like these, I think they're great.
+[01:32:20.520 --> 01:32:28.080]   And really the paper that introduced these, it was quite an extraordinary paper that introduced
+[01:32:28.080 --> 01:32:31.320]   both GIUs and attention models at the same time.
+[01:32:31.320 --> 01:32:36.480]   I think it might even be before the guy had his PhD if I remember correctly, it was just
+[01:32:36.480 --> 01:32:43.700]   a wonderful paper, very successful.
+[01:32:43.700 --> 01:32:52.120]   And the basic idea of an attention model is actually pretty simple.
+[01:32:52.120 --> 01:33:13.480]   You'll see here, here is our decoder, and here's our embedding.
+[01:33:13.480 --> 01:33:24.280]   And notice here, remember that my getRNN_return_sequences = true is the default, so the decoder now is
+[01:33:24.280 --> 01:33:30.200]   actually spitting out a sequence of states.
+[01:33:30.200 --> 01:33:38.160]   Now the length of that sequence is equal to the number of phonemes.
+[01:33:38.160 --> 01:33:43.160]   And we know that there isn't a mapping 1 to 1 of phonemes to letters.
+[01:33:43.160 --> 01:33:47.000]   So this is kind of interesting to think about how we're going to deal with this.
+[01:33:47.000 --> 01:33:53.600]   How are we going to deal with 16 states?
+[01:33:53.600 --> 01:34:00.880]   And the states, because they started with bidirectional, state 1 both represents a combination of
+[01:34:00.880 --> 01:34:04.400]   everything that's come before the first phoneme and everything that's come after.
+[01:34:04.400 --> 01:34:07.680]   State 2 is everything that's come before the second phoneme and everything that's come
+[01:34:07.680 --> 01:34:09.840]   after and so forth.
+[01:34:09.840 --> 01:34:15.440]   So the states in a sense are all representing something very similar, but they've got a
+[01:34:15.440 --> 01:34:17.080]   different focus.
+[01:34:17.080 --> 01:34:26.700]   Each one of these states represents everything that comes before and everything that comes
+[01:34:26.700 --> 01:34:33.160]   after that point, but with a focus on that phoneme.
+[01:34:33.160 --> 01:34:47.360]   So what we want to do now is create an RNN where the number of inputs to the RNN needs
+[01:34:47.360 --> 01:34:54.600]   to be 15, not 16, because remember the length of the word we're creating is 15.
+[01:34:54.600 --> 01:35:07.800]   So we're going to have 15 output time steps, and at each point we wanted to have the opportunity
+[01:35:07.800 --> 01:35:15.760]   to look at all of these 16 output states, but we're going to go in with the assumption
+[01:35:15.760 --> 01:35:24.560]   that only some of those 16 are going to be relevant, but we don't know which.
+[01:35:24.560 --> 01:35:35.600]   So what we want to do is basically take each of these 16 states and do a weighted sum,
+[01:35:35.600 --> 01:35:51.300]   sum of weights times encoded states, where these weights somehow represent how important
+[01:35:51.300 --> 01:35:58.000]   is each one of those 16 inputs for calculating this output, and how important are each of
+[01:35:58.000 --> 01:36:03.180]   those 16 inputs for calculating this output, and so forth.
+[01:36:03.180 --> 01:36:09.080]   If we could somehow come up with a set of weights for every single one of those time
+[01:36:09.080 --> 01:36:17.000]   steps, then we can replace the length 16 thing with a single thing.
+[01:36:17.000 --> 01:36:24.360]   If it turns out that output number 1 only really depends on input number 1 and nothing
+[01:36:24.360 --> 01:36:31.700]   else, then basically that input, those weights are going to be 1, 0, 0, 0, 0, 0, 0, 0, right?
+[01:36:31.700 --> 01:36:33.840]   It can learn to do that.
+[01:36:33.840 --> 01:36:45.400]   But if it turns out that output number 1 actually depends on phonemes 1 and 2 equally, then
+[01:36:45.400 --> 01:36:52.360]   it can learn the weights 0.5, 0.5, 0.000.
+[01:36:52.360 --> 01:37:03.000]   So in other words, we want some function, wi equals some function that returns the right
+[01:37:03.000 --> 01:37:11.520]   set of weights to tell us which bit of the decoded input to look at.
+[01:37:11.520 --> 01:37:17.420]   So it so happens we actually know a good way of learning functions.
+[01:37:17.420 --> 01:37:21.480]   What if we made the function a neural net?
+[01:37:21.480 --> 01:37:27.160]   And what if we learned it using SGD?
+[01:37:27.160 --> 01:37:28.600]   Why not?
+[01:37:28.600 --> 01:37:42.720]   So here's the paper, "Neural Machine Translation by Jointly Learning to Align and Translate."
+[01:37:42.720 --> 01:37:46.560]   And it's a great paper.
+[01:37:46.560 --> 01:37:52.120]   It's not the clearest in my opinion in terms of understandability, but let me describe
+[01:37:52.120 --> 01:37:56.840]   some of the main pieces.
+[01:37:56.840 --> 01:38:09.280]   So here's the starting point.
+[01:38:09.280 --> 01:38:16.260]   Okay, let's describe how to read this equation.
+[01:38:16.260 --> 01:38:22.840]   When you see a probability like this, you can very often think of it as a loss function.
+[01:38:22.840 --> 01:38:29.720]   The idea of SGD, basically most of the time when we're using it, is to come up with a
+[01:38:29.720 --> 01:38:36.080]   model where the probabilities that the model creates are as high as possible for the true
+[01:38:36.080 --> 01:38:39.360]   data and as low as possible for the other data.
+[01:38:39.360 --> 01:38:43.440]   That's just another way of talking about a loss function.
+[01:38:43.440 --> 01:38:48.520]   So very often when you read the papers where we would write a loss function, a paper will
+[01:38:48.520 --> 01:38:50.720]   say a probability.
+[01:38:50.720 --> 01:38:56.880]   What this here says, earlier on they say that y is basically our outputs, very common for
+[01:38:56.880 --> 01:38:57.880]   y to be an output.
+[01:38:57.880 --> 01:39:04.560]   And what this is saying is that the probability of the output at time step i, so at some particular
+[01:39:04.560 --> 01:39:12.960]   time step, depends on, so this bar here means depends on all of the previous outputs.
+[01:39:12.960 --> 01:39:20.920]   In other words, in our spelling thing, when we're looking at the fourth letter that we're
+[01:39:20.920 --> 01:39:25.680]   spelling, it depends on the three letters that we've spelled so far.
+[01:39:25.680 --> 01:39:30.600]   You can't have it depend on the later letters, that's cheating.
+[01:39:30.600 --> 01:39:34.280]   So this is basically a description of the problem, is that we're building something
+[01:39:34.280 --> 01:39:40.360]   which is time-dependent and where the i-th thing that we're creating can only be allowed
+[01:39:40.360 --> 01:39:50.000]   to depend on the previous i-1 things, comma, that basically means and, and it's also allowed
+[01:39:50.000 --> 01:39:56.880]   to depend on, anything in bold is a vector, a vector of inputs.
+[01:39:56.880 --> 01:40:05.160]   And so this here is our list of phonemes, and this here is our list of all of the letters
+[01:40:05.160 --> 01:40:08.360]   we've spelled so far.
+[01:40:08.360 --> 01:40:21.680]   So that whole thing, that whole probability, we're going to calculate using some function.
+[01:40:21.680 --> 01:40:24.400]   And because this is a neural net paper, you can be pretty sure that it's going to turn
+[01:40:24.400 --> 01:40:27.000]   out to be a neural net.
+[01:40:27.000 --> 01:40:30.440]   And what are the things that we're allowed to calculate with?
+[01:40:30.440 --> 01:40:38.600]   Well we're allowed to calculate with the previous letter that we just translated.
+[01:40:38.600 --> 01:40:41.200]   What's this?
+[01:40:41.200 --> 01:40:49.320]   The RNN hidden state that we've built up so far, and what's this?
+[01:40:49.320 --> 01:40:52.080]   A context vector.
+[01:40:52.080 --> 01:40:54.080]   What is a context vector?
+[01:40:54.080 --> 01:41:03.920]   The context vector is a weighted sum of annotations h.
+[01:41:03.920 --> 01:41:12.680]   So these are the hidden states that come out of our encoder, and these are some weights.
+[01:41:12.680 --> 01:41:18.120]   So I'm trying to give you enough information to try and parse this paper over the week.
+[01:41:18.120 --> 01:41:22.920]   So that's everything I've described so far.
+[01:41:22.920 --> 01:41:29.960]   The nice thing is that hopefully you guys have now read enough papers that you can look
+[01:41:29.960 --> 01:41:36.840]   at something like this and skip over it, and go, oh, that's just softmax.
+[01:41:36.840 --> 01:41:42.160]   Over time, your pattern recognition starts getting good.
+[01:41:42.160 --> 01:41:45.000]   You start seeing something like this, and you go, oh, that's a weighted sum.
+[01:41:45.000 --> 01:41:48.600]   And you say something like this, and you go, oh, that's softmax.
+[01:41:48.600 --> 01:41:52.840]   People who read papers don't actually read every symbol.
+[01:41:52.840 --> 01:41:59.560]   Their eye looks at it and goes, softmax, weighted sum, logistic function, got it.
+[01:41:59.560 --> 01:42:04.480]   As if it was like pieces of code, only this is really annoying code that you can't look
+[01:42:04.480 --> 01:42:07.600]   up in a dictionary and you can't run and you can't check it and you can't debug it.
+[01:42:07.600 --> 01:42:12.120]   But apart from that, it's just like code.
+[01:42:12.120 --> 01:42:15.920]   So the alphas are things that came out of a softmax.
+[01:42:15.920 --> 01:42:18.860]   What goes into the softmax?
+[01:42:18.860 --> 01:42:23.280]   Something called E. The other annoying thing about math notation is often you introduce
+[01:42:23.280 --> 01:42:26.080]   something and define it later.
+[01:42:26.080 --> 01:42:30.800]   So here we are, later we define E. What's E equal to?
+[01:42:30.800 --> 01:42:35.720]   E is equal to some function of what?
+[01:42:35.720 --> 01:42:48.580]   Some function of the previous hidden state and the encoder state.
+[01:42:48.580 --> 01:42:50.520]   And what's that function?
+[01:42:50.520 --> 01:42:57.420]   That function is again a neural network.
+[01:42:57.420 --> 01:43:02.440]   Now the important piece here is jointly trained.
+[01:43:02.440 --> 01:43:07.080]   Jointly trained means it's not like a GAN where we train a bit of discriminator and
+[01:43:07.080 --> 01:43:08.560]   a bit of generator.
+[01:43:08.560 --> 01:43:14.040]   It's not like one of these manual attentional models where we first of all figure out the
+[01:43:14.040 --> 01:43:18.120]   nodules are here and then we zoom into them and find them there.
+[01:43:18.120 --> 01:43:22.920]   Jointly trained means we create a single model, a single computation graph if you like, where
+[01:43:22.920 --> 01:43:26.220]   the gradients are going to flow through everything.
+[01:43:26.220 --> 01:43:31.520]   So we have to try and come up with a way basically where we're going to build a standard regular
+[01:43:31.520 --> 01:43:43.800]   RNN, but the RNN is going to use as the input at each time step this.
+[01:43:43.800 --> 01:43:52.040]   So we're going to have to come up with a way of actually making this mini-neuronet.
+[01:43:52.040 --> 01:43:58.540]   This is just a single one-hidden layer standard neural net that's going to be inside every
+[01:43:58.540 --> 01:44:07.640]   time step in our RNN.
+[01:44:07.640 --> 01:44:16.200]   This whole thing is summarized in another paper.
+[01:44:16.200 --> 01:44:22.960]   This is actually a really cool paper, Grammar as a Foreign Language.
+[01:44:22.960 --> 01:44:29.440]   Lots of names you probably recognize here, Jeffrey Hinton, who's kind of a father of
+[01:44:29.440 --> 01:44:40.760]   deep learning, Julia, who's now I think chief scientist or something at OpenAI, this paper
+[01:44:40.760 --> 01:44:43.080]   is kind of neat and fun anyway.
+[01:44:43.080 --> 01:44:49.760]   It basically says what if you didn't know anything about grammar and you attempted to
+[01:44:49.760 --> 01:44:57.400]   build a neural net which assigned grammar to sentences, it turns out you actually end
+[01:44:57.400 --> 01:45:04.040]   up with something more accurate than any rule-based grammar system that's been built.
+[01:45:04.040 --> 01:45:08.920]   One of the nice things they do is to summarize all the bits.
+[01:45:08.920 --> 01:45:13.440]   And again, this is where like if you were reading a paper the first time and didn't
+[01:45:13.440 --> 01:45:18.760]   know what an LSTM was and went oh, an LSTM is all these things, that's not going to mean
+[01:45:18.760 --> 01:45:19.760]   anything to you.
+[01:45:19.760 --> 01:45:27.320]   You have to recognize that people write stuff in papers, there's no point writing LSTM equations
+[01:45:27.320 --> 01:45:32.640]   in papers, but basically you're going to have to go and find the LSTM paper or find a tutorial
+[01:45:32.640 --> 01:45:39.520]   like learn about LSTMs when you're finished, come back, and the same way they summarize
+[01:45:39.520 --> 01:45:41.080]   attention.
+[01:45:41.080 --> 01:45:47.560]   So they say we've adapted the attention model from 2, if you go and have a look at 2, that's
+[01:45:47.560 --> 01:45:51.000]   the paper we just looked at.
+[01:45:51.000 --> 01:45:55.360]   But the nice thing is that because this came a little later, they've done a pretty good
+[01:45:55.360 --> 01:45:59.080]   job of trying to summarize it into a single page.
+[01:45:59.080 --> 01:46:03.160]   So during the week if you want to try and get the hang of attention, you might find
+[01:46:03.160 --> 01:46:08.000]   it good to have a look at this paper and look at their summary.
+[01:46:08.000 --> 01:46:14.880]   And you'll see that basically the idea is that it's a standard sequence to sequence
+[01:46:14.880 --> 01:46:20.240]   model, so a standard sequence to sequence model means encoder, hidden states, the final
+[01:46:20.240 --> 01:46:27.240]   hidden state decoder, plus adding attention.
+[01:46:27.240 --> 01:46:36.520]   And so we have two separate LSTMs, an encoder and a decoder, and now be careful of the notation
+[01:46:36.520 --> 01:46:45.920]   the encoder states are going to be called H. The decoder states H1 through HTA, the decoder
+[01:46:45.920 --> 01:46:54.280]   states D, which we're also going to call HTA+1 to TA+TB.
+[01:46:54.280 --> 01:47:03.120]   So the inputs are 1 through TA, and here you can see is defining a single layer neural
+[01:47:03.120 --> 01:47:06.640]   net.
+[01:47:06.640 --> 01:47:19.120]   So we've got our decoder states, we've got our current encoder state, put it through
+[01:47:19.120 --> 01:47:26.960]   a nonlinearity, put it through another affine transformation, stick it through a softmax,
+[01:47:26.960 --> 01:47:29.660]   and use that to create a weighted sum.
+[01:47:29.660 --> 01:47:34.400]   So there's like all of it in one little snapshot.
+[01:47:34.400 --> 01:47:40.840]   So don't expect this to make perfect sense the first time you see it necessarily, but
+[01:47:40.840 --> 01:47:47.360]   hopefully you can kind of see that these bits are all stuff you've seen lots of times before.
+[01:47:47.360 --> 01:47:55.320]   So next week we're going to come back and work through creating this code and seeing
+[01:47:55.320 --> 01:47:56.320]   how it works.
+[01:47:56.320 --> 01:47:57.320]   Did you have something Rachel?
+[01:47:57.320 --> 01:48:04.000]   We have two questions, one is, won't the weightings be heavily impacted by the padding done to
+[01:48:04.000 --> 01:48:05.760]   the input set?
+[01:48:05.760 --> 01:48:07.920]   Sure, absolutely.
+[01:48:07.920 --> 01:48:12.800]   And specifically those weights will say the padding is always weighted zero.
+[01:48:12.800 --> 01:48:17.360]   It's not going to take very long to learn to create that pattern.
+[01:48:17.360 --> 01:48:23.240]   And is A shared among all ij pairs, or do we train a separate alignment for each pair?
+[01:48:23.240 --> 01:48:31.160]   No, A is not trained, A is the output of a softmax.
+[01:48:31.160 --> 01:48:34.560]   What's trained is w1 and w2.
+[01:48:34.560 --> 01:48:37.320]   And note that capital letters are matrices, right?
+[01:48:37.320 --> 01:48:41.960]   So we just have to learn a single w1 and a single w2.
+[01:48:41.960 --> 01:48:56.400]   But note that they're being applied to all of the encoded states and the current state
+[01:48:56.400 --> 01:48:58.760]   of the decoder.
+[01:48:58.760 --> 01:49:11.800]   And in fact, easier is to just abstract out this all the way back to say it is some function.
+[01:49:11.800 --> 01:49:15.240]   This is the best way to think of it, it's some function of what?
+[01:49:15.240 --> 01:49:26.960]   Some function of the current hidden state and all of the decoder states.
+[01:49:26.960 --> 01:49:32.440]   So that's the inputs to the function, and we just have to learn a set of weights that
+[01:49:32.440 --> 01:49:35.800]   will spit out the inputs to our softmax.
+[01:49:35.800 --> 01:49:43.560]   Did you say you had another question?
+[01:49:43.560 --> 01:49:44.560]   Okay great.
+[01:49:44.560 --> 01:49:48.680]   So I don't feel like I want to introduce something new so let's take one final AMA before we
+[01:49:48.680 --> 01:49:51.720]   go home.
+[01:49:51.720 --> 01:50:10.160]   There's not really that much clever you can do about it.
+[01:50:10.160 --> 01:50:19.040]   Basically if you've got, well a great example would be one of the impact talks talked about
+[01:50:19.040 --> 01:50:26.880]   breast cancer detection from mammography scans and this thing called the Dream Challenge
+[01:50:26.880 --> 01:50:38.540]   had less than 0.3% of the scans actually had cancer.
+[01:50:38.540 --> 01:50:40.200]   So that's very unbalanced.
+[01:50:40.200 --> 01:50:45.000]   I think the first thing you try to do with such an unbalanced dataset is ignore it and
+[01:50:45.000 --> 01:50:47.800]   try it and see how it goes.
+[01:50:47.800 --> 01:50:53.760]   The reason that often it doesn't go well is that the initial gradients will tend to point
+[01:50:53.760 --> 01:51:00.200]   to say they never have cancer, because that's going to give you a very accurate model.
+[01:51:00.200 --> 01:51:06.760]   So one thing you can try and do is to come up with some kind of initial model which is
+[01:51:06.760 --> 01:51:11.400]   like maybe some kind of heuristic which is not terrible and gets it to the point where
+[01:51:11.400 --> 01:51:19.020]   the gradients don't always point to saying they never have cancer.
+[01:51:19.020 --> 01:51:24.960]   But the really obvious thing to do is to adjust your thing which is creating the mini batches
+[01:51:24.960 --> 01:51:31.120]   so that on every mini batch you grab like half of it as being people with cancer and
+[01:51:31.120 --> 01:51:34.560]   half of it being without cancer.
+[01:51:34.560 --> 01:51:42.600]   So that way you can still go through lots and lots of epochs, the challenge is that
+[01:51:42.600 --> 01:51:46.720]   the people that do have cancer, you're going to see lots and lots and lots of times so
+[01:51:46.720 --> 01:51:52.440]   you have to be very careful of overfitting.
+[01:51:52.440 --> 01:51:57.240]   And then basically there's kind of things between those two extremes.
+[01:51:57.240 --> 01:52:03.620]   So I think what you really need to do is figure out what's the smallest number of people with
+[01:52:03.620 --> 01:52:05.560]   cancer that you can get away with.
+[01:52:05.560 --> 01:52:10.440]   What's the smallest number where the gradients don't point to zero?
+[01:52:10.440 --> 01:52:17.640]   And then create a model where every batch, mini batch, you create 10% of it with people
+[01:52:17.640 --> 01:52:20.520]   with cancer and 90% people without.
+[01:52:20.520 --> 01:52:22.680]   Train that for a while.
+[01:52:22.680 --> 01:52:31.080]   The good news is once it's working pretty well, you can then decrease the size that
+[01:52:31.080 --> 01:52:35.680]   has cancer size because you're already at a point where your model is not pointing off
+[01:52:35.680 --> 01:52:36.680]   to zero.
+[01:52:36.680 --> 01:52:42.520]   So you can gradually start to change the sample to have less and less.
+[01:52:42.520 --> 01:52:45.080]   I think that's the basic technique.
+[01:52:45.080 --> 01:53:05.800]   So in this example where you're repeating the positive results over and over again, you're
+[01:53:05.800 --> 01:53:06.800]   essentially just weighting them more.
+[01:53:06.800 --> 01:53:07.800]   Could you get the same results by just throwing away a bunch of the false data set?
+[01:53:07.800 --> 01:53:13.320]   You could do that, and that's the really quick way to do it, but that way you're not using
+[01:53:13.320 --> 01:53:17.000]   all the information about the false stuff still has information.
+[01:53:17.000 --> 01:53:18.000]   So yeah.
+[01:53:18.000 --> 01:53:19.000]   OK.
+[01:53:19.000 --> 01:53:20.000]   Thanks everybody.
+[01:53:20.000 --> 01:53:21.000]   Have a good week.
+[01:53:21.000 --> 01:53:21.000]   [Applause]
+[01:53:21.000 --> 01:53:24.000]   (audience applauds)
+
