@@ -1,0 +1,671 @@
+
+[00:00:00.000 --> 00:00:07.640]   So, welcome. This is going further with CUDA for Python programmers. As the name suggests,
+[00:00:07.640 --> 00:00:13.640]   this won't make too much sense unless you've got started with CUDA for Python programmers.
+[00:00:13.640 --> 00:00:19.320]   The good news is that I have a video called Getting Started with CUDA for Python programmers.
+[00:00:19.320 --> 00:00:26.160]   So, start there. It's only a bit over an hour long. You might be surprised at how quick
+[00:00:26.160 --> 00:00:32.000]   and easy it is to get started if you haven't. So, assuming that you have got started, today
+[00:00:32.000 --> 00:00:40.400]   we're going to be looking at the most important next step of taking advantage of CUDA, which
+[00:00:40.400 --> 00:00:45.260]   is we've already learnt to take advantage of the thousands of threads that you can run
+[00:00:45.260 --> 00:00:51.480]   simultaneously on a GPU. Today we're going to learn how to take advantage of the incredibly
+[00:00:51.480 --> 00:00:58.600]   fast memory. So, up to now, although we haven't really talked about it, the memory we've been
+[00:00:58.600 --> 00:01:08.360]   using is what's called global memory. It's basically think of this. So, this is the same
+[00:01:08.360 --> 00:01:14.960]   book we looked at last week, which we do recommend programming massively parallel processes.
+[00:01:14.960 --> 00:01:22.340]   And the stuff we're covering today is largely covered in chapter 5 of that book. In this
+[00:01:22.340 --> 00:01:30.000]   CUDA mode series, there's a lecture from Thomas Boonerman, which goes through this and the
+[00:01:30.000 --> 00:01:35.040]   previous chapter in some detail. And so, that's actually a good video to watch maybe after
+[00:01:35.040 --> 00:01:40.160]   this one or before this one. Either order is fine. They're covering similar material
+[00:01:40.160 --> 00:01:47.520]   in different ways. The key thing to understand is so, that we're looking at here today is
+[00:01:47.520 --> 00:01:52.280]   that this, if we look at this box here, which is basically you can think of as a GPU. And
+[00:01:52.280 --> 00:01:57.440]   in the GPU, you have global memory. Global memory is basically what we've always been
+[00:01:57.440 --> 00:02:06.720]   using so far when we just put, when we say like dot CUDA in PyTorch, it's actually putting
+[00:02:06.720 --> 00:02:13.880]   the tensor into global memory. Global memory is pretty fast compared to some other types
+[00:02:13.880 --> 00:02:18.880]   of memory we might be used to, but it's far from the quickest memory available on the
+[00:02:18.880 --> 00:02:28.280]   GPU. In fact, this shared memory is much faster. Shared memory, however, is not global, which
+[00:02:28.280 --> 00:02:37.600]   is to say that not all of the threads can see it. In fact, as this box indicates, shared
+[00:02:37.600 --> 00:02:46.440]   memory is something that's only available to the threads on a specific streaming multiprocessor,
+[00:02:46.440 --> 00:02:54.120]   SM, or in CUDA programming world within a block. So, all of the different threads in
+[00:02:54.120 --> 00:03:00.600]   a block can access shared memory. And the reason we care about this is that shared memory
+[00:03:00.600 --> 00:03:12.680]   is about 10 times faster than global memory. And because CUDA with all of its simultaneous
+[00:03:12.680 --> 00:03:16.520]   thousands of threads running at the same time is so incredibly quick, because GPUs are so
+[00:03:16.520 --> 00:03:22.960]   incredibly quick, the speed at which you access memory turns out to matter a whole lot. So,
+[00:03:22.960 --> 00:03:28.400]   being able to use this shared memory effectively is as important as being able to use the thousands
+[00:03:28.400 --> 00:03:34.160]   of threads at the same time simultaneously is important. So, in the last lecture we focused
+[00:03:34.160 --> 00:03:39.240]   on how to use all of those threads, and today we'll focus on how to use shared memory. Those
+[00:03:39.240 --> 00:03:49.600]   two things will get you quite a long way in terms of creating pretty fast CUDA code.
+[00:03:49.600 --> 00:04:04.800]   Okay. So, the repo for these lectures is the CUDA mode repo, and specifically the CUDA
+[00:04:04.800 --> 00:04:10.840]   mode /lectures repo. And in there you'll find there's a lecture 5. You don't have to have
+[00:04:10.840 --> 00:04:16.120]   seen all the lectures beforehand, but they're certainly all useful. Just need to have seen
+[00:04:16.120 --> 00:04:24.160]   lecture 3, which is the one I mentioned. Lecture 5 is where today's notebook will be found.
+[00:04:24.160 --> 00:04:35.520]   And here it is. Okay. So, one thing I'll just mention that I've added is a little utils.py
+[00:04:35.520 --> 00:04:40.520]   where some of the stuff that we used last time, and what we used quite a bit, I've just
+[00:04:40.520 --> 00:04:46.840]   put it all into a script so we can access it multiple times. So, we've got the C div,
+[00:04:46.840 --> 00:04:52.400]   which is sealing the vision function, the little load inline wrapper called load CUDA,
+[00:04:52.400 --> 00:04:56.660]   and the little kind of prefix we have that has the hash includes and the stuff we're
+[00:04:56.660 --> 00:05:06.200]   going to need there. And so, you'll see that we're going to import those here. Other than
+[00:05:06.200 --> 00:05:13.720]   that, we're going to import all the usual stuff that we like to use. Last time we used
+[00:05:13.720 --> 00:05:20.880]   simple namespace, but actually thought let's make things closer to -- let's make things
+[00:05:20.880 --> 00:05:31.000]   closer to how CUDA does things, and let's create a little thing called dim3. So, this
+[00:05:31.000 --> 00:05:38.200]   is a 3D grid with an X, a Y, and a Z using the handy little Python named tuple functionality.
+[00:05:38.200 --> 00:05:48.200]   So, here's a nice way for us. And we can, just like in CUDA, provide as many of the
+[00:05:48.200 --> 00:05:56.120]   dimensions as we want. Today we'll be doing two-dimensional grids. So, there'll be implicit
+[00:05:56.120 --> 00:06:05.680]   Z equals 1. So, we can access these as D dot X and D dot Y, for example. Like before, we'll
+[00:06:05.680 --> 00:06:14.960]   use Wurlitzer to print stuff from CUDA if we want to. CUDA launch blocking is helpful
+[00:06:14.960 --> 00:06:21.360]   for debugging, so you can turn that on if you want to. And so, today we're going to
+[00:06:21.360 --> 00:06:32.440]   do a matrix multiplication of a 5120 by 256 matrix M1 by a 256 by 5120 matrix M2. This
+[00:06:32.440 --> 00:06:44.720]   approach of going from -- it's not true. Okay. So, like before, we're going to start by looking
+[00:06:44.720 --> 00:06:50.880]   at pure Python, and so pure Python is going to be really, really slow. So, to handle that,
+[00:06:50.880 --> 00:06:56.000]   we're going to create a sample of the first matrix with the first four rows, and a sample
+[00:06:56.000 --> 00:07:00.760]   of the second matrix with the first four columns. And so, we'll use that for our pure Python
+[00:07:00.760 --> 00:07:05.520]   example. All right. So, just to remind you what we've already done in the past is we
+[00:07:05.520 --> 00:07:14.960]   created this simple kernel runner that goes through every block and every thread. Not
+[00:07:14.960 --> 00:07:19.920]   real blocks and threads, they're actually just integers. And calls some kernel, which
+[00:07:19.920 --> 00:07:24.320]   is not actually a kernel, it's just a function. And I'm going to use dem3 now that we've got
+[00:07:24.320 --> 00:07:29.240]   it to pass into that. And so, this was our previous matrix multiplication. We grabbed
+[00:07:29.240 --> 00:07:37.000]   the row, we grabbed the column from the indexes we passed in. We have a guard. And we then
+[00:07:37.000 --> 00:07:47.680]   accumulated our dot product for whatever particular row and column we're filling in. So, this
+[00:07:47.680 --> 00:07:58.080]   is basically the -- ignore the extra details here, but conceptually, we're just doing this
+[00:07:58.080 --> 00:08:07.680]   dot product, for example, to fill in -- this is -- so, if we're filling in this here, then
+[00:08:07.680 --> 00:08:22.240]   this is R. And this is C. So, this is R comma C. And so, we're doing the dot product between
+[00:08:22.240 --> 00:08:32.720]   that column and that row. And so, that's what this looping is here. So, I is going through
+[00:08:32.720 --> 00:08:39.120]   all of the elements of the row and the column. And multiplying, adding, and then putting
+[00:08:39.120 --> 00:08:45.920]   that into the output. So, that's what we do. We have a so-called kernel. And then we created
+[00:08:45.920 --> 00:08:52.360]   something that would call the kernel by calling our kernel runner, passing in the function.
+[00:08:52.360 --> 00:08:59.560]   We need our blocks and our threads per block, which are just dem3 tuples. And then we pass
+[00:08:59.560 --> 00:09:07.560]   in our flattened data and our -- any other information that's required. And so, we can
+[00:09:07.560 --> 00:09:15.380]   check that that matrix multiplication result using these small sample versions is close
+[00:09:15.380 --> 00:09:25.280]   to the PyTorch version. And it is. And then we also looked at the CUDA version. And the
+[00:09:25.280 --> 00:09:33.200]   CUDA version we created by pasting the kernel into chat GPT. And it's bad out something
+[00:09:33.200 --> 00:09:38.840]   which we hardly had to change at all to get this. And the kernel runner also looks very
+[00:09:38.840 --> 00:09:45.000]   similar except that the syntax for calling a kernel in CUDA is different with this weird
+[00:09:45.000 --> 00:09:53.760]   triple angle bracket. To make life a little bit simpler for myself,
+[00:09:53.760 --> 00:10:00.720]   you might remember before we had the CPP source where we would copy and paste that into a
+[00:10:00.720 --> 00:10:06.480]   string. I got a bit bored of doing that manually. So, I created a little get signature function
+[00:10:06.480 --> 00:10:13.080]   that just uses a regular expression to automatically find that line of code. And so, for the rest
+[00:10:13.080 --> 00:10:18.560]   of this lesson, I will be getting this CPP source automatically. That way I don't have
+[00:10:18.560 --> 00:10:26.160]   to worry about changing it. But you can see that regex is just returning the necessary
+[00:10:26.160 --> 00:10:33.760]   line of code plus the semicolon. So, that makes life a little bit simpler. And I like
+[00:10:33.760 --> 00:10:38.720]   being simple. Okay. So, then we go load CUDA. It ran very quickly because I've already compiled
+[00:10:38.720 --> 00:10:43.800]   this once and PyTorch caches that. And this is actually another change I made since last
+[00:10:43.800 --> 00:10:53.480]   time is that in the load CUDA function, if you don't pass in a name, then it uses the
+[00:10:53.480 --> 00:11:00.880]   function's name. And that means that PyTorch will cache different versions of your code
+[00:11:00.880 --> 00:11:04.200]   with different names for the various different things you're doing. So, you won't lose your
+[00:11:04.200 --> 00:11:09.800]   cache each time. So, that's handy as well. Okay. So, now we can use the full matrices
+[00:11:09.800 --> 00:11:14.120]   because we're going to be nice and fast. We need them to be contiguous in CUDA. So, we
+[00:11:14.120 --> 00:11:21.760]   will create M1C and M2C for that. And they should be similar to the result of PyTorch
+[00:11:21.760 --> 00:11:31.760]   doing it. And it takes about six milliseconds. One thing I wondered about is how long of
+[00:11:31.760 --> 00:11:38.840]   that six milliseconds was it actually running the matrix multiplication compared to doing
+[00:11:38.840 --> 00:11:44.040]   all this other stuff before it. So, I just commented out those two lines of code and
+[00:11:44.040 --> 00:11:51.720]   reran it. And that took about 50 microseconds. So, that's 0.05 milliseconds. So, very little
+[00:11:51.720 --> 00:11:56.560]   of this time is kind of overhead. Most of this is actually doing a matrix multiplication.
+[00:11:56.560 --> 00:12:05.680]   So, I think that's an encouraging start. Okay. So, how do we take advantage of shared memory?
+[00:12:05.680 --> 00:12:17.680]   The problem here is that in a loop here, M and N are global memory. And so, in this loop
+[00:12:17.680 --> 00:12:25.280]   that's happening K times, we are reading from global memory again and again and again. And
+[00:12:25.280 --> 00:12:31.880]   that is a bit of a bummer. So, there's a better thing we could do, which is instead we could
+[00:12:31.880 --> 00:12:42.600]   use shared memory. Now, the problem is that shared memory is quite small. So, we can't
+[00:12:42.600 --> 00:12:48.560]   just dump everything into shared memory for every single thread. Because we've got lots
+[00:12:48.560 --> 00:12:53.960]   and lots of threads running at the same time. Or I should say for every block. So, we've
+[00:12:53.960 --> 00:12:57.460]   got lots of blocks running at the same time. If every one of them had the entire matrices
+[00:12:57.460 --> 00:13:01.600]   in memory for every block, that's going to be an enormous amount of data. And that's
+[00:13:01.600 --> 00:13:10.080]   going to be far too much for our GPU to handle. So, to deal with that, what we do is we do
+[00:13:10.080 --> 00:13:18.080]   something called tiling. And a tile is basically -- so, we're going to pick a tile width of
+[00:13:18.080 --> 00:13:22.560]   16. So, here it says tile width here. We're going to use 16. We basically say, okay, if
+[00:13:22.560 --> 00:13:29.320]   we're going to calculate this R comma C thing here, right, instead of doing the entire dot
+[00:13:29.320 --> 00:13:41.760]   product of all of this row and all of this column, what we could instead do is just grab
+[00:13:41.760 --> 00:13:52.680]   the first little bit of that row. And the first little bit of that column. We could
+[00:13:52.680 --> 00:13:58.040]   take the dot product of those and put them into R comma C. And then we could do that
+[00:13:58.040 --> 00:14:02.320]   again for the next tile across and the next tile across and so forth. And this is what
+[00:14:02.320 --> 00:14:08.680]   this dot, dot, dot here is. And the next tile across. And so, then, you know, eventually
+[00:14:08.680 --> 00:14:14.560]   we get to this bit of the row by this bit of the column, take the dot product of those
+[00:14:14.560 --> 00:14:22.760]   and add them up to the existing R comma C output we've already got. And so, that's just
+[00:14:22.760 --> 00:14:27.880]   -- it's doing exactly the same thing. But rather than doing the dot product all at once,
+[00:14:27.880 --> 00:14:39.560]   we're doing it one step at a time. That's not interesting of itself. But what is interesting
+[00:14:39.560 --> 00:14:49.960]   is you might notice that let's say for calculating this bit here, let's say, so this is thread
+[00:14:49.960 --> 00:14:56.560]   zero comma zero, we can do the same thing. We can take the first little bit of this and
+[00:14:56.560 --> 00:15:04.520]   the first little bit of this and take their dot product. And that gives us the first piece
+[00:15:04.520 --> 00:15:08.840]   we're going to need of that one. And we can do that again and again and again until eventually
+[00:15:08.840 --> 00:15:15.960]   we get to this one. And we do this bit times this bit. And we keep going all the way to
+[00:15:15.960 --> 00:15:22.960]   the end until there's a final tile at the end. And once we've done that for all of the
+[00:15:22.960 --> 00:15:28.560]   bits, eventually we're going to have the correct answer in zero comma zero. Why is that interesting?
+[00:15:28.560 --> 00:15:35.400]   Well, it's interesting because we could reorder this rather than doing the whole first little
+[00:15:35.400 --> 00:15:38.400]   bit of this row and then the next bit of that row and the next bit of that row and the next
+[00:15:38.400 --> 00:15:48.280]   bit of that row. Instead, what we could do is we could calculate zero comma zero for
+[00:15:48.280 --> 00:15:54.520]   the first tile and then we could calculate zero comma one for the first tile. And notice
+[00:15:54.520 --> 00:15:59.880]   this is zero comma one. It's exactly the same row as we had before, right? But a different
+[00:15:59.880 --> 00:16:07.600]   column. Now, with a normal kind of CPU style thinking, you'd say like, oh, maybe this will
+[00:16:07.600 --> 00:16:11.760]   be in the cache. So this could be faster. And that doesn't work in GPU programming and
+[00:16:11.760 --> 00:16:17.940]   GPU programming, we instead use shared memory. So we could have put this into shared memory.
+[00:16:17.940 --> 00:16:21.720]   And if we had done so, then the second time we use it, we don't have to read it from global
+[00:16:21.720 --> 00:16:25.920]   memory. It's already there in shared memory. And then the same thing will happen when we
+[00:16:25.920 --> 00:16:34.960]   get to the second row, right? We could put that into shared memory. And then we go second
+[00:16:34.960 --> 00:16:42.040]   row of that tile times the first column of that tile is needed to do one comma zero.
+[00:16:42.040 --> 00:16:48.720]   And if you think about it, we've already accessed the first column of the tile in N. So if we
+[00:16:48.720 --> 00:16:53.020]   had put that in shared memory as well, then we won't have to get that from global memory
+[00:16:53.020 --> 00:16:58.180]   either. So maybe you see where this is going. What we're going to be able to do actually
+[00:16:58.180 --> 00:17:05.640]   is before we do any work is we'll put this whole tile into shared memory and we'll put
+[00:17:05.640 --> 00:17:13.480]   this whole tile into shared memory. And then we'll take the matrix multiplication of the
+[00:17:13.480 --> 00:17:21.600]   two tiles. And that will give us all of the first pieces of the entire tile output. And
+[00:17:21.600 --> 00:17:26.600]   then we'll do the same for the tile one to the right of this one, and one underneath
+[00:17:26.600 --> 00:17:30.760]   this one. And we'll take the matrix product of those and add it to this again, and so
+[00:17:30.760 --> 00:17:37.480]   forth until eventually again, we get up to here, we put that whole tile into shared memory,
+[00:17:37.480 --> 00:17:43.000]   we put that whole tile into shared memory, we take the matrix product, which again, remember
+[00:17:43.000 --> 00:17:47.200]   it's just lots and lots of dot products, the column and row dot products. And so all of
+[00:17:47.200 --> 00:17:52.320]   those are going to be able to use shared memory and we can we add them to the outputs here.
+[00:17:52.320 --> 00:18:00.160]   And so once we eventually do that for all of the tiles, we will have finished calculating
+[00:18:00.160 --> 00:18:08.120]   these outputs. So how many times did we read from global memory? Each of the input elements
+[00:18:08.120 --> 00:18:13.240]   only got read from global memory once. And the soon as we grabbed it, all we did with
+[00:18:13.240 --> 00:18:18.100]   it was we put it into shared memory, and then the actual dot product was entirely done from
+[00:18:18.100 --> 00:18:32.460]   shared memory. And that's how we make this faster. So
+[00:18:32.460 --> 00:18:42.620]   to do that, let's use Python, plain Python. And we're going to basically try to design
+[00:18:42.620 --> 00:18:46.680]   something in Python that looks a lot like how CUDA is going to do it. And then we're
+[00:18:46.680 --> 00:18:56.080]   going to auto generate CUDA just like we have in the past. So in CUDA, the kind of maximally
+[00:18:56.080 --> 00:19:02.000]   flexible way to do things is what's called dynamic shared memory, where you tell CUDA
+[00:19:02.000 --> 00:19:08.480]   how much shared memory you're going to want. And it puts it aside for you. And then in
+[00:19:08.480 --> 00:19:13.880]   basically one contiguous block with a pointer to that block that you will have access to,
+[00:19:13.880 --> 00:19:18.120]   which is the same as an array. And then you basically grab from that block any of the
+[00:19:18.120 --> 00:19:25.560]   pieces you want. In Python, we can do exactly the same kind of thing by using a trick which
+[00:19:25.560 --> 00:19:31.220]   is true for both NumPy arrays and PyTorch tensors, which is that views into those tensors
+[00:19:31.220 --> 00:19:36.800]   are writable. So if we create a tensor of length 5, and then we create a view of the
+[00:19:36.800 --> 00:19:48.080]   first three elements and of the last two elements called B and C, if we then modify B, it actually
+[00:19:48.080 --> 00:19:56.420]   changes A because they're a view of the same memory. And if we change C, it'll also change
+[00:19:56.420 --> 00:20:01.960]   A. And so that's going to be handy for us. You'll see why in a moment. We're going to
+[00:20:01.960 --> 00:20:09.000]   basically use our shared memory like that. Now, the thing is, we've got to restructure
+[00:20:09.000 --> 00:20:21.140]   our kernel runner a little bit because we have two steps now. Step number one is copy
+[00:20:21.140 --> 00:20:27.200]   all of our input into shared memory. And then step two is take the dot product. And so that
+[00:20:27.200 --> 00:20:34.680]   doesn't quite work with our previous approach because we just have one big loop and we just
+[00:20:34.680 --> 00:20:42.840]   have one thing that we do. So I've changed our kernel runner to create a shared memory
+[00:20:42.840 --> 00:20:47.880]   kernel runner. I've still got the same loop through blocks dot Y, the same loop through
+[00:20:47.880 --> 00:20:54.480]   blocks dot X. This is all pure Python again. And here I'm going to create our shared memory.
+[00:20:54.480 --> 00:21:01.120]   And so this is now going to be passed the shared memory into each function. So all of
+[00:21:01.120 --> 00:21:05.880]   our threads are going to have access to the same shared memory. Now, we don't actually
+[00:21:05.880 --> 00:21:14.600]   create the threads here. So instead, step number one is in my kernel, I'm actually going
+[00:21:14.600 --> 00:21:19.520]   to do the loop through the threads manually. We'll improve this in a moment. Don't worry.
+[00:21:19.520 --> 00:21:24.460]   It's pretty messy with all this kind of duplicate code. But at least it's nice and simple to
+[00:21:24.460 --> 00:21:30.080]   understand. So first of all, let's just run this and confirm we get the same answer as
+[00:21:30.080 --> 00:21:37.520]   before. And we do. So let's see what's happening. The bit that does the running is exactly the
+[00:21:37.520 --> 00:21:48.240]   same, except that I'm calling our new shared memory runner. And I'm also telling it the
+[00:21:48.240 --> 00:21:52.880]   third thing you have to pass in is the shared size is how much shared memory. So how much
+[00:21:52.880 --> 00:22:00.280]   shared memory do we need? We need tile width times tile width. Because that's the size
+[00:22:00.280 --> 00:22:07.080]   of the tile is tile width by tile width. But we're going to need two of them, one for m
+[00:22:07.080 --> 00:22:12.520]   and one for n. So the amount of shared memory we need is tile width times tile width times
+[00:22:12.520 --> 00:22:18.920]   two. So that's what this is. Tile width times tile width times two. So that's going to be
+[00:22:18.920 --> 00:22:31.920]   passed in as the shared memory size. And that will be constructed here. Okay. So that shared
+[00:22:31.920 --> 00:22:39.040]   then gets passed into our kernel. Our pretend kernel. And it's just one big continuous block
+[00:22:39.040 --> 00:22:46.120]   of memory. So we have to grab the first share size bits and that will be our m shared memory.
+[00:22:46.120 --> 00:22:54.840]   So our two inputs are m and n. And everything from there onwards is going to be our n shared
+[00:22:54.840 --> 00:23:00.800]   memory. So then what we do is we loop through. This is exactly the same as we had before.
+[00:23:00.800 --> 00:23:15.640]   In fact, I should use C div here to make it a bit more obvious what's going on. C div.
+[00:23:15.640 --> 00:23:21.640]   So we go through every element in the dot product we're going to need. And so the indexing
+[00:23:21.640 --> 00:23:29.480]   starts to get a bit complicated here. So pH is what the book and therefore we will use,
+[00:23:29.480 --> 00:23:35.580]   which is basically the index of what tile are we up to. So we loop through each tile.
+[00:23:35.580 --> 00:23:44.640]   So look through each tile. So the number of tiles we'll need is the size of the k dimension.
+[00:23:44.640 --> 00:23:51.920]   So that's the number of columns in m or the number of rows in n. And then divide that
+[00:23:51.920 --> 00:23:58.120]   by the tile width. And that tells you how many tiles will fit. We do a ceiling division
+[00:23:58.120 --> 00:24:05.000]   to go all the way to the end. So then we need to know. So let's say we're doing again we're
+[00:24:05.000 --> 00:24:21.040]   doing this R comma C one here. So we need to know where this is. Where does it start? And
+[00:24:21.040 --> 00:24:28.640]   the answer is that we've done pH lots of tiles so far. Each one has jumped across TW or tile
+[00:24:28.640 --> 00:24:39.480]   width. So this distance here is pH times tile width. And we're going to call that IDX. So
+[00:24:39.480 --> 00:24:44.640]   this is an important tip. I found I had a lot of trouble getting this to like settled
+[00:24:44.640 --> 00:24:55.760]   in my head until I drew it all out and wrote on my picture what everything is. So and I've
+[00:24:55.760 --> 00:25:00.680]   been doing this with the help also of my friend Karim who works with me at answer.ai. And
+[00:25:00.680 --> 00:25:04.680]   he found the same thing. We were both like our first attempts were both to do it just
+[00:25:04.680 --> 00:25:10.320]   in code and we did not get it working until we actually started drawing it out. And that's
+[00:25:10.320 --> 00:25:16.760]   when Karim and I actually were like oh OK that all makes sense. So that's what IDX is.
+[00:25:16.760 --> 00:25:24.260]   And so notice IDX is that but it's also because this is these are symmetric it's also that.
+[00:25:24.260 --> 00:25:33.740]   Like it's also IDX. OK. So now we need to fill in the shared memory. So we've got two sets
+[00:25:33.740 --> 00:25:40.920]   of threads one to fill in the shared memory and one to do the matrix product. Let's write
+[00:25:40.920 --> 00:25:56.760]   that in fill shared to the dot products from shared. OK. So we need to go through all of
+[00:25:56.760 --> 00:26:03.120]   our threads find out what row and column we're in. So how do we find out what row and column
+[00:26:03.120 --> 00:26:07.440]   we're in. And again these are the things that get complicated. So this is our as we've already
+[00:26:07.440 --> 00:26:13.560]   mentioned. So R is going to be equal to look there's two pieces of it. There's the IDX
+[00:26:13.560 --> 00:26:18.760]   piece goes from here to here. And then there's also an additional piece which is from here
+[00:26:18.760 --> 00:26:29.680]   to here. What is that piece. Well that piece is simply the coordinates of this grid location
+[00:26:29.680 --> 00:26:41.040]   within the tile. And so remember that we are looping through. So blocked in dot Y and blocked
+[00:26:41.040 --> 00:26:50.320]   into X is the size of the tile. Right. So that means that. All right. So we've got tile row
+[00:26:50.320 --> 00:27:00.320]   and tile column. And so that's what that is. So that's so therefore this here is tile row
+[00:27:00.320 --> 00:27:07.800]   and this here is tile column. And so therefore to find R we have to add together IDX plus
+[00:27:07.800 --> 00:27:19.640]   TR. And here it is IDX plus TR. And that needs to be less than the second dimension of the
+[00:27:19.640 --> 00:27:31.560]   matrix. And then here we just need to index into it. So if this was a two dimensional
+[00:27:31.560 --> 00:27:38.600]   tensor we could just do TR comma TC but it's not it's one dimensional so we have to flatten
+[00:27:38.600 --> 00:27:48.600]   out our dimensions so it becomes TR times TW plus TC. So this is filling in our M shared
+[00:27:48.600 --> 00:27:53.600]   and N shared by going through all the possible elements of the tile and filling them all
+[00:27:53.600 --> 00:28:07.280]   in. Okay. So after this bunch of loops is complete MS and NS will simply contain a copy
+[00:28:07.280 --> 00:28:13.640]   of the appropriate tile from M and N. And again here the indexing we're doing is so
+[00:28:13.640 --> 00:28:19.680]   this remember is the kind of element that we're up to in terms of the column. And this
+[00:28:19.680 --> 00:28:25.480]   is the row that we're doing but we have to do times C times K in order to deal with the
+[00:28:25.480 --> 00:28:32.080]   fact that we've flattened out our indexes. If one thing to think about that you might
+[00:28:32.080 --> 00:28:42.120]   have been wondering is what about this this final tile that goes off the edge. So it's
+[00:28:42.120 --> 00:28:49.960]   not big enough. So what happens there. So for that final tile we put in zeros. So we call
+[00:28:49.960 --> 00:28:59.120]   that padding. And so they show that in the book here. So in this case they're doing a
+[00:28:59.120 --> 00:29:06.520]   four by four matrix multiplication containing two by two grids. And you can see here when
+[00:29:06.520 --> 00:29:12.200]   we're doing this one we've actually sorry it's a three by three using a two by two grid.
+[00:29:12.200 --> 00:29:20.560]   So we get to this piece here it goes off the edge. So what happens when we go off the edge
+[00:29:20.560 --> 00:29:26.440]   we just put zeros in to the shared memory. And so that means then when we do the dot
+[00:29:26.440 --> 00:29:32.640]   product between this one here containing zeros and this one here containing zeros then the
+[00:29:32.640 --> 00:29:40.600]   zeros can just be ignored. They don't they don't do anything because they're just zeros.
+[00:29:40.600 --> 00:29:48.720]   So that's why we put zeros in if we are outside the dimensions of the matrix for both m and
+[00:29:48.720 --> 00:29:55.800]   n. So now that has filled in our shared memory or our pretend shared memory. I mean it is
+[00:29:55.800 --> 00:30:00.080]   shared memory it's just not any faster because we're just in Python. And so now we've done
+[00:30:00.080 --> 00:30:04.160]   that we can go through all the threads again and find out what row and column we're in
+[00:30:04.160 --> 00:30:14.240]   using exactly the same code. And then we can go through our tile width and aggregate all
+[00:30:14.240 --> 00:30:21.500]   of the bits of our dot product. So why are we aggregating through tile width because
+[00:30:21.500 --> 00:30:28.920]   the dot product will always be between tile width on this side and tile width on this
+[00:30:28.920 --> 00:30:37.180]   side. So every one every row from here and every column from here will be of size TW.
+[00:30:37.180 --> 00:30:49.680]   So that's why we do that. Okay so okay so that's that rather messy tiled matrix modification
+[00:30:49.680 --> 00:30:53.240]   in Python. So then I but like this is the place to start. So if you don't understand
+[00:30:53.240 --> 00:30:56.320]   anything come back to here because you can run it through in the debugger. You can print
+[00:30:56.320 --> 00:31:01.840]   out what the shared memory looks like. You know you can make sure you understand exactly
+[00:31:01.840 --> 00:31:05.640]   what's going on because it's plain Python. And so then all I've I did is I basically
+[00:31:05.640 --> 00:31:13.360]   said okay well effectively that is saying oh run this bit of code as all the threads
+[00:31:13.360 --> 00:31:19.480]   and then run this bit of code as all the threads. So just to refactor this a little bit I created
+[00:31:19.480 --> 00:31:26.640]   a run threads function that just says okay look through all the threads and call some
+[00:31:26.640 --> 00:31:34.240]   function. And so using this approach so with this function available we can now change
+[00:31:34.240 --> 00:31:44.680]   our loop so that instead of having to do this big for loop we can just say run this function
+[00:31:44.680 --> 00:31:53.080]   in every thread and run this function in every thread. And so then those functions just contain
+[00:31:53.080 --> 00:31:56.920]   the two pieces. So this is now going to get a bit closer to what the CUDA code is going
+[00:31:56.920 --> 00:32:03.000]   to look like. The CUDA code is going to have something that says go through each tile and
+[00:32:03.000 --> 00:32:08.640]   then fill the shared using all the threads and then do the dot product using all the
+[00:32:08.640 --> 00:32:16.480]   threads. Okay so this is identical to the last one we've just refactored out the loops. So
+[00:32:16.480 --> 00:32:19.960]   it's going to get a little bit closer to what the final CUDA code will look like. The thing
+[00:32:19.960 --> 00:32:30.320]   that calls it is identical and of course therefore the result's the same. Are there any questions
+[00:32:30.320 --> 00:32:39.680]   so far? I think he asked about the relationship between blocks in CUDA and the tile size.
+[00:32:39.680 --> 00:32:54.640]   Sure yeah so in CUDA a block is a as we learned in the last one of these lectures a block
+[00:32:54.640 --> 00:33:02.480]   is and is just a kind of a conceptual thing that the CUDA programming model provides. It's
+[00:33:02.480 --> 00:33:12.640]   just a bunch of numbers basically that are passed to your function as block IDX. And
+[00:33:12.640 --> 00:33:16.920]   you know that all of the threads in a block will be running on the same SM on the same
+[00:33:16.920 --> 00:33:24.000]   streaming multiprocessor. What you do with that information is entirely up to you and
+[00:33:24.000 --> 00:33:31.000]   last time we did nothing with that information. This time we're going to we're taking advantage
+[00:33:31.000 --> 00:33:37.660]   of it to say like okay well everything in a block has access to the same shared memory.
+[00:33:37.660 --> 00:33:45.120]   So we decided that we will treat a block as something that is calculating one particular
+[00:33:45.120 --> 00:33:51.920]   part of our output a tile. So that's what we called it we just called it a tile. So
+[00:33:51.920 --> 00:33:58.560]   a tile is just a is a semantic thing that we're using. And by mapping that semantic
+[00:33:58.560 --> 00:34:04.560]   idea of a tile to the CUDA programming models idea of a block and basically saying okay
+[00:34:04.560 --> 00:34:09.520]   we're going to treat each block as a tile. It's going to allow us to use one block to
+[00:34:09.520 --> 00:34:17.760]   calculate one tile in our output. And so therefore we're going to have one sort of shared memory
+[00:34:17.760 --> 00:34:22.000]   for each block which we're mapping to each tile in our output. So you can kind of think
+[00:34:22.000 --> 00:34:36.280]   of them as being the same thing. But they're kind of conceptually different. Okay so now
+[00:34:36.280 --> 00:34:41.400]   we're going to make it even more CUDA like because actually CUDA code does not have a
+[00:34:41.400 --> 00:34:51.760]   thing called run threads. It doesn't look like this. Instead in CUDA code there is no loop
+[00:34:51.760 --> 00:34:58.160]   like this. But instead all of these functions across all of these possible I0 and I1 coordinates
+[00:34:58.160 --> 00:35:03.000]   are run at the same time. I mean not necessarily the same time but they can be the same. They
+[00:35:03.000 --> 00:35:07.760]   can all be the same time or some subset of the same time. Conceptually for the programming
+[00:35:07.760 --> 00:35:14.240]   model you think of them as all running at the same time. To do that in Python we have
+[00:35:14.240 --> 00:35:23.200]   to use threads. Now in real life Python threads don't actually all run at the same time except
+[00:35:23.200 --> 00:35:27.200]   in certain situations at least with the current version of Python because there's a thing
+[00:35:27.200 --> 00:35:32.240]   called the global interpreter lock. They actually run one after the other. But again for the
+[00:35:32.240 --> 00:35:37.600]   programming model we can ignore that. So we're just going to pretend that they actually are
+[00:35:37.600 --> 00:35:47.120]   in parallel. So to create threads we use Python's threading library. It has a thread class.
+[00:35:47.120 --> 00:35:53.720]   And so let me show you a couple of interesting things here. I've got a function here called
+[00:35:53.720 --> 00:35:58.960]   g that just prints whatever you pass it and it prints the negative of whatever you pass
+[00:35:58.960 --> 00:36:09.920]   it and it prints whatever you pass it times 10. I'm going to call g using a bunch of threads.
+[00:36:09.920 --> 00:36:14.760]   One convenient way to create and run a bunch of threads is with a thread pool executor.
+[00:36:14.760 --> 00:36:20.800]   This is going to create three threads and run them at the same time or as much as that
+[00:36:20.800 --> 00:36:29.160]   this Python can handle. And so that thread pool dot map basically will run all the numbers
+[00:36:29.160 --> 00:36:41.720]   from one up to num and call our function g. So it'll call this three times. So if I just
+[00:36:41.720 --> 00:36:50.680]   comment out these mysterious lines of code you can see what it does is it runs all of
+[00:36:50.680 --> 00:36:56.480]   them for the first thread and then all of them for the second thread and then all of
+[00:36:56.480 --> 00:37:04.720]   them for the third thread. This is not going to work for us because we want all of our
+[00:37:04.720 --> 00:37:09.920]   threads to first complete the task of fill in shared memory and then all of them to complete
+[00:37:09.920 --> 00:37:18.340]   the task of doing the dot product. So we need to have a way to tell a thread to stop until
+[00:37:18.340 --> 00:37:24.680]   all of the threads are up to this point and in Python that thing is called a barrier.
+[00:37:24.680 --> 00:37:31.200]   And so we can create a barrier like so and we can say create a barrier so that until
+[00:37:31.200 --> 00:37:36.200]   three threads have hit that barrier stop. So that's what and so then we're going to
+[00:37:36.200 --> 00:37:42.160]   pass that in this sink barrier SBSinkBarrier. And so it's going to pause at the sink barrier
+[00:37:42.160 --> 00:37:47.880]   until all the threads are here and then pause at this sink barrier until all the threads
+[00:37:47.880 --> 00:37:56.320]   are here. And now if you run it you can see they all complete the first task and then
+[00:37:56.320 --> 00:38:01.020]   they all complete the second task and then they all complete the third task. And you'll
+[00:38:01.020 --> 00:38:05.880]   see they don't necessarily do it in the same order because threads can you know happen
+[00:38:05.880 --> 00:38:12.280]   in any order. And so this is the trick which is going to allow us to have a single loop
+[00:38:12.280 --> 00:38:17.940]   which everything in that loop first does the shared memory filling in task and then does
+[00:38:17.940 --> 00:38:29.720]   the dot product task. So here is our new kernel runner as before it goes through each block
+[00:38:29.720 --> 00:38:35.320]   as before it creates our shared memory and it's now going to create a synchronization
+[00:38:35.320 --> 00:38:42.040]   barrier containing the number of threads. So threads per block Y times threads per block
+[00:38:42.040 --> 00:38:47.920]   X is how many threads there will be. And then we're going to create a whole bunch of threads
+[00:38:47.920 --> 00:38:54.480]   one for every Y and one for every X. If you haven't seen this before in Python if you
+[00:38:54.480 --> 00:38:59.360]   have two things in a list comprehension it just does the Cartesian product of those.
+[00:38:59.360 --> 00:39:07.520]   So go through every anything in Y and everything in X and so O and P will be our two coordinates.
+[00:39:07.520 --> 00:39:11.640]   So create a new thread the function that it's going to call is whatever function you asked
+[00:39:11.640 --> 00:39:19.360]   for and the arguments are going to be the coordinates of the block the coordinates of
+[00:39:19.360 --> 00:39:25.680]   the thread. And then we'll say how many threads per block pass in the shared memory pass in
+[00:39:25.680 --> 00:39:33.680]   the synchronization barrier and any arguments you requested. And so now this looks like
+[00:39:33.680 --> 00:39:43.760]   actually as you'll see like CUDA code we can figure out what our row and column is using
+[00:39:43.760 --> 00:39:53.000]   exactly the approach we saw before although now our row and column are actually going
+[00:39:53.000 --> 00:40:05.920]   to be based on block IDX and block DIM because this is actually telling us whereabouts we
+[00:40:05.920 --> 00:40:13.200]   are. The shared memory is exactly the same as before and so again we loop through all
+[00:40:13.200 --> 00:40:21.640]   of our tiles and again we set the shared memory just like before. But you'll notice now we
+[00:40:21.640 --> 00:40:27.640]   don't need two separate loops we just do the set the shared memory piece and then we say
+[00:40:27.640 --> 00:40:38.480]   wait for the synchronization barrier. So remember that this is happening for every this is happening
+[00:40:38.480 --> 00:40:44.200]   for every output value in the tile simultaneously. At least as far as the programming model is
+[00:40:44.200 --> 00:40:48.660]   concerned it's simultaneously in fact in Python it doesn't do a good job of actually paralyzing
+[00:40:48.660 --> 00:40:53.760]   it and in CUDA we don't know for sure if they're happening exactly the same time but as far
+[00:40:53.760 --> 00:40:58.080]   as the programming model is concerned we should think of them as happening at the same time.
+[00:40:58.080 --> 00:41:05.240]   So all of these different coordinates are running conceptually at the same time. And
+[00:41:05.240 --> 00:41:11.720]   so when we hit wait here that means that all of the threads have finished running those
+[00:41:11.720 --> 00:41:17.520]   two lines of code. And so now we know that MS and NS are filled in for that tile. And
+[00:41:17.520 --> 00:41:27.080]   so now we can go ahead and do the dot product. And then once every thread has done its own
+[00:41:27.080 --> 00:41:34.680]   dot product we then need to stop and wait until they're all done. And then once they
+[00:41:34.680 --> 00:41:39.840]   are all done we can go ahead and fill in the next tile shared memory. This is very important
+[00:41:39.840 --> 00:41:45.000]   to have this wait here because if this wait wasn't here then some of them will still be
+[00:41:45.000 --> 00:41:49.760]   going ahead and doing the dot product and others will be replacing the shared memory
+[00:41:49.760 --> 00:41:54.560]   and that was going to give you wrong answers. So you have to wait after you've completed
+[00:41:54.560 --> 00:41:58.640]   the shared memory filling in and you have to wait after you've completed doing the dot
+[00:41:58.640 --> 00:42:09.080]   product. Okay this code's identical to before. And again it's giving us the same answer so
+[00:42:09.080 --> 00:42:16.480]   that is a good sign. So here's the cool thing. I then took this code and I passed it into
+[00:42:16.480 --> 00:42:23.480]   chatgpt and I said convert the following Python code to CUDA C and I pointed out that you
+[00:42:23.480 --> 00:42:28.720]   can remove these from the argument list. So we don't need those in the argument list.
+[00:42:28.720 --> 00:42:31.640]   I mean obviously you can manually remove this but I just thought if I have one prompt that
+[00:42:31.640 --> 00:42:38.080]   always works I don't have to do anything manually. I said change sync_b.wait to sync_threads
+[00:42:38.080 --> 00:42:42.800]   and I said for creating shared. So we'll talk about all this in a moment. So basically told
+[00:42:42.800 --> 00:42:49.680]   it about the minor things it would have to change to convert the Python into CUDA C.
+[00:42:49.680 --> 00:42:56.800]   And the thing it gave me worked first time. Although I did do some minor cleanups. But
+[00:42:56.800 --> 00:43:03.440]   this is the code it created after my minor cleanups. So you'll see now it's getting,
+[00:43:03.440 --> 00:43:10.040]   so it's converted the, it recognises that we need float arrays for our input and output
+[00:43:10.040 --> 00:43:20.600]   matrices. It's typed all of those things correctly. And so in my cleanup I added a few things.
+[00:43:20.600 --> 00:43:30.400]   So I've got now the tile column is thread_idx.x, the tile row, thread_idx.y, and then we've
+[00:43:30.400 --> 00:43:36.640]   got r and c just like before. Now CUDA the way it does shared memory is a little bit
+[00:43:36.640 --> 00:43:42.080]   weird. It doesn't get passed in just like thread_idx and block_idx don't get passed
+[00:43:42.080 --> 00:43:48.560]   in. You just have to put this magic incantation in exactly one line of code in your, in your
+[00:43:48.560 --> 00:43:53.680]   kernel. And so here it is. Here's this one line of code. And then following that you
+[00:43:53.680 --> 00:43:57.800]   say what data type you want your shared memory to be. And then you say what you want to call
+[00:43:57.800 --> 00:44:04.880]   it and that's an array. So this is created something called ms, which is the pointer
+[00:44:04.880 --> 00:44:08.760]   to the start of the shared memory that CUDA is going to create. So that's what externed
+[00:44:08.760 --> 00:44:16.320]   under shared means. So ms is a pointer to the start of the shared memory. We need ns
+[00:44:16.320 --> 00:44:21.800]   to be a pointer to the start of the second half of the shared memory. So go in tile_width
+[00:44:21.800 --> 00:44:29.800]   times tile_width because that will finish off the m part of the shared memory. That's
+[00:44:29.800 --> 00:44:34.240]   tile width by tile width. And the second half is the n part, just tile width by tile width.
+[00:44:34.240 --> 00:44:38.000]   So remember we did this in the Python version as well. So if any of this is confusing, go
+[00:44:38.000 --> 00:44:43.440]   back to the Python version and step through it in a debugger. So now we've got ms and
+[00:44:43.440 --> 00:44:50.920]   ns as our shared memory. And then this is exactly the same as the Python version. But
+[00:44:50.920 --> 00:45:11.180]   we've now got this sync_threads. So sync_threads is identical to the sync_b.wait. It says wait
+[00:45:11.180 --> 00:45:17.560]   until all of the threads are finished doing the previous lines of code before any of them
+[00:45:17.560 --> 00:45:23.200]   are allowed to do the next one. Because this stuff's built into CUDA, we don't have to
+[00:45:23.200 --> 00:45:28.660]   create a sync_barrier object and pass it in and all that. You just have this magic line
+[00:45:28.660 --> 00:45:36.520]   of code. So there's quite a bit of magic in CUDA, like this externed_shared and this_sink_threads.
+[00:45:36.520 --> 00:45:43.800]   But there's not too many pieces. And you can see we're basically using them all here. So
+[00:45:43.800 --> 00:45:51.400]   the next part is then to call the kernel. And so when we call the kernel, we've got the
+[00:45:51.400 --> 00:45:56.480]   normal triple angle brackets, blocks, threads per block, and then we pass in one third argument
+[00:45:56.480 --> 00:46:01.360]   to the triple angle brackets, which is how much shared memory do you want to create.
+[00:46:01.360 --> 00:46:06.120]   And so that is what's going to be used automatically when it creates this shared memory that we
+[00:46:06.120 --> 00:46:11.680]   get a pointer to here. That's how much shared memory it will create. How much shared memory
+[00:46:11.680 --> 00:46:16.400]   should you create? Well, in this case, I've commented out this section, so ignore that
+[00:46:16.400 --> 00:46:20.640]   for a moment. For now, we're just going to do the same thing. We're just going to make
+[00:46:20.640 --> 00:46:25.920]   the tile_width 16. So the amount of shared memory we need in bytes is tile_width times
+[00:46:25.920 --> 00:46:32.720]   tile_width for m times 2 for n as well, times size of float, because we don't want bytes,
+[00:46:32.720 --> 00:46:37.560]   we want floats. So that's the amount of bytes of shared memory we need. And that's what
+[00:46:37.560 --> 00:46:51.520]   we pass in. Okay. So that's basically that. And so we can then run that. And we can see
+[00:46:51.520 --> 00:47:00.360]   that we get the same result, which is good. One thing, though, which is a bit of a worry,
+[00:47:00.360 --> 00:47:06.920]   is that our time is actually slightly worse. It's gone from 6 milliseconds to 6.5 milliseconds.
+[00:47:06.920 --> 00:47:10.360]   So we'll talk about that in a moment. I just want to mention one other thing that is in
+[00:47:10.360 --> 00:47:17.640]   the book, they say, okay, for your size, you should write some function to calculate what
+[00:47:17.640 --> 00:47:22.680]   size it should be. But they never say how to do that. And so in future lectures, we'll
+[00:47:22.680 --> 00:47:29.820]   be talking about how to think about things like this and how to design this correctly.
+[00:47:29.820 --> 00:47:33.860]   But in this commented out section here, you can see the basic idea. So this will work
+[00:47:33.860 --> 00:47:40.460]   if you run it, even though it's not necessarily optimized. So you can call this special function
+[00:47:40.460 --> 00:47:47.480]   CUDA, get device properties, passing in a structure to fill in. So and means a pointer
+[00:47:47.480 --> 00:47:52.680]   to that. That's like a reference to the structure to fill in. And I think this is the device
+[00:47:52.680 --> 00:47:56.480]   number, if I remember correctly. And it will return back a structure containing a number
+[00:47:56.480 --> 00:48:04.480]   of things, including max threads per block. So and it will also give you shared memory
+[00:48:04.480 --> 00:48:13.880]   per block. So you can use that to dynamically figure out threads per block and to dynamically
+[00:48:13.880 --> 00:48:18.960]   figure out your tile width and stuff like that. I'm not saying this is an optimized
+[00:48:18.960 --> 00:48:23.360]   way to do any of those things. It's just an indicative kind of showing you how you can
+[00:48:23.360 --> 00:48:28.840]   get all the pieces you can need to calculate that. And so in later lectures, we will learn
+[00:48:28.840 --> 00:48:35.240]   more about how to actually figure out what would be the optimal tile width and shared
+[00:48:35.240 --> 00:48:41.680]   memory size and so forth. But for now, I'm just using 16. Okay, so this is the mystery
+[00:48:41.680 --> 00:48:51.560]   part. The mystery part is this is slower, as we saw. But if I take the exact same code,
+[00:48:51.560 --> 00:48:57.100]   instead I use this thing where we tell it what size to create is called dynamic shared
+[00:48:57.100 --> 00:49:04.840]   memory allocation. If we don't use dynamic shared memory allocation, then we do that
+[00:49:04.840 --> 00:49:12.360]   by not passing in the shared memory size here. But instead, if we know at compile time how
+[00:49:12.360 --> 00:49:18.360]   big we want our tiles to be, so we can try I've tried both 32 or 16, you can actually
+[00:49:18.360 --> 00:49:28.080]   create an MS of TW by TW and an NS of TW by TW. So you can have two separate things and
+[00:49:28.080 --> 00:49:33.420]   because we know we're deciding at compile time what our tile width is, then this is
+[00:49:33.420 --> 00:49:39.040]   not dynamically created. The rest of the code is the same, except now we've got proper kind
+[00:49:39.040 --> 00:49:48.040]   of two-dimensional indexing, which is nice. And with this one, this is faster. So we've
+[00:49:48.040 --> 00:49:56.960]   gone down from 6 to 5. And I think if I remember correctly, when I tried 16 tile width, it's
+[00:49:56.960 --> 00:50:07.480]   a bit faster too, it's more like 4. We'll have that running in the background. 16. Okay,
+[00:50:07.480 --> 00:50:21.800]   let's recompile that. Okay, any more questions before I move on?
+[00:50:21.800 --> 00:50:39.400]   So we have to the shared memory, we need to be able to store the tile for M and the tile
+[00:50:39.400 --> 00:50:47.400]   for N. So each one of those is TW by TW. And so therefore we need two times TW by TW in
+[00:50:47.400 --> 00:50:59.000]   order to have enough room for both of those two input tiles. And then we use it here.
+[00:50:59.000 --> 00:51:03.800]   We've got a pointer to the start of M, we've got a pointer to the start of N. We also saw
+[00:51:03.800 --> 00:51:22.320]   it in the Python version, the shared memory size we passed in. TW times TW times 2, because
+[00:51:22.320 --> 00:51:32.960]   we needed the MS, M's shared memory tile and N's shared memory tile. Okay, thank you for
+[00:51:32.960 --> 00:51:33.960]   the question.
+[00:51:33.960 --> 00:51:46.080]   Do you find some documentation or some reference why the dynamic shared memory version is supposed
+[00:51:46.080 --> 00:51:50.200]   to be this way? I'm a little bit surprised that it's...
+[00:51:50.200 --> 00:51:58.060]   No, it's a total mystery to me. So maybe there's something wrong with my code. I don't know.
+[00:51:58.060 --> 00:52:02.240]   So this is something I think we should try to follow up on and maybe some of our friends
+[00:52:02.240 --> 00:52:06.560]   at Nvidia can tell me the dumb thing I did because, you know, I'm a newbie to all this
+[00:52:06.560 --> 00:52:12.080]   stuff, so I probably did something stupid. But yeah, I've looked around, I've read around,
+[00:52:12.080 --> 00:52:16.500]   I've searched, I've asked chat GPT, nothing so far has told me. I've found some other
+[00:52:16.500 --> 00:52:21.240]   people who have said the same thing on the internet saying like, "Oh, why is my dynamic
+[00:52:21.240 --> 00:52:26.160]   and static having different speeds?" I haven't found answers to any of those either. So yeah,
+[00:52:26.160 --> 00:52:31.920]   this one's a... The theory is that it definitely should not be solid. They should be identical.
+[00:52:31.920 --> 00:52:38.640]   They should create exactly the same PTX code. So yeah, my guess is maybe I've made a mistake
+[00:52:38.640 --> 00:52:43.600]   in my code somewhere. So I will... If anybody figures this out, I will update the YouTube
+[00:52:43.600 --> 00:52:48.240]   description to say what the answer turned out to be.
+[00:52:48.240 --> 00:52:59.080]   Oh, hi there. Jeremy here with a message from the future. I figured out why that code was
+[00:52:59.080 --> 00:53:08.440]   going slowly. And the reason is because of this tiny little bit here. The problem is
+[00:53:08.440 --> 00:53:16.320]   that when TW, the tile width, is not known at compile time, it turns out that CUDA does
+[00:53:16.320 --> 00:53:24.320]   not know how to create an optimized piece of code for a range of tile widths. So it
+[00:53:24.320 --> 00:53:32.000]   falls back to the slowest possible version. I found a somewhat better solution than just
+[00:53:32.000 --> 00:53:39.040]   supporting one constant tile width which is... You can skip over this if you're not interested.
+[00:53:39.040 --> 00:53:45.200]   It's a bit more advanced, but basically you can use a C++ template and you can make tile
+[00:53:45.200 --> 00:53:51.640]   width a template parameter instead of a normal parameter. When you do this, now you can only
+[00:53:51.640 --> 00:53:57.000]   call it with a constant tile width, which is a bit ugly, but you can actually deal with
+[00:53:57.000 --> 00:54:02.560]   that by basically supporting some fixed number of tile widths and it will compile a separate
+[00:54:02.560 --> 00:54:09.240]   version of the kernel for each one. So I've got it here doing eight and a 16 and a 32.
+[00:54:09.240 --> 00:54:12.840]   So you could have something... So here I've just got tile width equals 16, but it's a
+[00:54:12.840 --> 00:54:16.440]   variable to kind of show it's possible and you could replace that with some code that
+[00:54:16.440 --> 00:54:20.340]   calculates dynamically whether you want to make it eight or 16 or 32, or you could do
+[00:54:20.340 --> 00:54:28.640]   additional ones as well. And then there's a lambda. This is how C++ very ugly does lambdas.
+[00:54:28.640 --> 00:54:32.960]   Looks quite different to Python lambdas as you can see, but basically this is a lambda
+[00:54:32.960 --> 00:54:39.240]   now which we'll take. So this is the function that we're going to call and we'll call that
+[00:54:39.240 --> 00:54:45.320]   function using some particular kernel. This is the kernel function, kf is the kernel function.
+[00:54:45.320 --> 00:54:53.080]   Anyway, so lots of messiness there. It's pretty hideous code. And I guess this is where it
+[00:54:53.080 --> 00:54:59.120]   gets pretty complicated when you actually want to have optimized kernels for a range
+[00:54:59.120 --> 00:55:08.080]   of different hardware. The good news is that at the moment at least any even reasonably
+[00:55:08.080 --> 00:55:15.560]   modern Nvidia GPU supports exactly the same amount of shared memory. So maybe all this
+[00:55:15.560 --> 00:55:20.320]   dynamic stuff isn't that necessary. Although having said that I do think that you do need
+[00:55:20.320 --> 00:55:24.960]   to change the tile width depending on the matrix size or the size of the matrices that
+[00:55:24.960 --> 00:55:33.160]   you're using. So yeah, I do think this is actually reasonably complicated to make it
+[00:55:33.160 --> 00:55:36.880]   work well in lots of different situations. And I guess this is why there's a whole team
+[00:55:36.880 --> 00:55:44.360]   of people at Nvidia who work on doing this in Kublai and Gudian and so we don't have
+[00:55:44.360 --> 00:55:51.240]   to worry about it. Anyway, I'm glad I got it figured out and I will now return you back
+[00:55:51.240 --> 00:55:57.440]   to our scheduled programming. All right. So now I've got something really exciting to
+[00:55:57.440 --> 00:56:08.240]   show which is that we can do everything that we've just seen in a different library called
+[00:56:08.240 --> 00:56:16.000]   number. Number is another way of writing CUDA code. It's a way of writing CUDA code where
+[00:56:16.000 --> 00:56:31.560]   you actually write the CUDA code in Python. Here is the CUDA code for our call. I haven't
+[00:56:31.560 --> 00:56:39.240]   tried this before but we can actually see how long this takes to run. Okay. That's interesting.
+[00:56:39.240 --> 00:56:48.840]   So this one is slower still. So again, maybe I'm doing something weird. This is using the
+[00:56:48.840 --> 00:56:55.240]   dynamic shared memory approach. I've got two times tile width, times tile width, times
+[00:56:55.240 --> 00:57:01.320]   -- I just manually put four which is how many bytes an hour in a float. But still it's running
+[00:57:01.320 --> 00:57:09.200]   at CUDA speeds which is good even if it's not the full speed we were getting from CUDA.
+[00:57:09.200 --> 00:57:15.240]   Now why would you do this? Because actually if you look at the amount of code I have here,
+[00:57:15.240 --> 00:57:24.840]   it's not less code than the amount that I had here. So it's not like -- it's not easier
+[00:57:24.840 --> 00:57:29.600]   to write. I mean, so I've still got to use block IDX, block damn thread IDX. So all these
+[00:57:29.600 --> 00:57:38.240]   are now available in the CUDA -- what would that be -- module, I guess. And they're kind
+[00:57:38.240 --> 00:57:46.200]   of globals available here. We can create our shared array here because we say shared.array0.
+[00:57:46.200 --> 00:57:51.120]   This is actually quite a new thing in number. It does the dynamic approach. So when you
+[00:57:51.120 --> 00:57:56.800]   call the kernel rather than using triple angle brackets, you use square brackets, passing
+[00:57:56.800 --> 00:58:01.280]   in the blocks, threads per block, stream number which we haven't learned about yet, and the
+[00:58:01.280 --> 00:58:05.760]   dynamic shared memory size. And so here is where it creates it with a dynamic shared
+[00:58:05.760 --> 00:58:11.440]   memory size. Tell it that you want them to be floats. And so now we can do the exact
+[00:58:11.440 --> 00:58:17.520]   same trick that we did before. Grabbing our MS and NS. Instead of underscore, underscore
+[00:58:17.520 --> 00:58:24.560]   sync threads, it's CUDA.sync threads. So in some ways I'd say, like, okay, this is not
+[00:58:24.560 --> 00:58:31.000]   necessarily a big win. But there's a couple of things that do make it a big win. So one
+[00:58:31.000 --> 00:58:37.040]   I'll show you, for instance, is -- I mean, we could just do something pointless like
+[00:58:37.040 --> 00:58:42.360]   a times one here. There we go. So that should force it to recompile the kernel. Okay, run.
+[00:58:42.360 --> 00:58:47.040]   There we go. Done. So it took less than a second to recompile the kernel. So for some
+[00:58:47.040 --> 00:58:57.440]   reason which I don't fully understand, compiling number kernels, CUDA kernels, is way faster
+[00:58:57.440 --> 00:59:05.600]   than compiling C and C++ CUDA kernels. And I have asked an NVIDIA guy about this, and
+[00:59:05.600 --> 00:59:09.520]   he was like, oh, well, it's just how it is. Sorry. It doesn't seem to be an obvious way
+[00:59:09.520 --> 00:59:17.320]   to make the C, C++ version faster. So I actually think this is great for doing development,
+[00:59:17.320 --> 00:59:24.640]   is I can, you know, have actual CUDA running and just change things and run it very fast.
+[00:59:24.640 --> 00:59:28.800]   So I think that's very handy. The second thing that's very handy is that I don't have to
+[00:59:28.800 --> 00:59:36.200]   flatten my tensors. M and N here are being passed in -- actually, M and N. The only thing
+[00:59:36.200 --> 00:59:42.340]   I've done to them is wrapped them with as CUDA array, which is a take zero time. It's
+[00:59:42.340 --> 00:59:48.520]   just changing the type, basically. So you don't have to flatten it. So I can actually
+[00:59:48.520 --> 00:59:56.340]   use proper indexing notation, which is convenient. That's another nice thing. I can do things
+[00:59:56.340 --> 01:00:03.040]   like dot shape, so I don't have to pass in the H, K, and W, which, again, is quite nice.
+[01:00:03.040 --> 01:00:07.720]   So there's some conveniences. But then I'm going to tell you the most amazingly cool
+[01:00:07.720 --> 01:00:19.160]   thing, which is the Python thread thing we created back here that kind of simulates threads
+[01:00:19.160 --> 01:00:26.880]   and simulates CUDA in Python is fully built in to number. So everything that we kind of
+[01:00:26.880 --> 01:00:34.280]   recreated from scratch here actually already exists. And so in number, to use it, if you
+[01:00:34.280 --> 01:00:43.560]   Google for number CUDA simulator, you'll see here that if you set the environment variable
+[01:00:43.560 --> 01:00:52.840]   number enable CUDA sim to one, then that enables the CUDA simulator. The code is executed as
+[01:00:52.840 --> 01:01:02.720]   normal, except that it's actually run on the CPU as pure Python code, just like ours was.
+[01:01:02.720 --> 01:01:14.140]   So you can, for example, set a break point or print stuff directly from Python. Now notice,
+[01:01:14.140 --> 01:01:18.580]   because this is not running CUDA, it's going to be slow. It's going to be exactly as slow
+[01:01:18.580 --> 01:01:23.480]   as our manual Python version, because this is just their Python, manual Python version,
+[01:01:23.480 --> 01:01:29.880]   or I think it's exactly as slow. So you still want to use much smaller subsets of your data.
+[01:01:29.880 --> 01:01:37.320]   But this is a great way to actually, in my opinion, to do real world CUDA development
+[01:01:37.320 --> 01:01:44.600]   is do it in number. Do it all with number enable CUDA sim set to one with small amounts
+[01:01:44.600 --> 01:01:52.600]   of data until everything works. And you have to, by the way, you have to set that environment
+[01:01:52.600 --> 01:01:59.880]   variable before you import number, right? So you would have it before you import number.
+[01:01:59.880 --> 01:02:05.080]   And if you're using a notebook, you'd have to reset the kernel, restart the kernel, and
+[01:02:05.080 --> 01:02:09.040]   then change the environment variable and then reimport number. And then you can set it to
+[01:02:09.040 --> 01:02:14.920]   zero, and now the exact same code will now be running on the GPU. And then I've tested
+[01:02:14.920 --> 01:02:20.860]   this. If you then take your code and paste it into chat GPT and say, please convert this
+[01:02:20.860 --> 01:02:28.520]   into CUDA C code, for me, at least, it did it perfectly correctly first time. So I think
+[01:02:28.520 --> 01:02:33.920]   this is a really useful way to kind of combine all the stuff we've learned about from first
+[01:02:33.920 --> 01:02:38.120]   principles. And we've done it all from scratch. And so we understand how it all works. But
+[01:02:38.120 --> 01:02:44.080]   now to implement it in practice, maybe the easiest way to do that is actually to use
+[01:02:44.080 --> 01:02:49.600]   number. Now, of course, you don't even need to convert it to C or C++. You could just
+[01:02:49.600 --> 01:02:55.280]   leave it in number. The challenge is from a deployment point of view, you know, it might
+[01:02:55.280 --> 01:03:05.640]   be a bit more tricky. With PyTorch, if you use our load inline, load CUDA approach, the
+[01:03:05.640 --> 01:03:10.840]   documentation explains how you can precompile that and actually provide a pip or conda installable
+[01:03:10.840 --> 01:03:17.280]   package that people can just use right away without having any of the CUDA development
+[01:03:17.280 --> 01:03:24.040]   toolkit installed. The number, that's not true. Having said that, if you do install number
+[01:03:24.040 --> 01:03:28.240]   from conda, it automatically installs all the stuff you need for the toolkit. So maybe that's
+[01:03:28.240 --> 01:03:34.840]   okay. So anyway, these are some things like pros and cons to think about. So maybe you
+[01:03:34.840 --> 01:03:41.640]   just just use number as is. Maybe it's a little bit slower. So maybe that'll be a problem.
+[01:03:41.640 --> 01:03:51.000]   Or maybe you auto-convert it to CUDA C and actually use that in practice. Yeah. So I
+[01:03:51.000 --> 01:03:58.320]   think that basically covers everything. Any more questions or anything anybody wanted
+[01:03:58.320 --> 01:03:59.320]   to add?
+[01:03:59.320 --> 01:04:06.920]   From my side, first of all, I must say, this was a super fantastic session. I learned a
+[01:04:06.920 --> 01:04:12.560]   lot. And I didn't expect that you would go so deep into the Metamol stuff. And also I
+[01:04:12.560 --> 01:04:19.040]   think this shows so many elements of the CUDA development. It's starting from having this
+[01:04:19.040 --> 01:04:24.880]   single character variables that you normally see. And it also maybe shocks people if they
+[01:04:24.880 --> 01:04:30.920]   see curves for the first time. It makes it a little bit inaccessible in the first class
+[01:04:30.920 --> 01:04:37.280]   because you just see this variables in the class and multiply whatever. So magic happens.
+[01:04:37.280 --> 01:04:44.960]   That's what you showed this, like the starting from this drawing, all the memory, like basically
+[01:04:44.960 --> 01:04:49.960]   the structures look like and what you need to do. And then reference back to this, because
+[01:04:49.960 --> 01:04:56.360]   normally in the first approach, you already get something wrong. And looking back, where
+[01:04:56.360 --> 01:05:03.800]   do the variables come from? This is why I'm full. And I also have mine, always, some pencil
+[01:05:03.800 --> 01:05:05.320]   and paper beside me.
+[01:05:05.320 --> 01:05:06.320]   Yes, marvelous. Thank you.
+[01:05:06.320 --> 01:05:11.320]   Yeah. There are also a few things that stood out for me. I think if more people are interested
+[01:05:11.320 --> 01:05:18.520]   in a lot of ship number kernels, that's something we can certainly take a look at. As far as
+[01:05:18.520 --> 01:05:23.960]   I know, I think number did have an ahead-of-time compilation mode, which should make some stuff
+[01:05:23.960 --> 01:05:29.440]   easier. But because it's all sort of old Python, you can ship it. You just have to ease the
+[01:05:29.440 --> 01:05:30.440]   compilation cost.
+[01:05:30.440 --> 01:05:38.880]   Yeah. The AOT ahead-of-time compilation is deprecated as of, what is this, February 2024.
+[01:05:38.880 --> 01:05:42.120]   They say they're going to replace it with something newer and better, but they haven't
+[01:05:42.120 --> 01:05:47.120]   said what that is yet. So that's currently an outstanding question. They did say they
+[01:05:47.120 --> 01:05:54.640]   won't remove the previous AOT approach until the new approach is working and everything.
+[01:05:54.640 --> 01:06:00.160]   So yeah, hopefully, by the time people watch this video on YouTube in the future, maybe
+[01:06:00.160 --> 01:06:01.640]   this will all be fully resolved.
+[01:06:01.640 --> 01:06:07.720]   So we have a question here from Jonas, who wants to know if you have checked it out,
+[01:06:07.720 --> 01:06:15.440]   how it compares to Q+ to the optimized tutor library, or maybe also to the PyTorch metrics
+[01:06:15.440 --> 01:06:17.840]   modification as a baseline.
+[01:06:17.840 --> 01:06:25.480]   I haven't because I'm not a CUDA expert. I actually don't know how to optimize all these
+[01:06:25.480 --> 01:06:33.080]   shared memory sizes and tiles and blah, blah, blah. So I know that stuff like Kuberless
+[01:06:33.080 --> 01:06:38.480]   has a whole lot of-- so actually, one of the things you might have noticed is I changed
+[01:06:38.480 --> 01:06:44.760]   my input matrix sizes from last time. Last time, I used the MNIST data and a kind of
+[01:06:44.760 --> 01:06:53.920]   a pretend set of weights for MNIST. And so the output was 50,000 by 10. And that really
+[01:06:53.920 --> 01:06:59.760]   kind of long, narrow matrix is particularly hard to optimize, because with a tile width
+[01:06:59.760 --> 01:07:08.200]   of 32, for example, most of it's padding. So I actually used kind of a simpler-- not
+[01:07:08.200 --> 01:07:12.500]   your old shapes to make this a bit easier for me to think about.
+[01:07:12.500 --> 01:07:19.440]   So I think it'll be a fun exercise as we go further to see if we can figure out for that
+[01:07:19.440 --> 01:07:26.520]   like a one layer MNIST model, can we create something that is close in performance to
+[01:07:26.520 --> 01:07:35.040]   what Q+ or QDNN does? Because yeah, I think it's kind of-- I found it quite tricky to
+[01:07:35.040 --> 01:07:38.680]   think about how I would do all that automatically.
+[01:07:38.680 --> 01:07:45.560]   There are things like TVM, which maybe one day we can look at TVM together. I know Thomas
+[01:07:45.560 --> 01:07:49.960]   Feynman says he's used that. Yeah, so maybe he can even help us there, which is something
+[01:07:49.960 --> 01:07:58.320]   which can kind of automatically optimize these and a lot more details for you. And then also,
+[01:07:58.320 --> 01:08:02.320]   I know sometime hopefully in the next month or so-- so sometime around late February or
+[01:08:02.320 --> 01:08:09.000]   March, 2024, Mojo GPU should be becoming available, at least in a preview form. And that has an
+[01:08:09.000 --> 01:08:14.720]   autotune functionality which might help us to automatically find the best parameters
+[01:08:14.720 --> 01:08:19.840]   as well. But yeah, for now, I didn't even bother checking because I suspected I was going to
+[01:08:19.840 --> 01:08:22.520]   be quite embarrassed at how much further there is to go.
+[01:08:22.520 --> 01:08:31.360]   Well, I think this is a super good opportunity for the community because you have this baggable
+[01:08:31.360 --> 01:08:36.720]   notebook which can be-- yes, everybody can fork it and play around with it and try out
+[01:08:36.720 --> 01:08:42.680]   different stuff, like make performance measurements and it will be-- I'm pretty sure that somebody
+[01:08:42.680 --> 01:08:47.480]   can make reports on things and experiment with it and maybe we can look at what we've
+[01:08:47.480 --> 01:08:54.480]   found. So the current state isn't-- I think I'm closer to what state-of-the-art with this
+[01:08:54.480 --> 01:08:59.920]   metrics multiplication. And I think also the session today played the foundation for further
+[01:08:59.920 --> 01:09:09.200]   stuff like special currents, technology from tensor cores, for example, from NVIDIA, which
+[01:09:09.200 --> 01:09:18.000]   is specifically in the hardware, the further hardware features for sitting metrics multiplications.
+[01:09:18.000 --> 01:09:21.800]   So thanks for keeping it in the future, maybe.
+[01:09:21.800 --> 01:09:24.800]   Great.
+[01:09:24.800 --> 01:09:30.400]   So for what's worth, I think getting something less competitive is probably going to be very
+[01:09:30.400 --> 01:09:37.600]   difficult, at least on basically the server's use of things like A100s. I suspect that's
+[01:09:37.600 --> 01:09:44.400]   not as true for consumer-only use. So that's potentially like [INAUDIBLE] because it wants
+[01:09:44.400 --> 01:09:49.000]   to be less attention from the video.
+[01:09:49.000 --> 01:09:50.000]   Good point.
+[01:09:50.000 --> 01:09:54.000]   So MikeG, Misa wants to know what is PyTorch currently using for metrics multiplications,
+[01:09:54.000 --> 01:09:55.000]   I guess.
+[01:09:55.000 --> 01:09:56.000]   Do you know?
+[01:09:56.000 --> 01:09:57.000]   Yeah.
+[01:09:57.000 --> 01:10:04.000]   So some writers mostly still use as like a loss. There is like an experimental-- with
+[01:10:04.000 --> 01:10:13.600]   if you use PyTorch compile, there's a flag called torch.enductor.config. I think it's
+[01:10:13.600 --> 01:10:19.400]   off by default. But, you know, it's something we're potentially interested in exploring.
+[01:10:19.400 --> 01:10:24.200]   But I think as far as today, it's mostly still the loss. The way you can tell, by the way,
+[01:10:24.200 --> 01:10:31.600]   is if you launch the PyTorch profiler, the function names will have specific signatures
+[01:10:31.600 --> 01:10:37.000]   to sort of say, OK, it's using a loss, it's using test records. So like a profile trace
+[01:10:37.000 --> 01:10:41.000]   as well would be really different from what you're trying to think about.
+[01:10:41.000 --> 01:10:46.600]   And Jeremy, what you said, I think, regarding this speed of compilation, for me personally,
+[01:10:46.600 --> 01:10:52.400]   this is super important in getting like, experimenting with things. I was trying to optimize for
+[01:10:52.400 --> 01:10:58.600]   this, and I think it's a big advantage if this is in-- well, it's really much faster
+[01:10:58.600 --> 01:11:04.600]   and you're running and you succeed, and you're voicelessly waiting for the next result after
+[01:11:04.600 --> 01:11:11.440]   you get into the failures you went through. Exactly. Yeah, you need a quick iteration loop.
+[01:11:11.440 --> 01:11:19.360]   So I think between the CUDA simulator and the fast number CUDA JIT, it can make life
+[01:11:19.360 --> 01:11:30.400]   a lot better. I think there were two more general questions regarding Chagipiti use. I think
+[01:11:30.400 --> 01:11:38.920]   one was whether Chagipiti could, because it was fusing much bit corners, or is this like
+[01:11:38.920 --> 01:11:44.000]   what the limits basically are for what Chagipiti can do, because I think it's take how to do
+[01:11:44.000 --> 01:11:47.560]   that. And you have to try it. Let's try it. That'd be an interesting thing for people
+[01:11:47.560 --> 01:11:51.040]   to experiment with, wouldn't it? See how far we can go. I think, in general, people tend
+[01:11:51.040 --> 01:11:58.240]   to underestimate maybe what Chagipiti can do. So yeah, why don't you try some things
+[01:11:58.240 --> 01:12:01.320]   that maybe you suspect might be a bit too hard for it, and we'll find out where the limits
+[01:12:01.320 --> 01:12:13.520]   are. For example, this-- I put that prompt in-- well,
+[01:12:13.520 --> 01:12:21.680]   so when I converted number into CUDA, it automatically changed the number shared memory. In my prompt,
+[01:12:21.680 --> 01:12:30.040]   I had something saying replace sync_b.wait with __sync_threads. I didn't try doing it
+[01:12:30.040 --> 01:12:51.780]   without it. Maybe it would have guessed. Personally, I haven't found it at all useful
+[01:12:51.780 --> 01:13:05.640]   for anything remotely novel. So I found it really useful for using languages I'm not
+[01:13:05.640 --> 01:13:10.920]   that familiar with, or frameworks I'm not that familiar with, and it gets me-- or calling
+[01:13:10.920 --> 01:13:18.520]   some API. I find it really good for that. But for doing anything at all algorithm-related,
+[01:13:18.520 --> 01:13:24.160]   which is anything other than just replicating a well-known algorithm, I've found it terrible.
+[01:13:24.160 --> 01:13:29.200]   So at least the kind of work I do, which is kind of-- because it's research-oriented,
+[01:13:29.200 --> 01:13:37.440]   so most of what I write is pretty new, I haven't found it at all useful. So at least I think
+[01:13:37.440 --> 01:13:59.920]   my work's safe for a while. I don't know about yours.
+[01:13:59.920 --> 01:14:05.720]   Yeah, a little bit. I mean, it's-- I'm not an expert. I know you guys know a lot more
+[01:14:05.720 --> 01:14:14.680]   than me. So I mean, Triton's different in that in Triton, you can have a matrix multiplication
+[01:14:14.680 --> 01:14:23.520]   inside. You can have @ inside your kernel. And Triton's really clever at optimizing these
+[01:14:23.520 --> 01:14:31.520]   much more sophisticated things. So number's a lot more basic, really. It's just a mapping
+[01:14:31.520 --> 01:14:43.400]   of the CUDA-C concepts directly to Python concepts. Triton is a fairly recent, literally
+[01:14:43.400 --> 01:14:51.680]   a PhD thesis artifact. So it's doing something a lot more clever. I mean, there are similarities.
+[01:14:51.680 --> 01:15:01.160]   It works with a decorator. It converts Python code to GPU code. I think they're good for
+[01:15:01.160 --> 01:15:06.760]   different things, because Triton is somewhat limited as well. It's very, very smart, but
+[01:15:06.760 --> 01:15:13.360]   it's not a mapping of the entire CUDA programming model. So for example, when I know at Meta,
+[01:15:13.360 --> 01:15:21.760]   when you guys, Horace and those guys did the GPT fast thing and wanted to do 4-bit discretization,
+[01:15:21.760 --> 01:15:25.440]   you found that you couldn't do it in Triton. And that's because Triton doesn't have any
+[01:15:25.440 --> 01:15:34.040]   way to express that at the moment. So yeah, I think they both have their place. Do you
+[01:15:34.040 --> 01:15:35.840]   guys feel the same way?
+[01:15:35.840 --> 01:15:41.520]   Yeah, so we are going to have Charles, who is the author of the GPT fast kernel, give
+[01:15:41.520 --> 01:15:46.680]   us a talk in two weeks. So he's going to sort of tell us the first time it'll happen. I
+[01:15:46.680 --> 01:15:52.920]   think when people ask this question, the motivation is sort of can you avoid learning CUDA? And
+[01:15:52.920 --> 01:15:55.000]   after that, it's like that's a negative.
+[01:15:55.000 --> 01:15:56.000]   Does seem to be, yeah.
+[01:15:56.000 --> 01:16:01.200]   So when I'm like learning both, and trying it will just be slightly easier to ship some
+[01:16:01.200 --> 01:16:06.480]   sort of useful kernel, but you're going to sort of run into the limits of the language.
+[01:16:06.480 --> 01:16:14.200]   Yeah, and I'm not even sure it's easier to use Triton. I feel like Triton is more complex
+[01:16:14.200 --> 01:16:20.000]   in many ways. So once you know CUDA, then you can find the places where Triton can help.
+[01:16:20.000 --> 01:16:25.840]   I think trying to use Triton effectively if you didn't know CUDA would be an even harder
+[01:16:25.840 --> 01:16:35.200]   path, especially now that we've kind of figured out these ways of doing iterative notebook
+[01:16:35.200 --> 01:16:39.640]   based CUDA development, which is one of the big benefits of Triton is just it's a decorator
+[01:16:39.640 --> 01:16:52.040]   and it's Python and stuff. So, yeah.
+[01:16:52.040 --> 01:17:21.040]   Okay, so I think then this was wonderful session today. Thank you so much, Henry.
+[01:17:21.040 --> 01:17:22.040]   Thank you.
+[01:17:22.040 --> 01:17:28.560]   Thank you so much for the opportunity now to work on this. And yeah, fantastic, a really
+[01:17:28.560 --> 01:17:31.240]   deep dive into a metrics modification.
+[01:17:31.240 --> 01:17:33.240]   Bye, everybody. Thanks for joining.
+

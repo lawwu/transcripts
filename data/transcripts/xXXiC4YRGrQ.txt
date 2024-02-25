@@ -1,0 +1,1498 @@
+
+[00:00:00.000 --> 00:00:11.400]   Welcome to Lesson 13, where we're going to be talking about image enhancement.
+[00:00:11.400 --> 00:00:15.880]   Image enhancement would cover things like this painting that you might be familiar with.
+[00:00:15.880 --> 00:00:20.920]   However, you might not have noticed before that this painting actually has a picture
+[00:00:20.920 --> 00:00:22.760]   of an eagle in it.
+[00:00:22.760 --> 00:00:25.640]   The reason you may not have noticed that before is that this painting actually didn't use
+[00:00:25.640 --> 00:00:28.280]   to have an eagle in it.
+[00:00:28.280 --> 00:00:31.780]   By the same token, actually, on that first page, this painting did not use to have Captain
+[00:00:31.780 --> 00:00:34.600]   America's shield on it either.
+[00:00:34.600 --> 00:00:37.960]   This painting did not use to have a clock in it either.
+[00:00:37.960 --> 00:00:43.200]   This is a cool new paper that just came out a couple of days ago called "Deep Painterly
+[00:00:43.200 --> 00:00:44.200]   Harmonization."
+[00:00:44.200 --> 00:00:50.200]   It uses almost exactly the technique we're going to learn in this lesson with some minor
+[00:00:50.200 --> 00:00:51.200]   tweaks.
+[00:00:51.200 --> 00:00:57.040]   But you can see the basic idea is to take one picture, paste it on top of another picture,
+[00:00:57.040 --> 00:01:01.320]   and then use some kind of approach to combine the two.
+[00:01:01.320 --> 00:01:07.920]   And the basic approach is something called style transfer.
+[00:01:07.920 --> 00:01:14.160]   Before we talk about that, though, I wanted to mention this really cool contribution by
+[00:01:14.160 --> 00:01:20.240]   William Horton, who added this stochastic weight averaging technique to the FastAI library
+[00:01:20.240 --> 00:01:24.160]   that is now all merged and ready to go.
+[00:01:24.160 --> 00:01:27.560]   And he's written a whole post about that which I strongly recommend you check out, not just
+[00:01:27.560 --> 00:01:33.680]   because stochastic weight averaging actually lets you get higher performance from your existing
+[00:01:33.680 --> 00:01:37.440]   neural networks with basically no extra work.
+[00:01:37.440 --> 00:01:41.480]   It's as simple as adding these two parameters to your fit function.
+[00:01:41.480 --> 00:01:46.960]   But also he's described his process of building this and how he tested it and how he contributed
+[00:01:46.960 --> 00:01:47.960]   to the library.
+[00:01:47.960 --> 00:01:55.080]   So I think it's interesting if you're interested in doing something like this, because I think
+[00:01:55.080 --> 00:02:02.140]   William had not built this kind of library before, so he describes how he did it.
+[00:02:02.140 --> 00:02:10.320]   Another very cool contribution to the FastAI library is a new train phase API.
+[00:02:10.320 --> 00:02:14.560]   And I'm going to do something I've never done before, which I'm actually going to present
+[00:02:14.560 --> 00:02:16.400]   somebody else's notebook.
+[00:02:16.400 --> 00:02:21.280]   And the reason I haven't done it before is because I haven't liked any notebooks enough
+[00:02:21.280 --> 00:02:25.720]   to think they're worth presenting, but still has done a fantastic job here of not just
+[00:02:25.720 --> 00:02:31.520]   creating this new API, but also creating a beautiful notebook describing what it is and
+[00:02:31.520 --> 00:02:33.440]   how it works and so forth.
+[00:02:33.440 --> 00:02:41.880]   And the background here is, as you guys know, we've been trying to train networks faster
+[00:02:41.880 --> 00:02:46.760]   partly as part of this Dawnbench competition, and also for a reason that you'll learn about
+[00:02:46.760 --> 00:02:50.000]   next week.
+[00:02:50.000 --> 00:02:56.160]   And I mentioned on the forums last week, it would be really handy for our experiments
+[00:02:56.160 --> 00:03:01.160]   if we had an easier way to try out different learning rate schedules and stuff, and I basically
+[00:03:01.160 --> 00:03:04.280]   laid out an API that I had in mind.
+[00:03:04.280 --> 00:03:09.120]   I said it would be really cool if somebody could write this, because I'm going to bed
+[00:03:09.120 --> 00:03:12.640]   now and I kind of need it by tomorrow.
+[00:03:12.640 --> 00:03:17.800]   And Sylvain replied on the forum, "Well, that sounds like a good challenge."
+[00:03:17.800 --> 00:03:21.680]   And by 24 hours later, it was done.
+[00:03:21.680 --> 00:03:23.120]   And it's been super cool.
+[00:03:23.120 --> 00:03:30.500]   I want to take you through it because it's going to allow you to do research into things
+[00:03:30.500 --> 00:03:32.160]   that nobody's tried before.
+[00:03:32.160 --> 00:03:37.640]   So it's called the train phase API, and the easiest way to show it is to show an example
+[00:03:37.640 --> 00:03:41.880]   of what it does, which is here.
+[00:03:41.880 --> 00:03:48.560]   Here is an iteration against learning rate chart, as you're familiar with seeing.
+[00:03:48.560 --> 00:03:53.300]   And this is one where we train for a while at a learning rate of 0.01, and then we train
+[00:03:53.300 --> 00:03:58.240]   for a while at a learning rate of 0.001.
+[00:03:58.240 --> 00:04:02.120]   I actually wanted to create something very much like that learning rate chart because
+[00:04:02.120 --> 00:04:09.920]   most people that train ImageNet use this stepwise approach, and it's actually not something
+[00:04:09.920 --> 00:04:14.040]   that's built into fast AI because it's not generally something we recommend.
+[00:04:14.040 --> 00:04:18.400]   But in order to replicate existing papers, I wanted to do it the same way.
+[00:04:18.400 --> 00:04:23.280]   And so rather than writing a number of fit calls with different learning rates, it would
+[00:04:23.280 --> 00:04:28.400]   be nice to be able to basically say train for n epochs at this learning rate and then
+[00:04:28.400 --> 00:04:30.700]   m epochs at that learning rate.
+[00:04:30.700 --> 00:04:32.420]   And so here's how you do that.
+[00:04:32.420 --> 00:04:39.920]   You can say a phase is a period of training with particular optimizer parameters, and
+[00:04:39.920 --> 00:04:43.040]   it consists of a number of training phase objects.
+[00:04:43.040 --> 00:04:49.360]   Training phase objects is how many epochs to train for, what optimization function to
+[00:04:49.360 --> 00:04:54.080]   use, and what learning rate, amongst other things that we'll see.
+[00:04:54.080 --> 00:05:00.240]   And so here you'll see the two training phases that you just saw on that graph.
+[00:05:00.240 --> 00:05:08.400]   So now, rather than calling learn.fit, you say learn.fit with an optimizer scheduler
+[00:05:08.400 --> 00:05:12.480]   with these phases, fit, opt, shed.
+[00:05:12.480 --> 00:05:17.040]   And then from there, most of the things you pass in can just get sent across to the fit
+[00:05:17.040 --> 00:05:22.560]   function as per usual, so most of the usual parameters will work fine.
+[00:05:22.560 --> 00:05:27.280]   But in this case, generally speaking, actually we can just use these training phases and
+[00:05:27.280 --> 00:05:29.580]   you'll see it fits in the usual way.
+[00:05:29.580 --> 00:05:33.520]   And then when you say plot LR, there it is.
+[00:05:33.520 --> 00:05:38.840]   And not only does it plot the learning rate, it also plots momentum, and for each phase
+[00:05:38.840 --> 00:05:42.880]   it tells you what optimizer it used.
+[00:05:42.880 --> 00:05:49.000]   You can turn off the printing of the optimizers, you can turn off the printing of mentums,
+[00:05:49.000 --> 00:05:54.840]   and you can do other little things like a training phase could have an LR decay parameter.
+[00:05:54.840 --> 00:05:59.240]   So here's a fixed learning rate, and then a linear decay learning rate, and then a fixed
+[00:05:59.240 --> 00:06:03.960]   learning rate, which gives us that picture.
+[00:06:03.960 --> 00:06:09.640]   And this might be quite a good way to train actually, because we know at high learning
+[00:06:09.640 --> 00:06:16.400]   rates you get to explore better, and at low learning rates you get to fine-tune better,
+[00:06:16.400 --> 00:06:20.000]   and it's probably better to gradually slide between the two.
+[00:06:20.000 --> 00:06:26.260]   So this actually isn't a bad approach, I suspect.
+[00:06:26.260 --> 00:06:30.960]   You can use other decay types, not just linear, so cosine, and this probably makes even more
+[00:06:30.960 --> 00:06:39.160]   sense as a genuinely, potentially useful learning rate and kneeling shape exponential, which
+[00:06:39.160 --> 00:06:43.240]   is a super popular approach.
+[00:06:43.240 --> 00:06:48.560]   Polynomial which isn't terribly popular, but actually in the literature works better than
+[00:06:48.560 --> 00:06:53.200]   just about anything else, but seems to have been largely ignored, so polynomial is good
+[00:06:53.200 --> 00:06:54.200]   to be aware of.
+[00:06:54.200 --> 00:06:59.520]   And what Sylvain's done is he's given us the formula for each of these curves.
+[00:06:59.520 --> 00:07:10.680]   And so with a polynomial you get to pick what polynomial to use.
+[00:07:10.680 --> 00:07:15.640]   So here it is with a different size.
+[00:07:15.640 --> 00:07:27.120]   And I believe a p of 0.9 is the one that I've seen really good results for, FYI.
+[00:07:27.120 --> 00:07:31.900]   If you don't give a tuple of learning rates when there's an LR decay, then it will decay
+[00:07:31.900 --> 00:07:34.360]   all the way down to zero.
+[00:07:34.360 --> 00:07:44.240]   And as you can see, you can happily start the next cycle at a different point.
+[00:07:44.240 --> 00:07:49.920]   So the cool thing is now we can replicate all of our existing schedules using nothing
+[00:07:49.920 --> 00:07:52.120]   but these training phases.
+[00:07:52.120 --> 00:08:00.100]   So here's a function called Phases SGDR, which does SGDR using the new training phase API.
+[00:08:00.100 --> 00:08:05.580]   And so you can see if he runs this schedule, then here's what it looks like.
+[00:08:05.580 --> 00:08:08.920]   That is even done the little trick I have where you train at a really low learning rate
+[00:08:08.920 --> 00:08:12.400]   just for a little bit, and then pop up and do a few cycles, and the cycles are increasing
+[00:08:12.400 --> 00:08:20.720]   in length, and that's all done in a single function.
+[00:08:20.720 --> 00:08:28.920]   So the new one cycle we can now implement with, again, a single little function.
+[00:08:28.920 --> 00:08:35.880]   And so if we fit with that, we get this triangle followed by a little flatter bit, and the
+[00:08:35.880 --> 00:08:45.400]   momentum has a momentum decay.
+[00:08:45.400 --> 00:08:48.840]   And then here we've got a fixed momentum at the end.
+[00:08:48.840 --> 00:08:54.360]   So it's doing the momentum and the learning rate at the same time.
+[00:08:54.360 --> 00:08:58.720]   So something that I haven't tried yet that I think would be really interesting is to
+[00:08:58.720 --> 00:09:02.160]   use differential learning rates.
+[00:09:02.160 --> 00:09:15.660]   We've changed the name now to discriminative learning rates.
+[00:09:15.660 --> 00:09:20.960]   So a combination of discriminative learning rates and one cycle, no one's tried yet.
+[00:09:20.960 --> 00:09:25.440]   So that would be really interesting.
+[00:09:25.440 --> 00:09:29.680]   The only paper I've come across which has discriminative learning rates uses something
+[00:09:29.680 --> 00:09:38.440]   called Lars, L-A-R-S, and it was used to train ImageNet with very, very large batch sizes
+[00:09:38.440 --> 00:09:46.600]   by basically looking at the ratio between the gradient and the mean at each layer and
+[00:09:46.600 --> 00:09:52.800]   using that to change the learning rate of each layer automatically, and they found that
+[00:09:52.800 --> 00:09:54.920]   they could use much larger batch sizes.
+[00:09:54.920 --> 00:09:59.320]   That's the only other place I've seen this kind of approach used, but there's lots of
+[00:09:59.320 --> 00:10:04.080]   interesting things you could try with combining discriminative learning rates and different
+[00:10:04.080 --> 00:10:06.680]   interesting schedules.
+[00:10:06.680 --> 00:10:11.440]   So you can now write your own LRFinder of different types specifically because there's
+[00:10:11.440 --> 00:10:17.560]   now this stop div parameter which basically means that it'll use whatever schedule you
+[00:10:17.560 --> 00:10:22.680]   asked for, but when the loss gets too bad it'll stop training.
+[00:10:22.680 --> 00:10:37.700]   So here's one with learning rate versus loss and you can see it stops itself automatically.
+[00:10:37.700 --> 00:10:44.480]   One useful thing that's been added is the linear parameter to the plot function.
+[00:10:44.480 --> 00:10:50.280]   If you use linear schedule rather than an exponential schedule in your learning rate
+[00:10:50.280 --> 00:10:56.520]   finder, which is a good idea if you're fine-tuned into roughly the right area, then you can
+[00:10:56.520 --> 00:11:00.600]   use linear to find exactly the right area, and then you probably want to plot it with
+[00:11:00.600 --> 00:11:01.880]   a linear scale.
+[00:11:01.880 --> 00:11:07.460]   So that's why you can also pass linear to plot now as well.
+[00:11:07.460 --> 00:11:15.560]   You can change the optimizer H-face, and that's more important than you might imagine because
+[00:11:15.560 --> 00:11:22.200]   actually the current state-of-the-art for training on really large batch sizes really
+[00:11:22.200 --> 00:11:27.600]   quickly for ImageNet actually starts with RMSprop for the first bit and then they switch to
+[00:11:27.600 --> 00:11:31.680]   SGD for the second bit.
+[00:11:31.680 --> 00:11:37.800]   And so that could be something interesting to experiment more with because at least one
+[00:11:37.800 --> 00:11:41.720]   paper has now shown that that can work well.
+[00:11:41.720 --> 00:11:50.080]   And again it's something that isn't well appreciated as yet.
+[00:11:50.080 --> 00:11:54.120]   And then the bit I find most interesting is you can change your data.
+[00:11:54.120 --> 00:11:56.080]   Why would we want to change our data?
+[00:11:56.080 --> 00:12:00.000]   Because you remember from lessons 1 and 2 you could use smaller images at the start
+[00:12:00.000 --> 00:12:02.720]   and bigger images later.
+[00:12:02.720 --> 00:12:14.280]   And the theory is that you could use that to train the first bit more quickly with smaller
+[00:12:14.280 --> 00:12:15.280]   images.
+[00:12:15.280 --> 00:12:19.240]   And remember if you have half the height and half the width and you've got a quarter of
+[00:12:19.240 --> 00:12:24.720]   the activations of basically every layer, so it can be a lot faster.
+[00:12:24.720 --> 00:12:28.360]   And it might even generalize better.
+[00:12:28.360 --> 00:12:33.000]   So you can now create a couple of different -- for example in this case he's got 28 and
+[00:12:33.000 --> 00:12:34.440]   then 32 sized images.
+[00:12:34.440 --> 00:12:37.460]   This is just sci-fi 10, so there's only so much you can do.
+[00:12:37.460 --> 00:12:43.720]   And then if you pass in an array of data in this data list parameter, when you call fit.shed,
+[00:12:43.720 --> 00:12:49.000]   it'll use a different data set for each phase.
+[00:12:49.000 --> 00:12:53.080]   So that's really cool because we can use that now, like we could use that in our dorm bench
+[00:12:53.080 --> 00:13:03.560]   entries and see what happens when we actually increase the size with very little code.
+[00:13:03.560 --> 00:13:06.920]   So what happens when we do that?
+[00:13:06.920 --> 00:13:13.320]   Well the answer is here in dorm bench training on ImageNet.
+[00:13:13.320 --> 00:13:23.320]   And you can see here that Google won this with half an hour on a cluster of TPUs.
+[00:13:23.320 --> 00:13:34.440]   The best non-cluster of TPU result is fastAI+ students under three hours beating out Intel
+[00:13:34.440 --> 00:13:41.320]   on 128 computers, or else we ran on a single computer.
+[00:13:41.320 --> 00:13:47.600]   We also beat Google running on a TPU.
+[00:13:47.600 --> 00:13:55.880]   So using this approach we've shown the fastest GPU result, the fastest single machine result,
+[00:13:55.880 --> 00:14:01.800]   the fastest publicly available infrastructure result, these TPU pods you can't use unless
+[00:14:01.800 --> 00:14:04.320]   you're Google.
+[00:14:04.320 --> 00:14:10.320]   And the cost is tiny, like this Intel one cost them $1200 worth of compute, they haven't
+[00:14:10.320 --> 00:14:12.200]   even written it here.
+[00:14:12.200 --> 00:14:19.840]   That's what you get if you use 128 computers in parallel, each one with 36 cores, each
+[00:14:19.840 --> 00:14:26.080]   one with 140 GB compared to our single AWS instance.
+[00:14:26.080 --> 00:14:36.800]   So this is a kind of a breakthrough in what we can do, the idea that we can train ImageNet
+[00:14:36.800 --> 00:14:39.040]   on a single publicly available machine.
+[00:14:39.040 --> 00:14:45.200]   And this $72, by the way, it was actually $25 because we used a spot instance, so one
+[00:14:45.200 --> 00:14:49.480]   of our students, Andrew Shaw, built this whole system to allow us to throw a whole bunch
+[00:14:49.480 --> 00:14:55.480]   of spot instance experiments up and run them simultaneously, and pretty much automatically.
+[00:14:55.480 --> 00:15:03.160]   But Dawn Bench doesn't quote the actual number we used, so it's actually $25, not $72.
+[00:15:03.160 --> 00:15:16.000]   So this data list idea is super important and helpful.
+[00:15:16.000 --> 00:15:22.560]   And so our SciFi 10 results are also now up there officially, and you might remember the
+[00:15:22.560 --> 00:15:28.040]   previous best was a bit over an hour, and the trick here was using one cycle, basically.
+[00:15:28.040 --> 00:15:33.320]   So all this stuff that's in Sylvan's training phase API is really all the stuff that we
+[00:15:33.320 --> 00:15:35.400]   use to get these top results.
+[00:15:35.400 --> 00:15:43.840]   And really cool, another fast AI student who goes by the name here, BKJ, has taken that
+[00:15:43.840 --> 00:15:47.360]   and done his own version.
+[00:15:47.360 --> 00:15:51.880]   He took ResNet18 and added the concat pooling that you might remember that we learned about
+[00:15:51.880 --> 00:15:59.560]   on top, and used Leslie Smith's one cycle, and so he's got on the leaderboard.
+[00:15:59.560 --> 00:16:05.120]   So all the top three fast AI students, which is wonderful.
+[00:16:05.120 --> 00:16:07.760]   And same for cost, the top three.
+[00:16:07.760 --> 00:16:11.160]   And you can see paper space.
+[00:16:11.160 --> 00:16:21.800]   So Brett ran this on paper space and got the cheapest result, just ahead of BKJ.
+[00:16:21.800 --> 00:16:25.640]   Ben, his name is, I believe.
+[00:16:25.640 --> 00:16:26.640]   Okay.
+[00:16:26.640 --> 00:16:34.480]   So I think you can see a lot of the interesting opportunities at the moment for training stuff
+[00:16:34.480 --> 00:16:39.560]   more quickly and cheaply are all about the learning rate annealing, and size annealing,
+[00:16:39.560 --> 00:16:43.720]   like training with different parameters at different times, and I still think everybody's
+[00:16:43.720 --> 00:16:44.720]   scratching the surface.
+[00:16:44.720 --> 00:16:48.520]   I think we can go a lot faster and a lot cheaper.
+[00:16:48.520 --> 00:16:53.520]   And that's really helpful for people in resource constrained environments, which is basically
+[00:16:53.520 --> 00:17:02.560]   everybody except Google, maybe Facebook.
+[00:17:02.560 --> 00:17:04.000]   Architecture is interesting as well, though.
+[00:17:04.000 --> 00:17:08.120]   And one of the things we looked at last week was just like creating a simpler architecture,
+[00:17:08.120 --> 00:17:13.680]   which is basically state of the art, like the really basic kind of dark-net architecture.
+[00:17:13.680 --> 00:17:21.800]   But there's a piece of architecture we haven't talked about, which is necessary to understand
+[00:17:21.800 --> 00:17:23.360]   the inception network.
+[00:17:23.360 --> 00:17:31.080]   And the inception network is actually pretty interesting because they use some tricks to
+[00:17:31.080 --> 00:17:35.080]   actually make things more efficient, and we're not currently using these tricks, and I kind
+[00:17:35.080 --> 00:17:38.040]   of feel like maybe we should try it.
+[00:17:38.040 --> 00:17:42.880]   And so this is -- the most interesting, most successful inception network is their Inception
+[00:17:42.880 --> 00:17:48.280]   ResNet 2 network, and most of the blocks in that look something like this.
+[00:17:48.280 --> 00:17:53.120]   And it looks a lot like a standard ResNet block, and there's an identity connection here,
+[00:17:53.120 --> 00:18:00.160]   and then there's a conv-con path here, and then we add them up together.
+[00:18:00.160 --> 00:18:06.100]   But it's not quite that, right?
+[00:18:06.100 --> 00:18:18.100]   The first is that this path is a 1 by 1 conv, not just any old conv, but a 1 by 1 conv.
+[00:18:18.100 --> 00:18:24.040]   And so it's worth thinking about what a 1 by 1 conv actually is.
+[00:18:24.040 --> 00:18:31.960]   So a 1 by 1 conv is simply saying for each grid cell in your input, you've got a -- basically
+[00:18:31.960 --> 00:18:38.140]   it's a vector, a 1 by 1 by number of filters tensor is basically a vector.
+[00:18:38.140 --> 00:18:45.520]   So for each grid cell in your input, you're just doing a dot product with that tensor.
+[00:18:45.520 --> 00:18:51.160]   And then of course it's going to be one of those vectors for each of the 192 activations
+[00:18:51.160 --> 00:18:52.160]   we're creating.
+[00:18:52.160 --> 00:18:57.800]   So you basically do 192 dot products with grid cell 1, 1, and then 192 with grid cell
+[00:18:57.800 --> 00:19:03.640]   1, 2 and 1, 3 and so forth, and so you'll end up with something which has got the same grid
+[00:19:03.640 --> 00:19:09.160]   size as the input and 192 channels in the output.
+[00:19:09.160 --> 00:19:16.240]   So that's a really good way to either reduce the dimensionality or increase the dimensionality
+[00:19:16.240 --> 00:19:20.260]   of an input without changing the grid size.
+[00:19:20.260 --> 00:19:25.020]   That's normally what we use 1 by 1 convs for.
+[00:19:25.020 --> 00:19:29.760]   So here we've got a 1 by 1 conv and then we've got another 1 by 1 conv and then they're added
+[00:19:29.760 --> 00:19:30.760]   together.
+[00:19:30.760 --> 00:19:35.920]   And then there's a third path and this third path is not added.
+[00:19:35.920 --> 00:19:41.260]   This third path is not actually explicitly mentioned but it's concatenated.
+[00:19:41.260 --> 00:19:46.520]   And so actually there is a form of resnet which is basically identical to resnet but
+[00:19:46.520 --> 00:19:49.920]   we don't do plus, we do concat.
+[00:19:49.920 --> 00:19:51.920]   And that's called a densenet.
+[00:19:51.920 --> 00:19:56.300]   So it's just a resnet where we do concat instead of plus.
+[00:19:56.300 --> 00:20:04.040]   And that's an interesting approach because then the kind of the identity path is literally
+[00:20:04.040 --> 00:20:05.040]   being copied.
+[00:20:05.040 --> 00:20:06.040]   Right?
+[00:20:06.040 --> 00:20:11.680]   So you kind of get that flow through all the way through and so as we'll see next week
+[00:20:11.680 --> 00:20:16.200]   that tends to be good for like segmentation and stuff like that where you really want
+[00:20:16.200 --> 00:20:19.680]   to kind of keep the original pixels and the first layer of pixels and the second layer
+[00:20:19.680 --> 00:20:23.320]   of pixels untouched.
+[00:20:23.320 --> 00:20:31.300]   So concatenating rather than adding branches is a very useful thing to do.
+[00:20:31.300 --> 00:20:36.000]   And so here we're concatenating this branch and this branch is doing something interesting
+[00:20:36.000 --> 00:20:43.220]   which is it's doing first of all the 1 by 1 conv and then a 1 by 7 and then a 7 by 1.
+[00:20:43.220 --> 00:20:46.440]   So what's going on there?
+[00:20:46.440 --> 00:20:54.280]   So what's going on there is basically what we really want to do is do a 7 by 7 conv.
+[00:20:54.280 --> 00:20:59.200]   The reason we want to do a 7 by 7 conv is that if you've got multiple paths, each of
+[00:20:59.200 --> 00:21:07.040]   which has different kernel sizes, then it's able to look at different amounts of the image.
+[00:21:07.040 --> 00:21:12.160]   And so like the original inception network had like a 1 by 1, a 3 by 3, a 5 by 5, 7 by
+[00:21:12.160 --> 00:21:17.360]   7 kind of getting concatenated in together, something like that.
+[00:21:17.360 --> 00:21:22.320]   And so if we can have a 7 by 7 filter then we get to kind of look at a lot of the image
+[00:21:22.320 --> 00:21:25.880]   at once and create a really rich representation.
+[00:21:25.880 --> 00:21:33.080]   And so actually the stem of the inception network, that is the first few layers of the
+[00:21:33.080 --> 00:21:40.280]   inception network actually also use this kind of 7 by 7 conv because you start out with
+[00:21:40.280 --> 00:21:48.880]   224 by 224 by 3 and you want to turn it into something that's like 112 by 112 by 64.
+[00:21:48.880 --> 00:21:54.800]   And so by using a 7 by 7 conv you can get a lot of information in each one of those outputs
+[00:21:54.800 --> 00:21:57.200]   to get those 64 filters.
+[00:21:57.200 --> 00:22:05.000]   But the problem is that 7 by 7 conv is a lot of work.
+[00:22:05.000 --> 00:22:13.840]   We've got 49 kernel values to multiply by 49 inputs for every input pixel across every
+[00:22:13.840 --> 00:22:16.160]   channel.
+[00:22:16.160 --> 00:22:19.480]   So the compute is crazy, you know.
+[00:22:19.480 --> 00:22:23.880]   You can kind of get away with it maybe for the very first layer and in fact the very
+[00:22:23.880 --> 00:22:31.400]   first layer, the very first conv of ResNet is a 7 by 7 conv.
+[00:22:31.400 --> 00:22:37.000]   But not so for Inception, for Inception they don't do a 7 by 7 conv.
+[00:22:37.000 --> 00:22:42.520]   Instead they do a 1 by 7 followed by a 7 by 1.
+[00:22:42.520 --> 00:22:48.360]   And so to explain, the basic idea of the inception networks, all of the different versions of
+[00:22:48.360 --> 00:22:55.200]   it, is that you have a number of separate paths which have different convolution widths.
+[00:22:55.200 --> 00:22:59.680]   In this case conceptually the idea is this is a 1 by 1 convolution width and this is
+[00:22:59.680 --> 00:23:02.360]   going to be a 7 convolution width.
+[00:23:02.360 --> 00:23:09.840]   And so they're looking at different amounts of data and then we combine them together.
+[00:23:09.840 --> 00:23:16.840]   But we don't want to have a 7 by 7 conv throughout the network because it's just too computationally
+[00:23:16.840 --> 00:23:19.440]   expensive.
+[00:23:19.440 --> 00:23:28.920]   But if you think about it, if we've got some input coming in and we have some big filter
+[00:23:28.920 --> 00:23:33.760]   that we want and it's too big to deal with, what could we do?
+[00:23:33.760 --> 00:23:38.440]   Let's make it a little bit less drawing, let's do 5 by 5.
+[00:23:38.440 --> 00:23:51.880]   What we can do is to create two filters, one which is 1 by 5, one which is 5 by 1, or 7
+[00:23:51.880 --> 00:23:55.000]   or whatever, or 9.
+[00:23:55.000 --> 00:24:03.040]   So we take our activations, the previous layer, and we put it through the 1 by 5.
+[00:24:03.040 --> 00:24:09.160]   We take the activations out of that and put it through the 5 by 1, and something comes
+[00:24:09.160 --> 00:24:10.680]   out the other end.
+[00:24:10.680 --> 00:24:12.520]   What comes out the other end?
+[00:24:12.520 --> 00:24:18.640]   Well rather than thinking of it as first of all we take the activations, then we put it
+[00:24:18.640 --> 00:24:25.200]   through the 5 by 1, then we put it through the 1 by 5, then the 5 by 1.
+[00:24:25.200 --> 00:24:35.760]   What if instead we think of these two operations together and say what is a 5 by 1 dot product
+[00:24:35.760 --> 00:24:40.800]   and a 1 by 5 dot product do together?
+[00:24:40.800 --> 00:24:47.640]   And effectively you could take a 1 by 5 and a 5 by 1, and the outer product of that is
+[00:24:47.640 --> 00:24:56.980]   going to give you a 5 by 5.
+[00:24:56.980 --> 00:25:04.160]   You can't create any possible 5 by 5 matrix by taking that product, but there's a lot
+[00:25:04.160 --> 00:25:07.620]   of 5 by 5 matrices that you can create.
+[00:25:07.620 --> 00:25:12.320]   And so the basic idea here is when you think about the order of operations, and I'm not
+[00:25:12.320 --> 00:25:16.640]   going to go into the detail of this, if you're interested in more of the theory here, you
+[00:25:16.640 --> 00:25:21.600]   should check out Rachel's Numerical Linear Algebra course, which is basically a whole
+[00:25:21.600 --> 00:25:25.000]   course about this stuff.
+[00:25:25.000 --> 00:25:33.140]   But conceptually the idea is that very often the computation you want to do is actually
+[00:25:33.140 --> 00:25:39.320]   more simple than an entire 5 by 5 convolution.
+[00:25:39.320 --> 00:25:46.180]   Very often the term we use in linear algebra is that there's some lower rank approximation.
+[00:25:46.180 --> 00:25:52.520]   In other words, the 1 by 5 and 5 by 1 combined together, that 5 by 5 matrix is nearly as
+[00:25:52.520 --> 00:26:00.080]   good as the 5 by 5 matrix you ideally would have computed if you were able to.
+[00:26:00.080 --> 00:26:07.760]   And so this is very often the case in practice, just because the nature of the real world
+[00:26:07.760 --> 00:26:17.400]   is that the real world tends to have more structure than randomness.
+[00:26:17.400 --> 00:26:32.560]   So the cool thing is, if we replace our 7 by 7 conv with a 1 by 7 and a 7 by 1, then this
+[00:26:32.560 --> 00:26:49.440]   has 14 dot products to do, whereas this one has 49 to do.
+[00:26:49.440 --> 00:26:54.200]   So it's just going to be a lot faster, and we have to hope that it's going to be nearly
+[00:26:54.200 --> 00:26:55.200]   as good.
+[00:26:55.200 --> 00:27:01.000]   It's certainly capturing as much width of information by definition.
+[00:27:01.000 --> 00:27:04.040]   So if you're interested in learning more about this specifically in the deep learning area,
+[00:27:04.040 --> 00:27:07.680]   you can Google for factored convolutions.
+[00:27:07.680 --> 00:27:12.960]   The idea was to come up with three or four years ago now, it's probably been around for
+[00:27:12.960 --> 00:27:17.220]   longer but that was when I first saw it, and it turned out to work really well and the
+[00:27:17.220 --> 00:27:22.680]   Inception network uses it quite widely.
+[00:27:22.680 --> 00:27:27.040]   They actually use it in their stem.
+[00:27:27.040 --> 00:27:34.640]   It's interesting actually, we've talked before about how we tend to say like there's this
+[00:27:34.640 --> 00:27:41.240]   main backbone, like when we have ResNet34 for example, we say there's this main backbone
+[00:27:41.240 --> 00:27:43.400]   which is all of the convolutions.
+[00:27:43.400 --> 00:27:47.860]   And then we've talked about how we can add on to it a custom head.
+[00:27:47.860 --> 00:27:55.500]   And that tends to be like a max pooling layer and a fully connected layer.
+[00:27:55.500 --> 00:28:01.560]   It's actually kind of better to talk about the backbone as containing kind of two pieces.
+[00:28:01.560 --> 00:28:11.080]   One is the stem, and then the other is kind of the main backbone.
+[00:28:11.080 --> 00:28:17.220]   And the reason is that the thing that's coming in, remember it's only got three channels,
+[00:28:17.220 --> 00:28:22.280]   and so we want some sequence of operations that's going to expand that out into something
+[00:28:22.280 --> 00:28:24.920]   richer, generally something like 64 channels.
+[00:28:24.920 --> 00:28:29.460]   And so in ResNet, the stem is just super simple.
+[00:28:29.460 --> 00:28:36.960]   It's a 7x7 conv, a stride 2 conv, followed by a stride 2 max pool.
+[00:28:36.960 --> 00:28:40.000]   I think that's it if memory says it correctly.
+[00:28:40.000 --> 00:28:45.320]   In Inception they have a much more complex stem with multiple paths, getting combined
+[00:28:45.320 --> 00:28:56.080]   and concatenated, including factored comms, 1x7 and 7x1.
+[00:28:56.080 --> 00:29:03.880]   What would happen if you stuck a standard ResNet on top of an InceptionStem, for instance?
+[00:29:03.880 --> 00:29:09.960]   I think that would be a really interesting thing to try because an InceptionStem is quite
+[00:29:09.960 --> 00:29:11.600]   a carefully engineered thing.
+[00:29:11.600 --> 00:29:15.820]   And this thing of how do you take your three-channel input and turn it into something richer seems
+[00:29:15.820 --> 00:29:17.840]   really important.
+[00:29:17.840 --> 00:29:22.420]   And all of that work seems to have got thrown away for ResNet.
+[00:29:22.420 --> 00:29:23.420]   We like ResNet.
+[00:29:23.420 --> 00:29:24.420]   It works really well.
+[00:29:24.420 --> 00:29:31.320]   But what if we put a denseNet backbone on top of an InceptionStem?
+[00:29:31.320 --> 00:29:39.440]   Or what if we replaced the 7x7 conv with a 1x7 7x1 factored conv in a standard ResNet?
+[00:29:39.440 --> 00:29:40.440]   I don't know.
+[00:29:40.440 --> 00:29:41.440]   We could try it.
+[00:29:41.440 --> 00:29:44.080]   I think it would be really interesting.
+[00:29:44.080 --> 00:29:53.160]   So there's some more thoughts about potential research directions.
+[00:29:53.160 --> 00:30:00.560]   So that was kind of my little bunch of random stuff section.
+[00:30:00.560 --> 00:30:07.320]   Moving a little bit closer to the actual main topic of this, which is -- what was the word
+[00:30:07.320 --> 00:30:08.360]   I used?
+[00:30:08.360 --> 00:30:11.840]   Image enhancement.
+[00:30:11.840 --> 00:30:17.900]   I'm going to talk about a new paper briefly because it really connects what I just discussed
+[00:30:17.900 --> 00:30:20.800]   with what we're going to discuss next.
+[00:30:20.800 --> 00:30:26.120]   And the new paper -- well, it's not that new, maybe it's a year old.
+[00:30:26.120 --> 00:30:32.880]   It's a paper on progressive GANs, which came from NVIDIA.
+[00:30:32.880 --> 00:30:37.240]   And the progressive GANs paper is really neat.
+[00:30:37.240 --> 00:30:40.000]   It basically -- sorry, Rachel, yes.
+[00:30:40.000 --> 00:30:41.760]   We have a question.
+[00:30:41.760 --> 00:30:46.420]   One-by-one conv is usually called a network within a network in the literature.
+[00:30:46.420 --> 00:30:48.520]   What is the intuition of such a name?
+[00:30:48.520 --> 00:30:49.520]   No.
+[00:30:49.520 --> 00:30:55.320]   Network in network is more than just a one-by-one conv.
+[00:30:55.320 --> 00:30:56.680]   It's part of an IN.
+[00:30:56.680 --> 00:31:06.600]   And I don't think there's any particular reason to look at that that I'm aware of.
+[00:31:06.600 --> 00:31:12.120]   Okay.
+[00:31:12.120 --> 00:31:21.320]   So the progressive GAN basically takes this idea of gradually increasing the image size.
+[00:31:21.320 --> 00:31:27.520]   It's the only other direction I'm aware of where people have gradually increased the
+[00:31:27.520 --> 00:31:28.520]   image size.
+[00:31:28.520 --> 00:31:33.100]   And it kind of surprises me because this paper is actually very popular and very well-known
+[00:31:33.100 --> 00:31:34.560]   and very well-liked.
+[00:31:34.560 --> 00:31:37.880]   And yet people haven't taken the basic idea of gradually increasing the image size and
+[00:31:37.880 --> 00:31:42.880]   use it anywhere else, which shows you the general level of creativity you can expect
+[00:31:42.880 --> 00:31:48.180]   to find in the deep learning research community, perhaps.
+[00:31:48.180 --> 00:31:51.600]   So they really go back.
+[00:31:51.600 --> 00:31:59.200]   Start with the 4x4 GAN, literally, they're trying to replicate 4x4 pixels, and then 8x8.
+[00:31:59.200 --> 00:32:01.080]   And so here's the 8x8 pixels.
+[00:32:01.080 --> 00:32:02.720]   This is the celeb A dataset.
+[00:32:02.720 --> 00:32:05.280]   So we're trying to recreate pictures of celebrities.
+[00:32:05.280 --> 00:32:12.960]   And then they go 60x16, and then 32, and then 64, and then 128, and then 256.
+[00:32:12.960 --> 00:32:19.000]   And one of the really nifty things they do is that as they increase size, they also add
+[00:32:19.000 --> 00:32:24.200]   more layers to the network, which kind of makes sense, because if you're doing a more
+[00:32:24.200 --> 00:32:29.600]   of a resnetty type thing, then you're spitting out something which hopefully makes sense
+[00:32:29.600 --> 00:32:34.560]   in each grid cell size, and so you should be able to layer stuff on top.
+[00:32:34.560 --> 00:32:41.000]   And they do another nifty thing where they add a skip connection when they do that, and
+[00:32:41.000 --> 00:32:45.640]   they gradually change a linear interpolation parameter that moves it more and more away
+[00:32:45.640 --> 00:32:51.320]   from the old 4x4 network and towards the new 8x8 network.
+[00:32:51.320 --> 00:32:56.080]   And then once they've totally moved it across, they throw away that extra connection.
+[00:32:56.080 --> 00:33:00.840]   So the details don't matter too much, but it uses the basic ideas we've talked about
+[00:33:00.840 --> 00:33:05.200]   gradually increasing the image size, skip connections and stuff.
+[00:33:05.200 --> 00:33:12.320]   But it's a great paper to study because it's one of these rare things where good engineers
+[00:33:12.320 --> 00:33:15.320]   actually built something that just works in a really sensible way.
+[00:33:15.320 --> 00:33:18.640]   It's not surprising, this actually comes from Nvidia themselves.
+[00:33:18.640 --> 00:33:22.400]   So Nvidia don't do a lot of papers, but it's interesting that when they do, they build
+[00:33:22.400 --> 00:33:26.120]   something that's so thoroughly practical and sensible.
+[00:33:26.120 --> 00:33:33.240]   And so I think it's a great paper to study if you want to put together lots of the different
+[00:33:33.240 --> 00:33:36.220]   things we've learned.
+[00:33:36.220 --> 00:33:43.320]   And there aren't many re-implementations of this, so it's an interesting thing to project,
+[00:33:43.320 --> 00:33:46.000]   and maybe you could build on and find something else.
+[00:33:46.000 --> 00:33:47.840]   So here's what happens next.
+[00:33:47.840 --> 00:33:52.640]   We eventually go up to 1024x1024, and you'll see that the images are not only getting higher
+[00:33:52.640 --> 00:33:54.440]   resolution but they're getting better.
+[00:33:54.440 --> 00:34:06.680]   And so 1024x1024, I'm going to see if you can guess which one of the next page is fake.
+[00:34:06.680 --> 00:34:08.920]   They're all fake.
+[00:34:08.920 --> 00:34:09.920]   That's the next stage.
+[00:34:09.920 --> 00:34:16.600]   You go up, up, up, up, up, up, up, and then boom.
+[00:34:16.600 --> 00:34:25.220]   So like, dans and stuff are getting crazy, and some of you may have seen this during
+[00:34:25.220 --> 00:34:29.200]   the week.
+[00:34:29.200 --> 00:34:39.080]   Yeah, so this video just came out, and it's a speech by Barack Obama, and let's check
+[00:34:39.080 --> 00:34:40.080]   it out.
+[00:34:40.080 --> 00:34:48.040]   So like Jordan Peele, this is a dangerous time.
+[00:34:48.040 --> 00:34:51.960]   Moving forward, we need to be more vigilant with what we trust from the internet.
+[00:34:51.960 --> 00:34:56.480]   It's a time when we need to rely on trusted news sources.
+[00:34:56.480 --> 00:35:02.740]   It may sound basic, but how do we move forward?
+[00:35:02.740 --> 00:35:13.200]   So as you can see, they've used this kind of technology to literally move Obama's face
+[00:35:13.200 --> 00:35:17.800]   in the way that Jordan Peele's face was moving.
+[00:35:17.800 --> 00:35:24.500]   You basically have all the techniques you need now to do that.
+[00:35:24.500 --> 00:35:31.740]   So is that a good idea?
+[00:35:31.740 --> 00:35:37.160]   So this is the bit where we talk about what's most important, which is like, now that we
+[00:35:37.160 --> 00:35:49.400]   can do all this stuff, what should we be doing, and how do we think about that?
+[00:35:49.400 --> 00:35:55.640]   And the TODR version is, I actually don't know.
+[00:35:55.640 --> 00:36:02.320]   Actually a lot of you saw the founders of the Spacey Prodigy folks, founders of explosion
+[00:36:02.320 --> 00:36:08.000]   AI, I did a talk with Matthew, and I went to dinner with them afterwards, and we basically
+[00:36:08.000 --> 00:36:15.920]   spent the entire evening talking, debating, arguing about what does it mean that companies
+[00:36:15.920 --> 00:36:24.600]   like ours are building tools that are democratizing access to tools that can be used in harmful
+[00:36:24.600 --> 00:36:25.600]   ways.
+[00:36:25.600 --> 00:36:34.240]   They're incredibly thoughtful people, and I wouldn't say we didn't agree, we just couldn't
+[00:36:34.240 --> 00:36:35.680]   come to a conclusion ourselves.
+[00:36:35.680 --> 00:36:42.640]   So I'm just going to lay out some of the questions and point to some of the research.
+[00:36:42.640 --> 00:36:47.320]   And when I say research, most of the actual literature review and putting this together
+[00:36:47.320 --> 00:36:53.040]   was done by Rachel.
+[00:36:53.040 --> 00:37:02.360]   We start by saying the models we build are often pretty shitty in ways which are not
+[00:37:02.360 --> 00:37:07.900]   immediately apparent, and you won't know how shitty they are unless the people that are
+[00:37:07.900 --> 00:37:12.620]   building them with you are a range of people, and the people that are using them with you
+[00:37:12.620 --> 00:37:14.120]   are a range of people.
+[00:37:14.120 --> 00:37:20.080]   So for example, a couple of wonderful research is Timnett's at Stanford.
+[00:37:20.080 --> 00:37:21.080]   Where's Joy?
+[00:37:21.080 --> 00:37:29.440]   Joy is from MIT.
+[00:37:29.440 --> 00:37:36.120]   So Joy and Timnett did this really interesting research where they looked at some basically
+[00:37:36.120 --> 00:37:42.960]   off-the-shelf face recognizers, one from Face++ which is a huge Chinese company, IBM's and
+[00:37:42.960 --> 00:37:48.960]   Microsoft's, and they looked for a range of different face types.
+[00:37:48.960 --> 00:37:53.680]   And generally speaking, the Microsoft one in particular was incredibly accurate unless
+[00:37:53.680 --> 00:38:03.000]   the face type happened to be dark-skinned when suddenly it went 25 times worse, got it wrong
+[00:38:03.000 --> 00:38:05.800]   nearly half the time.
+[00:38:05.800 --> 00:38:15.360]   And for somebody to, a big company like this, to release a product that for a very, very
+[00:38:15.360 --> 00:38:22.520]   large percentage of the world basically doesn't work, it's more than a technical failure, right?
+[00:38:22.520 --> 00:38:29.160]   It's a really deep failure of understanding what kind of team needs to be used to create
+[00:38:29.160 --> 00:38:34.720]   such a technology and to test such a technology, or even an understanding of who your customers
+[00:38:34.720 --> 00:38:35.720]   are.
+[00:38:35.720 --> 00:38:38.200]   Yeah, some of your customers have dark skin.
+[00:38:38.200 --> 00:38:39.200]   Yes, Rachel?
+[00:38:39.200 --> 00:38:45.520]   I was also going to add that the classifiers all did worse on women than on men.
+[00:38:45.520 --> 00:38:46.520]   Shocking.
+[00:38:46.520 --> 00:38:47.520]   Yeah.
+[00:38:47.520 --> 00:38:54.520]   It's funny, actually, Rachel tweeted about something like this the other day, and some
+[00:38:54.520 --> 00:39:02.080]   guy was like, "What's this all about, what are you saying, don't you know about, people
+[00:39:02.080 --> 00:39:05.800]   made cars for a long time, you're saying you don't need women to make cars too?"
+[00:39:05.800 --> 00:39:12.880]   And Rachel pointed out, "Well, actually, yes, for most of the history of car safety, women
+[00:39:12.880 --> 00:39:19.920]   in cars have been far, far more at risk of death than men in cars because the men created
+[00:39:19.920 --> 00:39:24.120]   male-looking, feeling-sized crash test dummies.
+[00:39:24.120 --> 00:39:28.540]   And so car safety was literally not tested on women-sized bodies.
+[00:39:28.540 --> 00:39:34.280]   So the fact that shitty product management with a total failure of diversity and understanding
+[00:39:34.280 --> 00:39:36.280]   is not new to our field."
+[00:39:36.280 --> 00:39:43.520]   And I was just going to say, that was comparing impacts of similar strength, men and women.
+[00:39:43.520 --> 00:39:45.360]   Yeah, I don't know why.
+[00:39:45.360 --> 00:39:49.080]   Whenever you say something on Twitter, Rachel has to say this, because any time you say
+[00:39:49.080 --> 00:39:52.120]   something like this on Twitter, there's like 10 people who'll be like, "Oh, you have to
+[00:39:52.120 --> 00:39:55.800]   compare all these other things," as if we didn't know that.
+[00:39:55.800 --> 00:40:08.920]   Other things our very best, most famous systems do, like Microsoft's Face Recognizer or Google's
+[00:40:08.920 --> 00:40:15.320]   Language Translator, you turn "she is a doctor, he is a nurse" into Turkish, and quite correctly,
+[00:40:15.320 --> 00:40:20.320]   both the pronouns become "oh," because there's no gendered pronouns in Turkish.
+[00:40:20.320 --> 00:40:27.440]   So go the other direction, "I'll be a doctor" -- I don't know how to say that, the equivalent
+[00:40:27.440 --> 00:40:28.440]   for Turkish nurse.
+[00:40:28.440 --> 00:40:29.440]   And what does it get turned into?
+[00:40:29.440 --> 00:40:32.160]   "He is a doctor, she is a nurse."
+[00:40:32.160 --> 00:40:39.000]   So we've got these kind of biases built into tools that we're all using every day.
+[00:40:39.000 --> 00:40:42.480]   And again, people are like, "Oh, it's just showing us what's in the world, and well,
+[00:40:42.480 --> 00:40:47.760]   okay, there's lots of problems with that basic assertion," but as you know, machine learning
+[00:40:47.760 --> 00:40:50.120]   algorithms love to generalize.
+[00:40:50.120 --> 00:40:54.420]   And so because they love to generalize -- this is one of the cool things about you guys knowing
+[00:40:54.420 --> 00:40:59.680]   the technical details now -- because they love to generalize, when you see something like
+[00:40:59.680 --> 00:41:04.620]   60% of people cooking are women in the pictures they use to build this model, and then you
+[00:41:04.620 --> 00:41:10.840]   actually run the model on a separate set of pictures, then 84% of the people they choose
+[00:41:10.840 --> 00:41:18.020]   as cooking are women rather than the correct 67%, which is like a really understandable
+[00:41:18.020 --> 00:41:26.040]   thing for an algorithm to do, is it took a biased input and created a more biased output
+[00:41:26.040 --> 00:41:31.280]   because for this particular loss function, that's kind of where it ended up.
+[00:41:31.280 --> 00:41:40.260]   And this is a really common kind of model amplification.
+[00:41:40.260 --> 00:41:44.960]   So this stuff matters.
+[00:41:44.960 --> 00:41:55.080]   It matters in ways more than just awkward translations, or like black people's photos
+[00:41:55.080 --> 00:42:02.260]   not being classified correctly, or maybe there's some wins too as well, like horrifying surveillance
+[00:42:02.260 --> 00:42:05.880]   everywhere maybe won't work on black people, I don't know.
+[00:42:05.880 --> 00:42:11.920]   Or it'll be even worse because it's horrifying surveillance and it's flat-out racist and
+[00:42:11.920 --> 00:42:12.920]   wrong.
+[00:42:12.920 --> 00:42:20.880]   But let's go deeper, right?
+[00:42:20.880 --> 00:42:30.840]   For all we say about human failings, there's a long history of civilization and societies
+[00:42:30.840 --> 00:42:38.080]   creating layers of human judgment which avoid hopefully the most horrible things happening.
+[00:42:38.080 --> 00:42:44.320]   And sometimes companies which love technology think "let's throw away the humans and replace
+[00:42:44.320 --> 00:42:47.080]   them with technology like Facebook did."
+[00:42:47.080 --> 00:42:52.760]   So two or three years ago, Facebook literally got rid of their human editors, like this
+[00:42:52.760 --> 00:42:56.720]   was in the news at the time, and they were replaced with algorithms.
+[00:42:56.720 --> 00:43:01.920]   And so now it's algorithms that put all the stuff on your newsfeed and human editors right
+[00:43:01.920 --> 00:43:03.200]   at the loop.
+[00:43:03.200 --> 00:43:04.920]   What happened next?
+[00:43:04.920 --> 00:43:06.440]   Many things happened next.
+[00:43:06.440 --> 00:43:13.240]   One of which was a massive horrifying genocide in Myanmar.
+[00:43:13.240 --> 00:43:19.880]   Babies getting torn out of their mother's arms and thrown onto fires, mass rape, murder,
+[00:43:19.880 --> 00:43:26.240]   and an entire people exiled from their homeland.
+[00:43:26.240 --> 00:43:33.360]   I'm not going to say that was because Facebook did this, but what I will say is that when
+[00:43:33.360 --> 00:43:41.280]   the leaders of this horrifying project are interviewed, they regularly talk about how
+[00:43:41.280 --> 00:43:46.880]   everything they learned about the disgusting animal behaviors of Rohingya that need to
+[00:43:46.880 --> 00:43:50.760]   be thrown off the earth, they learned from Facebook.
+[00:43:50.760 --> 00:43:56.000]   Because the algorithms just want to feed you more stuff that gets you clicking.
+[00:43:56.000 --> 00:44:01.040]   And so if you get told these people that don't look like you and you don't know are bad people
+[00:44:01.040 --> 00:44:04.720]   and here's lots of stories about the bad people, and then you start clicking on them and then
+[00:44:04.720 --> 00:44:09.120]   they feed you more of those things, the next thing you know you have this extraordinary
+[00:44:09.120 --> 00:44:10.120]   cycle.
+[00:44:10.120 --> 00:44:12.520]   And people have been studying this.
+[00:44:12.520 --> 00:44:18.840]   So for example, we've been told a few times people click on our fast AI videos and then
+[00:44:18.840 --> 00:44:25.680]   the next thing recommended to them is conspiracy theory videos from Alex Jones and then that
+[00:44:25.680 --> 00:44:26.680]   continues there.
+[00:44:26.680 --> 00:44:34.240]   Because humans click on things that shock us and surprise us and horrify us.
+[00:44:34.240 --> 00:44:44.320]   And so at so many levels, this decision has had extraordinary consequences which we're
+[00:44:44.320 --> 00:44:46.400]   only beginning to understand.
+[00:44:46.400 --> 00:44:51.840]   And again, this is not to say this particular consequence is because of this one thing,
+[00:44:51.840 --> 00:44:59.720]   but to say it's entirely unrelated would be clearly ignoring all of the evidence and information
+[00:44:59.720 --> 00:45:01.880]   that we have.
+[00:45:01.880 --> 00:45:11.760]   So this is really kind of the key takeaway is to think like, what are you building and
+[00:45:11.760 --> 00:45:13.960]   how could it be used?
+[00:45:13.960 --> 00:45:24.000]   So lots and lots of effort now being put into face detection, including in our course, we've
+[00:45:24.000 --> 00:45:29.120]   been spending a lot of time thinking about how to recognize stuff and where it is.
+[00:45:29.120 --> 00:45:34.680]   And there's lots of good reasons to want to be good at that, for improving crop yields
+[00:45:34.680 --> 00:45:40.080]   in agriculture, for improving diagnostic and treatment planning in medicine, for improving
+[00:45:40.080 --> 00:45:47.760]   your Lego sorting robot system, whatever.
+[00:45:47.760 --> 00:45:59.920]   But it's also being widely used in surveillance and propaganda and disinformation, and again,
+[00:45:59.920 --> 00:46:02.640]   the question is what do I do about that?
+[00:46:02.640 --> 00:46:09.000]   I don't exactly know, but it's definitely at least important to be thinking about it,
+[00:46:09.000 --> 00:46:14.520]   talking about it, and sometimes you can do really good things.
+[00:46:14.520 --> 00:46:20.280]   For example, meetup.com did something which I would put in the category of really good
+[00:46:20.280 --> 00:46:29.320]   thing, which is they recognized early a potential problem, which is that more men were tending
+[00:46:29.320 --> 00:46:32.200]   to go to their meetups.
+[00:46:32.200 --> 00:46:38.280]   And that was causing their collaborative filtering systems, which you're all familiar with building
+[00:46:38.280 --> 00:46:44.760]   now, to recommend more technical content to men.
+[00:46:44.760 --> 00:46:49.320]   And that was causing more men to go to more technical content, which is causing the recommendation
+[00:46:49.320 --> 00:46:53.960]   systems to suggest more technical content to men.
+[00:46:53.960 --> 00:47:00.760]   And this kind of runaway feedback loop is extremely common when we interface the algorithm
+[00:47:00.760 --> 00:47:03.400]   and the human together.
+[00:47:03.400 --> 00:47:10.600]   So what did meetup do? They intentionally made the decision to recommend more technical
+[00:47:10.600 --> 00:47:20.240]   content to women, not because of some highfalutin idea about how the world should be, but just
+[00:47:20.240 --> 00:47:22.640]   because that makes sense.
+[00:47:22.640 --> 00:47:26.760]   The runaway feedback loop was a bug.
+[00:47:26.760 --> 00:47:30.160]   There are women that want to go to tech meetups, but when you turn up to a tech meetup and
+[00:47:30.160 --> 00:47:36.520]   it's all men, then you don't go and it recommends more men, and so on and so forth.
+[00:47:36.520 --> 00:47:42.680]   So meetup made a really strong product management decision here, which was to not do what the
+[00:47:42.680 --> 00:47:45.360]   algorithm said to do.
+[00:47:45.360 --> 00:47:48.320]   Unfortunately, this is rare.
+[00:47:48.320 --> 00:47:53.680]   Most of these runaway feedback loops, for example in predictive policing, where algorithms
+[00:47:53.680 --> 00:47:58.600]   tell policemen where to go, which very often is more black neighborhoods, which end up
+[00:47:58.600 --> 00:48:02.560]   crawling with more policemen, which leads to more arrests, which has assistance to tell
+[00:48:02.560 --> 00:48:09.560]   more policemen to go to more black neighborhoods, and so forth.
+[00:48:09.560 --> 00:48:20.960]   So this problem of algorithmic bias is now very widespread, and as algorithms become
+[00:48:20.960 --> 00:48:30.000]   more and more widely used for specific policy decisions, judicial decisions, day-to-day decisions
+[00:48:30.000 --> 00:48:40.960]   about who to give what offer to, this just keeps becoming a bigger problem.
+[00:48:40.960 --> 00:48:47.480]   And some of them are really things that the people involved in the product management
+[00:48:47.480 --> 00:48:53.800]   decision should have seen at the very start didn't make sense and were unreasonable under
+[00:48:53.800 --> 00:48:55.440]   any definition of the term.
+[00:48:55.440 --> 00:49:01.900]   For example, this stuff that I had gone and pointed out, these were questions that were
+[00:49:01.900 --> 00:49:08.360]   used to decide - Rachel, is this Sentencing Guidelines?
+[00:49:08.360 --> 00:49:13.760]   This software is used for both pretrial, so who it was required to post bail, so these
+[00:49:13.760 --> 00:49:18.200]   are people that haven't even been convicted, as well as for sentencing and for who gets
+[00:49:18.200 --> 00:49:23.760]   parole, and this was upheld by the Wisconsin Supreme Court last year, despite all the flaws
+[00:49:23.760 --> 00:49:25.480]   pointed out.
+[00:49:25.480 --> 00:49:31.920]   So whether you have to stay in jail because you can't pay the bail and how long your sentence
+[00:49:31.920 --> 00:49:38.680]   is for and how long you stay in jail for depends on what your father did, whether your parents
+[00:49:38.680 --> 00:49:43.920]   stayed married, who your friends are, and where you live.
+[00:49:43.920 --> 00:49:51.740]   Now it turns out these algorithms are actually terribly, terribly bad, so some recent analysis
+[00:49:51.740 --> 00:49:56.480]   showed that they're basically worse than chance, but even if the companies building them were
+[00:49:56.480 --> 00:50:03.440]   confident and these were statistically accurate correlations, does anybody imagine there's
+[00:50:03.440 --> 00:50:14.480]   a world where it makes sense to decide what happens to you based on what your dad did?
+[00:50:14.480 --> 00:50:23.800]   So a lot of this stuff at the basic level is obviously unreasonable, and a lot of it
+[00:50:23.800 --> 00:50:28.760]   just fails in these ways, but you can see empirically that these runaway feedback loops
+[00:50:28.760 --> 00:50:31.920]   must have happened, and these overgeneralizations must have happened.
+[00:50:31.920 --> 00:50:37.760]   For example, these are the kind of cross tabs that anybody working in these fields, in any
+[00:50:37.760 --> 00:50:41.160]   field that's using algorithms, should be preparing.
+[00:50:41.160 --> 00:50:51.640]   So prediction of likelihood of reoffending for black versus white defendants, we can
+[00:50:51.640 --> 00:50:54.480]   just calculate this very simply.
+[00:50:54.480 --> 00:51:04.760]   Of the people that were labeled high risk but didn't reoffend, there were 23.5% white,
+[00:51:04.760 --> 00:51:11.640]   but about twice that African American, whereas those that were labeled lower risk but did
+[00:51:11.640 --> 00:51:19.600]   reoffend was like half the white people and only 20% of the African American.
+[00:51:19.600 --> 00:51:25.240]   So this is the kind of stuff where at least if you're taking the technologies we've been
+[00:51:25.240 --> 00:51:33.240]   talking about and putting the production in any way, or building an API for other people,
+[00:51:33.240 --> 00:51:42.360]   or providing training for people, or whatever, then at least make sure that what you're doing
+[00:51:42.360 --> 00:51:49.480]   can be tracked in a way that people know what's going on, so at least they're informed.
+[00:51:49.480 --> 00:52:00.960]   I think it's a mistake in my opinion to assume that people are evil and trying to break society.
+[00:52:00.960 --> 00:52:07.600]   I prefer to start with an assumption of if people are doing dumb stuff it's because they
+[00:52:07.600 --> 00:52:12.240]   don't know better, so at least make sure that they have this information.
+[00:52:12.240 --> 00:52:19.080]   And I find very few ML practitioners thinking about what is the information they should
+[00:52:19.080 --> 00:52:21.560]   be presenting in their interface.
+[00:52:21.560 --> 00:52:25.280]   And then often I'll talk to data scientists who will say, "Oh, the stuff I'm working on
+[00:52:25.280 --> 00:52:27.720]   doesn't have a societal impact."
+[00:52:27.720 --> 00:52:30.680]   It's like, really?
+[00:52:30.680 --> 00:52:34.720]   Like a number of people who think that what they're doing is entirely pointless?
+[00:52:34.720 --> 00:52:37.400]   Come on!
+[00:52:37.400 --> 00:52:41.760]   People are paying you to do it for a reason, it's going to impact people in some way.
+[00:52:41.760 --> 00:52:46.360]   So think about what that is.
+[00:52:46.360 --> 00:52:50.480]   The other thing I know is a lot of people involved here are hiring people.
+[00:52:50.480 --> 00:52:55.240]   And so if you're hiring people, I guess you're all very familiar with the fast.ai philosophy
+[00:52:55.240 --> 00:52:57.600]   now which is the basic premise.
+[00:52:57.600 --> 00:53:02.800]   And I think it comes back to this idea that I don't think people on the whole are evil,
+[00:53:02.800 --> 00:53:07.440]   I think they need to be informed and have tools.
+[00:53:07.440 --> 00:53:12.960]   So we're trying to give as many people the tools as possible that they need, and particularly
+[00:53:12.960 --> 00:53:18.520]   we're trying to put those tools in the hands of a more diverse range of people.
+[00:53:18.520 --> 00:53:23.160]   So if you're involved in hiring decisions, perhaps you can keep this kind of philosophy
+[00:53:23.160 --> 00:53:25.280]   in mind as well.
+[00:53:25.280 --> 00:53:33.360]   If you're not just hiring a wider range of people, but also promoting a wider range of
+[00:53:33.360 --> 00:53:39.600]   people and providing really appropriate career management for a wider range of people, apart
+[00:53:39.600 --> 00:53:44.780]   from anything else, your company will do better.
+[00:53:44.780 --> 00:53:50.160]   It actually turns out that more diverse teams are more creative and tend to solve problems
+[00:53:50.160 --> 00:53:53.480]   more quickly and better than less diverse teams.
+[00:53:53.480 --> 00:54:02.600]   But also you might avoid these awful screw-ups which at one level are bad for the world,
+[00:54:02.600 --> 00:54:09.160]   and at another level if you ever get found out they can also destroy your company.
+[00:54:09.160 --> 00:54:16.280]   Also they can destroy you, or at least make you look pretty bad in history.
+[00:54:16.280 --> 00:54:18.660]   A couple of examples.
+[00:54:18.660 --> 00:54:27.000]   One is going right back to the Second World War, IBM basically provided all of the infrastructure
+[00:54:27.000 --> 00:54:33.720]   necessary to track the Holocaust.
+[00:54:33.720 --> 00:54:40.240]   These were the forms that they used, and they had different code for Jews were 8 and Gypsies
+[00:54:40.240 --> 00:54:44.880]   were 12, death in the gas chambers were 6, and they all went on these punch cards.
+[00:54:44.880 --> 00:54:49.320]   You can go and look at these punch cards in museums now.
+[00:54:49.320 --> 00:54:55.920]   This has actually been reviewed by a Swiss judge who said that IBM's technical assistance
+[00:54:55.920 --> 00:55:03.600]   facilitated the task of the Nazis in the commission of the crimes against humanity.
+[00:55:03.600 --> 00:55:10.440]   It's interesting to read back the history from these times to see what was going through
+[00:55:10.440 --> 00:55:14.160]   the minds of people at IBM at that time.
+[00:55:14.160 --> 00:55:18.720]   What was clearly going through the minds was the opportunity to show technical superiority,
+[00:55:18.720 --> 00:55:25.880]   the opportunity to test out their new systems, and of course the extraordinary amount of
+[00:55:25.880 --> 00:55:32.680]   money that they were making.
+[00:55:32.680 --> 00:55:39.200]   When you do something which at some point down the line turns out to be a problem, even
+[00:55:39.200 --> 00:55:44.280]   if you were told to do it, that can turn out to be a problem for you personally.
+[00:55:44.280 --> 00:55:50.160]   For example, you'll remember the diesel emissions scandal in VW, who was the one guy that went
+[00:55:50.160 --> 00:55:51.160]   to jail?
+[00:55:51.160 --> 00:55:56.480]   It was the engineer, just doing his job.
+[00:55:56.480 --> 00:56:02.800]   So if all of this stuff about actually not fucking up the world isn't enough to convince
+[00:56:02.800 --> 00:56:05.880]   you, it can fuck up your life too.
+[00:56:05.880 --> 00:56:11.800]   So if you do something that turns out to cause problems, even though somebody told you to
+[00:56:11.800 --> 00:56:17.640]   do it, you can absolutely be held criminally responsible.
+[00:56:17.640 --> 00:56:23.480]   And you'll certainly look at Kogan, I think a lot of people now know the name Alexander
+[00:56:23.480 --> 00:56:29.080]   Kogan, he was the guy that handed over the Cambridge Analytica data.
+[00:56:29.080 --> 00:56:36.680]   He's a Cambridge academic, now a very famous Cambridge academic the world over for doing
+[00:56:36.680 --> 00:56:39.960]   his part to destroy the foundations of democracy.
+[00:56:39.960 --> 00:56:46.600]   So this is probably not how we want to go down in history.
+[00:56:46.600 --> 00:56:54.360]   So let's have a break, before we do, Rachel.
+[00:56:54.360 --> 00:56:57.120]   In one of your tweets, you said dropout is patented.
+[00:56:57.120 --> 00:57:00.560]   I think this is about WaveNet patent from Google.
+[00:57:00.560 --> 00:57:01.560]   What does it mean?
+[00:57:01.560 --> 00:57:03.880]   Can you please share more insight on this subject?
+[00:57:03.880 --> 00:57:06.800]   Does it mean that we'll have to pay to use dropout in the future?
+[00:57:06.800 --> 00:57:08.560]   Okay, good question.
+[00:57:08.560 --> 00:57:11.520]   Let's talk about that after the break.
+[00:57:11.520 --> 00:57:15.920]   So let's come back at 7.40.
+[00:57:15.920 --> 00:57:19.920]   The question before the break was about patents.
+[00:57:19.920 --> 00:57:26.760]   What does it mean?
+[00:57:26.760 --> 00:57:33.160]   So I guess the reason it's coming up was because I wrote a tweet this week, which I think was
+[00:57:33.160 --> 00:57:38.140]   like three words, and said dropout is patented.
+[00:57:38.140 --> 00:57:43.400]   One of the patent holders is Jeffrey Hinton.
+[00:57:43.400 --> 00:57:44.400]   So what?
+[00:57:44.400 --> 00:57:45.720]   Isn't that great?
+[00:57:45.720 --> 00:57:49.640]   Inventions all about patents, blah blah blah, right?
+[00:57:49.640 --> 00:57:51.760]   My answer is no.
+[00:57:51.760 --> 00:57:55.360]   Patents have gone wildly crazy.
+[00:57:55.360 --> 00:58:01.440]   The amount of things that are patentable that we talk about every week would be dozens.
+[00:58:01.440 --> 00:58:09.000]   Like it's so easy to come up with a little tweak and then if you turn that into a patent
+[00:58:09.000 --> 00:58:12.400]   you stop everybody from using that little tweak for the next 14 years and you end up
+[00:58:12.400 --> 00:58:19.360]   with a situation we have now where everything is patented in 50 different ways and so then
+[00:58:19.360 --> 00:58:24.480]   you get these patent trolls who have made a very very good business out of basically
+[00:58:24.480 --> 00:58:30.560]   buying lots of shitty little patents and then suing anybody who accidentally turned out
+[00:58:30.560 --> 00:58:36.360]   did that thing, like putting rounded corners on buttons.
+[00:58:36.360 --> 00:58:49.960]   So what does it mean for us that a lot of stuff
+[00:58:49.960 --> 00:58:52.280]   is patented in deep learning?
+[00:58:52.280 --> 00:58:58.680]   I don't know.
+[00:58:58.680 --> 00:59:05.720]   One of the main people doing this is Google and people from Google who reply to this patent
+[00:59:05.720 --> 00:59:11.280]   tend to assume that Google is doing it because they want to have it defensively, so if somebody
+[00:59:11.280 --> 00:59:17.600]   sues them they'll be like don't sue us, we'll sue you back because we have all these patents.
+[00:59:17.600 --> 00:59:22.280]   The problem is that as far as I know they haven't signed what's called a defensive patent
+[00:59:22.280 --> 00:59:23.280]   pledge.
+[00:59:23.280 --> 00:59:28.040]   So basically you can sign a legally binding document that says our patent portfolio will
+[00:59:28.040 --> 00:59:33.040]   only be used in defense and not offense, and even if you believe all the management of
+[00:59:33.040 --> 00:59:41.240]   Google would never turn into a patent troll, you've got to remember that management changes.
+[00:59:41.240 --> 00:59:50.400]   To give a specific example, I know the somewhat recent CFO of Google has a much more aggressive
+[00:59:50.400 --> 00:59:57.000]   stance towards the P&L and I don't know, maybe she might decide that they should start monetizing
+[00:59:57.000 --> 01:00:03.280]   their patents, or maybe the group that made that patent might get spun off and then sold
+[01:00:03.280 --> 01:00:09.680]   to another company that might end up in private equity hands and decide to monetize the patents.
+[01:00:09.680 --> 01:00:12.780]   I think it's a problem.
+[01:00:12.780 --> 01:00:19.880]   There has been a big shift legally recently away from software patents actually having
+[01:00:19.880 --> 01:00:25.680]   any legal standing, so it's possible that these all end up thrown out of court, but
+[01:00:25.680 --> 01:00:30.920]   the reality is that anything but a big company is unlikely to have the financial ability
+[01:00:30.920 --> 01:00:37.720]   to defend themselves against one of these huge patent trolls.
+[01:00:37.720 --> 01:00:42.680]   So I think it's a problem.
+[01:00:42.680 --> 01:00:48.800]   You can't avoid using patented stuff if you write code.
+[01:00:48.800 --> 01:00:54.280]   I wouldn't be surprised if most lines of code you write have patents on them.
+[01:00:54.280 --> 01:01:00.800]   So actually, funnily enough, the best thing to do is not to study the patents, because
+[01:01:00.800 --> 01:01:09.080]   if you do and you infringe knowingly, the penalties are worse.
+[01:01:09.080 --> 01:01:15.120]   The best thing to do is to put your hands in your ears, sing a song, and get back to
+[01:01:15.120 --> 01:01:17.120]   work.
+[01:01:17.120 --> 01:01:30.280]   So that thing I said about dropouts patented, forget I said that, you skipped that bit.
+[01:01:30.280 --> 01:01:33.720]   This is super fun, artistic style.
+[01:01:33.720 --> 01:01:38.160]   We're going to go a bit retro here, because this is actually the original artistic style
+[01:01:38.160 --> 01:01:41.160]   paper.
+[01:01:41.160 --> 01:01:45.680]   There's been a lot of updates to it, a lot of different approaches.
+[01:01:45.680 --> 01:01:50.520]   And I actually think, in many ways, the original is the best.
+[01:01:50.520 --> 01:01:56.200]   We're going to look at some of the newer approaches as well, but I actually think the original
+[01:01:56.200 --> 01:02:05.880]   is a terrific way to do it, even with everything that's gone since.
+[01:02:05.880 --> 01:02:07.880]   Let's just jump to the code.
+[01:02:07.880 --> 01:02:13.680]   This is the style transfer notebook.
+[01:02:13.680 --> 01:02:24.940]   So the idea here is that we want to take a photo of this bird, and we want to create
+[01:02:24.940 --> 01:02:37.640]   a painting that looks like Van Gogh painted the picture of the bird.
+[01:02:37.640 --> 01:02:41.200]   Quite a bit of the stuff that I'm doing, by the way, uses ImageNet.
+[01:02:41.200 --> 01:02:44.400]   You don't have to download the whole of ImageNet for any of the things I'm doing.
+[01:02:44.400 --> 01:02:52.320]   There's an ImageNet sample on files.fast.ai/data, which has a couple of gigs, and it should be
+[01:02:52.320 --> 01:02:54.680]   plenty good enough for everything we're doing.
+[01:02:54.680 --> 01:02:57.560]   If you want to get really great results, you can grab ImageNet.
+[01:02:57.560 --> 01:03:00.160]   You can download it from Kaggle.
+[01:03:00.160 --> 01:03:06.980]   On Kaggle, the localization competition actually contains all of the classification data as
+[01:03:06.980 --> 01:03:11.080]   well.
+[01:03:11.080 --> 01:03:16.560]   So if you've got room, it's good to have a copy of ImageNet because it comes in handy
+[01:03:16.560 --> 01:03:18.680]   all the time.
+[01:03:18.680 --> 01:03:28.480]   So I just grabbed a bird out of my ImageNet folder, and there is my bird.
+[01:03:28.480 --> 01:03:35.160]   What I'm going to do is I'm going to start with this picture, and I'm going to try and
+[01:03:35.160 --> 01:03:45.200]   make it more and more like a picture of this bird painted by Van Gogh.
+[01:03:45.200 --> 01:03:50.120]   And the way I do that is actually very simple.
+[01:03:50.120 --> 01:03:53.160]   You're all familiar with it.
+[01:03:53.160 --> 01:04:04.480]   We will create a loss function, which we'll call f, and the loss function is going to
+[01:04:04.480 --> 01:04:18.440]   take as input a picture, and spit out as output a value, and the value will be lower if the
+[01:04:18.440 --> 01:04:30.260]   image looks more like the bird photo painted by Van Gogh.
+[01:04:30.260 --> 01:04:36.640]   Having written that loss function, we will then use the PyTorch gradient and optimizers
+[01:04:36.640 --> 01:04:50.040]   gradient times the learning rate, and we're not going to update any weights, we're going
+[01:04:50.040 --> 01:04:59.040]   to update the pixels of the input image to make it a little bit more like a picture which
+[01:04:59.040 --> 01:05:01.800]   would be a bird painted by Van Gogh.
+[01:05:01.800 --> 01:05:07.040]   And we'll stick it through the loss function again to get more gradients, and do it again
+[01:05:07.040 --> 01:05:09.000]   and again.
+[01:05:09.000 --> 01:05:10.320]   And that's it.
+[01:05:10.320 --> 01:05:14.800]   It's identical to how we solve every problem.
+[01:05:14.800 --> 01:05:16.200]   You know I'm a one-trick pony, right?
+[01:05:16.200 --> 01:05:19.540]   This is my only trick.
+[01:05:19.540 --> 01:05:23.240]   Create a loss function, use it to get some gradients, multiply it by learning rates to
+[01:05:23.240 --> 01:05:30.240]   update something, always before we've updated weights in a model, but today we're not going
+[01:05:30.240 --> 01:05:31.240]   to do that.
+[01:05:31.240 --> 01:05:38.720]   We're going to update the pixels of the input, but it's no different at all.
+[01:05:38.720 --> 01:05:42.280]   We're just taking the gradient with respect to the input, rather than with respect to
+[01:05:42.280 --> 01:05:44.480]   the weights.
+[01:05:44.480 --> 01:05:47.280]   That's it.
+[01:05:47.280 --> 01:05:49.620]   So we're nearly done.
+[01:05:49.620 --> 01:05:51.800]   Let's do a couple more things.
+[01:05:51.800 --> 01:05:58.820]   Let's mention here that there's going to be two more inputs to our loss function.
+[01:05:58.820 --> 01:06:07.400]   One is the picture of the bird, birds look like this.
+[01:06:07.400 --> 01:06:16.720]   And the second is an artwork by Van Gogh, they look like this.
+[01:06:16.720 --> 01:06:31.520]   By having those as inputs as well, that means we'll be able to re-run the function later
+[01:06:31.520 --> 01:06:42.240]   to make it look like a bird painted by Monet or a jumbo jet painted by Van Gogh or whatever.
+[01:06:42.240 --> 01:06:45.280]   So those are going to be the three inputs.
+[01:06:45.280 --> 01:06:50.560]   And so initially, as we discussed, our input here, this is going to be the first time I've
+[01:06:50.560 --> 01:06:54.760]   ever found the rainbow pen useful.
+[01:06:54.760 --> 01:07:05.320]   So we start with some random noise, use the loss function, get the gradients, make it
+[01:07:05.320 --> 01:07:09.680]   a little bit more like a bird painted by Van Gogh and so forth.
+[01:07:09.680 --> 01:07:18.320]   So the only outstanding question which I guess we can talk about briefly is how we calculate
+[01:07:18.320 --> 01:07:25.480]   how much our image looks like a bird, this bird, painted by Van Gogh.
+[01:07:25.480 --> 01:07:28.880]   So let's split it into two parts.
+[01:07:28.880 --> 01:07:38.960]   Let's put it into a part called the content_loss, and that's going to return a value that's
+[01:07:38.960 --> 01:07:47.520]   lower if it looks more like the bird.
+[01:07:47.520 --> 01:07:56.140]   Not just any bird, the specific bird that we had coming in.
+[01:07:56.140 --> 01:08:02.440]   And then let's also create something called the style_loss, and that's going to be a lower
+[01:08:02.440 --> 01:08:22.300]   number if the image is more like Van Gogh's style.
+[01:08:22.300 --> 01:08:27.320]   So there's one way to do the content_loss which is very simple.
+[01:08:27.320 --> 01:08:32.820]   We could look at the pixels of the output, compare them to the pixels of the bird, and
+[01:08:32.820 --> 01:08:36.940]   do a mean squared error, add them up.
+[01:08:36.940 --> 01:08:44.160]   So if we did that, I ran this for a while, eventually our image would turn into an image
+[01:08:44.160 --> 01:08:46.240]   of the bird.
+[01:08:46.240 --> 01:08:47.740]   You should try it.
+[01:08:47.740 --> 01:08:53.640]   You should try this as an exercise, try to use the optimizer_npy torch to start with
+[01:08:53.640 --> 01:09:00.400]   a random image, and turn it into another image by using mean squared error pixel_loss.
+[01:09:00.400 --> 01:09:06.180]   Not terribly exciting, but that would be step 1.
+[01:09:06.180 --> 01:09:14.000]   The problem is, even if we already had a style_loss function working beautifully, and then presumably
+[01:09:14.000 --> 01:09:21.460]   what we're going to do is we're going to add these two together, and then one of them will
+[01:09:21.460 --> 01:09:27.160]   be multiplied by some lambda.
+[01:09:27.160 --> 01:09:31.320]   Some number will pick to adjust how much style versus how much content.
+[01:09:31.320 --> 01:09:35.600]   So assuming we had a style_loss, or we had picked some sensible lambda, if we used a
+[01:09:35.600 --> 01:09:41.580]   pixel-wise content_loss, then anything that makes it look more like Van Gogh and less
+[01:09:41.580 --> 01:09:48.280]   like the exact photo, the exact background, the exact contrast, lighting, everything will
+[01:09:48.280 --> 01:09:53.000]   decrease the content loss, which is not what we want.
+[01:09:53.000 --> 01:10:00.320]   We want it to look like the bird, but not in the same way.
+[01:10:00.320 --> 01:10:03.960]   It's still going to have the same two eyes in the same place, and be the same kind of
+[01:10:03.960 --> 01:10:09.480]   shape and so forth, but not the same representation.
+[01:10:09.480 --> 01:10:14.920]   So what we're going to do is, this is going to shock you, we're going to use a neural
+[01:10:14.920 --> 01:10:19.760]   network, we're going to use a neural network.
+[01:10:19.760 --> 01:10:22.880]   I totally meant that to be black and it came out green.
+[01:10:22.880 --> 01:10:28.320]   It's always a black box.
+[01:10:28.320 --> 01:10:33.320]   And we're going to use the VGG neural network, because that's what I used last year and I
+[01:10:33.320 --> 01:10:40.000]   didn't have time to see if other things worked, so you can try that yourself during the wig.
+[01:10:40.000 --> 01:10:49.240]   And the VGG network is something which takes in an input and sticks it through a number
+[01:10:49.240 --> 01:10:52.760]   of layers.
+[01:10:52.760 --> 01:10:55.500]   And I'm just going to treat these as just the convolutional layers.
+[01:10:55.500 --> 01:11:01.440]   There's obviously ReLU there, and if it's a VGG with batch norm, which most are today,
+[01:11:01.440 --> 01:11:05.160]   then it's also got batch norm.
+[01:11:05.160 --> 01:11:09.320]   And there's max pooling and so forth, but that's fine.
+[01:11:09.320 --> 01:11:20.260]   What we could do is we could take one of these convolutional activations, and then rather
+[01:11:20.260 --> 01:11:32.760]   than comparing the pixels of this bird, we could instead compare the VGG layer 5 activations
+[01:11:32.760 --> 01:11:41.600]   of this to the VGG layer 5 activations of our original bird, or layer 6, layer 7 or whatever.
+[01:11:41.600 --> 01:11:44.160]   So why might that be more interesting?
+[01:11:44.160 --> 01:11:47.760]   Well for one thing, it wouldn't be the same bird.
+[01:11:47.760 --> 01:11:51.960]   It wouldn't be exactly the same, because we're not checking the pixels, we're checking some
+[01:11:51.960 --> 01:11:53.480]   later set of activations.
+[01:11:53.480 --> 01:11:57.280]   And so what do those later sets of activations contain?
+[01:11:57.280 --> 01:12:03.760]   Well assuming that after some max pooling they contain a smaller grid, so it's less specific
+[01:12:03.760 --> 01:12:09.680]   about where things are, and rather than containing pixel color values, they're more like semantic
+[01:12:09.680 --> 01:12:15.380]   things like, is this kind of like an eyeball, or is this kind of furry, or is this kind
+[01:12:15.380 --> 01:12:22.000]   of bright, or is this kind of reflective, or is this laying flat, or whatever.
+[01:12:22.000 --> 01:12:29.660]   So we would hope that there's some level of semantic features through those layers, where
+[01:12:29.660 --> 01:12:38.040]   if we get a picture that matches those activations, then any picture that matches those activations
+[01:12:38.040 --> 01:12:44.760]   looks like the bird, but it's not the same representation of the bird.
+[01:12:44.760 --> 01:12:46.000]   So that's what we're going to do.
+[01:12:46.000 --> 01:12:49.340]   That's what our content loss is going to be.
+[01:12:49.340 --> 01:12:56.000]   People generally call this a perceptual loss, because it's really important in deep learning
+[01:12:56.000 --> 01:13:00.280]   that you always create a new name for every obvious thing you do.
+[01:13:00.280 --> 01:13:08.780]   So if you compare two activations together, you're doing a perceptual loss.
+[01:13:08.780 --> 01:13:09.780]   So that's it.
+[01:13:09.780 --> 01:13:13.200]   Our content loss is going to be a perceptual loss, and then we'll do the style loss later.
+[01:13:13.200 --> 01:13:22.080]   So let's start by trying to create a bird that initially is random noise, and we're
+[01:13:22.080 --> 01:13:31.380]   going to use perceptual loss to create something that is bird-like, but it's not this bird.
+[01:13:31.380 --> 01:13:36.880]   So let's start by saying we're going to do 288 by 288.
+[01:13:36.880 --> 01:13:42.120]   Because we're only going to do one bird, there's going to be no GPU memory problems.
+[01:13:42.120 --> 01:13:45.920]   So I was actually disappointed that I realized that I picked a rather small input image.
+[01:13:45.920 --> 01:13:50.440]   It would be fun to try this with something much bigger to create a really grand scale
+[01:13:50.440 --> 01:13:52.440]   piece.
+[01:13:52.440 --> 01:13:55.680]   The other thing to remember is if you were productionizing this, you could do a whole
+[01:13:55.680 --> 01:13:59.780]   batch at a time.
+[01:13:59.780 --> 01:14:04.600]   People sometimes complain about this approach, Gatties is the lead author, the Gatties style
+[01:14:04.600 --> 01:14:06.520]   transfer approach is being slow.
+[01:14:06.520 --> 01:14:07.680]   I don't agree it's slow.
+[01:14:07.680 --> 01:14:13.760]   It takes a few seconds and you can do a whole batch in a few seconds.
+[01:14:13.760 --> 01:14:18.820]   So we're going to stick it through some transforms as per usual, transforms through a BGG16 model.
+[01:14:18.820 --> 01:14:27.840]   And so remember, the transform class has a dunder call method, so we can treat it as
+[01:14:27.840 --> 01:14:29.680]   if it's a function.
+[01:14:29.680 --> 01:14:35.280]   So if you pass an image into that, then we get the transformed image.
+[01:14:35.280 --> 01:14:42.000]   Try not to treat the fastai and PyTorch infrastructure as a black box, because it's all designed
+[01:14:42.000 --> 01:14:45.800]   to be really easy to use in a decoupled way.
+[01:14:45.800 --> 01:14:52.360]   So this idea of transforms are just callables, i.e. things that you can do with parentheses
+[01:14:52.360 --> 01:14:56.360]   comes from PyTorch, and we totally plagiarized the idea.
+[01:14:56.360 --> 01:15:02.900]   So with TorchVision or with fastai, your transforms are just callables.
+[01:15:02.900 --> 01:15:06.000]   The whole pipeline of transforms is just a callable.
+[01:15:06.000 --> 01:15:12.400]   So now we have something of 3x288x288, because PyTorch likes the channel to be first, and
+[01:15:12.400 --> 01:15:17.440]   as you can see it's been turned into a square for us, it's been normalized to 0.1, all that
+[01:15:17.440 --> 01:15:20.920]   normal stuff.
+[01:15:20.920 --> 01:15:25.400]   Now we're creating a random image.
+[01:15:25.400 --> 01:15:28.400]   And here's something I discovered.
+[01:15:28.400 --> 01:15:33.160]   Trying to turn this into a picture of anything is actually really hard.
+[01:15:33.160 --> 01:15:38.360]   I found it very difficult to actually get an optimizer to get reasonable gradients that
+[01:15:38.360 --> 01:15:40.560]   went anywhere.
+[01:15:40.560 --> 01:15:44.360]   And just as I thought I was going to run out of time for this class and really embarrass
+[01:15:44.360 --> 01:15:54.580]   myself, I realized the key issue is that pictures don't look like this, they have more smoothness.
+[01:15:54.580 --> 01:15:59.480]   So I turned this into this by just blurring it a little bit.
+[01:15:59.480 --> 01:16:08.240]   I used a median filter, basically it's like a median pooling effectively.
+[01:16:08.240 --> 01:16:12.680]   As soon as I changed it from this to this, it immediately started training really well.
+[01:16:12.680 --> 01:16:16.720]   So it's like a number of little tweaks you have to do to get these things to work is
+[01:16:16.720 --> 01:16:21.220]   kind of insane, but here's a little tweak.
+[01:16:21.220 --> 01:16:32.800]   So we start with a random image which is at least somewhat smooth.
+[01:16:32.800 --> 01:16:38.320]   I found that my bird image had a standard deviation of pixels that was about half of
+[01:16:38.320 --> 01:16:44.200]   this mean, so I divided it by 2, just trying to make it a little bit easier for it to match.
+[01:16:44.200 --> 01:16:46.760]   I don't know if it matters.
+[01:16:46.760 --> 01:16:51.880]   Turn that into a variable because this image, remember, we're going to be modifying those
+[01:16:51.880 --> 01:16:55.160]   pixels with an optimization algorithm.
+[01:16:55.160 --> 01:17:00.040]   So anything that's involved in the loss function needs to be a variable, and specifically it
+[01:17:00.040 --> 01:17:07.760]   requires a gradient because we're actually updating the image.
+[01:17:07.760 --> 01:17:17.040]   So we now have a mini-batch of 1, 3 channels, 288 by 288, random noise.
+[01:17:17.040 --> 01:17:21.720]   We're going to use for no particular reason the 37th layer of VGG.
+[01:17:21.720 --> 01:17:27.260]   If you print out the VGG network, you can just type in m_VGG and print it out.
+[01:17:27.260 --> 01:17:32.880]   You'll see that this is a mid to late stage layer.
+[01:17:32.880 --> 01:17:39.460]   So we can just grab the first 37 layers and turn it into a sequential model, so now we've
+[01:17:39.460 --> 01:17:45.240]   got a subset of VGG that will spit out some mid-layer activations.
+[01:17:45.240 --> 01:17:48.860]   And so that's what the model's going to be.
+[01:17:48.860 --> 01:17:56.380]   So we can take our actual bird image, and we want to create a mini-batch of 1.
+[01:17:56.380 --> 01:18:05.340]   So remember if you slice in numpy with none, also known as np.newaxis, it introduces a
+[01:18:05.340 --> 01:18:10.060]   new unit axis in that point.
+[01:18:10.060 --> 01:18:15.920]   So here I want to create an axis of size 1 to say this is a mini-batch of size 1, so
+[01:18:15.920 --> 01:18:24.400]   slicing with none, just like I did here, sliced with none to get this 1 unit axis at the front.
+[01:18:24.400 --> 01:18:28.360]   So then we turn that into a variable.
+[01:18:28.360 --> 01:18:33.220]   And this one doesn't need to be updated, so we use vv to say you don't need gradients
+[01:18:33.220 --> 01:18:37.400]   for this guy.
+[01:18:37.400 --> 01:18:42.600]   And so that's going to give us our target activations.
+[01:18:42.600 --> 01:18:49.280]   So we've basically taken our bird image, turned it into a variable, stuck it through our model
+[01:18:49.280 --> 01:18:56.360]   to grab the 37th layer activations, and that's our target, is that we want our content lost
+[01:18:56.360 --> 01:19:01.440]   to be this set of activations here.
+[01:19:01.440 --> 01:19:03.520]   So now we're going to create an optimizer.
+[01:19:03.520 --> 01:19:07.280]   We'll go back to the details of this in a moment, but we're going to create an optimizer,
+[01:19:07.280 --> 01:19:16.280]   and we're going to step a bunch of times, going 0 to gradients, call some lost function,
+[01:19:16.280 --> 01:19:20.680]   stop backward, blah blah blah.
+[01:19:20.680 --> 01:19:29.360]   So that's the high-level version, and I'm going to come back to the details in a moment.
+[01:19:29.360 --> 01:19:35.600]   But the key thing is that the lost function we're passing in that randomly generated image,
+[01:19:35.600 --> 01:19:39.520]   the optimization image, or actually the variable of it.
+[01:19:39.520 --> 01:19:43.560]   So we pass that to our lost function.
+[01:19:43.560 --> 01:19:48.760]   And so it's going to update this using the lost function, and the lost function is the
+[01:19:48.760 --> 01:19:56.360]   mean squared error loss, comparing our current optimization image, pass through our VGG to
+[01:19:56.360 --> 01:20:02.080]   get the intermediate activations, and comparing it to our target activations.
+[01:20:02.080 --> 01:20:04.120]   Just like we discussed.
+[01:20:04.120 --> 01:20:12.160]   And we'll run that a bunch of times, and we'll print it out, and we have our bird, but not
+[01:20:12.160 --> 01:20:18.840]   the representation of the bird, so there it is.
+[01:20:18.840 --> 01:20:20.760]   So a couple of new details here.
+[01:20:20.760 --> 01:20:27.920]   One is a weird optimizer, LBFGS.
+[01:20:27.920 --> 01:20:34.280]   Anybody who's done, I don't know exactly what courses they're in, but certain parts of math
+[01:20:34.280 --> 01:20:41.080]   and computer science courses come into deep learning, discovers we use all this stuff
+[01:20:41.080 --> 01:20:48.560]   like Adam and SGD and always assume that nobody in the field knows the first thing about computer
+[01:20:48.560 --> 01:20:55.360]   science and immediately says, "Oh, have any of you guys tried using VFGS?"
+[01:20:55.360 --> 01:21:00.600]   There's basically a long history of a totally different kind of algorithm for optimization
+[01:21:00.600 --> 01:21:03.480]   that we don't use to train neural networks.
+[01:21:03.480 --> 01:21:07.560]   And of course the answer is actually the people who have spent decades studying neural networks
+[01:21:07.560 --> 01:21:12.040]   do know a thing or two about computer science, and it turns out these techniques don't work
+[01:21:12.040 --> 01:21:13.280]   very well.
+[01:21:13.280 --> 01:21:16.800]   But it's actually going to work well for this, and it's a good opportunity to talk about
+[01:21:16.800 --> 01:21:22.720]   an interesting algorithm for those of you that haven't studied this type of optimization
+[01:21:22.720 --> 01:21:26.880]   algorithm at school.
+[01:21:26.880 --> 01:21:31.520]   So VFGS is -- what are the names?
+[01:21:31.520 --> 01:21:37.160]   I can't remember, anyway, initials are four different people.
+[01:21:37.160 --> 01:21:41.800]   The L stands for limited memory, so it's really just called VFGS.
+[01:21:41.800 --> 01:21:43.480]   Limited memory VFGS.
+[01:21:43.480 --> 01:21:45.160]   And it's an optimizer.
+[01:21:45.160 --> 01:21:49.440]   So as an optimizer, it means that there's some loss function, and it's going to use
+[01:21:49.440 --> 01:21:54.520]   some gradients to -- not all optimizers use gradients, but all the ones we use do -- use
+[01:21:54.520 --> 01:22:00.440]   gradients to find a direction to go and try to make the loss function go lower and lower
+[01:22:00.440 --> 01:22:02.400]   by adjusting some parameters.
+[01:22:02.400 --> 01:22:05.760]   It's just an optimizer.
+[01:22:05.760 --> 01:22:10.360]   But it's an interesting kind of optimizer because it does a bit more work than the ones
+[01:22:10.360 --> 01:22:13.120]   we're used to on each step.
+[01:22:13.120 --> 01:22:36.840]   And so specifically -- okay.
+[01:22:36.840 --> 01:22:41.000]   So the way it works is it starts the same way that we're used to, which is we just kind
+[01:22:41.000 --> 01:22:49.120]   of pick somewhere to get started, and in this case we pick a random image, as you saw.
+[01:22:49.120 --> 01:22:59.720]   And as per usual, we calculate the gradient.
+[01:22:59.720 --> 01:23:05.920]   But we don't just take a step, but what we actually do is as well as find in the gradient,
+[01:23:05.920 --> 01:23:08.600]   we also try to find the second derivative.
+[01:23:08.600 --> 01:23:12.920]   So the second derivative says how fast does the gradient change?
+[01:23:12.920 --> 01:23:16.040]   So the gradient is how fast does the function change, the second derivative is how fast
+[01:23:16.040 --> 01:23:17.040]   does the gradient change?
+[01:23:17.040 --> 01:23:18.880]   In other words, how curvy is it?
+[01:23:18.880 --> 01:23:28.140]   And the basic idea is that if you know that it's not very curvy, then you can probably
+[01:23:28.140 --> 01:23:31.760]   jump further.
+[01:23:31.760 --> 01:23:36.520]   But if it is very curvy, then you probably don't want to jump as far.
+[01:23:36.520 --> 01:23:40.800]   And so in higher dimensions, the gradient's called the Jacobian, and the second derivative's
+[01:23:40.800 --> 01:23:42.040]   called the Hessian.
+[01:23:42.040 --> 01:23:45.240]   You'll see those words all the time, but that's all they mean.
+[01:23:45.240 --> 01:23:48.880]   Again, mathematicians have to invent new words for everything as well.
+[01:23:48.880 --> 01:23:56.160]   They're just like people learning researchers, except maybe a bit more snooty.
+[01:23:56.160 --> 01:24:03.880]   So with BFGS, we're going to try and calculate the second derivative, and then we're going
+[01:24:03.880 --> 01:24:11.200]   to use that to figure out what direction to go and how far to go.
+[01:24:11.200 --> 01:24:16.260]   So it's less of a wild jump into the unknown.
+[01:24:16.260 --> 01:24:22.240]   Now the problem is that actually calculating the Hessian, the second derivative, is almost
+[01:24:22.240 --> 01:24:28.120]   certainly not a good idea, because in each possible direction that you can head, for
+[01:24:28.120 --> 01:24:33.400]   each direction that you're measuring the gradient in, you also have to calculate the Hessian
+[01:24:33.400 --> 01:24:34.720]   in every direction.
+[01:24:34.720 --> 01:24:38.640]   It gets ridiculously big.
+[01:24:38.640 --> 01:24:44.800]   So rather than actually calculating it, we take a few steps and we basically look at
+[01:24:44.800 --> 01:24:52.120]   how much the gradient's changing as we do each step, and we approximate the Hessian
+[01:24:52.120 --> 01:24:54.880]   using that little function.
+[01:24:54.880 --> 01:25:00.960]   And again, this seems like a really obvious thing to do, but nobody thought of it until
+[01:25:00.960 --> 01:25:04.920]   somewhat surprisingly long time later.
+[01:25:04.920 --> 01:25:09.960]   Keeping track of every single step you take takes a lot of memory.
+[01:25:09.960 --> 01:25:16.000]   So don't keep track of every step you take, just keep the last 10 or 20.
+[01:25:16.000 --> 01:25:20.240]   And the second bit there, that's the L to the L_BFGS.
+[01:25:20.240 --> 01:25:27.960]   So a limited memory BFGS means keep the last 10 or 20 gradients, use that to approximate
+[01:25:27.960 --> 01:25:32.800]   the amount of curvature, and then use the curvature and gradient to estimate what direction
+[01:25:32.800 --> 01:25:38.520]   to travel and how far.
+[01:25:38.520 --> 01:25:43.120]   And so that's normally not a good idea in deep learning for a number of reasons.
+[01:25:43.120 --> 01:25:51.000]   It's obviously more work to do than an atom or an SGD update, and obviously more memory.
+[01:25:51.000 --> 01:25:55.440]   Memory is much more of a big issue when you've got a GPU to store it on and hundreds of millions
+[01:25:55.440 --> 01:25:56.440]   of weights.
+[01:25:56.440 --> 01:26:00.760]   But more importantly, the mini-batches are super bumpy.
+[01:26:00.760 --> 01:26:06.840]   So figuring out curvature to decide exactly how far to travel is kind of polishing turds
+[01:26:06.840 --> 01:26:07.840]   as we say.
+[01:26:07.840 --> 01:26:11.920]   Is that an American expression or just an Australian thing?
+[01:26:11.920 --> 01:26:13.760]   I bet English say it too.
+[01:26:13.760 --> 01:26:16.440]   Do we have to say it?
+[01:26:16.440 --> 01:26:17.440]   Polishing turds.
+[01:26:17.440 --> 01:26:20.320]   You get the idea.
+[01:26:20.320 --> 01:26:26.780]   But also, interestingly, using the second derivative information, it turns out it's like
+[01:26:26.780 --> 01:26:29.100]   a magnet for saddle points.
+[01:26:29.100 --> 01:26:34.640]   So there's some interesting theoretical results that basically say it actually sends you towards
+[01:26:34.640 --> 01:26:39.320]   nasty flat areas of the function if you use second derivative information.
+[01:26:39.320 --> 01:26:40.660]   So normally not a good idea.
+[01:26:40.660 --> 01:26:43.240]   But in this case, we're not optimizing weights.
+[01:26:43.240 --> 01:26:46.800]   We're optimizing pixels, so all the rules change.
+[01:26:46.800 --> 01:26:51.200]   And actually it turns out LBFTS does make sense.
+[01:26:51.200 --> 01:26:56.000]   And because it does more work each time, when it's a different kind of optimizer, the API
+[01:26:56.000 --> 01:26:58.360]   is a little bit different in PyTorch.
+[01:26:58.360 --> 01:27:06.900]   As you can see here, when you say optimizer.step, you actually pass in the loss function.
+[01:27:06.900 --> 01:27:15.640]   And so my loss function is to call step with a particular loss function, which is my activation
+[01:27:15.640 --> 01:27:16.920]   loss.
+[01:27:16.920 --> 01:27:22.400]   And as you can see, inside the loop, you don't say step, step, step, but rather it looks
+[01:27:22.400 --> 01:27:23.400]   like this.
+[01:27:23.400 --> 01:27:25.760]   So it's a little bit different.
+[01:27:25.760 --> 01:27:30.760]   And you're welcome to try and rewrite this to use SGD, it'll still work, it'll just take
+[01:27:30.760 --> 01:27:31.880]   a bit longer.
+[01:27:31.880 --> 01:27:39.400]   I haven't tried it with SGD, I'd be interested to know how much longer it takes.
+[01:27:39.400 --> 01:27:46.560]   So you can see the loss function going down, the mean squared error between the activations
+[01:27:46.560 --> 01:27:55.900]   at layer 37 of our VGG model for our optimized image versus the target activations, and remember
+[01:27:55.900 --> 01:28:00.560]   the target activations were the VGG applied to our bird.
+[01:28:00.560 --> 01:28:08.960]   Does that make sense?
+[01:28:08.960 --> 01:28:13.320]   So we've now got a content loss.
+[01:28:13.320 --> 01:28:20.320]   Now one thing I'll say about this content loss is we don't know which layer is going
+[01:28:20.320 --> 01:28:24.400]   to work best, so it would be nice if we were able to experiment a little bit more, and
+[01:28:24.400 --> 01:28:26.920]   the way it is here is annoying.
+[01:28:26.920 --> 01:28:30.480]   Maybe we even want to use multiple layers.
+[01:28:30.480 --> 01:28:37.000]   So rather than like lopping off all of the layers after the one we want, wouldn't it
+[01:28:37.000 --> 01:28:45.440]   be nice if we could somehow grab the activations of a few layers as it calculates?
+[01:28:45.440 --> 01:28:47.560]   Now we already know one way to do that.
+[01:28:47.560 --> 01:28:55.360]   Back when we did SSD, we actually wrote our own network which had a number of outputs.
+[01:28:55.360 --> 01:28:56.360]   Do you remember?
+[01:28:56.360 --> 01:29:02.400]   Like the different convolutional layers, we spat out a different Ocon thing.
+[01:29:02.400 --> 01:29:08.240]   But I don't really want to go and add that to the TorchVision ResNet model, especially
+[01:29:08.240 --> 01:29:13.760]   not if later on I want to try the TorchVision VGG model, and then I want to try a NASNet
+[01:29:13.760 --> 01:29:14.760]   A model.
+[01:29:14.760 --> 01:29:20.180]   I don't want to go into all of them and change their outputs, besides which I'd like to easily
+[01:29:20.180 --> 01:29:24.320]   be able to turn certain activations on and off the demand.
+[01:29:24.320 --> 01:29:29.520]   So we've briefly touched before on this idea that PyTorch has these fantastic things called
+[01:29:29.520 --> 01:29:30.520]   hooks.
+[01:29:30.520 --> 01:29:37.560]   You can have forward hooks that let you plug anything you like into the forward path of
+[01:29:37.560 --> 01:29:42.040]   a calculation, or a backward hook that lets you plug anything you like into the backward
+[01:29:42.040 --> 01:29:43.080]   path.
+[01:29:43.080 --> 01:29:47.680]   So we're going to create the world's simplest forward hook.
+[01:29:47.680 --> 01:29:52.920]   This is one of these things that almost nobody knows about, so like almost any code you find
+[01:29:52.920 --> 01:30:02.040]   on the internet that implements style transfer will have all kinds of horrible hacks rather
+[01:30:02.040 --> 01:30:03.040]   than using forward hooks.
+[01:30:03.040 --> 01:30:05.440]   But with forward hooks, it's really easy.
+[01:30:05.440 --> 01:30:12.040]   So to create a forward hook, you just create a class, and the class has to have something
+[01:30:12.040 --> 01:30:15.320]   called hook function.
+[01:30:15.320 --> 01:30:21.000]   And your hook function is going to receive the module that you've hooked, it's going
+[01:30:21.000 --> 01:30:25.640]   to receive the input for the forward pass, and it's going to receive the target, and
+[01:30:25.640 --> 01:30:28.040]   then you do whatever the hell you like.
+[01:30:28.040 --> 01:30:36.760]   So what I'm going to do is I'm just going to store the output of this module in some
+[01:30:36.760 --> 01:30:39.000]   attribute.
+[01:30:39.000 --> 01:30:42.680]   That's it.
+[01:30:42.680 --> 01:30:46.240]   So this can actually be called anything you like, but hook function seems to be the standard.
+[01:30:46.240 --> 01:30:52.320]   You can see what happens here in the constructor is I store inside some attribute the result
+[01:30:52.320 --> 01:30:59.480]   of -- this is going to be the layer that I'm going to hook -- you go module.register_forward_hook
+[01:30:59.480 --> 01:31:07.000]   and pass in the function that you want to be called when this module, when its forward
+[01:31:07.000 --> 01:31:08.040]   method is called.
+[01:31:08.040 --> 01:31:14.720]   So when its forward method is called, it will call self.hook function which will store the
+[01:31:14.720 --> 01:31:22.200]   output in an attribute called features.
+[01:31:22.200 --> 01:31:31.760]   So now what we can do is we can create our VGG as before, and that's said it's not trainable
+[01:31:31.760 --> 01:31:36.540]   so we don't waste time and memory calculating gradients for it.
+[01:31:36.540 --> 01:31:41.800]   And let's go through and find all of the MaxPool layers.
+[01:31:41.800 --> 01:31:48.080]   So let's go through all of the children of this module, and if it's a MaxPool layer,
+[01:31:48.080 --> 01:31:51.140]   let's spit out index -1.
+[01:31:51.140 --> 01:31:54.200]   So that's going to give me the layer before the MaxPool.
+[01:31:54.200 --> 01:31:59.600]   And so in general the layer before a MaxPool or the layer before a Stride2Con is a very
+[01:31:59.600 --> 01:32:10.680]   interesting layer because it's the most complete representation we have at that grid cell size.
+[01:32:10.680 --> 01:32:14.040]   Because the very next layer is changing the grid.
+[01:32:14.040 --> 01:32:22.520]   So that seems to me like a good place to grab the content loss from is the best, most semantic,
+[01:32:22.520 --> 01:32:26.040]   most interesting content we have at that grid size.
+[01:32:26.040 --> 01:32:28.760]   So that's why I'm going to pick those indexes.
+[01:32:28.760 --> 01:32:30.680]   So here they are.
+[01:32:30.680 --> 01:32:37.820]   Those are the indexes of the last layer before each MaxPool in VGG.
+[01:32:37.820 --> 01:32:43.280]   So I'm going to grab this one here, 22, for no particular reason, just to try something
+[01:32:43.280 --> 01:32:44.840]   else.
+[01:32:44.840 --> 01:32:50.940]   So I'm going to say blockends3, that's going to be 32.
+[01:32:50.940 --> 01:33:02.700]   So children VGG index to blockends3 will give me the 32nd layer of VGG as a module.
+[01:33:02.700 --> 01:33:09.800]   And then if I call the save features constructor, it's going to go self.hook equals 32nd layer
+[01:33:09.800 --> 01:33:14.480]   of VGG.registerforwardhook function.
+[01:33:14.480 --> 01:33:22.360]   So now every time I do a forward pass on this VGG model, it's going to store the 32nd layer's
+[01:33:22.360 --> 01:33:29.760]   output inside sf.features.
+[01:33:29.760 --> 01:33:38.120]   So we can now say, see here I'm calling my VGG network, but I'm not storing it anywhere.
+[01:33:38.120 --> 01:33:43.320]   I'm not saying activations equals VGG of my image.
+[01:33:43.320 --> 01:33:51.580]   I'm calling it, throwing away the answer, and then grabbing the features that we stored
+[01:33:51.580 --> 01:33:56.640]   in our sf in our save features object.
+[01:33:56.640 --> 01:34:02.720]   So that way, this is now going to contain, this is a forward pass, that's how you do
+[01:34:02.720 --> 01:34:04.320]   a forward pass in PyTorch.
+[01:34:04.320 --> 01:34:07.600]   You don't say .forward, you just use it as a callable.
+[01:34:07.600 --> 01:34:12.440]   And using it as a callable on an nn.module automatically calls forward.
+[01:34:12.440 --> 01:34:16.080]   That's how PyTorch modules work.
+[01:34:16.080 --> 01:34:19.960]   So we call it as a callable, that ends up calling our forward hook.
+[01:34:19.960 --> 01:34:24.640]   That forward hook stores the activations in sf.features.
+[01:34:24.640 --> 01:34:35.040]   And so now we have our target variable, just like before, but in a much more flexible way.
+[01:34:35.040 --> 01:34:39.240]   These are the same four lines of code we had earlier, I've just stuck them into a function.
+[01:34:39.240 --> 01:34:45.920]   And so it's just giving me my random image to optimize, and an optimizer to optimize
+[01:34:45.920 --> 01:34:46.920]   that image.
+[01:34:46.920 --> 01:34:50.440]   This is exactly the same code as before, so that gives me these.
+[01:34:50.440 --> 01:34:54.600]   And so now I can go ahead and do exactly the same thing.
+[01:34:54.600 --> 01:35:00.200]   But now I'm going to use a different loss function, activation_loss_2, which doesn't
+[01:35:00.200 --> 01:35:01.200]   say out=mvgg.
+[01:35:01.200 --> 01:35:11.600]   Again, it calls mvgg to do a forward pass, throws away the results, and grabs sf.features.
+[01:35:11.600 --> 01:35:19.440]   And so that's now my 30-second layer activations, which I can then do my MSE loss on.
+[01:35:19.440 --> 01:35:24.840]   You might have noticed the last loss function and this one are both multiplied by a thousand.
+[01:35:24.840 --> 01:35:26.520]   Why are they multiplied by a thousand?
+[01:35:26.520 --> 01:35:31.680]   Again, this was like all the things that were trying to get this lesson to not work correctly.
+[01:35:31.680 --> 01:35:36.000]   I didn't used to have the a thousand, it wasn't training.
+[01:35:36.000 --> 01:35:43.360]   Lunch time to date, nothing was working, after days of trying to get this thing to work.
+[01:35:43.360 --> 01:35:51.400]   And finally, just randomly noticed, the loss functions, the numbers are really low, like
+[01:35:51.400 --> 01:35:53.800]   10e and x7.
+[01:35:53.800 --> 01:35:56.240]   And I just thought, what if they weren't so low?
+[01:35:56.240 --> 01:35:59.200]   So I multiplied them by a thousand and it started working.
+[01:35:59.200 --> 01:36:01.400]   So why did it not work?
+[01:36:01.400 --> 01:36:05.760]   Because we're doing single precision floating point, and single precision floating point
+[01:36:05.760 --> 01:36:07.360]   ain't that precise.
+[01:36:07.360 --> 01:36:10.840]   And particularly once you're getting gradients that are kind of small and then you're multiplying
+[01:36:10.840 --> 01:36:14.760]   the learning rate, it can be kind of small and you end up with a small number.
+[01:36:14.760 --> 01:36:19.480]   And if it's so small, it can get rounded to zero and that's what was happening and my
+[01:36:19.480 --> 01:36:22.720]   model wasn't training.
+[01:36:22.720 --> 01:36:27.960]   So I'm sure there are better ways of multiplying by a thousand, but whatever, it works fine.
+[01:36:27.960 --> 01:36:31.360]   It doesn't matter what you multiply a loss function by, because all you care about is
+[01:36:31.360 --> 01:36:37.560]   its direction and its relative size.
+[01:36:37.560 --> 01:36:41.800]   And interestingly, this is actually something similar for when we were training ImageNet,
+[01:36:41.800 --> 01:36:47.760]   we were using half-precision floating point because the Volta tensor cores require that.
+[01:36:47.760 --> 01:36:53.920]   And it's actually a standard practice if you want to get the half-precision floating point
+[01:36:53.920 --> 01:36:58.560]   to train, you actually have to multiply the loss function by a scaling factor.
+[01:36:58.560 --> 01:37:03.040]   We were using 1024 or 512.
+[01:37:03.040 --> 01:37:08.960]   And I think FastAI is now the first library that has all of the tricks necessary to train
+[01:37:08.960 --> 01:37:11.240]   in half-precision floating point built-in.
+[01:37:11.240 --> 01:37:18.800]   So if you have a Volta or you can pay for a P3, if you've got a learner object, you can
+[01:37:18.800 --> 01:37:27.600]   just say "learn.half" and it'll now just magically train correctly half-precision floating point
+[01:37:27.600 --> 01:37:32.080]   built into the model data objects as well, it's all automatic, and pretty sure no other
+[01:37:32.080 --> 01:37:36.960]   library does that.
+[01:37:36.960 --> 01:37:40.640]   So this is just doing the same thing on a slightly earlier layer.
+[01:37:40.640 --> 01:37:47.760]   And you can see that the later layer doesn't look very bird-like at all, but you can kind
+[01:37:47.760 --> 01:37:51.760]   of tell it's a bird, slightly earlier layer, more bird-like.
+[01:37:51.760 --> 01:38:01.720]   And hopefully that makes sense to you that earlier layers are getting closer to the pixels.
+[01:38:01.720 --> 01:38:09.760]   It's a smaller grid size, well, there's more grid cells, each cell is smaller, a smaller
+[01:38:09.760 --> 01:38:14.260]   receptive field, less complex semantic features.
+[01:38:14.260 --> 01:38:18.840]   So the earlier we get, the more it's going to look like a bird.
+[01:38:18.840 --> 01:38:26.200]   And in fact, the paper has a nice picture of that showing various different layers and
+[01:38:26.200 --> 01:38:30.360]   kind of zooming into this house, they're trying to make this house look like this picture.
+[01:38:30.360 --> 01:38:37.220]   And you can see that later on it's pretty messy and earlier on it looks like this.
+[01:38:37.220 --> 01:38:40.080]   So this is just doing what we just did.
+[01:38:40.080 --> 01:38:45.960]   And I will say one of the things I've noticed in our study group is anytime I say to somebody
+[01:38:45.960 --> 01:38:51.880]   to answer a question, anytime I say read the paper, there's a thing in the paper that tells
+[01:38:51.880 --> 01:38:56.160]   you the answer to that question, there's always this shocked look.
+[01:38:56.160 --> 01:39:04.380]   Read the paper, me, the paper, but seriously, the papers have done these experiments and
+[01:39:04.380 --> 01:39:08.800]   drawn the pictures, like there's all this stuff in the papers.
+[01:39:08.800 --> 01:39:14.320]   It doesn't mean you have to read every part of the paper, but at least look at the pictures.
+[01:39:14.320 --> 01:39:20.320]   So check out the Gattis paper, it's got nice pictures.
+[01:39:20.320 --> 01:39:25.320]   So they've done the experiment for us, they basically did this experiment, but it looks
+[01:39:25.320 --> 01:39:30.080]   like they didn't go as deep, they just got some earlier ones.
+[01:39:30.080 --> 01:39:33.920]   The next thing we need to do is to create style loss.
+[01:39:33.920 --> 01:39:39.520]   So we've already got the loss, which is how much like the bird is it.
+[01:39:39.520 --> 01:39:44.200]   Now we need how much like this painting style is it.
+[01:39:44.200 --> 01:39:47.480]   And we're going to do nearly the same thing.
+[01:39:47.480 --> 01:39:51.040]   We're going to grab the activations of some layer.
+[01:39:51.040 --> 01:40:02.120]   Now the problem is that the activations of some layer, let's say it was a 5x5 layer.
+[01:40:02.120 --> 01:40:16.600]   Of course there are no 5x5 layers at 224x224, but we'll pretend 5x5 by 19, totally unrealistic
+[01:40:16.600 --> 01:40:20.960]   sizes, but never mind.
+[01:40:20.960 --> 01:40:26.480]   So here's some activations, and we could get these activations both for the image we're
+[01:40:26.480 --> 01:40:31.240]   optimizing and for our Van Gogh painting.
+[01:40:31.240 --> 01:40:34.080]   And let's look at our Van Gogh painting.
+[01:40:34.080 --> 01:40:39.480]   There it is, very nice.
+[01:40:39.480 --> 01:40:44.240]   I downloaded this from Wikipedia, and I was wondering why it was taking so long to load.
+[01:40:44.240 --> 01:40:49.840]   It turns out that the Wikipedia version I downloaded was 30,000 by 30,000 pixels.
+[01:40:49.840 --> 01:40:56.200]   It's pretty cool, they've got this like serious gallery-quality archive stuff there, I didn't
+[01:40:56.200 --> 01:41:01.920]   know it existed, so don't try and run a neural net on that.
+[01:41:01.920 --> 01:41:07.740]   Totally killed my Jupiter notebook.
+[01:41:07.740 --> 01:41:14.880]   So we can do that for our Van Gogh image and we can do that for our optimized image.
+[01:41:14.880 --> 01:41:20.520]   And then we can compare the two and we would end up creating an image that looks content
+[01:41:20.520 --> 01:41:22.440]   like the painting, but it's not the painting.
+[01:41:22.440 --> 01:41:23.440]   That's not what we want.
+[01:41:23.440 --> 01:41:26.680]   We want something with the same style, but it's not the painting, it doesn't have the
+[01:41:26.680 --> 01:41:27.680]   content.
+[01:41:27.680 --> 01:41:33.160]   So we actually want to throw away all of the spatial information.
+[01:41:33.160 --> 01:41:40.840]   We're not trying to create something that has a moon here and stars here, that's a church
+[01:41:40.840 --> 01:41:43.200]   here or whatever.
+[01:41:43.200 --> 01:41:44.920]   We don't want any of that.
+[01:41:44.920 --> 01:41:48.720]   So how do we throw away all the spatial information?
+[01:41:48.720 --> 01:41:58.720]   What we do is let's grab, in this case there are like 19 faces on this, like 19 slices.
+[01:41:58.720 --> 01:42:14.120]   So let's grab this top slice, so that's going to be a 5x5 matrix.
+[01:42:14.120 --> 01:42:21.320]   And now let's flatten it.
+[01:42:21.320 --> 01:42:27.880]   So now we've got a 25 long vector.
+[01:42:27.880 --> 01:42:37.320]   Now in one stroke, we've thrown away the bulk of the spatial information by flattening it.
+[01:42:37.320 --> 01:42:55.740]   Now let's grab a second slice, another channel, and do the same thing.
+[01:42:55.740 --> 01:43:04.000]   So here's channel 1, flattened, here's channel 2, flattened, and they've both got 25 elements.
+[01:43:04.000 --> 01:43:12.880]   And now let's take the dot product, which we can do with @, and so the dot product's
+[01:43:12.880 --> 01:43:17.720]   going to give us one number.
+[01:43:17.720 --> 01:43:19.640]   What's that number?
+[01:43:19.640 --> 01:43:21.920]   What is it telling us?
+[01:43:21.920 --> 01:43:31.480]   Well, assuming this is somewhere around the middle layer of the VGG network, we might
+[01:43:31.480 --> 01:43:36.800]   expect some of these activations to be like how textured is the brush stroke, and some
+[01:43:36.800 --> 01:43:41.960]   of them to be like how bright is this area, and some of them to be like is this part of
+[01:43:41.960 --> 01:43:51.540]   a house or part of a circular thing, or other parts to be how dark is this part of the painting.
+[01:43:51.540 --> 01:43:58.920]   And so a dot product, remember, is basically a correlation.
+[01:43:58.920 --> 01:44:06.000]   If this element and this element are both highly positive or both highly negative, it
+[01:44:06.000 --> 01:44:11.120]   gives us a big result, whereas if they're the opposite, it gives us a small result.
+[01:44:11.120 --> 01:44:13.640]   If they're both close to zero, it gives no result.
+[01:44:13.640 --> 01:44:19.240]   So it's basically a dot product as a measure of how similar these two things are.
+[01:44:19.240 --> 01:44:29.600]   And so if the activations of channel 1 and channel 2 are similar, let's give an example.
+[01:44:29.600 --> 01:44:37.560]   Let's say this first one was like how textured are the brush strokes, and this one here was
+[01:44:37.560 --> 01:44:43.320]   like how diagonally oriented are the brush strokes.
+[01:44:43.320 --> 01:44:47.800]   And if both of these were high together and both of these were high together, then it's
+[01:44:47.800 --> 01:44:55.160]   basically saying anywhere that there's more textured brush strokes, they tend to be diagonal.
+[01:44:55.160 --> 01:45:03.440]   Another interesting one is what would be the dot product of C1 with C1?
+[01:45:03.440 --> 01:45:11.640]   So that would be basically the 2-norm, the sum of the squares of that channel.
+[01:45:11.640 --> 01:45:24.200]   Which in other words is basically just, let's go back, I screwed this up.
+[01:45:24.200 --> 01:45:33.200]   Channel 1 might be texture, and channel 2 might be diagonal, and this one here would
+[01:45:33.200 --> 01:45:41.400]   be cell 1,1, and this cell here would be cell 4,2.
+[01:45:41.400 --> 01:45:46.400]   What I should have been saying is if these are both high at the same time, and these
+[01:45:46.400 --> 01:45:52.640]   are both high at the same time, then it's saying grid cells that have texture tend to
+[01:45:52.640 --> 01:45:54.680]   also have diagonal.
+[01:45:54.680 --> 01:45:57.160]   Sorry, I drew that all wrong.
+[01:45:57.160 --> 01:46:01.400]   The idea was right, I just drew it all wrong.
+[01:46:01.400 --> 01:46:07.840]   So this number is going to be high when grid cells that have texture also have diagonal,
+[01:46:07.840 --> 01:46:11.980]   and when they don't, they don't.
+[01:46:11.980 --> 01:46:17.240]   So that's C1 dot product C2.
+[01:46:17.240 --> 01:46:28.840]   Whereas C1 dot product C1 is basically the 2-norm effectively, or the sum of the squares
+[01:46:28.840 --> 01:46:38.680]   of C1, sum over i of C1 squared.
+[01:46:38.680 --> 01:46:49.880]   And this is basically saying how in how many grid cells is the textured channel active,
+[01:46:49.880 --> 01:46:51.380]   and how active is it?
+[01:46:51.380 --> 01:46:59.560]   So in other words, C1 dot product C1 tells us how much textured painting is going on,
+[01:46:59.560 --> 01:47:07.000]   and C2 dot product C2 tells us how much diagonal paint strokes is going on.
+[01:47:07.000 --> 01:47:10.800]   Maybe C3 is bright colors.
+[01:47:10.800 --> 01:47:17.960]   So C3 dot product C3 would be how often do we have bright colored cells.
+[01:47:17.960 --> 01:47:28.120]   So what we could do then is we could create a 25 by 25 matrix containing every one, channel
+[01:47:28.120 --> 01:47:38.860]   1, channel 2, channel 3, channel 1, channel 2, channel 3 -- sorry, not channel -- man,
+[01:47:38.860 --> 01:47:45.280]   it's been a long day -- 19, there are 19 channels.
+[01:47:45.280 --> 01:47:48.760]   19 by 19.
+[01:47:48.760 --> 01:47:59.280]   Channel 1, channel 2, channel 3, channel 19, channel 1, channel 2, channel 3, channel 19.
+[01:47:59.280 --> 01:48:04.400]   And so this would be the dot product of channel 1 with channel 1, this would be the dot product
+[01:48:04.400 --> 01:48:11.920]   of channel 2 with channel 2, and so forth, after flattening.
+[01:48:11.920 --> 01:48:17.040]   And like we've discussed, mathematicians have to give everything a name.
+[01:48:17.040 --> 01:48:23.920]   So this particular matrix where you flatten something out and then do all the dot products
+[01:48:23.920 --> 01:48:29.900]   is called a Gram Matrix.
+[01:48:29.900 --> 01:48:37.400]   And I'll tell you a secret, most deep learning practitioners either don't know or don't remember
+[01:48:37.400 --> 01:48:41.920]   all these things, like what is a Gram Matrix if they ever did study at university, they
+[01:48:41.920 --> 01:48:44.880]   probably forgot it because they had a big night afterwards.
+[01:48:44.880 --> 01:48:51.120]   And the way it works in practice is like you realize, oh, I could create a kind of non-spatial
+[01:48:51.120 --> 01:48:57.100]   representation of how the channels correlate with each other, and then when I write up
+[01:48:57.100 --> 01:49:01.520]   the paper I have to go and ask around and say, does this thing have a name?
+[01:49:01.520 --> 01:49:04.480]   And somebody would be like, isn't it a Gram Matrix?
+[01:49:04.480 --> 01:49:06.240]   And you go and look it up, and it is.
+[01:49:06.240 --> 01:49:09.920]   So don't think you have to go and study all of math first.
+[01:49:09.920 --> 01:49:15.600]   You use your intuition and common sense and then you worry about what the math is called
+[01:49:15.600 --> 01:49:17.720]   later, normally.
+[01:49:17.720 --> 01:49:23.400]   Sometimes it works the other way, not with me, because I can't do math.
+[01:49:23.400 --> 01:49:26.460]   So this is called the Gram Matrix, and of course if you're a real mathematician it's
+[01:49:26.460 --> 01:49:32.200]   very important that you say this as if you always knew it was a Gram Matrix and you kind
+[01:49:32.200 --> 01:49:38.900]   of just go, oh yes, we just calculate the Gram Matrix, that's really important.
+[01:49:38.900 --> 01:49:51.720]   So the Gram Matrix then is this kind of map of -- the diagonal is perhaps the most interesting.
+[01:49:51.720 --> 01:49:58.040]   The diagonal is like which channels are the most active, and then the off-diagonal is
+[01:49:58.040 --> 01:50:01.600]   like which channels tend to appear together.
+[01:50:01.600 --> 01:50:09.800]   And overall, if two pictures have the same style, then we're expecting that some layer
+[01:50:09.800 --> 01:50:14.580]   of activations, they will have similar Gram Matrices.
+[01:50:14.580 --> 01:50:19.560]   Because if we found the level of activations that capture a lot of stuff about paint strokes
+[01:50:19.560 --> 01:50:25.960]   and colors and stuff, the diagonal alone might even be enough.
+[01:50:25.960 --> 01:50:31.260]   And that's another interesting homework assignment if somebody wants to take it, is try doing
+[01:50:31.260 --> 01:50:38.120]   Gaddy style transfer, not using the Gram Matrix, but just using the diagonal of the Gram Matrix.
+[01:50:38.120 --> 01:50:43.040]   And that would be like a single line of code to change, but I haven't seen it tried.
+[01:50:43.040 --> 01:50:47.200]   I don't know if it would work at all, but it might work fine.
+[01:50:47.200 --> 01:50:51.960]   Christine -- I'll pass this to Christine.
+[01:50:51.960 --> 01:50:52.960]   Okay yes, Christine, you've tried it.
+[01:50:52.960 --> 01:50:56.800]   I was going to say I have tried that, and it works most of the time except when you
+[01:50:56.800 --> 01:51:00.880]   have funny pictures where you need two styles to appear in the same spot.
+[01:51:00.880 --> 01:51:07.200]   So if you have grass in one half and a crowd in one half, and you need the two styles.
+[01:51:07.200 --> 01:51:18.440]   You still want to do your homework, but Christine says she'll do it for you.
+[01:51:18.440 --> 01:51:22.440]   So let's do that.
+[01:51:22.440 --> 01:51:27.280]   So here's our painting.
+[01:51:27.280 --> 01:51:42.120]   I've tried to resize the painting so it's the same size as my bird picture.
+[01:51:42.120 --> 01:51:48.680]   It doesn't matter too much which bit I use as long as it's got a nice style in it.
+[01:51:48.680 --> 01:51:53.760]   I grab my optimizer and my random image just like before.
+[01:51:53.760 --> 01:51:59.320]   And this time I call save features for all of my blockends, and that's going to give
+[01:51:59.320 --> 01:52:06.520]   me an array of save features objects, one for each module that appears the layer before
+[01:52:06.520 --> 01:52:09.480]   a Max pull.
+[01:52:09.480 --> 01:52:17.160]   Because this time I want to play around with different activation layer styles, or more
+[01:52:17.160 --> 01:52:21.280]   specifically I want to let you play around with it.
+[01:52:21.280 --> 01:52:24.160]   So now I've got a whole array of them.
+[01:52:24.160 --> 01:52:31.720]   So now I call my VGG module on my image again.
+[01:52:31.720 --> 01:52:38.120]   I'm not going to use that yet.
+[01:52:38.120 --> 01:52:42.320]   Ignore that line.
+[01:52:42.320 --> 01:52:44.520]   Style image is my Van Gogh painting.
+[01:52:44.520 --> 01:52:48.240]   So I take my style image, put it through my transformations to create my transform style
+[01:52:48.240 --> 01:52:49.240]   image.
+[01:52:49.240 --> 01:52:55.560]   I turn that into a variable, put it through the forward pass of my VGG module, and now
+[01:52:55.560 --> 01:53:01.720]   I can go through all of my save features objects and grab each set of features.
+[01:53:01.720 --> 01:53:08.140]   And notice I call clone, because later on if I call my VGG object again, it's going
+[01:53:08.140 --> 01:53:11.200]   to replace those contents.
+[01:53:11.200 --> 01:53:13.360]   I haven't quite thought about whether this is necessary.
+[01:53:13.360 --> 01:53:18.000]   If you take it away, it's fine, but I was just being careful.
+[01:53:18.000 --> 01:53:28.200]   So here's now an array of the activations at every block and layer.
+[01:53:28.200 --> 01:53:30.840]   So here you can see all of those shapes.
+[01:53:30.840 --> 01:53:35.200]   And you can see being able to whip up a list comprehension really quickly, it's really
+[01:53:35.200 --> 01:53:39.720]   important in your Jupyter fiddling around because you really want to be able to immediately
+[01:53:39.720 --> 01:53:49.560]   see the grid size halving as we would expect because all of these appeared just before
+[01:53:49.560 --> 01:53:53.440]   a max pull.
+[01:53:53.440 --> 01:54:01.600]   So to do a gram MSE loss, it's going to be the MSE loss on the gram matrix of the input
+[01:54:01.600 --> 01:54:05.080]   versus the gram matrix of the target.
+[01:54:05.080 --> 01:54:15.140]   And the gram matrix is just the matrix multiply of x with x transpose, where x is simply equal
+[01:54:15.140 --> 01:54:23.680]   to my input, where I've flattened the batch and channel axes all down together.
+[01:54:23.680 --> 01:54:29.400]   And I've already got one image, so you can kind of ignore the batch part, basically channel,
+[01:54:29.400 --> 01:54:33.600]   and then everything else, which in this case is the height and width, is the other dimension.
+[01:54:33.600 --> 01:54:39.400]   So this is now going to be channel by height and width, and then as we discussed we can
+[01:54:39.400 --> 01:54:44.400]   then just do the matrix multiply of that by its transpose.
+[01:54:44.400 --> 01:54:49.680]   And just to normalize it, we'll divide that by the number of elements.
+[01:54:49.680 --> 01:54:57.880]   It would actually be more elegant if I had said "divided by input.num_elements".
+[01:54:57.880 --> 01:55:04.880]   That would be the same thing.
+[01:55:04.880 --> 01:55:08.560]   And then again, this kind of gave me tiny numbers, so I multiply it by a big number to
+[01:55:08.560 --> 01:55:12.480]   make it something more sensible.
+[01:55:12.480 --> 01:55:14.000]   So that's basically my loss.
+[01:55:14.000 --> 01:55:21.160]   So now my style loss is to take my image to optimize, throw it through vgg_forward_pass,
+[01:55:21.160 --> 01:55:28.560]   have an array of the features in all of the features objects, and then call my gram_msc_loss
+[01:55:28.560 --> 01:55:34.680]   on every one of those layers.
+[01:55:34.680 --> 01:55:36.360]   And that's going to give me an array.
+[01:55:36.360 --> 01:55:37.720]   And then I just add them up.
+[01:55:37.720 --> 01:55:46.880]   Now you could add them up with different weightings, you could add up a subset, whatever, in this
+[01:55:46.880 --> 01:55:56.560]   case I'm just grabbing all of them, pass that into my optimizer as before, and here we have
+[01:55:56.560 --> 01:56:03.560]   a random image in the style of Van Gogh, which I think is kind of cool.
+[01:56:03.560 --> 01:56:06.880]   And again, Gatties has done it for us.
+[01:56:06.880 --> 01:56:13.360]   Here is different layers of random image in the style of Van Gogh.
+[01:56:13.360 --> 01:56:19.120]   And so the first one, as you can see, the activations are simple geometric things, not
+[01:56:19.120 --> 01:56:21.080]   very interesting at all.
+[01:56:21.080 --> 01:56:23.300]   The later layers are much more interesting.
+[01:56:23.300 --> 01:56:31.240]   So we kind of have a suspicion that we probably want to use later layers largely for our style
+[01:56:31.240 --> 01:56:38.280]   loss if we want it to look good.
+[01:56:38.280 --> 01:56:50.880]   I added this save_features.close, which just calls, remember I stored the hook here, and
+[01:56:50.880 --> 01:56:57.720]   so hook.remove gets rid of it, and it's a good idea to get rid of it because otherwise
+[01:56:57.720 --> 01:57:01.560]   you can potentially just keep using memory.
+[01:57:01.560 --> 01:57:08.760]   So at the end I go through each of my save_features objects and close it.
+[01:57:08.760 --> 01:57:19.660]   So style_transfer is adding the two together with some weight.
+[01:57:19.660 --> 01:57:21.080]   So there's not much to show.
+[01:57:21.080 --> 01:57:28.280]   Grab my optimizer, grab my image, and now my combined_loss is the MSC_loss at one particular
+[01:57:28.280 --> 01:57:35.240]   layer, my style_loss at all of my layers, sum up the style_losses, add them to the content_loss,
+[01:57:35.240 --> 01:57:38.960]   the content_loss I'm scaling.
+[01:57:38.960 --> 01:57:47.480]   Actually the style_loss I scaled already by 1e6, and this one is 1, 2, 3, 4, 5, 6.
+[01:57:47.480 --> 01:57:53.000]   So actually they're both scaled exactly the same, add them together, and again you could
+[01:57:53.000 --> 01:57:58.400]   try weighting the different style_losses, or you could remove some of them, whatever.
+[01:57:58.400 --> 01:58:02.160]   So this is the simplest possible version.
+[01:58:02.160 --> 01:58:09.760]   Train that, and holy shit, it actually looks good.
+[01:58:09.760 --> 01:58:20.040]   So I think that's pretty awesome.
+[01:58:20.040 --> 01:58:31.180]   The main takeaway here is if you want to solve something with a neural network, all you've
+[01:58:31.180 --> 01:58:39.000]   got to do is set up a loss function and then optimize something.
+[01:58:39.000 --> 01:58:44.880]   The loss function is something which a lower number is something that you're happier with.
+[01:58:44.880 --> 01:58:48.120]   Because then when you optimize it, it's going to make that number as low as you can, and
+[01:58:48.120 --> 01:58:51.880]   that will do what you wanted it to do.
+[01:58:51.880 --> 01:59:02.680]   So here we came up with a loss function that does a good job of being a smaller number
+[01:59:02.680 --> 01:59:06.000]   when it looks like the thing we want it to look like, and it looks like the style of
+[01:59:06.000 --> 01:59:08.000]   the thing we want it to be in the style of.
+[01:59:08.000 --> 01:59:09.480]   That's all we had to do.
+[01:59:09.480 --> 01:59:17.400]   When it actually comes to it, apart from implementing grammse_loss, which was like 6 lines of code
+[01:59:17.400 --> 01:59:26.380]   of that, that's our loss function, pass it to our optimizer, wait about 5 seconds, and
+[01:59:26.380 --> 01:59:27.380]   we're done.
+[01:59:27.380 --> 01:59:29.360]   And remember, we could do a batch of these at a time.
+[01:59:29.360 --> 01:59:36.400]   So we could wait 5 seconds and 64 of these will be done.
+[01:59:36.400 --> 01:59:38.920]   So I think that's really interesting.
+[01:59:38.920 --> 01:59:47.400]   Once this paper came out, it's really inspired a lot of interesting work.
+[01:59:47.400 --> 01:59:51.640]   To me though, most of the interesting work hasn't happened yet, because to me the interesting
+[01:59:51.640 --> 01:59:59.880]   work is the work where you combine human creativity with these kinds of tools.
+[01:59:59.880 --> 02:00:07.540]   I haven't seen much in the way of tools that you can download or use where the artist is
+[02:00:07.540 --> 02:00:10.960]   in control and can do things interactively.
+[02:00:10.960 --> 02:00:17.160]   It's interesting, talking to the guys at the Google Magenta project, which is their Creative
+[02:00:17.160 --> 02:00:22.720]   AI project, all of the stuff they're doing with music is specifically about this.
+[02:00:22.720 --> 02:00:27.300]   It's building tools that musicians can use to perform in real time.
+[02:00:27.300 --> 02:00:30.880]   And so you'll see much more of that on the music space thanks to Magenta.
+[02:00:30.880 --> 02:00:34.520]   If you go to their website, there's all kinds of things where you can press the buttons
+[02:00:34.520 --> 02:00:40.040]   to change the drum beats or melodies or keys or whatever.
+[02:00:40.040 --> 02:00:46.840]   You can definitely see Adobe and Nvidia starting to release little prototypes that have started
+[02:00:46.840 --> 02:00:49.040]   to do this.
+[02:00:49.040 --> 02:00:55.160]   This kind of creative AI explosion hasn't happened yet.
+[02:00:55.160 --> 02:00:59.760]   I think we have pretty much all the technology we need, but no one's put it together into
+[02:00:59.760 --> 02:01:04.840]   a thing and said look at the thing I built and look at the stuff that people built with
+[02:01:04.840 --> 02:01:08.280]   my thing.
+[02:01:08.280 --> 02:01:16.600]   That's just a huge area of opportunity.
+[02:01:16.600 --> 02:01:23.200]   The paper that I mentioned at the start of class in passing, the one where we can add
+[02:01:23.200 --> 02:01:31.760]   Captain America's shield to arbitrary paintings, basically used this technique.
+[02:01:31.760 --> 02:01:42.520]   The trick was some minor tweaks to make the pasted Captain America shield blend in nicely.
+[02:01:42.520 --> 02:01:49.040]   That paper's only a couple of days old, so that would be an interesting project to try.
+[02:01:49.040 --> 02:01:56.380]   You can use all this code, it really does leverage this approach.
+[02:01:56.380 --> 02:02:04.720]   You could start by making the content image be like the painting with the shield, and
+[02:02:04.720 --> 02:02:08.800]   then the style image could be the painting without the shield.
+[02:02:08.800 --> 02:02:12.160]   That would be a good start, and then you could kind of see what specific problems they're
+[02:02:12.160 --> 02:02:17.560]   trying to solve in this paper to make it better.
+[02:02:17.560 --> 02:02:24.280]   You could have a start on it right now.
+[02:02:24.280 --> 02:02:34.320]   Let's make a quick start on the next bit, which is, yes, Rachel.
+[02:02:34.320 --> 02:02:37.160]   I'll say two questions.
+[02:02:37.160 --> 02:02:41.000]   Earlier there were a number of people that expressed interest in your thoughts on pyro
+[02:02:41.000 --> 02:02:49.360]   and probabilistic programming.
+[02:02:49.360 --> 02:02:54.800]   So TensorFlow's now got this TensorFlow probability or something.
+[02:02:54.800 --> 02:03:01.760]   There's a bunch of probabilistic programming frameworks out there.
+[02:03:01.760 --> 02:03:15.480]   I think they're intriguing, but as yet unproven in the sense that I haven't seen anything
+[02:03:15.480 --> 02:03:22.720]   done with any probabilistic programming system which hasn't been done better without them.
+[02:03:22.720 --> 02:03:32.080]   The basic premise is that it allows you to create more of a model of how you think the
+[02:03:32.080 --> 02:03:34.760]   world works and then plug in the parameters.
+[02:03:34.760 --> 02:03:39.000]   Back when I used to work in management consulting 20 years ago, we used to do a lot of stuff
+[02:03:39.000 --> 02:03:44.440]   where we would use a spreadsheet and then we would have these Monte Carlo simulation
+[02:03:44.440 --> 02:03:45.440]   plugins.
+[02:03:45.440 --> 02:03:48.780]   There's one called at-risk and one called crystal ball, I don't know if they still exist
+[02:03:48.780 --> 02:03:54.200]   decades later, but basically they would let you change a spreadsheet cell to say this
+[02:03:54.200 --> 02:03:59.360]   is not a specific value, but it actually represents a distribution of values with this mean and
+[02:03:59.360 --> 02:04:02.460]   the standard deviation, or it's got this distribution.
+[02:04:02.460 --> 02:04:07.520]   And then you would hit a button and the spreadsheet would recalculate a thousand times pulling
+[02:04:07.520 --> 02:04:11.400]   random numbers from the distributions and show you the distribution of your outcome
+[02:04:11.400 --> 02:04:19.920]   that might be some profit or market share or whatever, and we used them all the time
+[02:04:19.920 --> 02:04:20.920]   back then.
+[02:04:20.920 --> 02:04:26.200]   I partly think that a spreadsheet is a more obvious place to do that kind of work because
+[02:04:26.200 --> 02:04:39.280]   you can see it all much more naturally, but at this stage I hope it turns out to be useful
+[02:04:39.280 --> 02:04:44.080]   because I find it very appealing and it kind of appeals to, as I say, the kind of work
+[02:04:44.080 --> 02:04:46.400]   I used to do a lot of.
+[02:04:46.400 --> 02:04:50.080]   There's actually whole practices around this stuff that you used to call systems dynamics,
+[02:04:50.080 --> 02:04:55.880]   which really was built on top of this kind of stuff, but I don't know, it's not quite
+[02:04:55.880 --> 02:04:56.880]   gone anywhere.
+[02:04:56.880 --> 02:05:09.600]   Then there was a question about pre-training for a generic style transfer.
+[02:05:09.600 --> 02:05:16.840]   I don't think you can pre-train for a generic style, but you can pre-train for a generic
+[02:05:16.840 --> 02:05:27.200]   photo for a particular style, which is where we're going to get to, although it may end
+[02:05:27.200 --> 02:05:32.020]   up being homework, I haven't decided, but I'm going to do all the pieces.
+[02:05:32.020 --> 02:05:36.560]   One more question is, "Please ask him to talk about multi-GPU."
+[02:05:36.560 --> 02:05:42.720]   Oh yeah, I even have a slide about that.
+[02:05:42.720 --> 02:05:49.520]   It's about to hit it.
+[02:05:49.520 --> 02:05:54.800]   Before we do just another interesting picture from the Gatties paper, they've got a few
+[02:05:54.800 --> 02:06:00.680]   more that didn't fit in my slide here, but different convolutional layers for the style,
+[02:06:00.680 --> 02:06:05.840]   different style to content ratios, and here's the different images.
+[02:06:05.840 --> 02:06:10.160]   Obviously this isn't Van Gogh anymore, this is a different combination.
+[02:06:10.160 --> 02:06:16.160]   You can see if you just do all style, you don't see any image, if you do all lots of
+[02:06:16.160 --> 02:06:22.080]   content, but you use a low enough convolutional layer, it looks okay, but the background's
+[02:06:22.080 --> 02:06:27.880]   kind of dumb, so you kind of want somewhere around here or here.
+[02:06:27.880 --> 02:06:34.160]   You can play around with an experiment, but also use the paper to help guide you.
+[02:06:34.160 --> 02:06:42.500]   I think I might work on the math now, and we'll talk about multi-GPU and super-resolution
+[02:06:42.500 --> 02:06:44.000]   next week.
+[02:06:44.000 --> 02:06:49.280]   I think this is from the paper, and one of the things I really do want you to do after
+[02:06:49.280 --> 02:06:54.440]   we talk about a paper is to read the paper and then ask questions on the forum, anything
+[02:06:54.440 --> 02:06:56.240]   that's not clear.
+[02:06:56.240 --> 02:07:02.520]   But there's kind of a key part of this paper which I wanted to talk about and discuss how
+[02:07:02.520 --> 02:07:03.680]   to interpret it.
+[02:07:03.680 --> 02:07:11.240]   So the paper says we're going to be given an input image, x, and this little thing means
+[02:07:11.240 --> 02:07:28.760]   it's a vector, but this one's a matrix, I guess it could mean either.
+[02:07:28.760 --> 02:07:36.440]   So normally small-letter bold means vector, or small-letter with doobie on top means vector,
+[02:07:36.440 --> 02:07:41.720]   they can both mean vector, and normally big-letter means matrix, or small-letter with two doobies
+[02:07:41.720 --> 02:07:43.560]   on top means matrix.
+[02:07:43.560 --> 02:07:46.720]   In this case, our image is a matrix.
+[02:07:46.720 --> 02:07:52.000]   We are going to basically treat it as a vector, so maybe we're just getting ahead of ourselves.
+[02:07:52.000 --> 02:07:58.280]   So we've got an input image, x, and it can be encoded in a particular layer of the CNN
+[02:07:58.280 --> 02:07:59.800]   by the filter responses.
+[02:07:59.800 --> 02:08:03.700]   So the activations, filter responses are activations.
+[02:08:03.700 --> 02:08:08.720]   So hopefully that's something you all understand, that's basically what a CNN does, is it produces
+[02:08:08.720 --> 02:08:11.480]   layers of activations.
+[02:08:11.480 --> 02:08:17.600]   A layer has a bunch of filters which produce a number of channels, and so this here says
+[02:08:17.600 --> 02:08:26.720]   that layer number L has capital NL filters, and again this capital does not mean matrix.
+[02:08:26.720 --> 02:08:30.580]   So I don't know, math notation is so inconsistent.
+[02:08:30.580 --> 02:08:38.600]   So capital NL distinct filters at layer L, which means it has also that many feature
+[02:08:38.600 --> 02:08:39.600]   maps.
+[02:08:39.600 --> 02:08:42.360]   So make sure you can see that this letter is the same as this letter.
+[02:08:42.360 --> 02:08:47.480]   So you've got to be very careful to read the letters and recognize it's like snap, that's
+[02:08:47.480 --> 02:08:49.560]   the same letter as that letter.
+[02:08:49.560 --> 02:08:57.440]   So obviously NL feature maps or NL filters create NL feature maps or channels, h1 is
+[02:08:57.440 --> 02:09:04.600]   of size m, okay so I can see this is where the unrolling is happening, hmap is of size
+[02:09:04.600 --> 02:09:13.760]   m little l, so this is like m square bracket l in numpy notation, it's the lth layer.
+[02:09:13.760 --> 02:09:15.960]   So m for the lth layer.
+[02:09:15.960 --> 02:09:22.840]   And the size is height times width, so we flattened it out.
+[02:09:22.840 --> 02:09:30.680]   So the responses of that layer l can be stored in a matrix F, and now the l goes at the top
+[02:09:30.680 --> 02:09:31.680]   for some reason.
+[02:09:31.680 --> 02:09:35.640]   So this is not F to the power of l, this is just another indexing, we're just moving it
+[02:09:35.640 --> 02:09:38.660]   around for fun.
+[02:09:38.660 --> 02:09:42.640]   And this thing here where we say it's an element of R, this is a special R meaning the real
+[02:09:42.640 --> 02:09:48.840]   numbers n times m, this is saying that the dimensions of this is n by m.
+[02:09:48.840 --> 02:09:53.360]   So this is really important, you don't move on, it's just like with PyTorch, making sure
+[02:09:53.360 --> 02:09:57.160]   that you understand the rank and size of your dimensions first.
+[02:09:57.160 --> 02:10:03.640]   Same with math, these are the bits where you stop and think, why is it n by m?
+[02:10:03.640 --> 02:10:09.120]   So n is the number of filters, m is height by width, so do you remember that thing where
+[02:10:09.120 --> 02:10:15.200]   we did view batch times channel comma minus 1?
+[02:10:15.200 --> 02:10:16.200]   Here that is.
+[02:10:16.200 --> 02:10:19.360]   So try to map the code to the math.
+[02:10:19.360 --> 02:10:31.640]   So f is x.
+[02:10:31.640 --> 02:10:36.440]   If I was nicer to you, I would have used the same letters as the paper, but I was too busy
+[02:10:36.440 --> 02:10:39.920]   getting this damn thing working to do that carefully.
+[02:10:39.920 --> 02:10:44.160]   So you can go back and rename it as capital F.
+[02:10:44.160 --> 02:10:48.560]   This is why we moved the l to the top, because we're now going to have some more indexing.
+[02:10:48.560 --> 02:10:53.220]   So like where else in NumPy or PyTorch we index things by square brackets and then lots
+[02:10:53.220 --> 02:10:59.320]   of things with commas between, the approach in math is to surround your letter by little
+[02:10:59.320 --> 02:11:03.460]   letters all around it, and just throw them up there everywhere.
+[02:11:03.460 --> 02:11:11.600]   So here fl is the lth layer of f, and then ij is the activation of the i-th filter at
+[02:11:11.600 --> 02:11:14.600]   position j of layer l.
+[02:11:14.600 --> 02:11:20.640]   So position j is up to size m, which is up to size height by width.
+[02:11:20.640 --> 02:11:22.640]   This is the kind of thing that would be easy to get confused.
+[02:11:22.640 --> 02:11:27.400]   Like often you'd see an ij and assume that's like indexing into a position of an image
+[02:11:27.400 --> 02:11:31.400]   like height by width, but it's totally not, is it?
+[02:11:31.400 --> 02:11:40.240]   It's indexing into channel by flattened image, and it even tells you it's the i-th filter,
+[02:11:40.240 --> 02:11:47.960]   the i-th channel in the jth position in the flattened out image in layer l.
+[02:11:47.960 --> 02:11:54.880]   So you're not going to be able to get any further in the paper unless you understand
+[02:11:54.880 --> 02:11:56.420]   what f is.
+[02:11:56.420 --> 02:12:04.000]   So that's why these are the bits where you stop and make sure you're comfortable.
+[02:12:04.000 --> 02:12:10.920]   So now the content loss I'm not going to spend much time on, but basically we're going to
+[02:12:10.920 --> 02:12:21.440]   just check out the values of the activations versus the predictions squared.
+[02:12:21.440 --> 02:12:26.440]   So there's our content loss, and the style loss will be much the same thing but using
+[02:12:26.440 --> 02:12:29.280]   the Gram matrix g.
+[02:12:29.280 --> 02:12:34.080]   And I really wanted to show you this one because sometimes I really like things you can do
+[02:12:34.080 --> 02:12:40.200]   in math notation, and they're things you can also generally do in j and APL, which is kind
+[02:12:40.200 --> 02:12:43.360]   of this implicit loop going on here.
+[02:12:43.360 --> 02:12:48.000]   What this is saying is there's a whole bunch of values of i and a whole bunch of values
+[02:12:48.000 --> 02:12:52.280]   of j, and I've got to define g for all of them.
+[02:12:52.280 --> 02:12:55.120]   And there's a whole bunch of values of l as well, and I've got to define g for all of
+[02:12:55.120 --> 02:12:56.840]   those as well.
+[02:12:56.840 --> 02:13:03.200]   And so for all of my g at every l, at every i, at every j, it's going to be equal to something.
+[02:13:03.200 --> 02:13:11.000]   And you can see that something has an i and a j and an l, so matching these, and it also
+[02:13:11.000 --> 02:13:14.840]   has a k, and that's part of the sum.
+[02:13:14.840 --> 02:13:17.160]   So what's going on here?
+[02:13:17.160 --> 02:13:26.720]   Well it's saying that my Gram matrix in layer l for the i-th channel, well these aren't channels
+[02:13:26.720 --> 02:13:33.080]   anymore, in the i-th position in one axis, in the j-th position in another axis, is equal
+[02:13:33.080 --> 02:13:45.400]   to my f matrix, so my flattened out matrix, for the i-th channel in that layer versus
+[02:13:45.400 --> 02:13:49.900]   the j-th channel in the same layer.
+[02:13:49.900 --> 02:13:55.720]   And then I'm going to sum over, see this k and this k, they're the same letter.
+[02:13:55.720 --> 02:14:00.800]   So we're going to take the k-th position and multiply them together and then add them all
+[02:14:00.800 --> 02:14:01.800]   up.
+[02:14:01.800 --> 02:14:06.400]   So that's exactly what we just did before when we calculated our Gram matrix.
+[02:14:06.400 --> 02:14:15.360]   So there's a lot going on because of some very neat notation, which is there are three
+[02:14:15.360 --> 02:14:22.040]   implicit loops all going on at the same time, plus one explicit loop in the sum, and then
+[02:14:22.040 --> 02:14:26.960]   they all work together to create this Gram matrix for every layer.
+[02:14:26.960 --> 02:14:38.000]   So let's go back and see if you can match this.
+[02:14:38.000 --> 02:14:45.280]   So all that's kind of happening all at once, which I think is pretty great.
+[02:14:45.280 --> 02:14:47.000]   So that's it.
+[02:14:47.000 --> 02:14:52.180]   So next week we're going to be looking at a very similar approach, basically doing style
+[02:14:52.180 --> 02:14:56.880]   transfer all over again, but in a way where we're actually going to train a neural network
+[02:14:56.880 --> 02:15:00.480]   to do it for us rather than having to do the optimization.
+[02:15:00.480 --> 02:15:05.440]   We'll also see that you can do the same thing to do super resolution, and we're also going
+[02:15:05.440 --> 02:15:15.280]   to go back and revisit some of that SSD stuff as well as doing some segmentation.
+[02:15:15.280 --> 02:15:22.360]   So if you've forgotten SSD, it might be worth doing a little bit of revision this week.
+[02:15:22.360 --> 02:15:23.360]   Thanks everybody.
+[02:15:23.360 --> 02:15:24.120]   See you next week.
+[02:15:24.120 --> 02:15:27.480]   [APPLAUSE]
+

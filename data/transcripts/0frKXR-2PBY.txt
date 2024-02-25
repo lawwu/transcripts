@@ -1,0 +1,1274 @@
+
+[00:00:00.000 --> 00:00:06.880]   So today we're going to continue working on object detection, which means that for every
+[00:00:06.880 --> 00:00:11.760]   object in a photo in one of 20 classes, we're going to try and figure out what the object
+[00:00:11.760 --> 00:00:17.400]   is and what its bounding box is, such that we can apply that model to a new dataset of
+[00:00:17.400 --> 00:00:21.800]   unlabeled data and add those labels to it.
+[00:00:21.800 --> 00:00:27.120]   The general approach we're going to use is to start simple and gradually make it more
+[00:00:27.120 --> 00:00:32.800]   complicated so we started last week with a simple classifier, the three lines of closed
+[00:00:32.800 --> 00:00:37.800]   classifier, we then made it slightly more complex to turn it into a bounding box without
+[00:00:37.800 --> 00:00:38.800]   a classifier.
+[00:00:38.800 --> 00:00:43.000]   Today we're going to put those two pieces together to make a classifier plus a bounding
+[00:00:43.000 --> 00:00:48.000]   box, all of these are just for a single object, the largest object, and then from there we're
+[00:00:48.000 --> 00:00:56.960]   going up to something closer to our final goal.
+[00:00:56.960 --> 00:01:01.240]   You should go back and make sure that you understand all of these concepts from last
+[00:01:01.240 --> 00:01:03.000]   week before you move on.
+[00:01:03.000 --> 00:01:07.200]   If you don't, go back and re-go through the notebooks carefully.
+[00:01:07.200 --> 00:01:11.560]   I won't read them all to you because you can see them in the video easily enough.
+[00:01:11.560 --> 00:01:16.960]   Perhaps this is the most important, knowing how to jump around source code in whatever
+[00:01:16.960 --> 00:01:19.800]   editor you prefer to use.
+[00:01:19.800 --> 00:01:28.960]   At plotlet, lambda function is also particularly important, they come up everywhere, and this
+[00:01:28.960 --> 00:01:35.960]   idea of a custom head is also going to come up in pretty much every lesson.
+[00:01:35.960 --> 00:01:41.040]   I've also added here a reminder of what you should know from part one of the course because
+[00:01:41.040 --> 00:01:47.880]   quite often I see questions on the forum asking, basically, why isn't my model working?
+[00:01:47.880 --> 00:01:54.480]   Why doesn't it start training or, having trained, why doesn't it seem to be in use?
+[00:01:54.480 --> 00:02:01.160]   And nearly always, the answer to the question is, did you print out the inputs to it from
+[00:02:01.160 --> 00:02:02.920]   a data loader?
+[00:02:02.920 --> 00:02:08.840]   Did you print out the outputs from it after evaluating it?
+[00:02:08.840 --> 00:02:11.960]   And normally the answer is no, when they try printing it and it turns out all the inputs
+[00:02:11.960 --> 00:02:16.200]   are zero or all of the outputs are negative or it's really obvious.
+[00:02:16.200 --> 00:02:21.240]   So that's just something I wanted to remind you about, you need to know how to do these
+[00:02:21.240 --> 00:02:22.240]   two things.
+[00:02:22.240 --> 00:02:30.120]   If you can't do that, then it's going to be very hard to debug models, and if you can
+[00:02:30.120 --> 00:02:34.960]   do that, but you're not doing it, then it's going to be very hard for you to debug models.
+[00:02:34.960 --> 00:02:40.360]   You don't debug models by staring at the source code hoping your error pops out, you debug
+[00:02:40.360 --> 00:02:47.400]   models by checking all of the intermediate steps, looking at the data, printing it out,
+[00:02:47.400 --> 00:02:57.440]   plotting its histogram, making sure it makes sense.
+[00:02:57.440 --> 00:03:07.360]   We were working through Pascal Notebook and we just quickly zipped through the bounding
+[00:03:07.360 --> 00:03:13.000]   box of the largest object without a classified part, and there was one bit that I skipped
+[00:03:13.000 --> 00:03:19.120]   over and said I'd come back to, so let's do that now.
+[00:03:19.120 --> 00:03:29.520]   Which is to talk about data augmentations of the y of the dependent variable.
+[00:03:29.520 --> 00:03:37.160]   Before I do, I'll just mention something pretty awkward in all this, which is I've got here
+[00:03:37.160 --> 00:03:41.520]   image classifier data continuous equals true.
+[00:03:41.520 --> 00:03:43.480]   This makes no sense whatsoever.
+[00:03:43.480 --> 00:03:50.640]   A classifier is anything where the dependent variable is categorical or binomial, as opposed
+[00:03:50.640 --> 00:03:56.160]   to regression, which is anything where the dependent variable is continuous.
+[00:03:56.160 --> 00:04:00.760]   And yet this parameter here, continuous equals true, says that the dependent variable is
+[00:04:00.760 --> 00:04:01.760]   continuous.
+[00:04:01.760 --> 00:04:07.840]   So this claims to be creating data for a classifier where the dependent is continuous.
+[00:04:07.840 --> 00:04:15.740]   This is the kind of awkward rough edge that you see when we're kind of at the edge of
+[00:04:15.740 --> 00:04:19.920]   the fast AI code that's not quite solidified yet.
+[00:04:19.920 --> 00:04:23.200]   So probably by the time you watch this in the MOOC, this will be sorted out, and this
+[00:04:23.200 --> 00:04:29.960]   will be called image regressor data or something like that, but I just wanted to kind of point
+[00:04:29.960 --> 00:04:34.600]   out this issue, and also because sometimes people are getting confused between regression
+[00:04:34.600 --> 00:04:41.240]   vs. classification, and this is not going to help one bit.
+[00:04:41.240 --> 00:04:44.120]   So let's create some data augmentations.
+[00:04:44.120 --> 00:04:52.880]   Normally when we create data augmentations, we tend to type in transform_side_on or transform_top_dem.
+[00:04:52.880 --> 00:04:58.520]   But if you look inside the fast_ai.transforms module, you'll see that they are simply defined
+[00:04:58.520 --> 00:04:59.520]   as a list.
+[00:04:59.520 --> 00:05:06.640]   So transform_basic is 10 degree rotations plus 0.05 brightness and contrast, and then
+[00:05:06.640 --> 00:05:14.360]   side_on adds to that random horizontal flips, or else top_down adds to that random dihedral
+[00:05:14.360 --> 00:05:19.800]   group of asymmetry flips, which basically means every possible 90 degree rotation optionally
+[00:05:19.800 --> 00:05:24.000]   with a flip, so eight possibilities.
+[00:05:24.000 --> 00:05:29.320]   So these are just little shortcuts that I added because they seem to be useful a lot
+[00:05:29.320 --> 00:05:35.080]   of the time, but you can always create your own list of augmentations.
+[00:05:35.080 --> 00:05:39.800]   And if you're not sure what augmentations are there, you can obviously check the fast_ai
+[00:05:39.800 --> 00:05:45.360]   source, or if you just start typing random, they all start with random, so you can see
+[00:05:45.360 --> 00:05:49.120]   them easily enough.
+[00:05:49.120 --> 00:05:54.840]   So let's take a look at what happens if we create some data augmentations.
+[00:05:54.840 --> 00:06:05.280]   Let's create a model data object, and let's just go through and rerun the iterator a bunch
+[00:06:05.280 --> 00:06:06.780]   of times.
+[00:06:06.780 --> 00:06:17.320]   And we'll do two things, we'll print out the bounding boxes, and we'll also draw the pictures.
+[00:06:17.320 --> 00:06:23.360]   So you'll see this lady is, as we would expect, flipping around and spinning around and getting
+[00:06:23.360 --> 00:06:31.340]   darker and lighter, but the bounding box, A, is not moving, and B is in the wrong spot.
+[00:06:31.340 --> 00:06:40.800]   So this is the problem with data augmentation when your dependent variable is pixel values
+[00:06:40.800 --> 00:06:46.440]   or is in some way connected to your independent variable, the two need to be augmented together.
+[00:06:46.440 --> 00:06:51.760]   And in fact, you can see that from the printout these numbers are bigger than 224, but these
+[00:06:51.760 --> 00:06:57.240]   images are of size 224, that's what we requested in these transforms.
+[00:06:57.240 --> 00:07:01.800]   And so it's not even being scaled or cropped or anything.
+[00:07:01.800 --> 00:07:07.360]   So you can see that our dependent variable needs to go through all of the same geometric
+[00:07:07.360 --> 00:07:10.520]   transformations as our independent variable.
+[00:07:10.520 --> 00:07:20.400]   So to do that, every transformation has an optional transform Y parameter.
+[00:07:20.400 --> 00:07:27.680]   It takes a transform type enum, the transform type enum has a few options, all of which
+[00:07:27.680 --> 00:07:30.160]   we'll cover in this course.
+[00:07:30.160 --> 00:07:39.160]   The co-ord option says that the Y values represent coordinates, in this case bounding box coordinates.
+[00:07:39.160 --> 00:07:44.000]   And so therefore if you flip, you need to change the coordinate to represent that flip, or
+[00:07:44.000 --> 00:07:47.200]   if you rotate, you have to change the coordinate to represent that rotation.
+[00:07:47.200 --> 00:07:52.160]   So I can add transform type or co-ord to all of my augmentations.
+[00:07:52.160 --> 00:07:57.080]   I also have to add the exact same thing to my transforms from model function, because
+[00:07:57.080 --> 00:08:04.400]   that's the thing that does the cropping and zooming and padding and resizing, and all
+[00:08:04.400 --> 00:08:07.860]   of those things need to happen to the dependent variable as well.
+[00:08:07.860 --> 00:08:12.640]   So if we add all of those together and rerun this, you'll see the bounding box changes
+[00:08:12.640 --> 00:08:17.720]   each time, and you'll see it's in the right spot.
+[00:08:17.720 --> 00:08:24.360]   Now you'll see sometimes it looks a little odd, like here, why is that bounding box there?
+[00:08:24.360 --> 00:08:29.440]   And the problem is, this is just a constraint of the information we have.
+[00:08:29.440 --> 00:08:34.320]   The bounding box does not tell us that actually her head isn't way over here in the top left
+[00:08:34.320 --> 00:08:38.640]   corner, but actually if you do a 30 degree rotation and her head was over here in the
+[00:08:38.640 --> 00:08:43.820]   top left corner, then the new bounding box would go really high.
+[00:08:43.820 --> 00:08:49.820]   So this is actually the correct bounding box based on the information it has available,
+[00:08:49.820 --> 00:08:53.920]   which is to say this is how high she might have been.
+[00:08:53.920 --> 00:08:59.300]   So basically you've got to be careful of not doing too high rotations with bounding boxes
+[00:08:59.300 --> 00:09:04.320]   because there's not enough information for them to stay totally accurate, just the fundamental
+[00:09:04.320 --> 00:09:06.840]   limitation of the information we're given.
+[00:09:06.840 --> 00:09:15.080]   If we were doing polygons, or segmentations, or whatever, we wouldn't have this problem.
+[00:09:15.080 --> 00:09:22.920]   So I'm going to do a maximum of 3 degree rotations to avoid that problem.
+[00:09:22.920 --> 00:09:29.360]   I'm also going to only rotate half the time, I'm going to have my random flip and my brightness
+[00:09:29.360 --> 00:09:35.680]   and contrast changing, so there's my set of transformations that I can use.
+[00:09:35.680 --> 00:09:42.920]   So we briefly looked at this custom head idea, but basically if you look at dot summary, dot
+[00:09:42.920 --> 00:09:48.240]   summary does something pretty cool which basically runs a small batch of data through a model
+[00:09:48.240 --> 00:09:56.780]   and prints out how big it is at every layer, and we can see that at the end of the convolutional
+[00:09:56.780 --> 00:10:06.960]   section before we hit the flatten, it's 512 x 7 x 7, and so 512 x 7 x 7, a tensor, a rank
+[00:10:06.960 --> 00:10:13.440]   3 tensor of that size, if we flatten it out into a single rank 1 tensor into a vector,
+[00:10:13.440 --> 00:10:17.800]   it's going to be 25,098 long.
+[00:10:17.800 --> 00:10:25.780]   So then that's why we had this linear layer, 2.5.0 to 4, because there's 4 bounding boxes.
+[00:10:25.780 --> 00:10:35.400]   So stick that on top of a pre-trained ResNet and train it for a while.
+[00:10:35.400 --> 00:10:38.820]   So that's where we got to last time.
+[00:10:38.820 --> 00:10:45.920]   So let's now put those two pieces together so that we can get something that classifies
+[00:10:45.920 --> 00:10:57.600]   and does bounding boxes, and there are three things that we need to do basically to train
+[00:10:57.600 --> 00:11:00.400]   a neural network ever.
+[00:11:00.400 --> 00:11:14.460]   We need to provide data, we need to pick some kind of architecture, and we need a loss function.
+[00:11:14.460 --> 00:11:22.400]   So the loss function says anything that gives a lower number here is a better network using
+[00:11:22.400 --> 00:11:25.200]   this data and this architecture.
+[00:11:25.200 --> 00:11:29.900]   So we're going to need to create those three things for our classification plus bounding
+[00:11:29.900 --> 00:11:33.960]   box regression.
+[00:11:33.960 --> 00:11:42.640]   So that means we need a model data object which has the independence, the images, and
+[00:11:42.640 --> 00:11:47.520]   the dependence, so when I have a tuple, the first element of the tuple should be the bounding
+[00:11:47.520 --> 00:11:55.240]   box coordinates, and the second element of the tuple should be the class.
+[00:11:55.240 --> 00:11:57.160]   There's lots of different ways you could do this.
+[00:11:57.160 --> 00:12:04.200]   The particularly lazy and convenient way I came up with was to create two model data
+[00:12:04.200 --> 00:12:09.560]   objects representing the two different dependent variables I want.
+[00:12:09.560 --> 00:12:16.840]   So one with the bounding box coordinates, one with the classes, just using the CSB.
+[00:12:16.840 --> 00:12:19.840]   And now I'm going to merge them together.
+[00:12:19.840 --> 00:12:27.480]   So I create a new data set class, and a data set class is anything which has a length and
+[00:12:27.480 --> 00:12:31.840]   an indexer, so something that lets you use it in square brackets like a list.
+[00:12:31.840 --> 00:12:38.520]   And so in this case I can have a constructor which takes an existing data set, so that's
+[00:12:38.520 --> 00:12:48.480]   going to have both an independent and a dependent, and the second dependent that I want.
+[00:12:48.480 --> 00:12:53.880]   The length then is just obviously the length of the data set, the first data set.
+[00:12:53.880 --> 00:13:01.400]   And then getItem is grab the x and the y from the data set that I passed in, and return
+[00:13:01.400 --> 00:13:09.400]   that x and that y and the i-th value of the second dependent variable that I passed in.
+[00:13:09.400 --> 00:13:13.760]   So there's a data set that basically adds in a second dependent variable.
+[00:13:13.760 --> 00:13:17.800]   As I said, there's lots of ways you could do this, but it's kind of convenient because
+[00:13:17.800 --> 00:13:25.000]   now what I could do is create a training data set and a validation data set based on that.
+[00:13:25.000 --> 00:13:32.320]   So here's an example, it's got a tuple of the bounding box coordinates in the class.
+[00:13:32.320 --> 00:13:35.920]   We can then take the existing training and validation data loaders and actually replace
+[00:13:35.920 --> 00:13:40.200]   their data sets with these, and I'm done.
+[00:13:40.200 --> 00:13:46.280]   So we can now test it by grabbing a mini-batch of data and checking that we have something
+[00:13:46.280 --> 00:13:48.200]   that makes sense.
+[00:13:48.200 --> 00:13:55.600]   So there's one way to customize a data set.
+[00:13:55.600 --> 00:14:02.040]   So what we're going to do this time now is we've got the data, so now we need an architecture.
+[00:14:02.040 --> 00:14:07.200]   So the architecture is going to be the same as the architectures that we used for the
+[00:14:07.200 --> 00:14:11.680]   classifier and for the bounding box regression, but we're just going to combine them.
+[00:14:11.680 --> 00:14:19.680]   So in other words, if there are c classes, then the number of activations we need in
+[00:14:19.680 --> 00:14:22.960]   the final layer is 4 plus c.
+[00:14:22.960 --> 00:14:29.460]   We've got the 4 bounding box coordinates and the c probabilities 1/3 class.
+[00:14:29.460 --> 00:14:38.320]   So this is the final layer, a linear layer that has 4 plus len of categories activations.
+[00:14:38.320 --> 00:14:42.100]   The first layer is before is a flatten.
+[00:14:42.100 --> 00:14:51.680]   We could just join those up together, but in general I want my custom head to hopefully
+[00:14:51.680 --> 00:14:59.360]   be capable of solving the problem that I give it on its own if the pre-trained backbone
+[00:14:59.360 --> 00:15:03.680]   it's connected to is appropriate.
+[00:15:03.680 --> 00:15:08.400]   And so in this case I'm thinking I'm trying to do quite a bit here, two different things,
+[00:15:08.400 --> 00:15:10.760]   the classifier and bounding box regression.
+[00:15:10.760 --> 00:15:16.880]   So just a single linear layer doesn't sound like enough, so I put in a second linear layer.
+[00:15:16.880 --> 00:15:24.040]   And so you can see we basically go relu, dropout, lenia, relu, batchnorm, dropout, lenia.
+[00:15:24.040 --> 00:15:28.560]   If you're wondering why there's no batchnorm back here, I checked the resnet backbone,
+[00:15:28.560 --> 00:15:33.460]   it already has a batchnorm as its final layer.
+[00:15:33.460 --> 00:15:40.140]   So this is basically nearly the same custom head as before, it's just got two linear layers
+[00:15:40.140 --> 00:15:45.840]   rather than one and the appropriate nonlinearities.
+[00:15:45.840 --> 00:15:52.980]   So that's piece 2, we've got theta, we've got architecture, now we need a loss function.
+[00:15:52.980 --> 00:16:02.040]   So the loss function needs to look at these 4 plus c activations and decide are they good?
+[00:16:02.040 --> 00:16:10.520]   Are these numbers accurately reflecting the position and class of the largest object in
+[00:16:10.520 --> 00:16:14.240]   this image?
+[00:16:14.240 --> 00:16:18.480]   We know how to do that.
+[00:16:18.480 --> 00:16:25.560]   For the first 4 we use L1 loss, just like we did in the bounding box regression before.
+[00:16:25.560 --> 00:16:33.360]   Remember L1 loss is like mean squared error, the sum of squareds is the sum of those values.
+[00:16:33.360 --> 00:16:38.900]   And then for the rest of the activations we can use cross-entropy loss.
+[00:16:38.900 --> 00:16:40.200]   So let's go ahead and do that.
+[00:16:40.200 --> 00:16:44.440]   So we're going to create something called detection_loss, and loss functions always
+[00:16:44.440 --> 00:16:49.120]   take an input and a target, that's what PyTorch always calls them.
+[00:16:49.120 --> 00:16:53.600]   So this is the activations, this is the ground truth.
+[00:16:53.600 --> 00:17:03.480]   So remember that our custom dataset returns a tuple containing the bounding box coordinates
+[00:17:03.480 --> 00:17:04.720]   and the classes.
+[00:17:04.720 --> 00:17:10.020]   So we can destructure that, use destructuring assignment to grab the bounding boxes and
+[00:17:10.020 --> 00:17:13.920]   the classes of the target.
+[00:17:13.920 --> 00:17:21.680]   And then the bounding boxes and the classes of the input are simply the first 4 elements
+[00:17:21.680 --> 00:17:26.540]   of the input and the 4 onwards elements of the input.
+[00:17:26.540 --> 00:17:32.200]   And remember we've also got a batch dimension that we need to grab the whole thing.
+[00:17:32.200 --> 00:17:33.200]   So that's it.
+[00:17:33.200 --> 00:17:38.480]   We've now got the bounding box target, bounding box input, class target, class input.
+[00:17:38.480 --> 00:17:44.000]   For the bounding boxes we know that they're going to be between 0 and 224, the coordinates,
+[00:17:44.000 --> 00:17:46.720]   because that's how big our image is.
+[00:17:46.720 --> 00:17:54.260]   So let's grab a sigmoid to force it between 0 and 1, multiply it by 224, and that's just
+[00:17:54.260 --> 00:18:02.600]   helping our neural net get close to what we -- be in the range we know it has to be.
+[00:18:02.600 --> 00:18:10.600]   As a general rule, is it better to put batch norm before or after a relu?
+[00:18:10.600 --> 00:18:19.560]   I would suggest that you should put it after a relu, because batch norm is meant to move
+[00:18:19.560 --> 00:18:26.560]   towards a 0 and 1 random variable, and if you put relu after it, then you're truncating
+[00:18:26.560 --> 00:18:30.520]   it at 0.
+[00:18:30.520 --> 00:18:32.640]   So there's no way to create negative numbers.
+[00:18:32.640 --> 00:18:41.480]   But if you put relu and then batch norm, it does have that ability.
+[00:18:41.480 --> 00:18:49.440]   Having said that -- and I think that way of doing it gives slightly better results.
+[00:18:49.440 --> 00:18:55.320]   Having said that, it's not too big a deal either way, and you'll see during this part
+[00:18:55.320 --> 00:19:02.120]   of the course, most of the time I go relu and then batch norm, but sometimes I go batch
+[00:19:02.120 --> 00:19:06.680]   norm and then relu if I'm trying to be consistent with a paper or something like that.
+[00:19:06.680 --> 00:19:12.240]   I think originally the batch norm was put after the activation, so there's still people
+[00:19:12.240 --> 00:19:14.000]   who do that.
+[00:19:14.000 --> 00:19:20.580]   So this is kind of to help our data or force our data into the right range, which if you
+[00:19:20.580 --> 00:19:23.000]   can do stuff like that, it makes it easier to train.
+[00:19:23.000 --> 00:19:24.000]   Yes, Rachel?
+[00:19:24.000 --> 00:19:25.000]   One more question.
+[00:19:25.000 --> 00:19:30.680]   What's the intuition behind using dropout with p=0.5 after a batch norm?
+[00:19:30.680 --> 00:19:36.160]   Doesn't batch norm already do a good job of regularizing?
+[00:19:36.160 --> 00:19:40.160]   Batch norm does an okay job of regularizing, but if you think back to part 1, we've got
+[00:19:40.160 --> 00:19:45.700]   to have that list of things we do to avoid overfitting, and adding batch norm is one
+[00:19:45.700 --> 00:19:53.360]   of them, that's data augmentation, but it's perfectly possible that you'll still be overfitting.
+[00:19:53.360 --> 00:19:59.000]   So one nice thing about dropout is that it has a parameter to say how much to drop out,
+[00:19:59.000 --> 00:20:05.520]   so parameters are great, or specifically parameters that decide how much to regularize are great,
+[00:20:05.520 --> 00:20:11.920]   because it lets you build a nice, big over-parameterized model and then decide how much to regularize
+[00:20:11.920 --> 00:20:12.920]   it.
+[00:20:12.920 --> 00:20:21.720]   So I tend to always include dropout, and then if it turns out I'll start with p=0, and then
+[00:20:21.720 --> 00:20:27.880]   as I add new to add regularization, I can just change my dropout parameter without worrying
+[00:20:27.880 --> 00:20:34.160]   about if I saved a model, I want to be able to load it back, but if I had dropout layers
+[00:20:34.160 --> 00:20:39.960]   in one and not in another, it would load me more, so this way it stays consistent.
+[00:20:39.960 --> 00:20:45.840]   So now that I've got my inputs and targets, I can just go calculate the L1 loss and add
+[00:20:45.840 --> 00:20:48.480]   to it the cross entropy.
+[00:20:48.480 --> 00:20:53.880]   So that's our loss function, surprisingly easy perhaps.
+[00:20:53.880 --> 00:20:59.720]   Now of course the cross entropy and the L1 loss may be of wildly different scales, in
+[00:20:59.720 --> 00:21:03.840]   which case in the loss function the larger one is going to dominate.
+[00:21:03.840 --> 00:21:13.280]   And so I just ran this in a debugger, checked how big each of the two things were, and found
+[00:21:13.280 --> 00:21:21.800]   if they multiply by 20, that makes them about the same scale.
+[00:21:21.800 --> 00:21:26.840]   That's your training, it's nice to print out information as you go.
+[00:21:26.840 --> 00:21:33.440]   So I also grabbed the L1 part of this and put it in a function, and I also created a
+[00:21:33.440 --> 00:21:40.360]   function for accuracy, so that I could then make the metrics and print it out as it goes.
+[00:21:40.360 --> 00:21:46.120]   So we've now got something which is printing out our object detection loss, detection accuracy,
+[00:21:46.120 --> 00:21:54.200]   and detection L1, and so we've trained it for a while, and it's looking good.
+[00:21:54.200 --> 00:21:59.600]   Add detection accuracy is in the low 80s, which is the same as what it was before.
+[00:21:59.600 --> 00:22:06.880]   That doesn't surprise me because ResNet was designed to do classification, so I wouldn't
+[00:22:06.880 --> 00:22:12.760]   expect us to be able to improve things in such a simple way.
+[00:22:12.760 --> 00:22:16.480]   But it certainly wasn't designed to do bounding box regression, it was explicitly actually
+[00:22:16.480 --> 00:22:22.160]   designed in such a way as to kind of not care about geometry.
+[00:22:22.160 --> 00:22:27.000]   It takes that last 7x7 grid of activations and averages them all together.
+[00:22:27.000 --> 00:22:31.920]   It throws away all of the information about where things came from.
+[00:22:31.920 --> 00:22:39.960]   So you can see that when we only trained the last layer, the detection L1 is pretty bad,
+[00:22:39.960 --> 00:22:46.560]   it's 24, and it really improves a lot, whereas the accuracy doesn't improve, it stays exactly
+[00:22:46.560 --> 00:22:47.560]   the same.
+[00:22:47.560 --> 00:22:55.080]   Interestingly, the L1, when we do accuracy and bounding box at the same time, adding .5,
+[00:22:55.080 --> 00:23:00.920]   seems like it's a little bit better than when we just do bounding box regression.
+[00:23:00.920 --> 00:23:05.160]   And if that's counterintuitive to you, then that would be one of the main things to think
+[00:23:05.160 --> 00:23:08.240]   about after this lesson, so it's a really important idea.
+[00:23:08.240 --> 00:23:25.360]   And the idea is this, figuring out what the main object in an image is, is kind of the
+[00:23:25.360 --> 00:23:31.400]   hard part, and then figuring out exactly where the bounding box is and what class it is is
+[00:23:31.400 --> 00:23:34.680]   kind of the easy part in a way.
+[00:23:34.680 --> 00:23:40.760]   And so when you've got a single network that's both saying what is the object and where is
+[00:23:40.760 --> 00:23:47.720]   the object, it's going to share all of the computation about finding the object.
+[00:23:47.720 --> 00:23:53.360]   And so all that shared computation is very efficient.
+[00:23:53.360 --> 00:24:01.440]   And so when we backpropagate the errors in the class and in the place, that's all information
+[00:24:01.440 --> 00:24:05.800]   that's going to help the computation around finding the biggest object.
+[00:24:05.800 --> 00:24:13.680]   So anytime you've got multiple tasks which kind of share some concept of what those tasks
+[00:24:13.680 --> 00:24:19.200]   would need to do to complete their work, it's very likely they should share at least some
+[00:24:19.200 --> 00:24:23.800]   layers of the network together.
+[00:24:23.800 --> 00:24:32.280]   And we'll look later today at a place where most of the layers are shared but the last
+[00:24:32.280 --> 00:24:35.600]   one isn't.
+[00:24:35.600 --> 00:24:42.120]   So you can see this is doing a good job as before of any time there's just a single major
+[00:24:42.120 --> 00:24:44.800]   object.
+[00:24:44.800 --> 00:24:48.360]   Sometimes it's getting a little confused, it thinks the main object here is the dog and
+[00:24:48.360 --> 00:24:51.560]   it's going to circle the dog, although it's kind of recognized that actually the main
+[00:24:51.560 --> 00:24:52.560]   object is a sofa.
+[00:24:52.560 --> 00:24:56.360]   So the classifier is doing the right thing with the bounding boxes labeling the wrong
+[00:24:56.360 --> 00:25:00.160]   thing, which is kind of curious.
+[00:25:00.160 --> 00:25:04.560]   When there are two birds it can only pick one so it's just kind of hedging in the middle,
+[00:25:04.560 --> 00:25:10.040]   ditto and there's lots of cows and so forth, doing a good job with this kind of thing.
+[00:25:10.040 --> 00:25:16.400]   So that's that.
+[00:25:16.400 --> 00:25:21.720]   There's not much new there, although in that last bit we did learn about some simple custom
+[00:25:21.720 --> 00:25:24.200]   data sets and simple custom lots functions.
+[00:25:24.200 --> 00:25:30.320]   Hopefully you can see now how easy that is to do.
+[00:25:30.320 --> 00:25:35.520]   So the next stage for me would be to do multi-label classifications.
+[00:25:35.520 --> 00:25:40.000]   This is this idea that I just want to keep building models that are slightly more complex
+[00:25:40.000 --> 00:25:46.920]   than the last model but hopefully don't require too much extra concepts so I can keep seeing
+[00:25:46.920 --> 00:25:47.920]   things working.
+[00:25:47.920 --> 00:25:51.760]   And if something stops working I know exactly where it worked, I'm not going to try and
+[00:25:51.760 --> 00:25:53.760]   build everything at the same time.
+[00:25:53.760 --> 00:25:58.400]   So multi-label classification is so easy, there's not much to mention.
+[00:25:58.400 --> 00:26:03.680]   So we've moved to Pascal Multi now, this is where we're going to do the multi-object stuff.
+[00:26:03.680 --> 00:26:08.360]   So for the multi-object stuff, I've just copied and pasted the functions from the previous
+[00:26:08.360 --> 00:26:12.580]   notebook that we used, so they're all at the top.
+[00:26:12.580 --> 00:26:23.000]   So we can create now a multi-class CSV file using the same basic approach that we did
+[00:26:23.000 --> 00:26:24.640]   last time.
+[00:26:24.640 --> 00:26:32.520]   And I'll mention by the way, one of our students who's visiting from India, Fani, pointed out
+[00:26:32.520 --> 00:26:39.980]   to me that all this stuff we're doing with default dicks and stuff like that, he actually
+[00:26:39.980 --> 00:26:45.040]   showed a way of doing it which was much simpler using pandas and he shared that on the forum.
+[00:26:45.040 --> 00:26:50.840]   So I totally bow to his much better approach, a simpler, more concise approach.
+[00:26:50.840 --> 00:26:56.160]   It's definitely true, like the more you get to know pandas, the more often you realize
+[00:26:56.160 --> 00:27:00.520]   it's a good way to solve lots of different problems.
+[00:27:00.520 --> 00:27:11.280]   So definitely check that out.
+[00:27:11.280 --> 00:27:16.160]   When you're building out the smaller models and you're iterating, do you reuse those models
+[00:27:16.160 --> 00:27:23.000]   as pre-trained weights for this larger one or do you just toss it all away and then retrain
+[00:27:23.000 --> 00:27:24.000]   from scratch?
+[00:27:24.000 --> 00:27:30.360]   When I'm figuring stuff out as I go like this, I would generally lean towards tossing away
+[00:27:30.360 --> 00:27:38.400]   because the reusing pre-trained weights introduces complexities that I'm not really thinking about.
+[00:27:38.400 --> 00:27:43.120]   However if I'm trying to get to a point where I can run something on really big images,
+[00:27:43.120 --> 00:28:00.320]   I'll generally start on much smaller ones and often I will reuse those weights.
+[00:28:00.320 --> 00:28:06.080]   So in this case what we're doing is joining up all of the classes with a space which gives
+[00:28:06.080 --> 00:28:10.120]   us a CSV in a normal format and once we've got the CSV in a normal format it's the usual
+[00:28:10.120 --> 00:28:16.840]   three lines of code and we train it and we print out the results.
+[00:28:16.840 --> 00:28:18.880]   So there's literally nothing to show you there.
+[00:28:18.880 --> 00:28:20.800]   And as you can see it's done a great job.
+[00:28:20.800 --> 00:28:25.680]   The only mistake I think it made was it called this dog where it should have been dog and
+[00:28:25.680 --> 00:28:26.680]   sofa.
+[00:28:26.680 --> 00:28:29.580]   I think everything else is correct.
+[00:28:29.580 --> 00:28:35.640]   So multi-class classification is pretty straightforward.
+[00:28:35.640 --> 00:28:42.160]   A minor tweak here is to note that I used a set here because I don't want to list all
+[00:28:42.160 --> 00:28:43.160]   of the objects.
+[00:28:43.160 --> 00:28:50.200]   I only want each object type to appear once and so the set plus is a way of depuplicating
+[00:28:50.200 --> 00:28:51.200]   a list.
+[00:28:51.200 --> 00:28:56.260]   So that's why I don't have person, person, person, person, person, just appears once.
+[00:28:56.260 --> 00:29:02.960]   So these object classification pre-trained networks we have are really pretty good at
+[00:29:02.960 --> 00:29:07.300]   recognizing multiple objects as long as you only have to mention each one once.
+[00:29:07.300 --> 00:29:11.720]   So that works pretty well.
+[00:29:11.720 --> 00:29:36.760]   So we've got this idea that we've got an input image that goes through a ConvNet which is
+[00:29:36.760 --> 00:29:51.200]   a tensor vector of size 4+c where c is the number of classes.
+[00:29:51.200 --> 00:29:53.240]   So that's what we've got.
+[00:29:53.240 --> 00:30:02.040]   And that gives us an object detector for a single object, the largest object in our case.
+[00:30:02.040 --> 00:30:12.240]   So let's now create one which doesn't find a single object but that finds 16 objects.
+[00:30:12.240 --> 00:30:21.160]   So an obvious way to do that would be to take this last, this is just an n.linear, which
+[00:30:21.160 --> 00:30:29.200]   has got however many inputs and 4+c outputs.
+[00:30:29.200 --> 00:30:37.440]   And we could take that linear layer and rather than having 4+c outputs, we could have 16
+[00:30:37.440 --> 00:30:42.720]   times 4+c outputs.
+[00:30:42.720 --> 00:30:48.360]   So it's now spitting out enough things to give us 16 sets of class probabilities and
+[00:30:48.360 --> 00:30:51.880]   16 sets of bounding box coordinates.
+[00:30:51.880 --> 00:30:58.860]   And then we would just need a loss function that would check whether those 16 sets of
+[00:30:58.860 --> 00:31:06.000]   bounding boxes correctly represented the up to 16 objects that were represented in the
+[00:31:06.000 --> 00:31:07.000]   image.
+[00:31:07.000 --> 00:31:09.960]   Now there's a lot of hand waving about the loss function, we'll go into it later as to
+[00:31:09.960 --> 00:31:14.640]   what that is, but let's pretend we have one.
+[00:31:14.640 --> 00:31:18.920]   Assuming we had a reasonable loss function, that's totally going to work.
+[00:31:18.920 --> 00:31:25.680]   That is an architecture which has the necessary output activations, but with the correct
+[00:31:25.680 --> 00:31:33.160]   loss function we should be able to train it to do what we want it to do.
+[00:31:33.160 --> 00:31:35.480]   But that's just one way to do it.
+[00:31:35.480 --> 00:31:37.920]   There's a second way we could do it.
+[00:31:37.920 --> 00:31:52.680]   Rather than having an n.linear, what if instead we took from our resnet convolutional backbone,
+[00:31:52.680 --> 00:32:07.560]   not an n.linear, but instead we added an n.com2d with stride 2.
+[00:32:07.560 --> 00:32:18.300]   So the final layer of resnet gives you a 7x7x512 result.
+[00:32:18.300 --> 00:32:33.680]   So this would give us a 4 by 4 by whatever, the number of filters, let's say we pick 256.
+[00:32:33.680 --> 00:32:53.060]   So 4 by 4 by 256 has, well actually, no, let's change that.
+[00:32:53.060 --> 00:32:57.280]   Let's not make it 4 by 4 by 256, that is still, let's do it all in one step.
+[00:32:57.280 --> 00:33:11.040]   Let's make it 4 by 4 by 4 plus C because now we've got a tensor where the number of elements
+[00:33:11.040 --> 00:33:15.000]   is exactly equal to the number of elements we wanted.
+[00:33:15.000 --> 00:33:28.600]   So in other words, we could now, this would work too, if we created a loss function that
+[00:33:28.600 --> 00:33:31.040]   took a 4 by 4 by 4 plus C tensor and mapped it to 16 objects in the image and checked
+[00:33:31.040 --> 00:33:37.160]   whether each one was correctly represented by those 4 plus C activations.
+[00:33:37.160 --> 00:33:38.160]   That would work.
+[00:33:38.160 --> 00:33:43.960]   These are two exactly equivalent sets of activations because they've got the same number of elements,
+[00:33:43.960 --> 00:33:48.360]   they just reshaped.
+[00:33:48.360 --> 00:33:55.000]   So it turns out that both of these approaches are actually used.
+[00:33:55.000 --> 00:34:00.680]   The approach where you basically just spit out one big long vector from a fully-confected
+[00:34:00.680 --> 00:34:08.920]   linear layer is used by a class of models known as YOLO.
+[00:34:08.920 --> 00:34:18.940]   Whereas the approach of the convolutional activations is used by models which started
+[00:34:18.940 --> 00:34:25.960]   with something called SSD or single shot detector.
+[00:34:25.960 --> 00:34:37.000]   What I will say is that since these things came out at very similar times in late 2015,
+[00:34:37.000 --> 00:34:43.760]   things have very much moved towards here, to the point where this morning YOLO version
+[00:34:43.760 --> 00:34:50.340]   3 came out and is now doing it the SSD way.
+[00:34:50.340 --> 00:34:51.640]   So that's what we're going to do.
+[00:34:51.640 --> 00:35:04.640]   We're going to do this, and we're going to learn about why this makes more sense as well.
+[00:35:04.640 --> 00:35:07.760]   And so the basic idea is this.
+[00:35:07.760 --> 00:35:27.920]   Let's imagine that underneath this we had another conv2D, strive2, and we'd have something
+[00:35:27.920 --> 00:35:37.720]   which was 2x2, again let's say it's 4+c, that's nice and simple.
+[00:35:37.720 --> 00:35:47.320]   And so basically it's creating a grid that looks something like this, 1, 2, 3, 4.
+[00:35:47.320 --> 00:35:54.760]   So that would be how the activations are, the geometry of the activations of that second
+[00:35:54.760 --> 00:35:57.600]   extra convolutional strive2 layer.
+[00:35:57.600 --> 00:36:04.560]   But strive2 convolution does the same thing to the geometry of the activations as a strive1
+[00:36:04.560 --> 00:36:09.880]   convolution followed by a mass-pulling, assuming patterns are key.
+[00:36:09.880 --> 00:36:15.360]   So let's talk about what we might do here, because the basic idea is we want to kind
+[00:36:15.360 --> 00:36:24.040]   of say this top left grid cell is responsible for identifying any object that's in the top
+[00:36:24.040 --> 00:36:28.920]   left, and this one in the top right is responsible for identifying something in the top right,
+[00:36:28.920 --> 00:36:32.920]   this one in the bottom left, and this one in the bottom right.
+[00:36:32.920 --> 00:36:36.560]   So in this case you can actually see it's done and it's said, okay, this one is going
+[00:36:36.560 --> 00:36:40.560]   to try and find the chair, this one, it's actually made a mistake, it should have said
+[00:36:40.560 --> 00:36:45.640]   table, but there are actually 1, 2, 3 chairs here as well, so it makes sense.
+[00:36:45.640 --> 00:36:51.680]   So basically each of these grid cells, if it's going to be told in the loss function,
+[00:36:51.680 --> 00:36:59.240]   your job is to find the object, the big object that's in that part of the image.
+[00:36:59.240 --> 00:37:00.240]   So what --
+[00:37:00.240 --> 00:37:09.080]   >> So for multi-label classification, I saw you had a threshold on there, which I guess
+[00:37:09.080 --> 00:37:11.240]   is a hyperparameter, is there a way to --
+[00:37:11.240 --> 00:37:21.360]   >> We're getting your well ahead, let's work through this.
+[00:37:21.360 --> 00:37:27.560]   So why do we care about the idea that we would like this convolutional grid cell to be responsible
+[00:37:27.560 --> 00:37:31.440]   for finding things that were in this part of the image?
+[00:37:31.440 --> 00:37:36.080]   And the reason is because of something called the receptive field of that convolutional
+[00:37:36.080 --> 00:37:37.160]   grid cell.
+[00:37:37.160 --> 00:37:44.600]   And the basic idea is that throughout your convolutional layers, every piece of those
+[00:37:44.600 --> 00:37:53.200]   tenses has a receptive field which means which part of the input image was responsible for
+[00:37:53.200 --> 00:37:56.600]   calculating that cell.
+[00:37:56.600 --> 00:38:02.080]   And like all things in life, the easiest way to see this is with Microsoft Excel.
+[00:38:02.080 --> 00:38:08.560]   So do you remember our convolutional neural net?
+[00:38:08.560 --> 00:38:11.600]   And this was MNIST, we had the number 7.
+[00:38:11.600 --> 00:38:21.960]   And it went through a two-channel filter, channel 1, channel 2, which therefore created
+[00:38:21.960 --> 00:38:27.080]   a two-channel output.
+[00:38:27.080 --> 00:38:35.400]   And then the next layer was another convolution, so this tensor is now a 3D tensor, which then
+[00:38:35.400 --> 00:38:38.880]   creates a two-channel output.
+[00:38:38.880 --> 00:38:44.520]   And then after that, we had our max-pooling layer.
+[00:38:44.520 --> 00:38:48.960]   So let's look at this part of this output.
+[00:38:48.960 --> 00:38:52.920]   And the fact that this is conv, followed by max-pool, let's just pretend it's a stride-two
+[00:38:52.920 --> 00:38:53.920]   conv.
+[00:38:53.920 --> 00:38:56.700]   It's basically the same thing.
+[00:38:56.700 --> 00:39:01.860]   So let's see where this number 27 came from.
+[00:39:01.860 --> 00:39:08.300]   So if you've got Excel, you can go formulas, trace precedence, and so you can see this
+[00:39:08.300 --> 00:39:12.560]   came from these four.
+[00:39:12.560 --> 00:39:17.680]   Now where did those four come from?
+[00:39:17.680 --> 00:39:29.800]   This four came from obviously the convolutional filter kernels, and from these four parts of
+[00:39:29.800 --> 00:39:37.920]   column 1, because we've got four things here, each one of which has a 3x3 filter, and so
+[00:39:37.920 --> 00:39:44.560]   we have 3, 3, 3, 3, and all together, it makes up 4x4.
+[00:39:44.560 --> 00:39:49.440]   Where did those four come from?
+[00:39:49.440 --> 00:40:04.400]   Those four came from obviously our filter, and this entire part of the input image.
+[00:40:04.400 --> 00:40:14.320]   And what's more, you can see that these bits in the middle have lots
+[00:40:14.320 --> 00:40:19.260]   of weights coming out, whereas these bits on the outside only have one weight coming
+[00:40:19.260 --> 00:40:20.260]   out.
+[00:40:20.260 --> 00:40:28.400]   So we call this here the receptive field of this activation.
+[00:40:28.400 --> 00:40:34.920]   But note that the receptive field is not just saying it's this here box, but also that the
+[00:40:34.920 --> 00:40:41.840]   center of the box has more dependencies.
+[00:40:41.840 --> 00:40:46.680]   So this is a critically important concept when it comes to understanding architectures
+[00:40:46.680 --> 00:40:52.200]   and understanding why convnets work the way they do, the idea of the receptive field.
+[00:40:52.200 --> 00:40:56.040]   And there are some great articles, if you just google for convolution receptive field,
+[00:40:56.040 --> 00:40:59.080]   you can find lots of terrific articles.
+[00:40:59.080 --> 00:41:03.960]   I'm sure some of you will write much better ones during the week as well.
+[00:41:03.960 --> 00:41:09.420]   So that's the basic idea there, right, is that the receptive field of this convolutional
+[00:41:09.420 --> 00:41:16.000]   activation is generally centered around this part of the input image, so it should be responsible
+[00:41:16.000 --> 00:41:19.260]   for finding objects that are here.
+[00:41:19.260 --> 00:41:23.100]   So that's the architecture.
+[00:41:23.100 --> 00:41:28.800]   The architecture is that we're going to have a ResNet backbone followed by one or more
+[00:41:28.800 --> 00:41:29.800]   2D convolutions.
+[00:41:29.800 --> 00:41:34.880]   And for now we're just going to do one, which is going to give us a 4x4 grid.
+[00:41:34.880 --> 00:41:46.120]   So let's take a look at that.
+[00:41:46.120 --> 00:41:47.920]   So here it is.
+[00:41:47.920 --> 00:41:51.480]   We start with our Releu and Dropout.
+[00:41:51.480 --> 00:42:03.800]   We then do, let's start at the output, actually let's go through and see what we've got here.
+[00:42:03.800 --> 00:42:07.960]   We start with a Stride 1 convolution.
+[00:42:07.960 --> 00:42:11.600]   And the reason we start with a Stride 1 convolution is because that doesn't change the geometry
+[00:42:11.600 --> 00:42:19.320]   at all, it just lets us add an extra layer of calculations, it lets us create not just
+[00:42:19.320 --> 00:42:25.000]   a linear layer, but now we have a little mini neural network in our custom here.
+[00:42:25.000 --> 00:42:27.520]   So we start with a Stride 1 convolution.
+[00:42:27.520 --> 00:42:34.360]   And standard conv is just something I defined up here, which does convolution, Releu, Vaginam,
+[00:42:34.360 --> 00:42:36.480]   Dropout.
+[00:42:36.480 --> 00:42:44.800]   Like most research code you see won't define a class like this, instead they'll write the
+[00:42:44.800 --> 00:42:50.520]   entire thing again and again and again, convolution, Vaginam, Dropout.
+[00:42:50.520 --> 00:42:51.920]   Don't be like that.
+[00:42:51.920 --> 00:42:58.440]   That kind of duplicate code leads to errors and leads to poor understanding.
+[00:42:58.440 --> 00:43:06.800]   I mention that also because this week I released the first draft of the FastAI style guide.
+[00:43:06.800 --> 00:43:13.520]   And the FastAI style guide is very heavily oriented towards the idea of expository programming,
+[00:43:13.520 --> 00:43:22.520]   which is the idea that programming code should be something you can use to explain an idea,
+[00:43:22.520 --> 00:43:30.320]   ideally as readily as mathematical notation to somebody that understands your coding method.
+[00:43:30.320 --> 00:43:37.280]   And so the idea actually goes back a very long way, but it was best described in the
+[00:43:37.280 --> 00:43:42.000]   Turing Award lecture, this is like the Nobel of Computer Science, the Turing Award lecture
+[00:43:42.000 --> 00:43:47.880]   of 1979 by probably my greatest computer science hero, Ken Iverson.
+[00:43:47.880 --> 00:43:56.320]   He had been working on it well before in 1964, but 1964 was the first example of this approach
+[00:43:56.320 --> 00:43:57.320]   to programming.
+[00:43:57.320 --> 00:44:04.120]   He released something called APL, and then 25 years later he won the Turing Award.
+[00:44:04.120 --> 00:44:10.920]   He then passed on the baton to his son, Eric Iverson, and there's been basically 50 or
+[00:44:10.920 --> 00:44:15.960]   60 years now of continuous development of this idea of what does programming look like when
+[00:44:15.960 --> 00:44:23.160]   it's designed to be a notation as a tool for thought for expository programming.
+[00:44:23.160 --> 00:44:30.480]   And so I've made a very shoddy attempt at taking some of these ideas and thinking about
+[00:44:30.480 --> 00:44:36.200]   how can they be applied to Python programming with all the limitations by comparison that
+[00:44:36.200 --> 00:44:38.800]   Python has.
+[00:44:38.800 --> 00:44:46.280]   So here's a very simple example, if you write all of these things again and again and again,
+[00:44:46.280 --> 00:44:52.880]   then it really hides the fact that you've got two convolutional layers, one of stride
+[00:44:52.880 --> 00:44:56.960]   1, one of stride 2.
+[00:44:56.960 --> 00:45:02.960]   So my default for standard conv is stride 2, this is stride 1, this is stride 2, and
+[00:45:02.960 --> 00:45:14.960]   then at the end, the output of this is going to be 4x4, I've got an outcon, and an outcon
+[00:45:14.960 --> 00:45:16.400]   is interesting.
+[00:45:16.400 --> 00:45:22.640]   You can see it's got two separate convolutional layers, each of which is stride 1, so it's
+[00:45:22.640 --> 00:45:27.240]   not changing the geometry of the input.
+[00:45:27.240 --> 00:45:32.240]   One of them is of length of the number of classes.
+[00:45:32.240 --> 00:45:38.000]   Just ignore k for now, k is equal to 1 at this point of the code, so one is equal to
+[00:45:38.000 --> 00:45:41.760]   the length of the number of classes, one is equal to 4.
+[00:45:41.760 --> 00:45:48.640]   And so this is this idea of rather than having a single conv layer that outputs 4 + c, let's
+[00:45:48.640 --> 00:45:54.240]   have two conv layers, one of which outputs 4, one of which outputs c.
+[00:45:54.240 --> 00:45:59.640]   And then I will just return them as a list of two items.
+[00:45:59.640 --> 00:46:07.360]   That's nearly the same thing as having a single conv layer that outputs 4 + c, but it lets
+[00:46:07.360 --> 00:46:11.240]   these layers specialize just a little bit.
+[00:46:11.240 --> 00:46:17.760]   So like we talked about this idea that when you've got multiple tasks, they can share
+[00:46:17.760 --> 00:46:20.920]   layers, but they don't have to share all the layers.
+[00:46:20.920 --> 00:46:28.960]   So in this case, our two tasks, which is create a classifier and create bound box regression,
+[00:46:28.960 --> 00:46:33.240]   share every single layer except the very last one.
+[00:46:33.240 --> 00:46:41.440]   And so this is going to spit out two separate tenses of activations, one of the classes
+[00:46:41.440 --> 00:46:45.960]   and one of the bounding box coordinates.
+[00:46:45.960 --> 00:46:47.960]   Why am I adding 1?
+[00:46:47.960 --> 00:46:51.160]   That's because I'm going to have one more class for background.
+[00:46:51.160 --> 00:46:57.120]   So if there aren't actually 16 objects to detect, or if there isn't an object in this
+[00:46:57.120 --> 00:47:05.780]   corner represented by this convolutional grid cell, then I want it to predict background.
+[00:47:05.780 --> 00:47:15.880]   So that's the entirety of our architecture, it's incredibly simple, but the point is now
+[00:47:15.880 --> 00:47:20.460]   that we have this convolutional layer at the end.
+[00:47:20.460 --> 00:47:30.280]   One thing I do do is that at the very end I flatten out the convolution, basically because
+[00:47:30.280 --> 00:47:37.160]   I wrote the loss function to expect a flattened-out tensor, but we could totally rewrite it to
+[00:47:37.160 --> 00:47:38.160]   not do that.
+[00:47:38.160 --> 00:47:43.880]   I might even try doing that during the week and see which one looks easier to understand.
+[00:47:43.880 --> 00:47:50.100]   So we've got our data, we've got our architecture.
+[00:47:50.100 --> 00:47:54.160]   So now all we need is a loss function.
+[00:47:54.160 --> 00:48:02.160]   So the loss function needs to look at each of these 16 sets of activations, each of which
+[00:48:02.160 --> 00:48:12.840]   are going to have 4 bounding box coordinates and c+1 class probabilities, and decide are
+[00:48:12.840 --> 00:48:28.720]   those activations close or far away from the object closest to this grid cell in the image?
+[00:48:28.720 --> 00:48:36.200]   And if nothing's there, then are you predicting background correctly?
+[00:48:36.200 --> 00:48:43.680]   So that turns out to be very hard to do.
+[00:48:43.680 --> 00:48:50.680]   Let's go back to the 2x2 example to keep it simple.
+[00:48:50.680 --> 00:48:58.280]   The loss function actually needs to take each of the objects in the image and match them
+[00:48:58.280 --> 00:49:03.280]   to one of these convolutional grid cells, to say this grid cell is responsible for this
+[00:49:03.280 --> 00:49:07.480]   particular object, this grid cell is responsible for this particular object, so then it can
+[00:49:07.480 --> 00:49:13.640]   go ahead and say how close are the 4 coordinates and how close are the class probabilities?
+[00:49:13.640 --> 00:49:18.200]   So this is called the matching problem.
+[00:49:18.200 --> 00:49:23.840]   In order to explain it, I'm going to show it to you.
+[00:49:23.840 --> 00:49:27.080]   But what I'm going to do first is I'm going to take a break and we're going to come back
+[00:49:27.080 --> 00:49:29.600]   and understand the matching problem.
+[00:49:29.600 --> 00:49:34.480]   So during the break, have a think about how would you design a loss function here?
+[00:49:34.480 --> 00:49:44.360]   How would you design a function which has a lower value if these 16x4+k activations somehow
+[00:49:44.360 --> 00:49:50.320]   better reflect the up to 16 objects which are actually in the ground truth image?
+[00:49:50.320 --> 00:49:56.900]   And we'll come back at 7.40.
+[00:49:56.900 --> 00:50:00.520]   So here's our goal.
+[00:50:00.520 --> 00:50:13.120]   Our dependent variable basically looks like that, and it's just an extract from our CSV
+[00:50:13.120 --> 00:50:15.120]   file.
+[00:50:15.120 --> 00:50:24.080]   And our final convolutional layer is going to be a bunch of numbers which initially is
+[00:50:24.080 --> 00:50:36.640]   a 4 by 4 by, in this case I think c is equal to 20 plus we've got 1 in the background, so
+[00:50:36.640 --> 00:50:45.040]   4 plus 21 equals 26, 4 by 4.
+[00:50:45.040 --> 00:50:51.300]   And then we flatten that out into a vector.
+[00:50:51.300 --> 00:50:59.640]   We flatten that out into a vector, and so basically our goal then is to say to some particular
+[00:50:59.640 --> 00:51:07.320]   set of activations that ended up coming out of this model, let's pick some particular
+[00:51:07.320 --> 00:51:09.080]   dependent variable.
+[00:51:09.080 --> 00:51:20.520]   We need some function that takes in that and that, and where it feeds back a higher number
+[00:51:20.520 --> 00:51:25.360]   if these activations aren't a good reflection of the ground truth bounding boxes, or a lower
+[00:51:25.360 --> 00:51:29.260]   number if it is a good reflection of the ground truth bounding boxes.
+[00:51:29.260 --> 00:51:30.360]   That's our goal.
+[00:51:30.360 --> 00:51:34.720]   We need to create that function.
+[00:51:34.720 --> 00:51:42.640]   And so the general approach to creating that function will be to first of all, to simplify
+[00:51:42.640 --> 00:51:59.080]   it down with a 2 by 2 version, will be to first of all, well actually, I'll show you.
+[00:51:59.080 --> 00:52:05.080]   Here's a model I trained earlier, and let's run through, I've taken the loss function
+[00:52:05.080 --> 00:52:11.040]   and I've split it line by line so that you can see every line that goes into making it.
+[00:52:11.040 --> 00:52:19.640]   So let's grab our validation set data loader, grab a batch from it, turn them into variables
+[00:52:19.640 --> 00:52:29.200]   so we can stick them into a model, put the model in evaluation mode, stick that data
+[00:52:29.200 --> 00:52:37.580]   into our model to grab a batch of activations, and remember that the final output convolution
+[00:52:37.580 --> 00:52:45.560]   returned two items, the classes and the bounding boxes, so we can do destructuring assignment
+[00:52:45.560 --> 00:52:52.560]   to grab the two pieces, the batch of classes and outputs, and the batch of bounding box
+[00:52:52.560 --> 00:52:55.840]   outputs.
+[00:52:55.840 --> 00:53:08.420]   And so as expected, the batch of class outputs is batch size 64 by 16 grid cells by 21 classes
+[00:53:08.420 --> 00:53:13.200]   and then 64 by 16 by 4 for the bounding box coordinates.
+[00:53:13.200 --> 00:53:19.240]   Hopefully that all makes sense and after class go back and just make sure if it's not obvious
+[00:53:19.240 --> 00:53:24.200]   why these are the shapes, make sure you get to the point where you understand where they
+[00:53:24.200 --> 00:53:25.200]   are.
+[00:53:25.200 --> 00:53:36.040]   So let's now go back and look at the ground truth, so the ground truth is in this Y variable.
+[00:53:36.040 --> 00:53:46.160]   So let's grab the bounding box part and the class part and put them into these two Python
+[00:53:46.160 --> 00:53:48.120]   variables and print them out.
+[00:53:48.120 --> 00:53:54.160]   And so there's our ground truth bounding boxes and there's our ground truth classes.
+[00:53:54.160 --> 00:53:57.440]   So this image apparently has three objects in it.
+[00:53:57.440 --> 00:54:03.200]   So let's draw a picture of the three objects, and there they are.
+[00:54:03.200 --> 00:54:10.420]   We already have a show ground truth function, the torch ground truth function simply converts
+[00:54:10.420 --> 00:54:15.040]   the tensors into numpy and passes them along so that we can print them out.
+[00:54:15.040 --> 00:54:21.720]   So here we've got the bounding box coordinates.
+[00:54:21.720 --> 00:54:28.440]   So notice that they've all been scaled between 0 and 1, so basically we're treating the image
+[00:54:28.440 --> 00:54:34.000]   as being 1 by 1, so these are all relative to the size of the image, there's our three
+[00:54:34.000 --> 00:54:39.680]   classes, and so here they are, chair is 0, dining table is 1, and 2 is sofa.
+[00:54:39.680 --> 00:54:45.960]   This is not a model, this is the ground truth.
+[00:54:45.960 --> 00:54:54.640]   Here is our 4 by 4 grid cells from our final convolutional layer.
+[00:54:54.640 --> 00:55:01.200]   So each of these square boxes, different papers call them different things, the three terms
+[00:55:01.200 --> 00:55:08.440]   you'll hear are anchor boxes, prior boxes, or default boxes.
+[00:55:08.440 --> 00:55:12.200]   And through this explanation you'll get a sense of what they are, but for now think
+[00:55:12.200 --> 00:55:18.240]   of them as just these 16 squares, I'm going to stick with the term anchor boxes.
+[00:55:18.240 --> 00:55:22.240]   These 16 squares are our anchor boxes.
+[00:55:22.240 --> 00:55:27.640]   So what we're going to do for this loss function is we're going to go through a matching problem
+[00:55:27.640 --> 00:55:33.440]   where we're going to take every one of these 16 boxes and we're going to see which one
+[00:55:33.440 --> 00:55:42.600]   of these three ground truth objects has the highest amount of overlap with this square.
+[00:55:42.600 --> 00:55:50.720]   So to do that, we're going to have to have some way of measuring an amount of overlap,
+[00:55:50.720 --> 00:55:57.560]   and there's a standard function for this which is called the Jacquard index, and the Jacquard
+[00:55:57.560 --> 00:56:01.000]   index is very simple, I'll do it through example.
+[00:56:01.000 --> 00:56:10.480]   Let's take this sofa, so if we take this sofa and let's take the Jacquard index of this sofa
+[00:56:10.480 --> 00:56:23.520]   with this grid cell here, what we do is we find the area of their intersection, so here
+[00:56:23.520 --> 00:56:33.640]   is the area of their intersection, and then we find the area of their union, so here is
+[00:56:33.640 --> 00:56:49.440]   the area of their union, and then we say take the intersection divided by the union.
+[00:56:49.440 --> 00:56:58.400]   And so that's the Jacquard index, also known as IOU intersection over union.
+[00:56:58.400 --> 00:57:04.320]   So if two things overlap by more compared to their total sizes together, they have a
+[00:57:04.320 --> 00:57:12.360]   higher Jacquard index.
+[00:57:12.360 --> 00:57:16.740]   So we're going to go through and find the Jacquard overlap for each one of these three
+[00:57:16.740 --> 00:57:23.560]   objects versus each of these 16 anchor boxes, and so that's going to give us a 3x16 matrix.
+[00:57:23.560 --> 00:57:30.600]   For every ground truth object, for every anchor box, how much overlap is there?
+[00:57:30.600 --> 00:57:37.880]   So here are the coordinates of all of our anchor boxes, in this case they're printed
+[00:57:37.880 --> 00:57:45.720]   as center and height and width.
+[00:57:45.720 --> 00:57:51.920]   And so here is the amount of overlap between, and as you can see it's 3x16, so for each
+[00:57:51.920 --> 00:57:59.500]   of the three ground truth objects, for each of the 16 anchor boxes, how much do they overlap?
+[00:57:59.500 --> 00:58:08.440]   So you can see here, 0, 1, 2, 3, 4, 5, 6, 7, 8, the 8th, anchor box overlaps a little
+[00:58:08.440 --> 00:58:14.400]   bit with the second ground truth object.
+[00:58:14.400 --> 00:58:20.960]   So what we could do now is we could take the max of dimension 1, so the max of each row,
+[00:58:20.960 --> 00:58:26.400]   and that will tell us for each ground truth object what's the maximum amount that it overlaps
+[00:58:26.400 --> 00:58:29.760]   with some grid cell.
+[00:58:29.760 --> 00:58:34.400]   And it also tells us, remember PyTorch when you say max returns two things, it says what
+[00:58:34.400 --> 00:58:38.380]   is the max and what is the index of the max.
+[00:58:38.380 --> 00:58:48.400]   So for each of these things, the 14th grid cell is the largest overlap for the first
+[00:58:48.400 --> 00:58:56.360]   ground truth, 13 for the second, and 11 for the third.
+[00:58:56.360 --> 00:59:03.480]   So that tells us a pretty good way of assigning each of these ground truth objects to a grid
+[00:59:03.480 --> 00:59:08.360]   cell, what the max is, which one is the highest overlap.
+[00:59:08.360 --> 00:59:14.000]   But we're going to do a second thing, we're also going to look at max over dimension 0,
+[00:59:14.000 --> 00:59:20.440]   and max over dimension 0 is going to tell us what's the maximum amount of overlap for
+[00:59:20.440 --> 00:59:26.880]   each grid cell across all of the ground truth objects.
+[00:59:26.880 --> 00:59:33.880]   And so particularly interesting here tells us for every grid cell of 16, what's the index
+[00:59:33.880 --> 00:59:39.280]   of the ground truth object which overlaps with it the most.
+[00:59:39.280 --> 00:59:45.440]   Zero is a bit overloaded here, zero could either mean the amount of overlap was zero,
+[00:59:45.440 --> 00:59:51.560]   or it could mean its largest overlap is with object index 0.
+[00:59:51.560 --> 00:59:57.420]   It's going to turn out not to matter, I just wanted to explain why this would be zero.
+[00:59:57.420 --> 01:00:02.400]   So there's a function called map to ground truth, which I'm not going to worry about
+[01:00:02.400 --> 01:00:11.040]   for now, it's super simple code but it's slightly awkward to think about, but basically what
+[01:00:11.040 --> 01:00:18.360]   it does is it combines these two sets of overlaps in a way described in the SSD paper to assign
+[01:00:18.360 --> 01:00:24.800]   every anchor box to a ground truth object.
+[01:00:24.800 --> 01:00:31.020]   Basically the way it assigns it is each of these ones, each of these three, gets assigned
+[01:00:31.020 --> 01:00:38.560]   in this way, so this object is assigned to anchor box 14, this one to 13, and this one
+[01:00:38.560 --> 01:00:44.600]   to 11, and then of the rest of the anchor boxes they get assigned to anything which
+[01:00:44.600 --> 01:00:48.960]   they have an overlap of at least 0.5 with.
+[01:00:48.960 --> 01:00:55.400]   If anything which isn't in either of those criteria, i.e. which either isn't a maximum
+[01:00:55.400 --> 01:01:00.960]   or doesn't have a greater than 0.5 overlap, is considered to be a cell which contains
+[01:01:00.960 --> 01:01:01.960]   background.
+[01:01:01.960 --> 01:01:05.240]   So that's all the map to ground truth function does.
+[01:01:05.240 --> 01:01:11.400]   And so after we go through it, you can see now a list of all of the assignments, and you
+[01:01:11.400 --> 01:01:16.040]   can also see anywhere that there's a 0 here, it means it was assigned to background.
+[01:01:16.040 --> 01:01:19.840]   In fact anywhere it's less than 0.5 here, it was assigned to background.
+[01:01:19.840 --> 01:01:25.440]   So you can see those three which are kind of forced assignments that puts a high number
+[01:01:25.440 --> 01:01:28.360]   in just to make sure that they're assigned.
+[01:01:28.360 --> 01:01:36.240]   So we can now go ahead and convert those to classes, and then we can make sure we just
+[01:01:36.240 --> 01:01:43.160]   grab those which are at least 0.5 in size, and so finally that allows us to spit out
+[01:01:43.160 --> 01:01:48.680]   the three classes that are being predicted.
+[01:01:48.680 --> 01:01:57.760]   We can then put that back into the bounding boxes, and so here are what each of those
+[01:01:57.760 --> 01:02:01.840]   anchor boxes is meant to be predicting.
+[01:02:01.840 --> 01:02:13.920]   So you can see sofa, dining room table, chair, this is meant to be predicting sofa, this
+[01:02:13.920 --> 01:02:18.400]   is meant to be predicting dining room table, this is meant to be predicting chair, and
+[01:02:18.400 --> 01:02:22.100]   everything else is meant to be predicting background.
+[01:02:22.100 --> 01:02:30.380]   So that's the matching stage.
+[01:02:30.380 --> 01:02:35.000]   So once we've done the matching stage, we're basically done.
+[01:02:35.000 --> 01:02:44.160]   We can take the activations, just grab those which matched, that's what these positive
+[01:02:44.160 --> 01:02:54.600]   indexes are, subtract from those the ground truth bounding boxes, take the absolute value
+[01:02:54.600 --> 01:03:00.160]   of the difference, take the mean of that, and that's bell1_was.
+[01:03:00.160 --> 01:03:09.000]   And then for the classifications, we can just do cross-entropy, and then as before we can
+[01:03:09.000 --> 01:03:11.040]   add them together.
+[01:03:11.040 --> 01:03:15.600]   So that's the basic idea.
+[01:03:15.600 --> 01:03:20.720]   There's a few, and so this is what's going to happen.
+[01:03:20.720 --> 01:03:30.780]   We're going to end up with 16 recommended predicted bounding boxes coming out.
+[01:03:30.780 --> 01:03:35.120]   Most of them will be background, see all these ones that say bg, but from time to time they'll
+[01:03:35.120 --> 01:03:40.960]   say this is a cow, this is potted plant, this is a cow.
+[01:03:40.960 --> 01:03:46.760]   If you're wondering what does it predict in terms of the bounding box of background, the
+[01:03:46.760 --> 01:03:48.960]   answer is it totally ignores it.
+[01:03:48.960 --> 01:03:54.000]   That's why we had this only positive index thing here.
+[01:03:54.000 --> 01:04:01.300]   So if it's background, there's no sense of where's the correct bounding box of background.
+[01:04:01.300 --> 01:04:05.120]   So the only ones where the bounding box makes sense out of all of these are the ones that
+[01:04:05.120 --> 01:04:09.160]   aren't background.
+[01:04:09.160 --> 01:04:12.280]   There are some important little tweaks.
+[01:04:12.280 --> 01:04:19.320]   One is that how do we interpret the activations?
+[01:04:19.320 --> 01:04:28.320]   And so the way we interpret the activations is defined here in activation to bounding
+[01:04:28.320 --> 01:04:29.740]   box.
+[01:04:29.740 --> 01:04:36.040]   And so basically we grab the activations, we stick them through than, and so remember
+[01:04:36.040 --> 01:04:44.000]   than is the same as sigmoid except it's scaled to be between -1 and 1, not between 0 and
+[01:04:44.000 --> 01:04:45.000]   1.
+[01:04:45.000 --> 01:04:48.200]   So it's basically a sigmoid function that goes between -1 and 1.
+[01:04:48.200 --> 01:04:51.360]   And so that forces it to be within that range.
+[01:04:51.360 --> 01:04:59.800]   And we then say let's grab the actual position of the anchor boxes and we will move them
+[01:04:59.800 --> 01:05:03.800]   around according to the value of the activations divided by 2.
+[01:05:03.800 --> 01:05:13.720]   So in other words, each predicted bounding box can be moved by up to 50% of a grid size
+[01:05:13.720 --> 01:05:20.200]   from where its default position is, and ditto for its height and width can be up to twice
+[01:05:20.200 --> 01:05:28.120]   as big or half as big as its default size.
+[01:05:28.120 --> 01:05:32.920]   So that's one thing is we have to convert the activations into some kind of way of scaling
+[01:05:32.920 --> 01:05:36.800]   those default anchor box positions.
+[01:05:36.800 --> 01:05:47.160]   Another thing is we don't actually use cross-entropy, we actually use binary cross-entropy loss.
+[01:05:47.160 --> 01:05:53.300]   So remember binary cross-entropy loss is what we normally use for multi-label classification,
+[01:05:53.300 --> 01:05:58.680]   like in the planet Amazon satellite competition.
+[01:05:58.680 --> 01:06:01.920]   Each satellite image could have multiple things in it.
+[01:06:01.920 --> 01:06:06.360]   So if it's got multiple things in it, you can't use softmax, because softmax kind of
+[01:06:06.360 --> 01:06:11.880]   really encourages just one thing to have the high number.
+[01:06:11.880 --> 01:06:18.800]   In our case, each anchor box can only have one object associated with it.
+[01:06:18.800 --> 01:06:25.760]   So it's not for that reason that we're avoiding softmax, it's something else, which is it's
+[01:06:25.760 --> 01:06:31.480]   possible for an anchor box to have nothing associated with it.
+[01:06:31.480 --> 01:06:35.080]   So there'd be two ways to handle that, this idea of background.
+[01:06:35.080 --> 01:06:42.480]   One would be to say, you know what, background's just a class, so let's use softmax and just
+[01:06:42.480 --> 01:06:48.800]   treat background as one of the classes that the softmax could predict.
+[01:06:48.800 --> 01:06:53.920]   A lot of people have done it this way, I don't like that though, because that's a really
+[01:06:53.920 --> 01:06:59.920]   hard thing to ask a neural network to do, is basically to say, can you tell whether
+[01:06:59.920 --> 01:07:06.680]   this grid cell doesn't have any of the 20 objects that I'm interested in with a jacquard
+[01:07:06.680 --> 01:07:09.320]   overlap of more than 0.5?
+[01:07:09.320 --> 01:07:15.320]   That's a really hard thing to put into a single computation.
+[01:07:15.320 --> 01:07:23.160]   On the other hand, what if we just had for each class, is it a motorbike, is it a bus,
+[01:07:23.160 --> 01:07:27.120]   is it a person, is it a bird, is it a dining room table?
+[01:07:27.120 --> 01:07:30.440]   And then it can check each of those and be no, no, no, no, no, and if it's no to all of
+[01:07:30.440 --> 01:07:33.700]   them, it's like, oh, then it's background.
+[01:07:33.700 --> 01:07:40.680]   So that's the way I'm doing it, it's not that we could have multiple true labels, but we
+[01:07:40.680 --> 01:07:44.080]   can have zero true labels.
+[01:07:44.080 --> 01:07:45.840]   And so that's what's going on here.
+[01:07:45.840 --> 01:07:53.400]   We take our target and we do a one-hot embedding with number of classes plus one, so at this
+[01:07:53.400 --> 01:07:57.080]   stage we do have the idea of background for the one-hot embedding.
+[01:07:57.080 --> 01:08:03.720]   But then we remove the last column, so the background column's now gone.
+[01:08:03.720 --> 01:08:12.920]   And so now this vector's either of all zeros, basically, meaning there's nothing here, or
+[01:08:12.920 --> 01:08:16.580]   it has at most one one.
+[01:08:16.580 --> 01:08:26.140]   And so then we can use binary cross-entropy to convey our predictions with that target.
+[01:08:26.140 --> 01:08:34.520]   That is a minor tweak, but it's the kind of minor tweak that I want you to think about
+[01:08:34.520 --> 01:08:42.880]   and understand, because it's a really big difference in practice to your training.
+[01:08:42.880 --> 01:08:46.240]   And it's the kind of thing that you'll see a lot of papers talk about, like often when
+[01:08:46.240 --> 01:08:50.520]   there's some increment over some previous paper, it'll be something like this.
+[01:08:50.520 --> 01:08:57.340]   It'll be somebody who realizes like, oh, trying to predict a background category using a softmax
+[01:08:57.340 --> 01:09:02.120]   is a really hard thing to do, what if we use the binary cross-entropy instead.
+[01:09:02.120 --> 01:09:08.320]   And so it's kind of like, if you understand what this is doing, and more importantly why
+[01:09:08.320 --> 01:09:13.840]   we're doing it, that's a really good test of your understanding of the material.
+[01:09:13.840 --> 01:09:19.080]   And if you don't, that's fine, it just shows you this is something that you need to maybe
+[01:09:19.080 --> 01:09:24.120]   go back and rewatch this part of the video and talk to some of your classmates and if
+[01:09:24.120 --> 01:09:32.720]   necessary ask for the forum until you understand what are we doing and why are we doing it.
+[01:09:32.720 --> 01:09:39.080]   So that's what this binary cross-entropy loss function is doing.
+[01:09:39.080 --> 01:09:43.400]   So basically in this part of the code we've got this custom loss function, we've got the
+[01:09:43.400 --> 01:09:48.600]   thing that calculates the Descartes index, we've got the thing that converts activations
+[01:09:48.600 --> 01:09:54.520]   to bounding blocks, we've got the thing that does map-to-ground truth that we look at,
+[01:09:54.520 --> 01:09:55.520]   and that's it.
+[01:09:55.520 --> 01:10:00.260]   All that's left is the SSD loss function.
+[01:10:00.260 --> 01:10:10.480]   So the SSD loss function, this is actually what we set as our criterion is SSD loss.
+[01:10:10.480 --> 01:10:18.440]   So what SSD loss does is it loops through each image in the minivac and it calls SSD1
+[01:10:18.440 --> 01:10:23.020]   loss, so SSD loss for one image.
+[01:10:23.020 --> 01:10:26.720]   So this function is really where it's all happening, this is calculating the SSD loss
+[01:10:26.720 --> 01:10:39.380]   for one image, so we destructure our bounding box in class and basically, what this is doing
+[01:10:39.380 --> 01:10:47.400]   here, this is worth mentioning, a lot of code you find out there on the internet doesn't
+[01:10:47.400 --> 01:10:53.600]   work with minibatches, it only does like one thing at a time, which we really don't want.
+[01:10:53.600 --> 01:10:59.040]   So in this case, all of this stuff is working, it's not exactly on a minibatch at a time,
+[01:10:59.040 --> 01:11:04.480]   it's on a whole bunch of ground truth objects at a time, and the data loader is being fed
+[01:11:04.480 --> 01:11:09.720]   a minibatch at a time to do the convolutional layers.
+[01:11:09.720 --> 01:11:16.480]   Because we could have different numbers of ground truth objects in each image, but a
+[01:11:16.480 --> 01:11:23.400]   tensor has to be a strict rectangular shape, fastai automatically pads it with zeros, anything
+[01:11:23.400 --> 01:11:25.400]   that's not the same length.
+[01:11:25.400 --> 01:11:31.700]   I think I fairly recently added it, but it's super handy, almost no other libraries do that.
+[01:11:31.700 --> 01:11:36.960]   But that does mean that you then have to make sure that you get rid of those zeros.
+[01:11:36.960 --> 01:11:45.680]   So you can see here I'm checking to find all of the non-zeros, and I'm only keeping those.
+[01:11:45.680 --> 01:11:53.600]   This is just getting rid of any of the bounding boxes that are actually just padding.
+[01:11:53.600 --> 01:11:58.240]   So get rid of the padding, turn the activations, bounding boxes, do the jaccard, do the ground
+[01:11:58.240 --> 01:12:03.560]   truth, this is all the stuff we just went through, it's all line by line underneath.
+[01:12:03.560 --> 01:12:08.480]   Check that there's an overlap greater than something around 0.4 or 0.5, different papers
+[01:12:08.480 --> 01:12:13.280]   use different values for this.
+[01:12:13.280 --> 01:12:23.520]   Find the things that match, put the background class for those, and then finally get the
+[01:12:23.520 --> 01:12:28.480]   L1 loss for the localization part, get the binary cross-entropy loss for the classification
+[01:12:28.480 --> 01:12:36.040]   part, return those two pieces, and then finally add them together.
+[01:12:36.040 --> 01:12:44.360]   So that's a lot going on, and it might take a few watches of the video to put in a code
+[01:12:44.360 --> 01:12:47.840]   to fully understand it.
+[01:12:47.840 --> 01:12:51.560]   But the basic idea now is that we now have the things we need.
+[01:12:51.560 --> 01:12:55.760]   We have the data, we have the architecture, and we have the loss function.
+[01:12:55.760 --> 01:12:58.280]   So now we've got those three things we can train.
+[01:12:58.280 --> 01:13:10.080]   So do my normal learning rate finder and train for a bit, and we get down to 25, and then
+[01:13:10.080 --> 01:13:16.120]   at the end we can see how we went.
+[01:13:16.120 --> 01:13:20.900]   So obviously this isn't quite what we want, I mean in practice we kind of remove the background
+[01:13:20.900 --> 01:13:26.960]   ones or some threshold, but it's on the right track, there's a dog in the middle, 0.34, there's
+[01:13:26.960 --> 01:13:35.400]   a bird here in the middle, 0.94, something's working okay, I've got a few concerns, I don't
+[01:13:35.400 --> 01:13:40.600]   see anything saying motorcycle here, it says bicycle, which isn't great.
+[01:13:40.600 --> 01:13:44.920]   There's nothing for the plot of plant that's big enough, but that's not surprising because
+[01:13:44.920 --> 01:13:51.080]   all of our anchor boxes were small, they were 4x4 grid.
+[01:13:51.080 --> 01:13:57.800]   So to go from here to something that's going to be more accurate, all we're going to do
+[01:13:57.800 --> 01:14:03.480]   is create way more anchor boxes.
+[01:14:03.480 --> 01:14:05.560]   So there's a couple of ways we can create --
+[01:14:05.560 --> 01:14:14.280]   >> Quick question, I'm just getting lost in the fact that the anchor boxes and the bounding
+[01:14:14.280 --> 01:14:16.520]   boxes are, how are they not the same?
+[01:14:16.520 --> 01:14:18.720]   Isn't that how we wrote the loss?
+[01:14:18.720 --> 01:14:22.320]   I must be missing something.
+[01:14:22.320 --> 01:14:31.840]   >> Anchor boxes are the square, the fixed square grid cells, these are the anchor boxes, they're
+[01:14:31.840 --> 01:14:36.000]   in an exact, specific, unmoving location.
+[01:14:36.000 --> 01:14:47.120]   The bounding boxes are, these are three things, the bounding boxes, these 16 things are anchor
+[01:14:47.120 --> 01:14:48.120]   boxes.
+[01:14:48.120 --> 01:14:49.120]   Okay.
+[01:14:49.120 --> 01:14:52.560]   So we're going to create lots more anchor boxes.
+[01:14:52.560 --> 01:15:00.080]   So there's three ways to do that, and I've kind of drawn some of them here.
+[01:15:00.080 --> 01:15:07.120]   One is to create anchor boxes of different sizes and aspect ratios.
+[01:15:07.120 --> 01:15:18.160]   So here you can see, you know, there's an upright rectangle, there's a line down rectangle,
+[01:15:18.160 --> 01:15:20.120]   and there's a square.
+[01:15:20.120 --> 01:15:27.880]   >> Just a question, for the multi-label classification, why aren't we multiplying the categorical
+[01:15:27.880 --> 01:15:31.000]   loss by a constant like we did before?
+[01:15:31.000 --> 01:15:34.000]   >> That's a great question.
+[01:15:34.000 --> 01:15:41.760]   Because later on it'll turn out we don't need to.
+[01:15:41.760 --> 01:15:45.040]   So yeah, so you can see here, like there's a square.
+[01:15:45.040 --> 01:15:49.600]   And so I don't know if you can see this, but if you look, you've basically got one, two,
+[01:15:49.600 --> 01:15:53.720]   three squares of different sizes, and for each of those three squares you've also got
+[01:15:53.720 --> 01:15:58.560]   a line down rectangle and an upright rectangle to go with them.
+[01:15:58.560 --> 01:16:05.580]   So we've got three aspect ratios at three zoom levels, so that's one way we can do this.
+[01:16:05.580 --> 01:16:08.760]   And this is for the one-by-one grid.
+[01:16:08.760 --> 01:16:12.800]   So in other words, if we added two more stride two convolutional layers, you'll eventually
+[01:16:12.800 --> 01:16:17.680]   get to the one-by-one grid, and this is for the one-by-one grid.
+[01:16:17.680 --> 01:16:27.200]   Another thing we could do is to use more convolutional layers as sources of anchor boxes.
+[01:16:27.200 --> 01:16:33.020]   So as well as our, and I've randomly jitted these a little bit so it's easier to see.
+[01:16:33.020 --> 01:16:44.160]   So as well as our 16-by-16 grid cells, we've also got two-by-two grid cells, and we've
+[01:16:44.160 --> 01:16:47.500]   also got the one-by-one grid cell.
+[01:16:47.500 --> 01:16:55.140]   So in other words, if we add three stride two convolutions to the end, we'll have four-by-four,
+[01:16:55.140 --> 01:17:01.480]   two-by-two, and one-by-one grid cells, all of which have anchor boxes.
+[01:17:01.480 --> 01:17:07.520]   And then for every one of those, we can have all of these different shapes and sizes.
+[01:17:07.520 --> 01:17:13.040]   So obviously those two are combined with each other to create lots of anchor boxes, and
+[01:17:13.040 --> 01:17:18.840]   if I try to print that on the screen, it's just one big blur of color, so I'm not going
+[01:17:18.840 --> 01:17:20.720]   to do that.
+[01:17:20.720 --> 01:17:21.920]   So that's all this code is, right?
+[01:17:21.920 --> 01:17:27.040]   It says, "All right, what are all the grid cell sizes I have for the anchor boxes?
+[01:17:27.040 --> 01:17:29.680]   What are all the zoom levels I have for the anchor boxes?
+[01:17:29.680 --> 01:17:33.320]   And what are all the aspect ratios I have for the anchor boxes?"
+[01:17:33.320 --> 01:17:40.720]   And the rest of this code then just goes away and creates the top left and bottom right
+[01:17:40.720 --> 01:17:49.600]   corners inside an anchor corner, and the middle and height and width in anchors.
+[01:17:49.600 --> 01:17:59.600]   So that's all this does, and you can go through it and print out the anchors and anchor corners.
+[01:17:59.600 --> 01:18:11.640]   So the key is to remember this basic idea that we have
+[01:18:11.640 --> 01:18:17.520]   a vector of ground truth stuff, right?
+[01:18:17.520 --> 01:18:25.880]   Where that stuff is like sets of four bounding boxes, but this is what we were given in the
+[01:18:25.880 --> 01:18:26.880]   JSON files.
+[01:18:26.880 --> 01:18:30.320]   It's the ground truth, it's a dependent variable.
+[01:18:30.320 --> 01:18:37.120]   Sets of four bounding boxes, and for each one, also a class.
+[01:18:37.120 --> 01:18:44.520]   So this is a person in this location, this is a dog in this location, and that's the
+[01:18:44.520 --> 01:18:46.120]   ground truth that we're given.
+[01:18:46.120 --> 01:18:55.760]   "Just to clarify, each set of four is one box, top left, bottom right, top left, xy, bottom right, xy."
+[01:18:55.760 --> 01:19:00.360]   So that's what we printed here, we printed out, this is what we call the ground truth.
+[01:19:00.360 --> 01:19:06.120]   There's no model, this is what we're told is what the answer is meant to be.
+[01:19:06.120 --> 01:19:12.640]   And so remember, any time we train a neural net, we have a dependent variable, and then
+[01:19:12.640 --> 01:19:21.240]   we have a neural net, some black box neural net, that takes some input and spits out some
+[01:19:21.240 --> 01:19:32.240]   output activations, and we take those activations and we compare them to the ground truth.
+[01:19:32.240 --> 01:19:39.240]   We calculate a loss, we find the derivative of that, and adjust the weights according
+[01:19:39.240 --> 01:19:43.240]   to the derivative times the learning rate, okay?
+[01:19:43.240 --> 01:19:49.240]   So the loss is calculated using a loss question.
+[01:19:49.240 --> 01:19:55.380]   Something I wanted to say is just I think one of the challenges with this problem is
+[01:19:55.380 --> 01:19:59.320]   part of what's going on here is we're having to come up with an architecture that's letting
+[01:19:59.320 --> 01:20:01.680]   us predict this ground truth.
+[01:20:01.680 --> 01:20:07.520]   Like it's not, because you can have, you know, any number of objects in your picture, it's
+[01:20:07.520 --> 01:20:13.240]   not immediately obvious what's the correct architecture that's going to let us predict
+[01:20:13.240 --> 01:20:14.240]   that sort of ground truth.
+[01:20:14.240 --> 01:20:20.320]   I guess so, but I'm going to kind of make this plain, as we saw when we looked at the
+[01:20:20.320 --> 01:20:26.120]   YOLO versus SSD, that there are only two possible architectures.
+[01:20:26.120 --> 01:20:30.840]   The last layer is fully connected, or the last layer is convolutional.
+[01:20:30.840 --> 01:20:33.160]   And both of them work perfectly well.
+[01:20:33.160 --> 01:20:39.080]   I'm sorry, I meant in terms of by creating this idea of anchor boxes and anchor boxes
+[01:20:39.080 --> 01:20:44.800]   with different locations and sizes, that's giving you a format that kind of lets you
+[01:20:44.800 --> 01:20:45.800]   get to the activations.
+[01:20:45.800 --> 01:20:47.800]   You're right, like high level.
+[01:20:47.800 --> 01:20:55.520]   You see, okay, so that's really entirely in the loss function, not in the architecture.
+[01:20:55.520 --> 01:21:02.840]   Like if we used the YOLO architecture where we had a fully connected layer, like literally
+[01:21:02.840 --> 01:21:06.960]   there would be no concept of geometry in it at all.
+[01:21:06.960 --> 01:21:14.680]   So I would suggest kind of forgetting the architecture and just treat it as just a given.
+[01:21:14.680 --> 01:21:21.680]   It's a thing that is spitting out 16x4+c activations.
+[01:21:21.680 --> 01:21:30.840]   And then I would say our job is to figure out how to take those 16x4+c activations and
+[01:21:30.840 --> 01:21:42.720]   compare them to our ground truth, which is like 4+1, but if it was one hot encoded it
+[01:21:42.720 --> 01:21:49.800]   would be c, and I think that's easier to think about, so call it 4+c times however many ground
+[01:21:49.800 --> 01:21:53.680]   truth objects there are for that particular image.
+[01:21:53.680 --> 01:21:57.600]   So let's call that m.
+[01:21:57.600 --> 01:22:06.600]   So we need a loss function that can take these two things and spit out a number that says
+[01:22:06.600 --> 01:22:11.520]   how good are these activations.
+[01:22:11.520 --> 01:22:14.720]   That's what we're trying to do.
+[01:22:14.720 --> 01:22:27.840]   So to do it, we need to take each one of these m ground truth objects and decide which set
+[01:22:27.840 --> 01:22:34.200]   of 4+c activations is responsible for that object.
+[01:22:34.200 --> 01:22:40.600]   Which one should we be comparing and saying it's the right class or not, and yeah it's
+[01:22:40.600 --> 01:22:45.560]   close or not.
+[01:22:45.560 --> 01:22:56.360]   The way we do that is basically to say let's decide the first 4+c activations are going
+[01:22:56.360 --> 01:23:01.880]   to be responsible for predicting the bounding box of the thing that's closest to the top
+[01:23:01.880 --> 01:23:09.640]   left, and the last 4+c you'll be predicting the furthest to the bottom right.
+[01:23:09.640 --> 01:23:18.800]   And then of course we're not using the YOLO approach where we have a single vector, we're
+[01:23:18.800 --> 01:23:27.320]   using the SSD approach where we spit out a convolutional output, which means that it's
+[01:23:27.320 --> 01:23:34.360]   not arbitrary as to which we match up, but actually we want to match up the set of activations
+[01:23:34.360 --> 01:23:45.840]   whose receptive field has the maximum density from where this real object is.
+[01:23:45.840 --> 01:23:49.080]   But that's a minor tweak.
+[01:23:49.080 --> 01:23:55.640]   I guess the easy way to have taught this would be to start with the YOLO approach where it's
+[01:23:55.640 --> 01:24:01.000]   just like an arbitrary vector and we can decide which activations correspond to which bound
+[01:24:01.000 --> 01:24:02.000]   truth object.
+[01:24:02.000 --> 01:24:07.800]   As long as it's consistent, it's got to be a consistent rule, because if in the first
+[01:24:07.800 --> 01:24:14.640]   image the top left object corresponds with the first 4+c activations, and then the second
+[01:24:14.640 --> 01:24:22.200]   image we threw things around and suddenly it's now going with the last 4+c activations,
+[01:24:22.200 --> 01:24:29.400]   the neural net doesn't know what to learn, but the loss function needs to be some consistent
+[01:24:29.400 --> 01:24:37.200]   task, which in this case the consistent task is try to make these activations reflect the
+[01:24:37.200 --> 01:24:41.240]   bounding box in this general area.
+[01:24:41.240 --> 01:24:48.160]   That's basically what this loss function is trying to do.
+[01:24:48.160 --> 01:24:54.680]   Is it purely coincident that the 4x4 in the conv2D is the same thing as year 16?
+[01:24:54.680 --> 01:25:01.040]   No, not at all coincidence.
+[01:25:01.040 --> 01:25:08.480]   That 4x4 conv is going to give us activations whose receptive field corresponds to those
+[01:25:08.480 --> 01:25:16.560]   locations in the input image, so it's carefully designed to make that as effective as possible.
+[01:25:16.560 --> 01:25:24.680]   Now remember I told you before part 2 that the stuff we learn in part 2 is going to assume
+[01:25:24.680 --> 01:25:29.440]   that you are extremely comfortable with everything you learn in part 1?
+[01:25:29.440 --> 01:25:35.080]   And for a lot of you, you might be realizing now maybe I wasn't quite as familiar with
+[01:25:35.080 --> 01:25:39.800]   the stuff in part 1 as I first thought, and that's fine, but just realize you might just
+[01:25:39.800 --> 01:25:47.200]   have to go back and really think deeply and experiment more with understanding what are
+[01:25:47.200 --> 01:25:51.440]   the inputs and outputs to each layer in a convolutional network, how big are they, what
+[01:25:51.440 --> 01:25:56.000]   are their rank, exactly how are they calculated, so that you really fully understand the idea
+[01:25:56.000 --> 01:25:57.760]   of a receptive field.
+[01:25:57.760 --> 01:26:02.920]   What's the loss function really, how does backpropagation work exactly?
+[01:26:02.920 --> 01:26:11.720]   These things all need to be deeply felt intuitions, which you only get through to practice.
+[01:26:11.720 --> 01:26:17.800]   And once they're all deeply felt intuitions, then you can rewatch this video and you'll
+[01:26:17.800 --> 01:26:28.720]   be like, oh, I see, okay, I see that these activations just need some way of understanding
+[01:26:28.720 --> 01:26:33.000]   what task they're being given, and that is being done by the loss function and the loss
+[01:26:33.000 --> 01:26:36.660]   function is encoding a task.
+[01:26:36.660 --> 01:26:42.640]   And so the task of the SSD loss function is basically two parts.
+[01:26:42.640 --> 01:26:51.120]   Part 1 is figure out which ground truth object is closest to which grid cell or which anchor
+[01:26:51.120 --> 01:26:52.720]   box.
+[01:26:52.720 --> 01:26:57.440]   When we started doing this, the grid cells of the convolution and the anchor boxes were
+[01:26:57.440 --> 01:27:07.100]   the same, but now we're starting to introduce the idea that we can have multiple anchor
+[01:27:07.100 --> 01:27:09.600]   boxes per grid cell.
+[01:27:09.600 --> 01:27:14.840]   So this is why it starts to get a little bit more complicated.
+[01:27:14.840 --> 01:27:20.520]   So every ground truth object we have to figure out which anchor boxes are closest to, for
+[01:27:20.520 --> 01:27:27.200]   every anchor box we have to decide which ground truth object is responsible for, if any.
+[01:27:27.200 --> 01:27:31.540]   And once we've done that matching, it's trivial.
+[01:27:31.540 --> 01:27:47.800]   Now we just basically go through and do, going back to the single object detection, now it's
+[01:27:47.800 --> 01:27:50.840]   just this.
+[01:27:50.840 --> 01:27:56.560]   Once we've got every ground truth object matched to an anchor box, to a set of activations,
+[01:27:56.560 --> 01:28:01.640]   we can basically then say, OK, what's the cross-entropy loss of the categorical part?
+[01:28:01.640 --> 01:28:06.680]   What's the L1 loss of the coordinate part?
+[01:28:06.680 --> 01:28:15.920]   So really it's the matching part, which is kind of the slightly surprising bit.
+[01:28:15.920 --> 01:28:22.440]   And then this idea of picking those in a way that the convolutional network gives it the
+[01:28:22.440 --> 01:28:32.800]   best opportunity to calculate that part of the space, is then the final cherry on top.
+[01:28:32.800 --> 01:28:42.400]   And this, I'll tell you something else, this class is by far going to be the most conceptually
+[01:28:42.400 --> 01:28:43.400]   challenging.
+[01:28:43.400 --> 01:28:49.000]   And part of the reason for that is that after this, we're going to go and do some different
+[01:28:49.000 --> 01:28:56.760]   stuff, and we're going to come back to it in lesson 14 and do it again with some tweaks.
+[01:28:56.760 --> 01:29:00.600]   And we're going to add in some of the new stuff we learned afterwards.
+[01:29:00.600 --> 01:29:06.440]   So you're going to get a whole second run through of this material, effectively, once
+[01:29:06.440 --> 01:29:08.840]   we add some extra stuff at the end.
+[01:29:08.840 --> 01:29:12.400]   So we're going to revise it, as we normally do.
+[01:29:12.400 --> 01:29:19.560]   So in part one, we kind of went through computer vision, NLP, structured data, back to NLP,
+[01:29:19.560 --> 01:29:21.160]   back to computer vision.
+[01:29:21.160 --> 01:29:28.400]   So we revised everything from the start to the end, and it'll be kind of similar.
+[01:29:28.400 --> 01:29:40.640]   So don't worry if it's a bit challenging at first, you'll get there.
+[01:29:40.640 --> 01:29:47.320]   So for every grid cell that can be different sizes, we can have different orientations
+[01:29:47.320 --> 01:29:55.840]   and zooms representing different anchor boxes, which are just like conceptual ideas that
+[01:29:55.840 --> 01:30:06.360]   basically every one of these is associated with one set of 4+C activations in our model.
+[01:30:06.360 --> 01:30:15.440]   So however many of these ground truth boxes we have, we need to have that times 4+C activations
+[01:30:15.440 --> 01:30:17.040]   in the model.
+[01:30:17.040 --> 01:30:25.360]   Now that does not mean that each convolutional layer needs that many filters, because remember,
+[01:30:25.360 --> 01:30:32.360]   the 4x4 convolutional layer already has 16 sets of filters, the 2x2 convolutional layer
+[01:30:32.360 --> 01:30:38.080]   already has four sets of activations.
+[01:30:38.080 --> 01:30:41.400]   And then finally the 1x1 has one set of activations.
+[01:30:41.400 --> 01:30:49.440]   So we basically get 1+4+16 for free, just because that's how a convolution works, it
+[01:30:49.440 --> 01:30:53.760]   calculates things at different locations.
+[01:30:53.760 --> 01:31:04.080]   So we actually only need to know k, where k is the number of zooms by the number of
+[01:31:04.080 --> 01:31:10.600]   aspect ratios, whereas the grids we're going to get for free through our architecture.
+[01:31:10.600 --> 01:31:12.840]   So let's check out that architecture.
+[01:31:12.840 --> 01:31:21.080]   So the model is nearly identical to what we had before, but we're going to have a number
+[01:31:21.080 --> 01:31:34.160]   of stride 2 convolutions, which is going to take us through to 4x4, 2x2, 1x1.
+[01:31:34.160 --> 01:31:41.400]   Each stride 2 convolution halves our grid size in both directions.
+[01:31:41.400 --> 01:31:48.760]   And then after we do our first convolution to get to 4x4, we're going to grab a set of
+[01:31:48.760 --> 01:31:55.960]   outputs from that, because we want to save away the 4x4 grid's anchors.
+[01:31:55.960 --> 01:32:03.800]   And then once we get to 2x2, we grab another set of our 2x2 anchors, and then finally we
+[01:32:03.800 --> 01:32:07.080]   get to 1x1, so we get another set of outputs.
+[01:32:07.080 --> 01:32:19.840]   So you can see we've got a whole bunch of these outcomes, this first one we're not using.
+[01:32:19.840 --> 01:32:26.360]   So at the end of that we can then concatenate them all together.
+[01:32:26.360 --> 01:32:34.900]   So we've got the 4x4 activations, the 2x2 activations, the 1x1 activations.
+[01:32:34.900 --> 01:32:42.720]   So that's going to give us the correct number of activations to give us one activation for
+[01:32:42.720 --> 01:32:51.200]   every bounding, for every anchor box that we have.
+[01:32:51.200 --> 01:32:59.960]   So then we just set our criteria as before to SSD loss, and we go ahead and train, and
+[01:32:59.960 --> 01:33:04.960]   away we go.
+[01:33:04.960 --> 01:33:10.280]   So in this case I'm just printing out those things, which are at least the probability
+[01:33:10.280 --> 01:33:16.560]   of 0.1, and you can see we've got -- some things look okay, some things don't.
+[01:33:16.560 --> 01:33:21.760]   Our big objects like bird, we've got a box here with a 0.93 probability, it's looking
+[01:33:21.760 --> 01:33:28.200]   to be in about the right spot, our person's looking pretty hopeful, but our motorbike
+[01:33:28.200 --> 01:33:33.200]   has nothing at all with a probability of 0.1.
+[01:33:33.200 --> 01:33:42.360]   Our pod of plants looking pretty horrible, our bus is all the wrong size, what's going
+[01:33:42.360 --> 01:33:43.880]   on?
+[01:33:43.880 --> 01:33:54.000]   So what's going on here will tell us a lot about the history of object detection.
+[01:33:54.000 --> 01:34:05.480]   And so these five papers are the key steps in the recent modern history of object detection.
+[01:34:05.480 --> 01:34:10.040]   And so they go back to about, I think this is maybe 2013, this paper called Scalable
+[01:34:10.040 --> 01:34:12.580]   Object Detection Using Deep Neural Networks.
+[01:34:12.580 --> 01:34:14.600]   This is what basically set everything up.
+[01:34:14.600 --> 01:34:20.160]   And when people refer to the multi-box method, they're talking about this paper.
+[01:34:20.160 --> 01:34:24.400]   And this is the basic one that came up with this idea that you can have a loss function
+[01:34:24.400 --> 01:34:30.680]   that has this matching process, and then you can kind of use that to do object detection.
+[01:34:30.680 --> 01:34:39.080]   So everything since that time has been trying to figure out basically how to make this better.
+[01:34:39.080 --> 01:34:44.760]   So in parallel, there's a guy called Russ Gershik who was going down a totally different
+[01:34:44.760 --> 01:34:52.840]   direction, which was he had these two stage processes where the first stage used classical
+[01:34:52.840 --> 01:34:59.400]   computer vision approaches to find edges and changes of gradients and stuff to kind of
+[01:34:59.400 --> 01:35:06.600]   guess which parts of the image may represent distinct objects, and then fit each of those
+[01:35:06.600 --> 01:35:12.840]   into a convolutional neural network, which was basically designed to figure out, is that
+[01:35:12.840 --> 01:35:15.960]   actually the kind of object I'm interested in?
+[01:35:15.960 --> 01:35:23.520]   And so this was called the R-CNN, and then fast R-CNN, this kind of hybrid of traditional
+[01:35:23.520 --> 01:35:27.000]   computer vision and deep learning.
+[01:35:27.000 --> 01:35:34.520]   So what Russ and his team then did was they basically took this multi-box idea and replaced
+[01:35:34.520 --> 01:35:40.960]   the traditional non-deep learning computer vision part of their two stage process with
+[01:35:40.960 --> 01:35:41.960]   a ConvNet.
+[01:35:41.960 --> 01:35:47.760]   So they now had two ConvNets, one ConvNet that basically spat out something like this,
+[01:35:47.760 --> 01:35:53.400]   which he called these region proposals, all of the things that might be objects.
+[01:35:53.400 --> 01:35:57.520]   And then the second part was the same as his earlier work, it was basically something to
+[01:35:57.520 --> 01:36:03.200]   talk each of those, fit it into a separate ConvNet, which was designed to classify whether
+[01:36:03.200 --> 01:36:09.840]   or not that particular thing really is an interesting object or not.
+[01:36:09.840 --> 01:36:18.400]   At a similar time, these two papers came out, YOLO and SSD, and both of these did something
+[01:36:18.400 --> 01:36:25.560]   pretty cool, which is they got the same kind of performance as fast R-CNN, but with one
+[01:36:25.560 --> 01:36:27.840]   stage.
+[01:36:27.840 --> 01:36:33.520]   And so they basically took the multi-box idea and they tried to figure out how to deal with
+[01:36:33.520 --> 01:36:40.480]   this mess that was done, and the basic ideas were to use, for example, a clinical hard-negative
+[01:36:40.480 --> 01:36:48.400]   mining where they would go through and find all of the matches that didn't look that good
+[01:36:48.400 --> 01:36:58.160]   and turn them away, some very tricky and complex data augmentation methods, all kinds of hackery,
+[01:36:58.160 --> 01:36:59.160]   basically.
+[01:36:59.160 --> 01:37:05.240]   But they got it to work pretty well.
+[01:37:05.240 --> 01:37:09.280]   But then something really cool happened late last year, which is this thing called focal
+[01:37:09.280 --> 01:37:21.240]   loss for dense object detection, where they actually realized why this messy crap wasn't
+[01:37:21.240 --> 01:37:22.240]   working.
+[01:37:22.240 --> 01:37:26.440]   And I'll describe why this messy crap wasn't working, by trying to describe why it is that
+[01:37:26.440 --> 01:37:29.300]   we can't find a motorbike.
+[01:37:29.300 --> 01:37:34.960]   So here's the thing.
+[01:37:34.960 --> 01:37:44.960]   When we look at this, we have three different granularities of convolutional groups, 4x4,
+[01:37:44.960 --> 01:37:48.440]   2x2, 1x1.
+[01:37:48.440 --> 01:37:56.400]   The 1x1 is quite likely to have a reasonable overlap with some object, because most people
+[01:37:56.400 --> 01:38:00.700]   photos have some kind of main subject.
+[01:38:00.700 --> 01:38:07.220]   On the other hand, in the 4x4, those 16 grid cells are unlikely.
+[01:38:07.220 --> 01:38:09.820]   Most of them are not going to have much of an overlap with anything.
+[01:38:09.820 --> 01:38:16.340]   Like in this motorbike case, it's going to be sky, sky, sky, sky, sky, sky, sky, ground,
+[01:38:16.340 --> 01:38:19.100]   ground, ground, ground, ground, ground, and finally motorbike.
+[01:38:19.100 --> 01:38:31.600]   So if somebody was to say to you like, "20 buck bet, what do you reckon this little clip
+[01:38:31.600 --> 01:38:32.600]   is?"
+[01:38:32.600 --> 01:38:35.900]   And you're not sure, you're going to say, "background."
+[01:38:35.900 --> 01:38:41.340]   Because most of the time it is background.
+[01:38:41.340 --> 01:38:48.660]   And so here's the thing.
+[01:38:48.660 --> 01:38:54.340]   I understand why we have a 4x4 grid of receptive fields with one anchor box each to coarsely
+[01:38:54.340 --> 01:38:59.180]   localize objects in the image, but I think I'm missing is why we need multiple receptive
+[01:38:59.180 --> 01:39:01.300]   fields at different sizes.
+[01:39:01.300 --> 01:39:06.860]   The first version already included 16 receptive fields each with a single anchor box associated
+[01:39:06.860 --> 01:39:12.140]   with the addition there are now many more anchor boxes to consider.
+[01:39:12.140 --> 01:39:15.900]   Is this because you constrained how much a receptive field could move or scale from its
+[01:39:15.900 --> 01:39:19.500]   original size or is there another reason?
+[01:39:19.500 --> 01:39:20.500]   It's kind of backwards.
+[01:39:20.500 --> 01:39:23.660]   The reason I did the constraining is because I knew I was going to be adding more anchor
+[01:39:23.660 --> 01:39:31.860]   boxes later, but really the reason is that the Jacquard overlap between one of those
+[01:39:31.860 --> 01:39:41.220]   4x4 grid cells and a single object that takes up most of the image is never going to be
+[01:39:41.220 --> 01:39:48.100]   0.5 because the intersection is much smaller than the union because one object is too big.
+[01:39:48.100 --> 01:39:53.940]   So for this general idea of work where we're saying you're responsible for something that
+[01:39:53.940 --> 01:40:03.500]   you've got a better than 50% overlap with, we need anchor boxes which will on a regular
+[01:40:03.500 --> 01:40:09.220]   basis have a 50% or higher overlap, which means we need to have a variety of sizes and
+[01:40:09.220 --> 01:40:14.880]   shapes and scales.
+[01:40:14.880 --> 01:40:20.540]   So this all happens in the last function.
+[01:40:20.540 --> 01:40:24.740]   Basically the vast majority of the interesting stuff in all of the object detection stuff
+[01:40:24.740 --> 01:40:35.300]   is the last function because there is only three things, last function, architecture,
+[01:40:35.300 --> 01:40:37.680]   data.
+[01:40:37.680 --> 01:40:47.660]   So this is the focal loss paper, focal loss for dense object detection from August 2017.
+[01:40:47.660 --> 01:40:50.420]   Here's Ross Gershik still doing this stuff, climbing her.
+[01:40:50.420 --> 01:40:57.380]   You might recognize as being the ResNet guy, a bit of an all-star cast here.
+[01:40:57.380 --> 01:41:00.580]   And the key thing is this very first picture.
+[01:41:00.580 --> 01:41:09.380]   The blue line is a picture of binary cross-entropy loss.
+[01:41:09.380 --> 01:41:17.500]   The x-axis is what is the probability or what is the activation, what is the probability
+[01:41:17.500 --> 01:41:20.380]   of the ground truth class.
+[01:41:20.380 --> 01:41:27.720]   So it's actually a motorbike, I said with 0.6 chance it's a motorbike, or it's actually
+[01:41:27.720 --> 01:41:32.580]   not a motorbike, and I said with 0.6 chance it's not a motorbike.
+[01:41:32.580 --> 01:41:37.940]   So this blue line represents the level of the value of cross-entropy loss.
+[01:41:37.940 --> 01:41:44.900]   You can draw this in Excel or Python or whatever, this is just a simple plot of cross-entropy
+[01:41:44.900 --> 01:41:46.560]   loss.
+[01:41:46.560 --> 01:41:52.700]   So the point is, if the answer is, because remember we're doing binary cross-entropy
+[01:41:52.700 --> 01:41:58.340]   loss, if the answer is not a motorbike, and I said yeah I think it's not a motorbike,
+[01:41:58.340 --> 01:42:02.620]   I'm 0.6 sure it's not a motorbike.
+[01:42:02.620 --> 01:42:13.380]   This blue line is still at a loss of about 0.5, it's still pretty bad, so I actually have
+[01:42:13.380 --> 01:42:17.500]   to keep getting more and more confident that it's not a motorbike.
+[01:42:17.500 --> 01:42:24.020]   So if I want to get my loss down, then for all of these things which are actually background,
+[01:42:24.020 --> 01:42:28.980]   I have to be saying like, I am sure that's background, or I'm sure it's not a motorbike
+[01:42:28.980 --> 01:42:32.980]   or a bus or a person or a dining room table.
+[01:42:32.980 --> 01:42:40.240]   Because if I don't say I'm sure it's not any of these things, then I still get loss.
+[01:42:40.240 --> 01:42:51.740]   So that's why this doesn't work, because even when it gets to here, and it wants to say,
+[01:42:51.740 --> 01:42:59.780]   I think it's a motorbike, there's no payoff for it to say so, because if it's wrong, it
+[01:42:59.780 --> 01:43:00.780]   gets killed.
+[01:43:00.780 --> 01:43:04.940]   And the vast majority of the time, it's not anything.
+[01:43:04.940 --> 01:43:06.820]   The vast majority of the time it's background.
+[01:43:06.820 --> 01:43:10.100]   And even if it's not background, it's not enough just to say it's not background, you
+[01:43:10.100 --> 01:43:13.060]   could say, which of the 20 things it is.
+[01:43:13.060 --> 01:43:19.920]   So for the really big things, it's fine, because that's the one by one grid, so it generally
+[01:43:19.920 --> 01:43:23.540]   is a thing, and you just have to figure out which thing it is.
+[01:43:23.540 --> 01:43:29.140]   Or else for these small ones, generally it's not anything, so generally small ones would
+[01:43:29.140 --> 01:43:36.580]   just prefer to be like, I've got nothing to say, no comment.
+[01:43:36.580 --> 01:43:46.460]   So that's why this is empty, and that's why even when we do have a bus, it's using a really
+[01:43:46.460 --> 01:43:53.020]   big grid cell to say it's a bus, because these are the only ones where it's confident enough
+[01:43:53.020 --> 01:44:00.260]   to make a call that it's something, because the small grid cells very rarely are something.
+[01:44:00.260 --> 01:44:05.180]   So the trick is to try and find a different loss function instead of binary cross-entropy
+[01:44:05.180 --> 01:44:10.700]   loss that doesn't look like the blue line, but looks more like the green or purple line.
+[01:44:10.700 --> 01:44:13.860]   And they actually end up suggesting the purple line.
+[01:44:13.860 --> 01:44:23.200]   And so it turns out this is cross-entropy loss, negative log p_t, focal loss is simply 1 - p_t
+[01:44:23.200 --> 01:44:33.100]   to the gamma, where gamma is some parameter, and they recommend using 2, times the cross-entropy
+[01:44:33.100 --> 01:44:34.100]   loss.
+[01:44:34.100 --> 01:44:38.740]   So it's literally just a scaling of it.
+[01:44:38.740 --> 01:44:42.980]   And so that takes you to, if you use gamma equals 2, that takes you to this purple line.
+[01:44:42.980 --> 01:44:50.940]   So now if we say, I'm 0.6 sure that it's not a motorbike, then the loss function is like,
+[01:44:50.940 --> 01:44:54.900]   good for you, no worries.
+[01:44:54.900 --> 01:44:56.100]   So that's what we want to do.
+[01:44:56.100 --> 01:45:00.340]   We want to replace cross-entropy loss with focal loss.
+[01:45:00.340 --> 01:45:03.780]   And I mentioned a couple of things about this fantastic paper.
+[01:45:03.780 --> 01:45:12.280]   The first is, the actual contribution of this paper is to add 1 - p_t to the gamma to the
+[01:45:12.280 --> 01:45:16.300]   start of this equation, which sounds like nothing.
+[01:45:16.300 --> 01:45:20.860]   But actually people have been trying to figure out this damn problem for years, and I'm not
+[01:45:20.860 --> 01:45:26.860]   even sure they'd realize it's a problem, there's just this assumption that object detection
+[01:45:26.860 --> 01:45:33.300]   is really hard, and you have to do all of these complex data augmentations, and hard
+[01:45:33.300 --> 01:45:37.300]   negative mining and blah, blah, blah to get the damn thing to work.
+[01:45:37.300 --> 01:45:42.540]   So A, it's like this recognition of, why are we doing all of those things?
+[01:45:42.540 --> 01:45:49.500]   And then this realization of, oh, if I do that it goes away, it's fixed.
+[01:45:49.500 --> 01:45:55.580]   So when you come across a paper like this, which is like game-changing, you shouldn't
+[01:45:55.580 --> 01:46:00.140]   assume that you're going to have to write 100,000 lines of code.
+[01:46:00.140 --> 01:46:07.220]   Very often it's one line of code, or the change of a single constant, or adding log to a single
+[01:46:07.220 --> 01:46:08.220]   place.
+[01:46:08.220 --> 01:46:15.140]   So let's go down to the bit where it all happens, where they describe focal loss.
+[01:46:15.140 --> 01:46:18.860]   And I just wanted to point out a couple of terrific things about this paper.
+[01:46:18.860 --> 01:46:23.100]   The first is, here is their definition of cross-entropy.
+[01:46:23.100 --> 01:46:27.940]   And if you're not able to write cross-entropy on a piece of paper right now, then you need
+[01:46:27.940 --> 01:46:34.260]   to go back and study it, because we've got to be assuming what it is, what it means,
+[01:46:34.260 --> 01:46:38.420]   why it's that, what the shape of it looks like, cross-entropy appears everywhere, binary
+[01:46:38.420 --> 01:46:46.940]   cross-entropy, and categorical cross-entropy, and the softmax that appears there.
+[01:46:46.940 --> 01:46:57.660]   Most of the time we'll see cross-entropy written as an indicator on Y times log P plus an indicator
+[01:46:57.660 --> 01:47:05.880]   on Y of 1 minus Y times log 1 minus P. This is like a kind of awkward notation, often
+[01:47:05.880 --> 01:47:10.060]   people will use like a Dirac delta function, stupid stuff like that.
+[01:47:10.060 --> 01:47:14.100]   Or else this paper just says, you know what, it's just a conditional.
+[01:47:14.100 --> 01:47:21.140]   Cross-entropy simply is negative log P if Y is 1, negative log 1 minus P, otherwise.
+[01:47:21.140 --> 01:47:26.460]   So Y is 1 if it's a motorbike, 0 if not.
+[01:47:26.460 --> 01:47:33.820]   In this paper they say 1 if it's a motorbike, or negative 1 if not.
+[01:47:33.820 --> 01:47:39.980]   And then they do something which mathematicians never do, they refactor, check this out.
+[01:47:39.980 --> 01:47:46.140]   Hey, what if we replace, what if we define a new term called PT which is equal to the
+[01:47:46.140 --> 01:47:53.740]   probability if Y is 1 or 1 minus P otherwise, if we did that we could now redefine CE as
+[01:47:53.740 --> 01:48:02.380]   that, which is super cool, like it's such an obvious thing to do, but as soon as you do
+[01:48:02.380 --> 01:48:05.540]   it all of the other equations get simpler as well.
+[01:48:05.540 --> 01:48:11.860]   Because later on, in the very next paragraph, they say, hey, one way to deal with class
+[01:48:11.860 --> 01:48:16.820]   imbalance, i.e. lots of stuff is background, would just be to have a different weighting
+[01:48:16.820 --> 01:48:19.860]   factor for background versus not.
+[01:48:19.860 --> 01:48:30.860]   So for class 1 we'll have some number alpha, and for class 0 we'll have 1 minus alpha.
+[01:48:30.860 --> 01:48:36.260]   But then they're like, hey, let's define alpha_t the same way, and so now our cross-entropy
+[01:48:36.260 --> 01:48:40.020]   with a weighting factor can be written like this.
+[01:48:40.020 --> 01:48:45.900]   And so then they can write their focal loss with the same concept, and then eventually
+[01:48:45.900 --> 01:48:52.940]   they say, hey, let's take focal loss and combine it with class weighting, like so.
+[01:48:52.940 --> 01:48:58.020]   So often when you see in a paper huge big equations, it's just because mathematicians
+[01:48:58.020 --> 01:49:02.100]   don't know how to read back that, and you'll see the same pieces are repeated all over
+[01:49:02.100 --> 01:49:03.100]   the place.
+[01:49:03.100 --> 01:49:05.140]   Very, very, very often.
+[01:49:05.140 --> 01:49:10.940]   And by the time you've turned it into numpy code, suddenly it's super simple.
+[01:49:10.940 --> 01:49:17.060]   So this is a million times better than nearly any other paper.
+[01:49:17.060 --> 01:49:22.140]   So it's a great paper to read to understand how papers should be, a terrible paper to
+[01:49:22.140 --> 01:49:27.740]   read to understand what most papers look like.
+[01:49:27.740 --> 01:49:28.740]   So let's try this.
+[01:49:28.740 --> 01:49:31.740]   We're going to use this here.
+[01:49:31.740 --> 01:49:39.140]   Now remember negative log p is the cross-entropy loss, so therefore this is just equal to some
+[01:49:39.140 --> 01:49:43.460]   number times the cross-entropy loss.
+[01:49:43.460 --> 01:49:53.580]   And when I defined the binomial cross-entropy loss, I don't know if you remember or if you
+[01:49:53.580 --> 01:50:04.820]   noticed, but I had a weight which by default was none.
+[01:50:04.820 --> 01:50:09.780]   And when you call binary cross-entropy with logits, the PyTorch thing, you can optionally
+[01:50:09.780 --> 01:50:10.780]   pass that away.
+[01:50:10.780 --> 01:50:13.260]   That is something that's modified by everything.
+[01:50:13.260 --> 01:50:15.300]   And if it's none, then there's no way.
+[01:50:15.300 --> 01:50:24.640]   So since we're just going to multiply cross-entropy by something, we can just define get_weight.
+[01:50:24.640 --> 01:50:29.820]   So here's the entirety of paper loss.
+[01:50:29.820 --> 01:50:36.420]   This is the thing that suddenly made object detection make sense.
+[01:50:36.420 --> 01:50:44.820]   So this was late last year, suddenly it got rid of all of the complex messy hackery.
+[01:50:44.820 --> 01:50:54.460]   And so we do our sigmoid, here's our p(t), here's our w, and here you can see 1 minus
+[01:50:54.460 --> 01:51:01.260]   p(t)^gamma, and so we're going to set gamma of 2, alpha of 0.25.
+[01:51:01.260 --> 01:51:06.980]   If you're wondering why, here's another excellent thing about this paper, because they tried
+[01:51:06.980 --> 01:51:16.980]   lots of different values of gamma and alpha, and they found that 2 and 0.25 work well consistently.
+[01:51:16.980 --> 01:51:24.900]   So there's our new_loss function, it derives from our bce_loss, adding a weight to it,
+[01:51:24.900 --> 01:51:25.900]   focal_loss.
+[01:51:25.900 --> 01:51:32.940]   Other than that, there's nothing else to do, we can just train our model again.
+[01:51:32.940 --> 01:51:38.140]   And so this time, things are looking quite a bit better.
+[01:51:38.140 --> 01:51:48.780]   We now have motorbike, bicycle, person, motorbike...it's actually having a go at finding something here.
+[01:51:48.780 --> 01:51:53.220]   It's still doing a good job with big ones, in fact it's looking quite a lot better.
+[01:51:53.220 --> 01:51:58.380]   It's finding quite a few people, it's finding a couple of different birds, it's looking
+[01:51:58.380 --> 01:52:00.100]   pretty good.
+[01:52:00.100 --> 01:52:09.220]   So our last step is to basically figure out how to pull out just the interesting stuff
+[01:52:09.220 --> 01:52:15.180]   out of...let's take this dog and this sofa, how do we pick out our dog and our sofa?
+[01:52:15.180 --> 01:52:21.660]   And the answer is incredibly simple, all we're going to do is we're going to go through every
+[01:52:21.660 --> 01:52:25.700]   pair of these bounding boxes.
+[01:52:25.700 --> 01:52:34.220]   And if they overlap by more than some amount, say 0.5 using jaccard, and they both are predicting
+[01:52:34.220 --> 01:52:36.900]   the same class, we're going to assume they're the same thing.
+[01:52:36.900 --> 01:52:41.140]   And we're just going to pick the one with the higher p-value.
+[01:52:41.140 --> 01:52:44.500]   And we just keep doing that repeatedly.
+[01:52:44.500 --> 01:52:48.380]   That's really boring code, I actually didn't write it myself, I copied it off somebody else.
+[01:52:48.380 --> 01:52:54.940]   Somebody else's code, non-maximum suppression, NMS, no reason particularly to go through
+[01:52:54.940 --> 01:52:57.780]   it, but that's all it does.
+[01:52:57.780 --> 01:53:06.020]   So we can now show the results of the non-maximum suppression, and here's the sofa, here's the
+[01:53:06.020 --> 01:53:14.220]   dog, here's the bird, here's the person.
+[01:53:14.220 --> 01:53:20.140]   This person's cigarette looks like it's like a firework or something, I don't know what's
+[01:53:20.140 --> 01:53:21.140]   going on there.
+[01:53:21.140 --> 01:53:26.820]   But it's fine, it's okay but not great, it's found a person in his bicycle, and a person
+[01:53:26.820 --> 01:53:32.740]   in his bicycle with his bicycle is in the wrong place, and this person is in the wrong
+[01:53:32.740 --> 01:53:33.740]   place.
+[01:53:33.740 --> 01:53:38.140]   You can also see that some of these smaller things have lower p-values than the tote,
+[01:53:38.140 --> 01:53:45.180]   like the motorbike is just 0.16, this is same time, or bus, so there's some things still
+[01:53:45.180 --> 01:53:51.180]   there, and the trick will be to use something called feature theorems.
+[01:53:51.180 --> 01:54:04.340]   And that's what we're going to do in lesson 14, or thereabouts, and that'll fix this up.
+[01:54:04.340 --> 01:54:14.420]   What I wanted to do in the last few minutes of class was to talk a little bit more about
+[01:54:14.420 --> 01:54:21.180]   the papers, and specifically to go back to the SSD paper.
+[01:54:21.180 --> 01:54:27.380]   So this is single shot multi-box detector, and when this came out I was very excited
+[01:54:27.380 --> 01:54:38.660]   because it was kind of, you know, it and YOLO were like the first kind of single pass, good
+[01:54:38.660 --> 01:54:43.420]   quality object detection methods that had come along.
+[01:54:43.420 --> 01:54:48.700]   And so I kind of ignored object detection until this time, all this two-pass stuff with
+[01:54:48.700 --> 01:54:57.580]   RCNN, and fast RCNN, and faster RCNN, because there's been this kind of continuous repetition
+[01:54:57.580 --> 01:55:04.620]   of history in the deep learning world, which is things that involve multiple passes of
+[01:55:04.620 --> 01:55:10.020]   multiple different pieces over time, you know, particularly where they involve some long
+[01:55:10.020 --> 01:55:18.060]   deep learning pieces, like RCNN and fast RCNN did, over time they basically always get turned
+[01:55:18.060 --> 01:55:21.460]   into a single end-to-end deep learning model.
+[01:55:21.460 --> 01:55:26.420]   So I tend to kind of ignore them until that happens, because that's the point where it's
+[01:55:26.420 --> 01:55:30.900]   like okay, now people have figured out how to show this as a deep learning problem.
+[01:55:30.900 --> 01:55:35.380]   As soon as people do that, they generally end up with something that's much faster and
+[01:55:35.380 --> 01:55:37.380]   much more accurate.
+[01:55:37.380 --> 01:55:40.500]   And so SSD and YOLO are really important.
+[01:55:40.500 --> 01:55:45.100]   So here's the SSD paper.
+[01:55:45.100 --> 01:55:50.180]   Let's go down to the key piece, which is where they describe the model.
+[01:55:50.180 --> 01:55:57.260]   And let's try and understand it.
+[01:55:57.260 --> 01:56:11.060]   So the model is basically 1, 2, 3, 4 paragraphs.
+[01:56:11.060 --> 01:56:19.420]   So papers are really concise, which means you kind of need to read them pretty carefully.
+[01:56:19.420 --> 01:56:23.180]   Partly, though, you need to know which bits to read carefully.
+[01:56:23.180 --> 01:56:29.380]   So the bits where they say here we're going to prove the error bounds on this model, you
+[01:56:29.380 --> 01:56:32.660]   can ignore that, because you don't care about proving the error bounds.
+[01:56:32.660 --> 01:56:38.580]   But the bit which says here is what the model is, is the bit you need to read really carefully.
+[01:56:38.580 --> 01:56:41.340]   So here's the bit called model.
+[01:56:41.340 --> 01:56:45.620]   And so hopefully you'll find we can now read this together and understand it.
+[01:56:45.620 --> 01:56:52.540]   So SSD is a feed-forward conflict and it creates a fixed-size collection of bounding boxes and
+[01:56:52.540 --> 01:56:56.940]   scores for the presence of object class instances in those boxes.
+[01:56:56.940 --> 01:57:07.020]   So fixed-size, i.e. the convolutional grid times k, the different aspect ratios and stuff,
+[01:57:07.020 --> 01:57:16.620]   and each one of those has 4+c activations, followed by a non-maximum suppression step
+[01:57:16.620 --> 01:57:23.340]   to take that massive dump and turn it into just a couple of non-overlapping different
+[01:57:23.340 --> 01:57:24.340]   objects.
+[01:57:24.340 --> 01:57:30.100]   The early layers are based on a standard architecture, so we just use ResNet.
+[01:57:30.100 --> 01:57:35.620]   This is pretty standard, as you can kind of see this consistent theme, particularly in
+[01:57:35.620 --> 01:57:40.700]   how the fast-ai library tries to do things, which is grab a pre-trained network that already
+[01:57:40.700 --> 01:57:44.660]   does something, pull off the end bits, stick on a new end bit.
+[01:57:44.660 --> 01:57:51.500]   So early network layers, if we use a standard classifier, truncate the classification layers
+[01:57:51.500 --> 01:57:56.480]   as we always do, that happens automatically when we use Concloner, and we call this the
+[01:57:56.480 --> 01:57:57.900]   base network.
+[01:57:57.900 --> 01:58:05.740]   Some papers call that the backbone, and we then add an auxiliary structure.
+[01:58:05.740 --> 01:58:11.660]   So the auxiliary structure, which we call the custom head, has multiscale feature mass.
+[01:58:11.660 --> 01:58:17.300]   So we add convolutional layers to the end of this base network, and they decrease in
+[01:58:17.300 --> 01:58:22.900]   size progressively, so a bunch of strive-to conflays.
+[01:58:22.900 --> 01:58:26.580]   So that allows predictions of detections at multiple scales.
+[01:58:26.580 --> 01:58:31.100]   The grid cells are a different size at each of these.
+[01:58:31.100 --> 01:58:39.420]   The model is different for each feature layer compared to YOLO that operate on a single feature
+[01:58:39.420 --> 01:58:47.540]   map, so YOLO is one vector, whereas we have different convales.
+[01:58:47.540 --> 01:58:55.460]   Each added feature layer gives you a fixed set of predictions using a bunch of filters.
+[01:58:55.460 --> 01:59:02.980]   For a filter layer where the grid size is N by N, 4 by 4, with P channels, let's take
+[01:59:02.980 --> 01:59:09.060]   the previous one, 7 by 7 with 5 channels of channels, the basic element is going to be
+[01:59:09.060 --> 01:59:22.180]   3 by 3 by P kernel, which in our case is a 3 by 3 by 4 for the shape offset bit, or 3
+[01:59:22.180 --> 01:59:26.580]   by 3 by C for the score for a category.
+[01:59:26.580 --> 01:59:30.140]   So those are those two pieces.
+[01:59:30.140 --> 01:59:36.580]   At each of those grid cell locations, it's going to produce an output value.
+[01:59:36.580 --> 01:59:44.380]   And the bounding box offsets are measured relative to a default box position, which we've been
+[01:59:44.380 --> 01:59:51.080]   calling an anchor box position, relative to the feature map location, what we've been
+[01:59:51.080 --> 02:00:01.540]   calling the grid cell, as opposed to YOLO, which has a poly-connected layer.
+[02:00:01.540 --> 02:00:07.420]   And then they go on to describe the default boxes, what they are for each feature map
+[02:00:07.420 --> 02:00:13.540]   cell, or what we would say grid cell, they tile the feature map in a convolutional manner,
+[02:00:13.540 --> 02:00:18.260]   so the position of each box relative to its grid cell is fixed.
+[02:00:18.260 --> 02:00:32.420]   So hopefully you can see we end up with C+4*K filters if there are K boxes at each location.
+[02:00:32.420 --> 02:00:36.960]   So these are similar to the anchor boxes described in the past class.
+[02:00:36.960 --> 02:00:43.900]   So if you jump straight in and read a paper like this without knowing what problem they're
+[02:00:43.900 --> 02:00:49.020]   solving and why are they solving it and what's the kind of non-actature and so forth, those
+[02:00:49.020 --> 02:00:51.820]   four paragraphs would probably make almost no sense.
+[02:00:51.820 --> 02:00:55.860]   But now that we've gone through it, you read those four paragraphs and hopefully you're
+[02:00:55.860 --> 02:01:03.620]   thinking, "Oh, that's just what Jeremy said, only they said it better than Jeremy in less
+[02:01:03.620 --> 02:01:04.620]   words."
+[02:01:04.620 --> 02:01:13.900]   So I have the same problem, when I started reading the SSD paper and I read those four
+[02:01:13.900 --> 02:01:17.200]   paragraphs and I didn't have before this time much of a background in object detection because
+[02:01:17.200 --> 02:01:23.260]   I had decided to wait until these two passed anymore, so I read this and I was like, "What
+[02:01:23.260 --> 02:01:24.260]   the hell?"
+[02:01:24.260 --> 02:01:29.740]   And so the trick is to then start reading back over the citations.
+[02:01:29.740 --> 02:01:35.060]   So for example, and you should go back and read this paper now, look, here's the matching
+[02:01:35.060 --> 02:01:36.060]   strategy.
+[02:01:36.060 --> 02:01:42.100]   And that whole matching strategy that I somehow spent an hour talking about, that's just a
+[02:01:42.100 --> 02:01:43.100]   paragraph.
+[02:01:43.100 --> 02:01:44.380]   But it really is.
+[02:01:44.380 --> 02:01:51.660]   For each ground truth, we select from default boxes based on location, aspect ratio, and
+[02:01:51.660 --> 02:01:52.660]   scale.
+[02:01:52.660 --> 02:01:57.380]   We match each ground truth to the default box with the best jaccade overlap.
+[02:01:57.380 --> 02:02:02.380]   And then we match default boxes to anything with the jaccade overlap higher than 25.
+[02:02:02.380 --> 02:02:03.380]   That's it.
+[02:02:03.380 --> 02:02:06.820]   That's the one-sentence version.
+[02:02:06.820 --> 02:02:14.900]   And then we've got the loss function, which is basically to say, take the average of the
+[02:02:14.900 --> 02:02:26.380]   loss based on the classes plus the loss based on localization with some weighting factor.
+[02:02:26.380 --> 02:02:29.420]   Now with focal loss, I found I didn't really need the weighting factor anymore.
+[02:02:29.420 --> 02:02:35.580]   They both had about the same scale, just a coincidence perhaps.
+[02:02:35.580 --> 02:02:40.420]   But in this case, as I started reading this, I didn't really understand exactly what L
+[02:02:40.420 --> 02:02:45.820]   and G and all this stuff was, but it says, well, this is derived from the multibox objective.
+[02:02:45.820 --> 02:02:54.060]   So then I went back to the paper that defined multibox, and I found in their proposed approach,
+[02:02:54.060 --> 02:03:03.140]   they've also got a section called training objective, also known as loss function.
+[02:03:03.140 --> 02:03:08.460]   And here I can see it's the same notation, L, G, blah, blah, blah.
+[02:03:08.460 --> 02:03:12.700]   And so this is where I can go back and see the detail.
+[02:03:12.700 --> 02:03:17.180]   And after you read a bunch of papers, you'll start to see things very quickly.
+[02:03:17.180 --> 02:03:22.220]   For example, when you see these double bars, 2, 2, you'll realize every time there's mean
+[02:03:22.220 --> 02:03:25.700]   squared error, that's how you write mean squared error.
+[02:03:25.700 --> 02:03:31.620]   This is actually called the 2-norm, the 2-norm is just the sum of squared differences.
+[02:03:31.620 --> 02:03:37.060]   And then this 2 up here means normally they take the square root, so we just undo the
+[02:03:37.060 --> 02:03:38.060]   square root.
+[02:03:38.060 --> 02:03:40.140]   So this is just MSE.
+[02:03:40.140 --> 02:03:44.860]   Any time you see here's a log C and here's a log of y minus C, you know that's basically
+[02:03:44.860 --> 02:03:46.900]   a binary cross-entropy.
+[02:03:46.900 --> 02:03:54.140]   So it's like, you're not actually going to have to read every bit of every equation.
+[02:03:54.140 --> 02:04:02.380]   You are kind of a bit at first, but after a while your brain just like immediately knows
+[02:04:02.380 --> 02:04:03.780]   basically what's going on.
+[02:04:03.780 --> 02:04:08.140]   And then I say, oh, I've got a log C up and a log 1 minus C, and as expected I should
+[02:04:08.140 --> 02:04:10.060]   have my x, and here's my 1 minus x.
+[02:04:10.060 --> 02:04:17.620]   Okay, there's all the pieces there that I would expect to see in a binary cross-entropy.
+[02:04:17.620 --> 02:04:22.900]   So then having done that, that then kind of allowed me, and then they get combined with
+[02:04:22.900 --> 02:04:28.340]   the two pieces, and oh, there's the multiplier that I expected, and so now I can kind of
+[02:04:28.340 --> 02:04:33.020]   come back here and understand what's going on.
+[02:04:33.020 --> 02:04:40.740]   So we're going to be looking at a lot more papers, but maybe this week, go through the
+[02:04:40.740 --> 02:04:47.580]   code and go through the paper and be like, what's going on?
+[02:04:47.580 --> 02:04:54.980]   And remember, what I did to make it easier for you was I took that loss function, I copied
+[02:04:54.980 --> 02:05:01.980]   it into a cell, and then I split it up so that each bit was in a separate cell, and
+[02:05:01.980 --> 02:05:08.860]   then after every cell, I either printed or plotted that value.
+[02:05:08.860 --> 02:05:13.820]   So if I hadn't done that for you, you should do it yourself, because there's no way you
+[02:05:13.820 --> 02:05:20.380]   can understand these functions without putting things in and seeing what comes down.
+[02:05:20.380 --> 02:05:27.940]   So hopefully this is kind of a good starting point.
+[02:05:27.940 --> 02:05:33.220]   Thanks everybody, have a great week, and see you next Monday.
+
