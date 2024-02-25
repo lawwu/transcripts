@@ -123,7 +123,9 @@ def is_transcript_valid(filename, directory=transcripts_dir):
 @timeit
 def run_whisper(filename, model_name, num_threads=7, num_processors=1):
     model_path = model_dir / model_name
-    # input_path = transcripts_dir / f"{filename}_16k.wav"
+    
+    # create file if doesn't exist
+    
     output_path = transcripts_dir / f"{filename}.txt"
 
     whisper_main = whispercpp_dir / "main"

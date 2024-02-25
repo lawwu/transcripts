@@ -148,3 +148,18 @@ UnicodeDecodeError: 'utf-8' codec can't decode byte 0xeb in position 1264: inval
         "file": "mljt_ids_done.txt"
     },
 ```
+- [ ] figure out how to handle playlists where some channels are hidden
+```
+    {
+        "name": "ask_pastor_john",
+        "url": "https://www.youtube.com/playlist?list=PLFF7F6AE365DA3564",
+        "in_file": "apj_ids.txt",
+        "file": "apj_ids_done.txt"
+    },    
+    {
+        "name": "ask_the_compound",
+        "url": "https://www.youtube.com/playlist?list=PLZgCX3KJ3XGDSgkgav-pPd5Uq01F82jGa",
+        "in_file": "ask_the_compound_ids.txt",
+        "file": "ask_the_compound_ids_done.txt"
+    },
+```
