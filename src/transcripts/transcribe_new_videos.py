@@ -14,6 +14,9 @@ with open(configs_dir / "channels.json", "r") as f:
     channels = json.load(f)
 
 for channel in channels:
+    channels_to_skip_download = ["ask_pastor_john", "ask_the_compound"]
+    if channel["name"] in channels_to_skip_download:
+        continue
     # Step 1: Get all video list from the channel
     # Use ID for YouTube, Google Podcast, use URL
     logging.info(f"Processing: {channel['name']}")
