@@ -20,8 +20,12 @@ for channel in channels:
     # Step 1: Get all video list from the channel
     # Use ID for YouTube, Google Podcast, use URL
     logging.info(f"Processing: {channel['name']}")
-    if channel["name"] in ["radical_personal_finance", "latent_space", 
-                           "all_the_hacks", "financial_samurai"]:
+    if channel["name"] in ["all_the_hacks",
+                           "everyday_educator",
+                           "financial_samurai",
+                           "latent_space", 
+                           "radical_personal_finance", 
+                           ]:
         cmd = f"yt-dlp -v --flat-playlist --print url {channel['url']}"
     else:
         cmd = f"yt-dlp --flat-playlist --print id {channel['url']}"
