@@ -10,6 +10,7 @@ from transcripts.utils import (
     data_dir,
     html_dir,
     configs_dir,
+    extract_yt_id,
 )
 
 logging.basicConfig(
@@ -229,6 +230,9 @@ def get_minimum_info_dict(info_dict):
 def fetch_video_details(
     video_id, video_details_cache=video_details_cache, ydl_opts={"quiet": True}
 ):
+    if video_id is None or video_id == "":
+        logging.info("Video ID is empty")
+        return None
     logging.info(f"Fetching details for video ID {video_id}")
     if video_id in video_details_cache:
         logging.info("Using cached details")
@@ -327,17 +331,34 @@ def generate_all_video_index(
 
         for index, video_id in enumerate(ids):
             # video_id = row["id"]
+            if video_id is None or video_id == "":
+                continue
+
+            # check video_id is a YouTube URL
+            if video_id.startswith(
+                "https://www.youtube.com/"
+            ) or video_id.startswith("http://youtube.com/"):
+                video_id = extract_yt_id(video_id)
+
             details = video_details_cache[video_id]
             whisper_transcript_file = f"{video_id}.html"
             transcript_file = f"transcript_{video_id}.html"
-            try:
-                formatted_date = datetime.strptime(
-                    details["upload_date"], "%Y-%m-%d"
-                ).strftime("%Y-%m-%d")
-            except ValueError:
+            if details["upload_date"] is None:
+                formatted_date = ""
+            elif len(details["upload_date"]) == 8:
                 formatted_date = datetime.strptime(
                     details["upload_date"], "%Y%m%d"
-                ).strftime("%Y%m%d")
+                ).strftime("%Y-%m-%d")
+            else:
+                try:
+                    formatted_date = datetime.strptime(
+                        details["upload_date"], "%Y-%m-%d"
+                    ).strftime("%Y-%m-%d")
+                except ValueError:
+                    logging.error(
+                        f"Invalid date format: {details['upload_date']}"
+                    )
+                    formatted_date = ""
 
             f.write(
                 '<tr style="{}">'.format(
@@ -346,7 +367,10 @@ def generate_all_video_index(
             )
             f.write(f"<td>{formatted_date}</td>")
             f.write(f'<td>{details["title"]}</td>')
-            f.write(f"<td>{details['duration'] // 60} min</td>")
+            if details["duration"] is None:
+                f.write("<td></td>")
+            else:
+                f.write(f"<td>{details['duration'] // 60} min</td>")
             f.write(
                 f'<td><a href="./{whisper_transcript_file}">Whisper Transcript</a></td>'
             )
@@ -376,7 +400,15 @@ def generate_index_page(video_ids, channel_name):
         )  # Added a new table header for "Transcript Only"
 
         for index, video_id in enumerate(video_ids):
+            if video_id is None or video_id == "":
+                continue
+
+            if video_id.startswith(
+                "https://www.youtube.com/"
+            ) or video_id.startswith("http://youtube.com/"):
+                video_id = extract_yt_id(video_id)
             details = fetch_video_details(video_id)
+
             video_id = details["id"]
             whisper_transcript_file = f"{video_id}.html"
 
@@ -405,6 +437,7 @@ def generate_index_page(video_ids, channel_name):
                 # TODO parse date from video_id
                 formatted_date = ""
 
+            # logging.info(f"Generating row in index page for video ID {video_id}")
             f.write(
                 '<tr style="{}">'.format(
                     "background-color: #f2f2f2;" if index % 2 == 0 else ""
@@ -566,6 +599,7 @@ if __name__ == "__main__":
     with open(configs_dir / "channels.json", "r") as f:
         config_channels = json.load(f)
 
+    list_all_videos = []
     for channel in config_channels:
         video_ids = read_ids_from_file(data_dir / channel["file"])
 
@@ -575,6 +609,8 @@ if __name__ == "__main__":
         for id in video_ids:
             # skip this id since these transcripts do not exist
             # if id in ["-hxeDjAxvJ8", "-QbjYf-sWpI", "-pdmry5gU7g", "-2ZBCUVXciw", "-8huxdlxe0I"]:
+            if id is None or id == "":
+                continue
             if id[0] == "-":
                 continue
 
@@ -611,7 +647,7 @@ if __name__ == "__main__":
                 "rosko1DktW0",
                 "HW554qecUU0",
                 "rVUFef-zaCE",
-                "B8h154w9qbo", #atc
+                "B8h154w9qbo",  # atc
                 "alOI2zxIPgc",
                 "Zxahu5y79SA",
                 "GkTOSDLfCaI",
@@ -626,7 +662,6 @@ if __name__ == "__main__":
                 "8aV44LTsw3k",
                 "Gfg3wVVecYI",
                 "https://traffic.libsyn.com/secure/financialsamurai/FS_212_-_Kathy_Fang-2.mp3?dest-id=1377836",
-
             ]
             if id in private_videos:
                 continue
@@ -641,11 +676,26 @@ if __name__ == "__main__":
         # exclude videos in exclude list
         filtered_ids = [id for id in all_ids if id not in exclude_list]
 
+        # append to list_all_videos
+        list_all_videos += filtered_ids
+
         logging.info("Generate index page")
         generate_index_page(filtered_ids, channel["name"])
         logging.info(f"Total videos: {len(filtered_ids)}")
 
-    generate_all_video_index(filtered_ids)
+    # Handle other_ids.txt
+    # other_ids = read_ids_from_file(data_dir / "other_ids.txt")
+    # logging.info(f"Found {len(other_ids)} other video IDs")
+
+    # for id in other_ids:
+    #     generate_html(id)
+    #     generate_transcript_page(id)
+
+    # generate_index_page(other_ids, "other")
+    # # add to filtered_ids
+    # list_all_videos += other_ids
+
+    generate_all_video_index(list_all_videos)
     generate_master_index(config_channels)
 
     logging.info("All tasks completed")

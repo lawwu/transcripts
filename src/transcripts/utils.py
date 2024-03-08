@@ -1,3 +1,4 @@
+import re
 import time
 from pathlib import Path
 from functools import wraps
@@ -65,3 +66,16 @@ def convert_cache_to_dataframe(cache):
     df = pd.DataFrame(flattened_data)
     df = df.sort_values(["upload_date"], ascending=False)
     return df
+
+
+def extract_yt_id(url):
+    # Define the regex pattern to find the video ID
+    pattern = r"v=([^&]+)"
+    # Search for the pattern in the URL
+    match = re.search(pattern, url)
+    # If a match is found, return the video ID (first capturing group)
+    if match:
+        return match.group(1)
+    else:
+        # Return None or an appropriate message if no video ID is found
+        return None
