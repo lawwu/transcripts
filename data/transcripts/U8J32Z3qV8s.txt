@@ -1,0 +1,1084 @@
+
+[00:00:00.000 --> 00:00:10.460]   Today, Erwin and I are going to be giving a talk on scaling transformers through sparsity.
+[00:00:10.460 --> 00:00:13.820]   And the kind of sparsity we're going to be talking about today is the kind where each
+[00:00:13.820 --> 00:00:18.720]   input can get either a different set of weights or have a different amount of computation
+[00:00:18.720 --> 00:00:19.720]   applied to it.
+[00:00:19.720 --> 00:00:22.960]   Erwin, do you want to start it off?
+[00:00:22.960 --> 00:00:32.360]   So, I guess the overall motivation for this line of work is that the community has realized
+[00:00:32.360 --> 00:00:40.240]   that scale is perhaps one of the most important axes to focus on for obtaining strong performance.
+[00:00:40.240 --> 00:00:45.720]   And there's almost like this ongoing arms race right now with different labs and different
+[00:00:45.720 --> 00:00:53.440]   institutions competing for training the largest models.
+[00:00:53.440 --> 00:01:01.360]   And so, maybe this dates back from early 2020 with a paper from OpenAI called Scaling Laws
+[00:01:01.360 --> 00:01:08.600]   for Neural Language Models, where they find that model performance follows a predictable
+[00:01:08.600 --> 00:01:22.080]   power law, scale as a power law with model size in terms of either compute or just parameters.
+[00:01:22.080 --> 00:01:28.620]   And so, this scaling law generalizes over multiple orders of magnitude, and that gives
+[00:01:28.620 --> 00:01:35.060]   us the confidence that if we are to train very large models, we can expect a certain
+[00:01:35.060 --> 00:01:40.120]   performance just by extrapolating these scaling laws.
+[00:01:40.120 --> 00:01:50.240]   So, in that paper, they also find the interesting observation that basically larger models are
+[00:01:50.240 --> 00:01:52.200]   more sample efficient.
+[00:01:52.200 --> 00:02:03.120]   And so, if you have a fixed compute budget, you can predict what is the size, what is
+[00:02:03.120 --> 00:02:06.440]   the optimal model size for a fixed compute budget.
+[00:02:06.440 --> 00:02:15.640]   And the overall observation is that you'd rather train very large models for less tests
+[00:02:15.640 --> 00:02:19.680]   than train smaller models for more training steps.
+[00:02:19.680 --> 00:02:28.640]   And so, these models are scaled through basically the paper focuses on dense models, where you
+[00:02:28.640 --> 00:02:34.480]   just increase the model dimensions, but they're not looking at sparsity.
+[00:02:34.480 --> 00:02:40.540]   And so, sparsity is a new dimension that you can use to scale architectures, and this is
+[00:02:40.540 --> 00:02:45.240]   sort of the focus of the talk.
+[00:02:45.240 --> 00:02:52.960]   And so, the sparsity we're mentioning here is basically you will have sparsely activated
+[00:02:52.960 --> 00:02:56.560]   weights based on the network inputs.
+[00:02:56.560 --> 00:03:02.640]   So, every input will go to a roughly similar amount of computation, but will be applied
+[00:03:02.640 --> 00:03:05.840]   different weights.
+[00:03:05.840 --> 00:03:14.040]   And so, this dates back to 1991 with a paper called Adaptive Mixtures of Local Experts,
+[00:03:14.040 --> 00:03:21.720]   and was recently revisited by Noam Shazier and colleagues at Google Brain with LSTMs,
+[00:03:21.720 --> 00:03:30.800]   where they replaced sort of the feed-forward networks in LSTMs with a mixture of experts.
+[00:03:30.800 --> 00:03:37.880]   And so, the way this works there roughly is that you will have multiple experts each implementing
+[00:03:37.880 --> 00:03:46.040]   a small network, or in that case, I think just a dense matrix multiplication.
+[00:03:46.040 --> 00:03:54.160]   And so, you have an additional gating network shown in green here that outputs a probability
+[00:03:54.160 --> 00:04:00.600]   distribution over experts that each token should be sent to.
+[00:04:00.600 --> 00:04:09.080]   So, this probability distribution is computed as a softmax, and once you have it, you select
+[00:04:09.080 --> 00:04:11.080]   a few experts.
+[00:04:11.080 --> 00:04:16.120]   So, there are different strategies, maybe we'll talk about it later on.
+[00:04:16.120 --> 00:04:22.440]   And the output is simply sort of the weighted mixture of all selected experts' outputs.
+[00:04:22.440 --> 00:04:38.160]   So, they've been pretty successful primarily in translation, but there were some complexities
+[00:04:38.160 --> 00:04:41.880]   that hindered their broader use in NLP.
+[00:04:41.880 --> 00:04:49.880]   And so, the Switch Transformer paper addresses some of those, and we'll be discussing how
+[00:04:49.880 --> 00:04:56.960]   to fix training instabilities or reduce communication costs and reduce model complexity.
+[00:04:56.960 --> 00:05:01.920]   All right, Barrett, do you want to go?
+[00:05:01.920 --> 00:05:02.920]   Yeah.
+[00:05:02.920 --> 00:05:07.520]   So, one kind of approach that we're going to have for sparsity is the Switch Transformer,
+[00:05:07.520 --> 00:05:13.080]   which is kind of like a simplified mixture of expert variant along with some other improved
+[00:05:13.080 --> 00:05:19.560]   training and fine-tuning techniques that allow it to be stably trained and also perform better
+[00:05:19.560 --> 00:05:22.880]   when fine-tuned on a lot of downstream tasks.
+[00:05:22.880 --> 00:05:27.320]   And so, yeah, so the Switch Transformer kind of model works as the following.
+[00:05:27.320 --> 00:05:32.880]   So, you have some transformer model that has self-attention and feed-forward layers.
+[00:05:32.880 --> 00:05:37.240]   And the idea is that we replace maybe one every two or one every four feed-forward layers
+[00:05:37.240 --> 00:05:39.960]   with a Switch Transformer layer.
+[00:05:39.960 --> 00:05:46.360]   So, you can see on the left is like one kind of layer block, which is self-attention, then
+[00:05:46.360 --> 00:05:49.400]   add normalize, then a feed-forward layer, then add normalize.
+[00:05:49.400 --> 00:05:53.920]   And in this case, we're replacing the normal feed-forward layer with the Switch layer.
+[00:05:53.920 --> 00:05:57.000]   And we can see an illustration of this on the right.
+[00:05:57.000 --> 00:06:01.320]   So, on the right, we can see that the layer has two inputs.
+[00:06:01.320 --> 00:06:04.480]   One is the token more, the other is the token parameters.
+[00:06:04.480 --> 00:06:09.400]   And we can see that these embedding representations will get sent to a router, which is exactly
+[00:06:09.400 --> 00:06:10.960]   how it works in the mixture of expert.
+[00:06:10.960 --> 00:06:15.240]   So, the router is basically just going to be getting a distribution over all of the
+[00:06:15.240 --> 00:06:16.240]   experts.
+[00:06:16.240 --> 00:06:20.760]   So, in this case, we can see that the highest probability is going to the expert number
+[00:06:20.760 --> 00:06:23.080]   two out of the four experts.
+[00:06:23.080 --> 00:06:27.960]   And then the right token is actually having the most probability on the first feed-forward
+[00:06:27.960 --> 00:06:30.040]   weight, which is like the first expert.
+[00:06:30.040 --> 00:06:33.760]   So, yeah, we can see here that what we're going to do is in the Switch Transformer,
+[00:06:33.760 --> 00:06:34.760]   which is very simple.
+[00:06:34.760 --> 00:06:38.040]   It's just send it to the highest probability expert.
+[00:06:38.040 --> 00:06:42.120]   And so, here we can see where the adaptive computation lies, where we'll have four sets
+[00:06:42.120 --> 00:06:43.480]   of weights.
+[00:06:43.480 --> 00:06:46.560]   There's some shared weights and computation across all the tokens.
+[00:06:46.560 --> 00:06:50.800]   For example, the self-attention layer is computed exactly the same for the more token and for
+[00:06:50.800 --> 00:06:52.920]   the parameters token.
+[00:06:52.920 --> 00:06:56.720]   But in the sparse Switch layer, we can see that actually the inputs are, while having
+[00:06:56.720 --> 00:07:00.360]   the same amount of floating point operations applied to them, actually have different weight
+[00:07:00.360 --> 00:07:03.680]   matrices.
+[00:07:03.680 --> 00:07:05.160]   Next slide.
+[00:07:05.160 --> 00:07:06.160]   Yeah.
+[00:07:06.160 --> 00:07:10.920]   So, that's the kind of high-level idea with Switch Transformer, is that instead of sending
+[00:07:10.920 --> 00:07:14.940]   a token to multiple different experts, which can also increase the communication costs,
+[00:07:14.940 --> 00:07:18.920]   as I'll go into a little bit later, it also just significantly simplifies the algorithm
+[00:07:18.920 --> 00:07:22.120]   by just only sending it to one expert.
+[00:07:22.120 --> 00:07:26.940]   So, for the improved training methodology, we focused on three different things to help
+[00:07:26.940 --> 00:07:29.560]   improve the training of sparse models.
+[00:07:29.560 --> 00:07:33.400]   The first was selected precision, which allows these sparse models to be trained in lower
+[00:07:33.400 --> 00:07:36.560]   precision formats, which is incredibly important.
+[00:07:36.560 --> 00:07:40.640]   Most of the models we train, we really don't want to be using float 32, because it's just
+[00:07:40.640 --> 00:07:41.640]   slower to compute.
+[00:07:41.640 --> 00:07:45.680]   And also, when you're communicating tensors across different processes and stuff, it's
+[00:07:45.680 --> 00:07:49.120]   twice as slow, just because there's twice as many things.
+[00:07:49.120 --> 00:07:53.160]   Also, we have some initialization tricks and some training tricks as well for allowing
+[00:07:53.160 --> 00:07:57.200]   them to be trained more stably, especially as the models grow in size, which is like
+[00:07:57.200 --> 00:08:02.800]   a new initialization method, along with a change to the learning rate schedule.
+[00:08:02.800 --> 00:08:07.260]   And third, since that our models have so many more parameters, we do notice definitely different
+[00:08:07.260 --> 00:08:12.160]   overfitting dynamics, especially once we fine tune these models that have been pre-trained
+[00:08:12.160 --> 00:08:16.880]   on all of the internet on these small tasks with maybe only 50 to 100,000 examples, that
+[00:08:16.880 --> 00:08:19.080]   they can be much more prone to overfitting.
+[00:08:19.080 --> 00:08:24.720]   So we also look at some custom regularization to help prevent some of the overfitting that
+[00:08:24.720 --> 00:08:26.400]   we observe.
+[00:08:26.400 --> 00:08:31.520]   And finally, we also talk about this differentiable load balancing technique we make, which kind
+[00:08:31.520 --> 00:08:36.200]   of allows each expert to roughly get the same amount of tokens.
+[00:08:36.200 --> 00:08:39.480]   Because this is very important, especially given that we want the stuff to be efficient
+[00:08:39.480 --> 00:08:40.480]   on hardware.
+[00:08:40.480 --> 00:08:44.080]   We want roughly each expert to have similar amounts of tokens sent to it.
+[00:08:44.080 --> 00:08:49.040]   And so to kind of encourage this, we tack on an additional load balancing loss along
+[00:08:49.040 --> 00:08:52.580]   with our cross-entropy loss that we're training with.
+[00:08:52.580 --> 00:08:53.580]   Next slide.
+[00:08:53.580 --> 00:08:54.580]   OK.
+[00:08:54.580 --> 00:08:56.520]   So here, I'm going to go into selected precision.
+[00:08:56.520 --> 00:09:00.080]   So yeah, again, so when we're training large models, it's really important that we should
+[00:09:00.080 --> 00:09:02.080]   be able to train them in lower precision formats.
+[00:09:02.080 --> 00:09:07.400]   So instead of each weight being an activation, being 32 bits, we want to shrink it down to
+[00:09:07.400 --> 00:09:08.400]   16 bits.
+[00:09:08.400 --> 00:09:11.220]   And we use the bfloat16 representation.
+[00:09:11.220 --> 00:09:16.240]   And what we found out of the gate is that these models are just unstable, especially
+[00:09:16.240 --> 00:09:19.700]   the sparse models are much more unstable than the dense models in terms of you'll train
+[00:09:19.700 --> 00:09:23.040]   it for 10,000, 20,000 steps, and then the losses would just diverge.
+[00:09:23.040 --> 00:09:25.620]   This was something that we frequently encountered.
+[00:09:25.620 --> 00:09:30.740]   And so one key thing that we found is that basically, you need to be casting a part of
+[00:09:30.740 --> 00:09:38.180]   the computation in float32 for these models to be able to be trained stably.
+[00:09:38.180 --> 00:09:42.840]   And the key component that we found that you need to cast is the router computation.
+[00:09:42.840 --> 00:09:47.060]   And essentially, we can go into the technical details a little bit more later.
+[00:09:47.060 --> 00:09:51.140]   But basically, any time that there's these exponentiation functions, it's very important
+[00:09:51.140 --> 00:09:56.720]   that we are having higher and higher precision because of round off errors that can then
+[00:09:56.720 --> 00:10:01.480]   drastically change the output of some kind of exponentiation function.
+[00:10:01.480 --> 00:10:06.580]   So for example, if you have an exponentiation function and you change it by 0.1 or 0.2 or
+[00:10:06.580 --> 00:10:11.860]   0.3, this can drastically change the output of exponentiating it, especially depending
+[00:10:11.860 --> 00:10:14.080]   on how large the input is.
+[00:10:14.080 --> 00:10:15.940]   So yeah, so this was a very important thing.
+[00:10:15.940 --> 00:10:19.440]   And it basically doesn't change the compute at all and allows the models to just be significantly
+[00:10:19.440 --> 00:10:20.440]   more stable.
+[00:10:20.440 --> 00:10:24.060]   Next slide.
+[00:10:24.060 --> 00:10:27.220]   So the second thing we looked at is also the initialization scale.
+[00:10:27.220 --> 00:10:31.980]   So like the standard way that we were initializing these models, we found to also just make the
+[00:10:31.980 --> 00:10:36.260]   models much more prone to being unstable and/or just performing worse.
+[00:10:36.260 --> 00:10:40.380]   So one thing that we did that we found was very effective was to just simply make the
+[00:10:40.380 --> 00:10:42.460]   initialization scale much smaller.
+[00:10:42.460 --> 00:10:46.300]   And when we did this, we found that the quality just drastically improved, and it was like
+[00:10:46.300 --> 00:10:48.940]   a very simple fix.
+[00:10:48.940 --> 00:10:51.840]   Next slide.
+[00:10:51.840 --> 00:10:55.300]   And the third thing I mentioned, where since we noticed that these models are much more
+[00:10:55.300 --> 00:10:59.600]   prone to overfitting, since they just have significantly more parameters, is that we
+[00:10:59.600 --> 00:11:03.100]   also use much more dropout for the expert layers only.
+[00:11:03.100 --> 00:11:08.320]   So here we can see we have the T5 base, which is a dense model, and then we have a bunch
+[00:11:08.320 --> 00:11:10.120]   of different switch variants on that.
+[00:11:10.120 --> 00:11:13.920]   And we found to be the most effective on these four different fine-tuning tasks was just
+[00:11:13.920 --> 00:11:17.800]   to really significantly increase the dropout rate inside the expert layers.
+[00:11:17.800 --> 00:11:21.160]   And we found that this was pretty effective for combating the overfitting.
+[00:11:21.160 --> 00:11:22.160]   Next slide.
+[00:11:22.160 --> 00:11:23.160]   Better?
+[00:11:23.160 --> 00:11:24.160]   Yeah.
+[00:11:24.160 --> 00:11:25.160]   We have a question.
+[00:11:25.160 --> 00:11:26.160]   Oh, awesome.
+[00:11:26.160 --> 00:11:27.160]   OK.
+[00:11:27.160 --> 00:11:28.160]   For one of the students.
+[00:11:28.160 --> 00:11:29.160]   Yeah.
+[00:11:29.160 --> 00:11:30.160]   OK, let me take a look.
+[00:11:30.160 --> 00:11:31.160]   Do you want to go ahead?
+[00:11:31.160 --> 00:11:32.160]   Yeah, I can ask.
+[00:11:32.160 --> 00:11:36.880]   It was just in reference to the previous table where you have throughput and precision.
+[00:11:36.880 --> 00:11:43.320]   It just seems surprising to me that you could match this 1390 number using selective precision.
+[00:11:43.320 --> 00:11:46.960]   It seems like I would expect it to be something in between.
+[00:11:46.960 --> 00:11:47.960]   Yeah.
+[00:11:47.960 --> 00:11:52.320]   So it essentially comes down to the fact that there's maybe a little bit of noise sampled
+[00:11:52.320 --> 00:11:53.440]   with the speed.
+[00:11:53.440 --> 00:11:58.720]   And the only part we're casting is the router, which is maybe such an insignificant portion
+[00:11:58.720 --> 00:12:00.240]   of the computation.
+[00:12:00.240 --> 00:12:01.600]   And there's zero communication there.
+[00:12:01.600 --> 00:12:04.140]   That is essentially like a free operation in the network.
+[00:12:04.140 --> 00:12:08.720]   So whether you cast it to VFLOW16 or FLOW32, it doesn't actually impact the speed at all
+[00:12:08.720 --> 00:12:12.320]   within the precision that we can actually measure the speed.
+[00:12:12.320 --> 00:12:19.240]   And also, these architectures only use sparse layer once, one every four layers.
+[00:12:19.240 --> 00:12:27.320]   And so, yeah, essentially, the FLOW32 part is kind of very negligible in the entire architecture.
+[00:12:27.320 --> 00:12:32.360]   It's like, for example, I think off the top of my head, it's like 1/40th the computation
+[00:12:32.360 --> 00:12:38.040]   that would cost for you to do the first weight matrix multiply in a dense, ReLU dense layer
+[00:12:38.040 --> 00:12:39.040]   or something.
+[00:12:39.040 --> 00:12:40.040]   So it's a very, very small part.
+[00:12:40.040 --> 00:12:44.000]   And yeah, we're not using them very frequently, like Erwin mentioned as well.
+[00:12:44.000 --> 00:12:48.800]   Got it, OK, thanks.
+[00:12:48.800 --> 00:12:51.480]   Yeah, and then just a quick point on this.
+[00:12:51.480 --> 00:12:54.960]   I won't go into some of the technical details, but yeah, we definitely-- since we're training
+[00:12:54.960 --> 00:12:58.660]   these things on hardware, we really-- I think a big part of the mixture of experts paradigm
+[00:12:58.660 --> 00:13:03.680]   is that these things are designed such that it maps really efficiently to hardware.
+[00:13:03.680 --> 00:13:06.360]   So we want to be doing dense matrix multiplies.
+[00:13:06.360 --> 00:13:10.280]   And for this to work really well, we also want to be able to have roughly equal amount
+[00:13:10.280 --> 00:13:13.740]   of tokens going to each of the different experts.
+[00:13:13.740 --> 00:13:17.800]   And I think this isn't that sensitive to the load balancing formulation.
+[00:13:17.800 --> 00:13:18.800]   Like, we tried a few things.
+[00:13:18.800 --> 00:13:19.800]   A lot of them worked.
+[00:13:19.800 --> 00:13:23.640]   But yeah, essentially, you definitely want some kind of load balancing loss added on
+[00:13:23.640 --> 00:13:25.040]   when using sparsity.
+[00:13:25.040 --> 00:13:27.640]   Yeah, next slide.
+[00:13:27.640 --> 00:13:31.960]   Yeah, Erwin, go ahead.
+[00:13:31.960 --> 00:13:55.020]   Yeah, so the frameworks, the library we use rely on static shapes for-- OK, yeah, so XLA,
+[00:13:55.020 --> 00:14:03.220]   so the compiler for TensorFlow and MeshTensorFlow expects static shapes for tensors.
+[00:14:03.220 --> 00:14:11.980]   However, the computations in switch transformers are dynamic because of the router, right?
+[00:14:11.980 --> 00:14:15.700]   Different inputs will be routed to different experts.
+[00:14:15.700 --> 00:14:22.580]   And so we need to specify ahead of time how many tokens will be sent to each expert.
+[00:14:22.580 --> 00:14:29.120]   And so we will introduce this expert capacity hyperparameter to specify that.
+[00:14:29.120 --> 00:14:37.960]   And that's going to be a static number which says how many tokens each expert can process.
+[00:14:37.960 --> 00:14:43.300]   And so in practice, we instead parametrize this by having a quantity called the capacity
+[00:14:43.300 --> 00:14:44.300]   factor.
+[00:14:44.300 --> 00:14:47.940]   And so we have an example here.
+[00:14:47.940 --> 00:14:56.660]   So the bottom row is a bunch of tokens on one device.
+[00:14:56.660 --> 00:15:02.880]   And then you need to sort of route those tokens to multiple devices or multiple experts.
+[00:15:02.880 --> 00:15:08.740]   So if too many tokens are routed to a single expert, some tokens will be dropped because,
+[00:15:08.740 --> 00:15:14.000]   as we said, experts have a fixed capacity.
+[00:15:14.000 --> 00:15:17.900]   So that's the example on the left where the capacity factor is one, and that basically
+[00:15:17.900 --> 00:15:27.180]   means that there's no extra buffer for routing tokens.
+[00:15:27.180 --> 00:15:30.780]   So instead of that, we can use the capacity factor that's larger than one.
+[00:15:30.780 --> 00:15:34.740]   So on the right, you have an example with 1.5.
+[00:15:34.740 --> 00:15:42.580]   So that means that now each expert has three slots that can process three tokens.
+[00:15:42.580 --> 00:15:46.920]   And so that prevents token dropping because we have more capacity.
+[00:15:46.920 --> 00:16:02.860]   But the issue is that this means more expensive communication across devices.
+[00:16:02.860 --> 00:16:07.820]   One thing that we also experimented with was this method called no token left behind.
+[00:16:07.820 --> 00:16:09.000]   And the idea was the following.
+[00:16:09.000 --> 00:16:15.700]   So since we have to have a fixed batch size for each expert, and there can be token dropping,
+[00:16:15.700 --> 00:16:19.860]   we're thinking that, hey, yeah, having tokens dropped or having some tokens not having any
+[00:16:19.860 --> 00:16:23.740]   computation applied to it is probably hurting the model performance.
+[00:16:23.740 --> 00:16:26.060]   So what if we do a multistage routing procedure?
+[00:16:26.060 --> 00:16:29.500]   So first, you do the normal routing where it's like you send each token to its highest
+[00:16:29.500 --> 00:16:30.900]   probability expert.
+[00:16:30.900 --> 00:16:36.460]   But then any dropped tokens, you then send to their second highest probability expert,
+[00:16:36.460 --> 00:16:37.460]   and so forth and so on.
+[00:16:37.460 --> 00:16:41.540]   Or you can basically repeat this process to guarantee that no tokens are being dropped.
+[00:16:41.540 --> 00:16:46.020]   Interestingly, actually, this approach didn't empirically improve model performance.
+[00:16:46.020 --> 00:16:48.420]   If anything, it actually kind of hurt it.
+[00:16:48.420 --> 00:16:51.060]   And we thought that was actually very interesting.
+[00:16:51.060 --> 00:16:54.380]   And I think the intuition is that, you know, once the model learns it wants to send a token
+[00:16:54.380 --> 00:16:58.060]   to one expert, like it really wants to have that computation applied to it.
+[00:16:58.060 --> 00:17:03.460]   And just applying some other computation doesn't, you know, have at all the same property, along
+[00:17:03.460 --> 00:17:06.400]   with it actually maybe being potentially detrimental.
+[00:17:06.400 --> 00:17:10.240]   So yeah, we thought that was pretty interesting, as we were very optimistic this would potentially,
+[00:17:10.240 --> 00:17:13.340]   you know, get improved performance, but it ended up not really making a difference.
+[00:17:13.340 --> 00:17:15.380]   And we found this quite surprising.
+[00:17:15.380 --> 00:17:21.220]   We have a question from…
+[00:17:21.220 --> 00:17:25.380]   I think it will actually kind of like address literally the last point that you brought
+[00:17:25.380 --> 00:17:26.380]   up.
+[00:17:26.380 --> 00:17:31.340]   I think when I think about like a mixture of experts, usually like they specialize in
+[00:17:31.340 --> 00:17:33.140]   like different things, right?
+[00:17:33.140 --> 00:17:41.740]   So I think it was like, just like a lot, like I was just wondering, like if you send it
+[00:17:41.740 --> 00:17:49.140]   to like the second best or whatever, like what if like all of your tokens would be particularly
+[00:17:49.140 --> 00:17:55.000]   good for like one expert, and then you only like process, let's say, like 20% of your
+[00:17:55.000 --> 00:17:57.000]   tokens.
+[00:17:57.000 --> 00:18:02.080]   So that ends up being better than rerouting them to anything else.
+[00:18:02.080 --> 00:18:03.080]   Exactly.
+[00:18:03.080 --> 00:18:04.080]   Yeah.
+[00:18:04.080 --> 00:18:06.760]   So yeah, even if you're dropping a lot of tokens, it's not beneficial to be sending
+[00:18:06.760 --> 00:18:09.440]   them to the second, third or fourth best thing.
+[00:18:09.440 --> 00:18:12.380]   And one actually interesting property that we, you know, noticed about these models is
+[00:18:12.380 --> 00:18:16.980]   they're surprisingly robust to token dropping, especially during fine tuning.
+[00:18:16.980 --> 00:18:17.980]   So yeah.
+[00:18:17.980 --> 00:18:19.680]   So in the standard paradigm, what we'll do is we'll pre-train this thing, we'll have
+[00:18:19.680 --> 00:18:24.480]   some load balancing loss, which makes the tokens pretty balanced actually.
+[00:18:24.480 --> 00:18:27.640]   But then during fine tuning, where it's like, we really want to fine tune it on a specific
+[00:18:27.640 --> 00:18:28.640]   task.
+[00:18:28.640 --> 00:18:31.780]   We actually studied this exact question and we were studying, does it help to have a load
+[00:18:31.780 --> 00:18:34.360]   balancing loss during fine tuning or not?
+[00:18:34.360 --> 00:18:37.560]   And so if you have the load balancing loss, yeah, that kind of is encouraging, you know,
+[00:18:37.560 --> 00:18:41.240]   for the specific task, we want to try to have, you know, all the experts be used versus turning
+[00:18:41.240 --> 00:18:42.240]   it off.
+[00:18:42.240 --> 00:18:45.600]   Whereas there's definitely some, you know, prior specialization and it's actually much
+[00:18:45.600 --> 00:18:47.760]   better to just turn the auxiliary loss off.
+[00:18:47.760 --> 00:18:51.760]   And even if it's like, you know, 60 to 70% of the tokens are being dropped, that actually
+[00:18:51.760 --> 00:18:55.520]   performs much better than, you know, having all the tokens balanced.
+[00:18:55.520 --> 00:19:00.920]   But doesn't a load balancing loss encourage basically all the experts to learn very similar
+[00:19:00.920 --> 00:19:05.320]   weights and then just randomly assign your tokens?
+[00:19:05.320 --> 00:19:08.980]   Because then it doesn't matter to which expert stuff is being sent to.
+[00:19:08.980 --> 00:19:12.120]   So when we use the load balancing loss, like the routing mechanism is definitely learned.
+[00:19:12.120 --> 00:19:16.520]   So the model definitely is encouraged to, you know, choose an expert that it wants to
+[00:19:16.520 --> 00:19:17.520]   send it to for good.
+[00:19:17.520 --> 00:19:18.520]   Right.
+[00:19:18.520 --> 00:19:23.760]   But like if all the experts learn the same weights, then the router learns basically,
+[00:19:23.760 --> 00:19:26.720]   oh, it doesn't matter where I send it to.
+[00:19:26.720 --> 00:19:32.760]   So if you encourage load balancing, you encourage technically that like you want any loss to
+[00:19:32.760 --> 00:19:33.760]   fit with any expert.
+[00:19:33.760 --> 00:19:34.760]   Right.
+[00:19:34.760 --> 00:19:39.320]   I mean, that's maybe the extreme behavior if you have a very high sort of load balancing
+[00:19:39.320 --> 00:19:44.520]   loss coefficient, but in practice that coefficient is kind of tuned and we observe that for,
+[00:19:44.520 --> 00:19:51.040]   you know, small enough values, the router still learns like semantic, like meaningful
+[00:19:51.040 --> 00:19:52.040]   routing.
+[00:19:52.040 --> 00:19:53.040]   Yeah.
+[00:19:53.040 --> 00:19:55.920]   Because it's like a balance between this, like, you know, cross entropy loss and this
+[00:19:55.920 --> 00:19:57.440]   load balancing loss.
+[00:19:57.440 --> 00:20:00.880]   And so on one hand, yeah, you definitely want to encourage the model to be balanced.
+[00:20:00.880 --> 00:20:04.760]   Then on the other hand, you also want to just get good empirical performance.
+[00:20:04.760 --> 00:20:08.680]   And yeah, the model is able to definitely like on one hand, learn and specialize the
+[00:20:08.680 --> 00:20:11.640]   experts where they have different weights such that it's like, you know, definitely
+[00:20:11.640 --> 00:20:14.960]   it expects certain tokens to be sent to certain experts, but on the other hand, still be reasonably
+[00:20:14.960 --> 00:20:18.800]   balanced so that the models are efficiently run on like modern hardware.
+[00:20:18.800 --> 00:20:19.800]   Exactly.
+[00:20:19.800 --> 00:20:24.080]   We also have a question from the classroom.
+[00:20:24.080 --> 00:20:28.480]   So the question that I want to ask is, it seems to me like this is a very experimental
+[00:20:28.480 --> 00:20:29.480]   talk.
+[00:20:29.480 --> 00:20:30.480]   We're talking about floating point precision.
+[00:20:30.480 --> 00:20:31.480]   We're talking about different approaches and currently work well.
+[00:20:31.480 --> 00:20:37.440]   And whenever we're dealing with clients, there's a question of what is the research question?
+[00:20:37.440 --> 00:20:39.040]   And I feel like I missed that.
+[00:20:39.040 --> 00:20:43.000]   So what are we trying to answer with all these experiments?
+[00:20:43.000 --> 00:20:44.000]   Yeah.
+[00:20:44.000 --> 00:20:48.800]   I think the, I think the high level of research question is like, you know, can we, you know,
+[00:20:48.800 --> 00:20:53.920]   create models that are, you know, like doing adaptive computation from the standpoint of
+[00:20:53.920 --> 00:20:58.760]   like, no, can we try to make models more simulate the dynamics that we think models should most
+[00:20:58.760 --> 00:21:03.040]   naturally use, which is different inputs to have different amounts of computation applied,
+[00:21:03.040 --> 00:21:06.080]   have different weights applied to them, you know, and basically all of this, basically
+[00:21:06.080 --> 00:21:09.560]   we're trying to research and like figure out how can we create like a new framework for
+[00:21:09.560 --> 00:21:13.440]   these models to be trained as opposed to their dense counterparts that, you know, for every
+[00:21:13.440 --> 00:21:17.040]   input are always having the same exact computation applied.
+[00:21:17.040 --> 00:21:21.040]   So that's interesting because when you say the same exact computation applied, one might
+[00:21:21.040 --> 00:21:26.960]   imagine that like, to me, the immediate thing is about how long to deliberate about something.
+[00:21:26.960 --> 00:21:31.360]   What I mean by that is if we want to have variable length computation, you could imagine
+[00:21:31.360 --> 00:21:35.280]   that I could have a short amount of computation or it could have much older computation, but
+[00:21:35.280 --> 00:21:39.480]   there's like, you have like, why then do we instead consider the dimension of different
+[00:21:39.480 --> 00:21:40.480]   computation?
+[00:21:40.480 --> 00:21:43.480]   I mean, assuming of course that these experts do indeed learn different things, which I
+[00:21:43.480 --> 00:21:45.320]   think you'll get to in a minute.
+[00:21:45.320 --> 00:21:46.320]   Yeah.
+[00:21:46.320 --> 00:21:50.880]   So why do we immediately jump to thinking about specialized experts as opposed to thinking
+[00:21:50.880 --> 00:21:52.640]   about variable length computation?
+[00:21:52.640 --> 00:21:57.240]   So, yeah, so this is actually, we actually go into some variable length computation stuff
+[00:21:57.240 --> 00:21:58.240]   later in the talk.
+[00:21:58.240 --> 00:22:01.720]   And I feel like they're both actually just important axes that should both be pushed
+[00:22:01.720 --> 00:22:02.720]   on.
+[00:22:02.720 --> 00:22:07.800]   I think, I guess, yeah, I guess it's kind of, you know, yeah, I'm not afraid of my question,
+[00:22:07.800 --> 00:22:10.760]   but what I'm trying to understand is you're thinking about why did you decide to attack
+[00:22:10.760 --> 00:22:11.760]   this one first?
+[00:22:11.760 --> 00:22:14.560]   I want to understand why your team chose to go this direction first.
+[00:22:14.560 --> 00:22:15.720]   Yeah, absolutely.
+[00:22:15.720 --> 00:22:20.880]   So I think that one empirically, it seems that sparsity has led to better empirical
+[00:22:20.880 --> 00:22:23.960]   results in the field of deep learning than adaptive computation so far.
+[00:22:23.960 --> 00:22:28.320]   And I think the way that we use these things maps really well to our modern hardware, which
+[00:22:28.320 --> 00:22:29.820]   is also very promising.
+[00:22:29.820 --> 00:22:32.840]   And I think the way we were kind of looking at it as like sparsity is like a first step
+[00:22:32.840 --> 00:22:37.320]   towards doing more interesting and general adaptive computation where, and we're, and
+[00:22:37.320 --> 00:22:41.000]   you know, cause I think it's like, you know, this stuff is complicated and typically starting
+[00:22:41.000 --> 00:22:45.720]   from something that works well is better than necessarily like, you know, you know, trying
+[00:22:45.720 --> 00:22:49.080]   something that's not necessarily as proven out and then trying to like get it to work
+[00:22:49.080 --> 00:22:50.080]   really well.
+[00:22:50.080 --> 00:22:53.360]   So I think we're kind of starting from sparsity, which like, you know, Noam Shazier and others
+[00:22:53.360 --> 00:22:55.600]   got to work really well in the context of LSTMs.
+[00:22:55.600 --> 00:22:58.920]   We were kind of interested in, you know, let's port some of this to transformers.
+[00:22:58.920 --> 00:22:59.920]   Let's get it working really well.
+[00:22:59.920 --> 00:23:03.080]   And then let's slowly start expanding towards a lot of the other natural questions that
+[00:23:03.080 --> 00:23:04.080]   you mentioned.
+[00:23:04.080 --> 00:23:07.640]   Whereas like, okay, whereas instead of, you know, different weights per core, let's also
+[00:23:07.640 --> 00:23:10.320]   maybe have different computation per core and all of this.
+[00:23:10.320 --> 00:23:14.240]   So that's, I guess how we were kind of building the natural, like, you know, buildup and progression
+[00:23:14.240 --> 00:23:15.240]   of our research.
+[00:23:15.240 --> 00:23:16.240]   Got it.
+[00:23:16.240 --> 00:23:17.240]   Cool.
+[00:23:17.240 --> 00:23:18.240]   Thank you.
+[00:23:18.240 --> 00:23:19.240]   Yeah.
+[00:23:19.240 --> 00:23:21.280]   What do you think Erwin?
+[00:23:21.280 --> 00:23:22.280]   Anything else to add?
+[00:23:22.280 --> 00:23:23.280]   Yeah.
+[00:23:23.280 --> 00:23:31.520]   I mean, I guess I kind of see adaptive computation and sparsity as, you know, related, but separate
+[00:23:31.520 --> 00:23:32.520]   things.
+[00:23:32.520 --> 00:23:36.960]   So, you know, sparsity is more like different parameters for each example and adaptive computation
+[00:23:36.960 --> 00:23:42.560]   might be more different amount of flops and we have some of that with the token dropping,
+[00:23:42.560 --> 00:23:49.200]   but that's kind of, you know, that's not the main motivation.
+[00:23:49.200 --> 00:23:56.440]   Definitely as Barrett mentioned, I would say, you know, no one really has figured out adaptive
+[00:23:56.440 --> 00:23:59.200]   computation yet for deep learning.
+[00:23:59.200 --> 00:24:05.640]   And one reason is because we have these, you know, accelerators, right.
+[00:24:05.640 --> 00:24:11.600]   Expect like sort of, you know, we need to work with like batch, like data parallelism,
+[00:24:11.600 --> 00:24:12.600]   right.
+[00:24:12.600 --> 00:24:19.320]   So, and all of our accelerators and our frameworks use this SPMD paradigm where we're kind of
+[00:24:19.320 --> 00:24:25.200]   supposed to apply the same computation to examples.
+[00:24:25.200 --> 00:24:30.880]   And so if you look at the literature, you have, you know, works like universal transformers
+[00:24:30.880 --> 00:24:36.240]   where they replace the feed forward in the transformer by just a recurrent weight.
+[00:24:36.240 --> 00:24:42.760]   And so it's kind of like an LSTM on each token and the LSTM can stop at different times based
+[00:24:42.760 --> 00:24:45.440]   on some criteria.
+[00:24:45.440 --> 00:24:51.320]   But the way these things are implemented is just through masking because it needs to be
+[00:24:51.320 --> 00:24:55.520]   implemented in the SPMD programming style.
+[00:24:55.520 --> 00:24:59.800]   And so definitely sparsity was kind of like easier to get to work first.
+[00:24:59.800 --> 00:25:06.600]   And also there were some prior results with LSTM, so yeah.
+[00:25:06.600 --> 00:25:09.880]   In terms of like the first question, you know, sort of what's the research question here
+[00:25:09.880 --> 00:25:13.400]   is just like, oh, can we design more efficient models?
+[00:25:13.400 --> 00:25:17.240]   And sparsity is this new axis that hasn't been explored that much.
+[00:25:17.240 --> 00:25:23.640]   And yeah, I think that, you know, I'm happy with just that being the research question.
+[00:25:23.640 --> 00:25:24.640]   Yeah.
+[00:25:24.640 --> 00:25:25.640]   Great.
+[00:25:25.640 --> 00:25:26.640]   Okay.
+[00:25:26.640 --> 00:25:27.640]   Yeah.
+[00:25:27.640 --> 00:25:28.640]   So next slide.
+[00:25:28.640 --> 00:25:29.640]   Yep.
+[00:25:29.640 --> 00:25:30.640]   Oops.
+[00:25:30.640 --> 00:25:31.640]   Yeah.
+[00:25:31.640 --> 00:25:35.440]   Again, so kind of putting it all together.
+[00:25:35.440 --> 00:25:40.160]   So the switch transformer layer selects an expert, like just the top expert, and then
+[00:25:40.160 --> 00:25:44.360]   incorporates a bunch of the general sparse model improvements to, you know, allow it
+[00:25:44.360 --> 00:25:49.840]   to fine tune better, allow it to, you know, be more regularized, allow it to, you know,
+[00:25:49.840 --> 00:25:52.520]   be trained with lower precision formats and a lot of like technical details to just get
+[00:25:52.520 --> 00:25:55.680]   them training and working well.
+[00:25:55.680 --> 00:25:58.120]   Yeah.
+[00:25:58.120 --> 00:26:02.200]   So one thing that we also wanted to do was a comparison between like top one and top
+[00:26:02.200 --> 00:26:07.760]   two routing since top two routing was kind of the, you know, most popular technique.
+[00:26:07.760 --> 00:26:10.400]   And so here we can see we have two different dense models trained of different sizes.
+[00:26:10.400 --> 00:26:14.640]   And we're going to be looking at like the, the pre-training like negative log perplexity.
+[00:26:14.640 --> 00:26:19.300]   So yeah, the bigger the number, the better.
+[00:26:19.300 --> 00:26:20.900]   So next slide.
+[00:26:20.900 --> 00:26:24.560]   So, so, and what we're going to be doing is we're going to be studying them at different
+[00:26:24.560 --> 00:26:26.140]   capacity factors.
+[00:26:26.140 --> 00:26:30.000]   So a capacity factor of 2.0 basically means that there's enough buffer for two tokens
+[00:26:30.000 --> 00:26:32.560]   to be sent to every single expert.
+[00:26:32.560 --> 00:26:36.280]   And we're going to be comparing like top one versus top two routing and also comparing
+[00:26:36.280 --> 00:26:40.560]   their speeds along with their like time to get some like threshold quality.
+[00:26:40.560 --> 00:26:41.560]   Okay.
+[00:26:41.560 --> 00:26:42.560]   Yeah.
+[00:26:42.560 --> 00:26:48.800]   So here we can see in the capacity factor 2.0 case that the MOE models outperform switch
+[00:26:48.800 --> 00:26:52.800]   transformer, which makes a lot of sense, like since switch transformer is only, you know,
+[00:26:52.800 --> 00:26:57.920]   sending like a top one token to each expert, the mixture of expert is sending, you know,
+[00:26:57.920 --> 00:26:58.920]   two tokens.
+[00:26:58.920 --> 00:27:01.960]   So that makes sense that this extra buffer will be like disproportionately beneficial
+[00:27:01.960 --> 00:27:04.120]   for the mixture of expert models.
+[00:27:04.120 --> 00:27:11.020]   And so we noticed that and next slide or next now, when we, so the really interesting parts
+[00:27:11.020 --> 00:27:14.940]   for the top one routing becomes when we lower the capacity factors.
+[00:27:14.940 --> 00:27:17.800]   So having a high capacity factor is bad for many reasons.
+[00:27:17.800 --> 00:27:22.320]   One of which is it really incurs more of these, you know, communication costs for sending
+[00:27:22.320 --> 00:27:24.280]   tokens to the correct experts.
+[00:27:24.280 --> 00:27:28.280]   It also incurs more compute costs and also incurs like a lot of memory overhead.
+[00:27:28.280 --> 00:27:32.760]   So if you can get this lower, it's, it's usually like a very, very good thing.
+[00:27:32.760 --> 00:27:37.460]   And so what we see here is that switch transformer actually outperforms mixture of experts when
+[00:27:37.460 --> 00:27:40.400]   you have like a lower capacity factor.
+[00:27:40.400 --> 00:27:46.500]   And we can see that the time to quality threshold, we you know, yeah, we, we get there much quicker.
+[00:27:46.500 --> 00:27:51.460]   And so even across the 2.0 and the 1.25 capacity factors, like the kind of Pareto optimal thing
+[00:27:51.460 --> 00:27:56.600]   we saw in our setup is to use switch transformer at a lower capacity factor, just due to the
+[00:27:56.600 --> 00:28:00.440]   fact that while the quality is worse, a little bit worse on a step basis, it's just like
+[00:28:00.440 --> 00:28:01.520]   much faster to run.
+[00:28:01.520 --> 00:28:05.220]   So it's kind of the Pareto optimal decision.
+[00:28:05.220 --> 00:28:06.220]   Next slide.
+[00:28:06.220 --> 00:28:11.660]   And we can also be seeing that like for capacity factor 1.0, again, we can see that this really
+[00:28:11.660 --> 00:28:17.020]   disproportionately benefits switch transformer and is even better on a Pareto standpoint
+[00:28:17.020 --> 00:28:20.060]   than the 1.25 capacity factors.
+[00:28:20.060 --> 00:28:24.000]   And interestingly, since, you know, MOE also does like a little bit more computation, we
+[00:28:24.000 --> 00:28:28.100]   can also just increase the amount of compute done elsewhere in the model.
+[00:28:28.100 --> 00:28:31.740]   And we can see that that's like a much more efficient allocation of compute.
+[00:28:31.740 --> 00:28:37.240]   So yeah, overall, our takeaway is that, yeah, lower capacity factors using op one routing
+[00:28:37.240 --> 00:28:42.220]   is more Pareto efficient than, you know, using like the top two routing at higher capacity
+[00:28:42.220 --> 00:28:43.220]   factors.
+[00:28:43.220 --> 00:28:44.220]   Next slide.
+[00:28:44.220 --> 00:28:47.980]   Erwin, you can take it over.
+[00:28:47.980 --> 00:28:48.980]   Okay.
+[00:28:48.980 --> 00:28:55.700]   So next we'll look at how a switch transformer scales as a function of the number of exports
+[00:28:55.700 --> 00:28:59.220]   in the switch layers.
+[00:28:59.220 --> 00:29:06.140]   And so on the right side here, you see a plot that shows perplexity versus training steps
+[00:29:06.140 --> 00:29:12.860]   for different switch architectures, ranging from T5 base, which is basically no export
+[00:29:12.860 --> 00:29:17.940]   or a single export up to 128 exports.
+[00:29:17.940 --> 00:29:21.820]   And so you see that as we increase the number of exports, which also increases the number
+[00:29:21.820 --> 00:29:30.840]   of parameters, of sparse parameters, you get sort of speed ups, you know, you get increasing
+[00:29:30.840 --> 00:29:32.940]   speed ups over the dense baseline.
+[00:29:32.940 --> 00:29:39.000]   And they're like sort of diminishing returns to, you know, multiplying to, you know, increasing
+[00:29:39.000 --> 00:29:44.580]   the number of exports as well.
+[00:29:44.580 --> 00:29:50.780]   So the previous figure was looking at perplexity versus training steps.
+[00:29:50.780 --> 00:29:54.780]   Here we look at perplexity versus strength time.
+[00:29:54.780 --> 00:30:00.900]   So that includes, you know, all the, you know, additional communication costs when you have
+[00:30:00.900 --> 00:30:07.700]   more exports or, you know, comparing to the dense baseline.
+[00:30:07.700 --> 00:30:17.580]   And so this is for switch base or T5 base, and we observe up to 7x speedups over T5 base.
+[00:30:17.580 --> 00:30:24.740]   And so, you know, just to maybe contextualize these numbers, like, you know, 7x speedups
+[00:30:24.740 --> 00:30:26.620]   in deep learning are pretty hard to obtain.
+[00:30:26.620 --> 00:30:34.300]   And so I think this is one of the, you know, one of the results that, you know, can spark
+[00:30:34.300 --> 00:30:39.260]   a lot of interest in sparse models, even if it's only for pre-training for now, like just
+[00:30:39.260 --> 00:30:47.660]   having that number is like, you know, maybe there's a significant, there's something significant
+[00:30:47.660 --> 00:30:50.660]   that can be obtained here.
+[00:30:50.660 --> 00:30:55.660]   Okay, so sparse scaling loss.
+[00:30:55.660 --> 00:31:03.580]   So here we'll look at sort of loss versus sparse model parameters, which are increased
+[00:31:03.580 --> 00:31:06.980]   by increasing the number of exports.
+[00:31:06.980 --> 00:31:13.380]   And so similarly to the sort of, you know, normal scaling law paper, we observed that
+[00:31:13.380 --> 00:31:23.020]   as you increase the parameters, which the sparse parameters and keep the flops fixed,
+[00:31:23.020 --> 00:31:27.900]   you get diminishing, like consistent gains, but diminishing gains.
+[00:31:27.900 --> 00:31:34.700]   Okay, so now we're going to compare export parallelism and model parallelism.
+[00:31:34.700 --> 00:31:42.340]   So we introduced sparsity or export parallelism as a new dimension to scale models.
+[00:31:42.340 --> 00:31:48.660]   But of course, that's the other one for dense model, which is simply model parallelism where,
+[00:31:48.660 --> 00:31:54.900]   you know, model weights are partitioned across cores once they are above the maximum size
+[00:31:54.900 --> 00:31:57.900]   that you can fit on a single core.
+[00:31:57.900 --> 00:32:05.980]   All right, so, yeah, Bharath, I assume to the left is export parallelism here?
+[00:32:05.980 --> 00:32:11.020]   Yeah, so essentially what we're doing is, yeah, we're kind of comparing a switch-based
+[00:32:11.020 --> 00:32:13.660]   model versus the dense base.
+[00:32:13.660 --> 00:32:18.820]   And we're also comparing against a larger dense model that has used model parallelism.
+[00:32:18.820 --> 00:32:22.380]   And we can see that, you know, because basically when we want to scale a model size, we kind
+[00:32:22.380 --> 00:32:24.340]   of have two axes that we can either go through.
+[00:32:24.340 --> 00:32:28.820]   We can either increase the number of flops by scaling through model parallelism or increase
+[00:32:28.820 --> 00:32:31.620]   the number of parameters by scaling through sparsity.
+[00:32:31.620 --> 00:32:35.500]   And so we can see that, you know, even compared to like, you know, a dense model that's been
+[00:32:35.500 --> 00:32:39.020]   scaled up through model parallelism, that sparsity is still at the scale, a more effective
+[00:32:39.020 --> 00:32:45.180]   way to scale up the model by, you know, still getting 2.5x speedups over this larger dense
+[00:32:45.180 --> 00:32:47.460]   model that was using model parallelism.
+[00:32:47.460 --> 00:32:50.060]   Cool, so next slide.
+[00:32:50.060 --> 00:32:55.740]   Yeah, basically here, T5 large is the dense model that uses model parallelism.
+[00:32:55.740 --> 00:32:58.860]   Yeah, right, go ahead.
+[00:32:58.860 --> 00:32:59.860]   Okay.
+[00:32:59.860 --> 00:33:05.740]   Yeah, and so one thing that we also wanted to look at is like, you know, are these expert
+[00:33:05.740 --> 00:33:09.220]   models effective if you have like, you know, really small amount of computer, just a small
+[00:33:09.220 --> 00:33:10.220]   amount of experts?
+[00:33:10.220 --> 00:33:14.580]   So typically when we're designing these models, like we have one expert per core.
+[00:33:14.580 --> 00:33:17.140]   But if you don't have like a large cluster to run these things on, let's say you just
+[00:33:17.140 --> 00:33:22.140]   have like a GPU with two cores or something, I guess having two experts more effective
+[00:33:22.140 --> 00:33:24.060]   than just like a dense model.
+[00:33:24.060 --> 00:33:25.220]   And the answer is yes.
+[00:33:25.220 --> 00:33:29.420]   So we can see even pretty good scaling properties, even with like a tiny amount of experts, which
+[00:33:29.420 --> 00:33:35.420]   is very, very promising for these models to be used even in like much lower compute regimes.
+[00:33:35.420 --> 00:33:36.420]   Next slide.
+[00:33:36.420 --> 00:33:40.060]   Or when you want to go ahead.
+[00:33:40.060 --> 00:33:41.060]   Okay.
+[00:33:41.060 --> 00:33:42.060]   Yeah.
+[00:33:42.060 --> 00:33:51.140]   And so look at, you know, what things look like when we use different types of parallelism,
+[00:33:51.140 --> 00:33:57.060]   namely expert parallelism to add experts, model parallelism to shard model weights across
+[00:33:57.060 --> 00:34:02.700]   cores and also data parallelism, which is sort of the dominant paradigm in deep learning
+[00:34:02.700 --> 00:34:06.300]   at the moment.
+[00:34:06.300 --> 00:34:12.100]   And so, you know, I guess, you know, in the previous slides, we mostly talked about expert
+[00:34:12.100 --> 00:34:17.220]   parallelism, but of course, you know, dense models and large scale dense models use model
+[00:34:17.220 --> 00:34:18.220]   parallelism.
+[00:34:18.220 --> 00:34:23.220]   So GP3 and these other large models, what they do is that they will simply shard model
+[00:34:23.220 --> 00:34:25.300]   weights across different cores.
+[00:34:25.300 --> 00:34:26.300]   Yeah.
+[00:34:26.300 --> 00:34:29.500]   We have a question.
+[00:34:29.500 --> 00:34:31.740]   Oh yeah.
+[00:34:31.740 --> 00:34:35.420]   I just wanted to know, because I think there was like, I don't know if you're going to
+[00:34:35.420 --> 00:34:40.580]   address later, but I think somewhere in a paper, it said that the more experts you have,
+[00:34:40.580 --> 00:34:43.380]   the more sample efficient it gets.
+[00:34:43.380 --> 00:34:47.700]   And I was just like hoping, hoping that you could give us some intuition about that, because
+[00:34:47.700 --> 00:34:52.260]   I don't understand why that would be the case.
+[00:34:52.260 --> 00:34:59.700]   So I guess, yeah, maybe, so I guess like, you know, there's all of this work on larger
+[00:34:59.700 --> 00:35:04.760]   models are more sample efficient and larger in the context of the scaling law works means
+[00:35:04.760 --> 00:35:06.980]   like more parameters and more flops.
+[00:35:06.980 --> 00:35:09.900]   As you increase the number of experts, there's more parameters, but not more flops.
+[00:35:09.900 --> 00:35:14.260]   But the model is still like, you know, larger and like, you know, a similar sense.
+[00:35:14.260 --> 00:35:18.100]   So I guess like building on the intuition that larger models are more sample efficient
+[00:35:18.100 --> 00:35:24.020]   in my mind, it's not necessarily that surprising that these models with more experts that have
+[00:35:24.020 --> 00:35:27.500]   more parameters are more sample efficient.
+[00:35:27.500 --> 00:35:30.100]   I guess that's my like kind of high level intuition for it.
+[00:35:30.100 --> 00:35:37.480]   Yeah, I would say that's kind of expected that, you know, more experts leads to better
+[00:35:37.480 --> 00:35:46.760]   sample efficiency, especially if you look at training step, right, in a training time.
+[00:35:46.760 --> 00:35:52.040]   Okay, cool.
+[00:35:52.040 --> 00:35:53.700]   So where were we?
+[00:35:53.700 --> 00:35:59.360]   Yeah, so, yeah, so, okay, so we'll look at how model weights are split over cost for
+[00:35:59.360 --> 00:36:01.560]   different scenarios.
+[00:36:01.560 --> 00:36:04.580]   So data parallelism is the first one.
+[00:36:04.580 --> 00:36:11.840]   So that's kind of the typical setup that deep learning uses, especially for not so large
+[00:36:11.840 --> 00:36:16.040]   networks which don't require model parallelism.
+[00:36:16.040 --> 00:36:22.920]   And so let me, yeah, let me explain how, yeah, I'll just go to the final figure and I'll
+[00:36:22.920 --> 00:36:27.360]   explain how to look at this figure.
+[00:36:27.360 --> 00:36:33.980]   Okay, so we have 16 processes which are organized in the four by four mesh, right?
+[00:36:33.980 --> 00:36:41.160]   So each dotted line, each four by four dotted line here represents a different core.
+[00:36:41.160 --> 00:36:45.720]   And the first row studies how the model weights are split over cost.
+[00:36:45.720 --> 00:36:52.080]   And the second row illustrates how data, so literally examples and tokens are split over
+[00:36:52.080 --> 00:36:55.360]   cost.
+[00:36:55.360 --> 00:37:00.000]   And yeah, and then the final thing that's required to understand this figure is that
+[00:37:00.000 --> 00:37:09.200]   each, yeah, each color of the shaded squares here identifies the unique weight matrix.
+[00:37:09.200 --> 00:37:13.140]   Okay, so let's start with data parallelism.
+[00:37:13.140 --> 00:37:20.800]   So for data parallelism, the same model weights are replicated across all cores.
+[00:37:20.800 --> 00:37:23.920]   And the data is simply partitioned over cores.
+[00:37:23.920 --> 00:37:34.800]   And so that's what this corresponds to, using the description of the caption, the explanation
+[00:37:34.800 --> 00:37:36.120]   of the caption I just gave.
+[00:37:36.120 --> 00:37:39.520]   So next we have model parallelism.
+[00:37:39.520 --> 00:37:44.440]   That's kind of just like a theoretical example because in practice, people always use model
+[00:37:44.440 --> 00:37:48.000]   parallelism in conjunction with data parallelism.
+[00:37:48.000 --> 00:37:52.440]   But so if you were to do only model parallelism, now you would have a single model weight that
+[00:37:52.440 --> 00:38:01.880]   is partitioned over all cores, and your data would just be replicated over all cores instead.
+[00:38:01.880 --> 00:38:05.920]   So now we have model and data parallelism, and that's kind of the typical scenario for
+[00:38:05.920 --> 00:38:08.040]   large dense networks.
+[00:38:08.040 --> 00:38:14.240]   So in that case, model weights are partitioned among a subset of the cores, the subset of
+[00:38:14.240 --> 00:38:16.920]   cores that process different batches of data.
+[00:38:16.920 --> 00:38:22.760]   And so in that example here, we have sort of four, so the first sub-square here means
+[00:38:22.760 --> 00:38:31.080]   that the model weights are partitioned across four cores.
+[00:38:31.080 --> 00:38:38.320]   And this is replicated sort of four times for the data parallelism dimension.
+[00:38:38.320 --> 00:38:46.720]   On the data side, for model and data parallelism, yeah, the data here is replicated across model
+[00:38:46.720 --> 00:38:51.240]   parallel cores and partitioned across data parallel cores.
+[00:38:51.240 --> 00:38:55.320]   So next we have expert and data parallelism.
+[00:38:55.320 --> 00:38:59.520]   So in that scenario, that's kind of similar to data parallelism, but now each core will
+[00:38:59.520 --> 00:39:06.260]   hold a different model weight, which is illustrated by the different colors.
+[00:39:06.260 --> 00:39:12.400]   And for the data side, the data is simply replicated, sorry, the data is partitioned
+[00:39:12.400 --> 00:39:18.160]   across all cores, just like in the data parallelism scenario.
+[00:39:18.160 --> 00:39:25.800]   And so finally, we have the rightmost column, which is, I guess, yeah, that's the setup
+[00:39:25.800 --> 00:39:30.920]   used in the switch transformer paper for the larger models.
+[00:39:30.920 --> 00:39:37.020]   And so here for the model partitioning, each expert is partitioned across multiple cores.
+[00:39:37.020 --> 00:39:42.820]   So in that example, we have four experts, each partitioned across four cores, and the
+[00:39:42.820 --> 00:39:48.500]   data is replicated across model parallel cores and partitioned across data parallel cores.
+[00:39:48.500 --> 00:39:54.780]   So that's a little bit complex to understand, really, but the switch transformer paper has
+[00:39:54.780 --> 00:40:00.360]   a nice, the same figure with a nice caption to explain it.
+[00:40:00.360 --> 00:40:09.820]   Yeah, maybe we can, about it, we can add something quickly about how this is implemented in practice.
+[00:40:09.820 --> 00:40:18.780]   So there's this paper called Mesh Transformer, which kind of extends batch or data parallelism
+[00:40:18.780 --> 00:40:23.900]   to more general purpose SPMD style programming.
+[00:40:23.900 --> 00:40:28.420]   And so different labs have different frameworks, but this paper kind of lays the foundation
+[00:40:28.420 --> 00:40:37.080]   for general SPMD distributed computing, which is required for training large scale models.
+[00:40:37.080 --> 00:40:45.460]   And so under the mesh abstraction, basically we have a mesh of processes, and so that mesh
+[00:40:45.460 --> 00:40:53.740]   has dimensions, name dimensions, and these name dimensions specify how the tensor dimensions
+[00:40:53.740 --> 00:40:58.400]   will be partitioned or replicated across the mesh dimensions.
+[00:40:58.400 --> 00:41:04.700]   And so just that simple abstraction sort of supports data parallelism, also model parallelism,
+[00:41:04.700 --> 00:41:07.980]   and especially expert parallelism at once.
+[00:41:07.980 --> 00:41:16.060]   And so I invite whoever is interested to also check that paper, because that kind of lays
+[00:41:16.060 --> 00:41:18.300]   the foundation for understanding these things.
+[00:41:18.300 --> 00:41:22.180]   All right, Barry, do you want to go?
+[00:41:22.180 --> 00:41:23.180]   Cool.
+[00:41:23.180 --> 00:41:26.300]   So next we are going to kind of talk about like how we take these parallelism strategies
+[00:41:26.300 --> 00:41:31.140]   and like kind of combine them together to make like a 1.6 trillion parameter sparse
+[00:41:31.140 --> 00:41:32.140]   model.
+[00:41:32.140 --> 00:41:35.220]   So next slide.
+[00:41:35.220 --> 00:41:41.820]   So what we ended up doing in this work was we trained two different very large sparse
+[00:41:41.820 --> 00:41:44.540]   models, and we compared them to the largest T5 model.
+[00:41:44.540 --> 00:41:48.820]   So we can see the T5 XXL, which is a dense model, and it was the largest one trained
+[00:41:48.820 --> 00:41:52.740]   in the T5 paper, and it has around 13 billion parameters.
+[00:41:52.740 --> 00:41:56.140]   And here we list a lot of the model dimensions like D model, DFF, which are just like the
+[00:41:56.140 --> 00:42:00.900]   various sizes and shapes of the tensors and stuff, the number of layers, the number of
+[00:42:00.900 --> 00:42:01.900]   heads.
+[00:42:01.900 --> 00:42:08.980]   And importantly, we also mentioned the negative log perplexity at step 250k and at 500k.
+[00:42:08.980 --> 00:42:16.740]   And so yeah, so we designed two sparse models to test like how scaling versus sparsity versus
+[00:42:16.740 --> 00:42:19.600]   scaling versus sparsity and flops work.
+[00:42:19.600 --> 00:42:21.660]   So first, let me talk about switch XXL.
+[00:42:21.660 --> 00:42:27.200]   So that has the same amount of flops per token as T5 XXL, but has 64 experts.
+[00:42:27.200 --> 00:42:31.020]   And this leads it to have around 400 billion parameters.
+[00:42:31.020 --> 00:42:35.620]   And we can see that on a step basis, it actually performs quite well and outperforms the T5
+[00:42:35.620 --> 00:42:37.700]   XXL by like quite a good margin.
+[00:42:37.700 --> 00:42:42.340]   Interestingly, though, are the third model we designed switch C, which has 1.6 trillion
+[00:42:42.340 --> 00:42:47.700]   parameters, but has a significantly fewer flops, almost 10 less flops per token than
+[00:42:47.700 --> 00:42:48.900]   either of the above two models.
+[00:42:48.900 --> 00:42:54.660]   So it's really trading by reducing flops to have way more sparse parameters.
+[00:42:54.660 --> 00:42:59.780]   And we can see on a step basis, the switch C model works well, but not, not as well as
+[00:42:59.780 --> 00:43:04.860]   actually the higher flop model, but on a, like a kind of a Pareto axis where we are
+[00:43:04.860 --> 00:43:09.500]   looking at TPU hours on the X axis and not step the switch C model actually outperforms
+[00:43:09.500 --> 00:43:12.060]   them both by like a pretty large margin.
+[00:43:12.060 --> 00:43:15.900]   So for pre-training performance, we're seeing that actually just like having a lot of sparsity
+[00:43:15.900 --> 00:43:20.060]   and less flops is actually, um, can be quite good.
+[00:43:20.060 --> 00:43:21.060]   Next slide.
+[00:43:21.060 --> 00:43:22.060]   Yeah.
+[00:43:22.060 --> 00:43:25.700]   And so, yeah, this, so again, those two sparse models are kind of really trying to get at
+[00:43:25.700 --> 00:43:30.060]   this hypothesis that actually Noam Shazir had, which is, you know, that, you know, parameters
+[00:43:30.060 --> 00:43:37.020]   are good for more knowledge, reasoning and compute AKA flops is good for intelligence.
+[00:43:37.020 --> 00:43:39.900]   And so we're going to kind of try to get at that by taking these different sparse models
+[00:43:39.900 --> 00:43:44.140]   and then fine tuning them on, uh, different tasks, some of which require more like knowledge
+[00:43:44.140 --> 00:43:48.100]   and then others, which require more of like reasoning, um, for whatever, like hand wavy
+[00:43:48.100 --> 00:43:51.060]   definition we want to give that.
+[00:43:51.060 --> 00:43:52.060]   So yeah.
+[00:43:52.060 --> 00:43:53.380]   So for a fixed, Oh, go back.
+[00:43:53.380 --> 00:43:54.380]   So yeah.
+[00:43:54.380 --> 00:43:56.980]   So for a fixed, Oh, can you go back to the previous slide?
+[00:43:56.980 --> 00:43:57.980]   Oh yeah.
+[00:43:57.980 --> 00:43:58.980]   Sorry.
+[00:43:58.980 --> 00:43:59.980]   Okay.
+[00:43:59.980 --> 00:44:03.060]   So for a fixed quality on an upstream pre-training task, um, yeah.
+[00:44:03.060 --> 00:44:05.360]   Do parameters independently matter?
+[00:44:05.360 --> 00:44:06.980]   So we're going to look at two tasks here.
+[00:44:06.980 --> 00:44:09.860]   One of which is super glue, which is kind of our like reasoning task.
+[00:44:09.860 --> 00:44:12.860]   And then another is like trivia QA, which is like some knowledge task where it's like,
+[00:44:12.860 --> 00:44:16.860]   you just give it a question, you have it output an answer.
+[00:44:16.860 --> 00:44:19.300]   Okay.
+[00:44:19.300 --> 00:44:21.860]   And so here we're going to take a look at super glue quality.
+[00:44:21.860 --> 00:44:26.620]   So we can see on the X axis is the pre-training performance and the Y axis is the super glue
+[00:44:26.620 --> 00:44:28.980]   score after fine tuning.
+[00:44:28.980 --> 00:44:34.260]   And interestingly, we can see definitely that the sparse models definitely are for a fixed,
+[00:44:34.260 --> 00:44:37.660]   um, pre-training perplexity do worse on fine tuning.
+[00:44:37.660 --> 00:44:41.340]   This can be especially noticed at like the upper right portion of the plot where the
+[00:44:41.340 --> 00:44:47.140]   dense models are definitely fine tuning better than the, their sparse counterpart.
+[00:44:47.140 --> 00:44:48.140]   Next slide.
+[00:44:48.140 --> 00:44:52.940]   Interestingly, when we study it on the more knowledge, heavy tasks, the sparse model for
+[00:44:52.940 --> 00:44:57.100]   a fixed, uh, pre-training perplexity does disproportionately well.
+[00:44:57.100 --> 00:45:00.260]   So, you know, for a model that roughly has the same perplexity, we're getting like really
+[00:45:00.260 --> 00:45:03.300]   large boosts for these knowledge, heavy tasks.
+[00:45:03.300 --> 00:45:04.300]   So this is pretty interesting.
+[00:45:04.300 --> 00:45:09.220]   And it also really, you know, show some of the dangers of comparing only on your pre-training
+[00:45:09.220 --> 00:45:10.220]   metrics.
+[00:45:10.220 --> 00:45:13.580]   So dense models, you know, can have the same exact pre-training metric, but very different,
+[00:45:13.580 --> 00:45:18.620]   um, you know, properties when fine tuning them on different tasks.
+[00:45:18.620 --> 00:45:21.060]   Next slide.
+[00:45:21.060 --> 00:45:26.220]   And interestingly, so yeah, all of the switch models here are the, um, are, are just like,
+[00:45:26.220 --> 00:45:30.780]   you know, various models that have still a good amount of flops, but the red model is
+[00:45:30.780 --> 00:45:37.500]   actually the 1.6 trillion parameter, uh, sparse model that has, you know, very few flops,
+[00:45:37.500 --> 00:45:38.500]   but a lot, a lot of parameters.
+[00:45:38.500 --> 00:45:42.580]   And we can see that as the red dot here, and it does actually disproportionately bad compared
+[00:45:42.580 --> 00:45:46.180]   to other sparse models that also have pretty good perplexities.
+[00:45:46.180 --> 00:45:49.540]   And so, yeah, it's, uh, it's definitely very interesting and it shows that, you know, for
+[00:45:49.540 --> 00:45:53.340]   models during pre-training that have a lot of sparsity, they definitely suffer on some
+[00:45:53.340 --> 00:45:57.960]   of these more reasoning heavy metrics, but do disproportionately well for more of these
+[00:45:57.960 --> 00:46:00.060]   knowledge, heavy tasks.
+[00:46:00.060 --> 00:46:01.060]   Next slide.
+[00:46:01.060 --> 00:46:02.060]   Yeah.
+[00:46:02.060 --> 00:46:07.380]   And so here we can see it as just like a huge outlier for a pre-training perplexity doing
+[00:46:07.380 --> 00:46:13.420]   like just incredibly well on this, uh, downstream question answering task.
+[00:46:13.420 --> 00:46:14.420]   Next slide.
+[00:46:14.420 --> 00:46:15.420]   Yeah.
+[00:46:15.420 --> 00:46:16.420]   Okay.
+[00:46:16.420 --> 00:46:19.760]   So also, you know, one thing that we were going to do is just look at the fine tuning
+[00:46:19.760 --> 00:46:24.900]   properties of sparse models across like a few scales and just see how they perform.
+[00:46:24.900 --> 00:46:25.900]   Next slide.
+[00:46:25.900 --> 00:46:26.900]   Yeah.
+[00:46:26.900 --> 00:46:29.220]   And so here we try two different models.
+[00:46:29.220 --> 00:46:33.460]   One is, um, T5 base, and then we make a flop match sparse counterpoint.
+[00:46:33.460 --> 00:46:36.420]   And when they say flop match, it's like, you know, each token will have the same amount
+[00:46:36.420 --> 00:46:38.600]   of flops, but now we just have experts.
+[00:46:38.600 --> 00:46:42.140]   So we do this for both base and large, and we see that actually across almost all tasks
+[00:46:42.140 --> 00:46:47.460]   besides two arc tasks, the sparse models perform quite well, which is, which is definitely
+[00:46:47.460 --> 00:46:48.460]   promising.
+[00:46:48.460 --> 00:46:51.380]   So we are seeing that these models are pretty robust, they pre-train well, and then they
+[00:46:51.380 --> 00:46:57.020]   also fine tune well when scaled appropriately by scaling up both the flops and sparsity.
+[00:46:57.020 --> 00:47:00.460]   Whereas, you know, the negative results we've really seen are like, yeah, when you just
+[00:47:00.460 --> 00:47:04.180]   have a huge amount of sparsity and not too many flops.
+[00:47:04.180 --> 00:47:05.180]   Next slide.
+[00:47:05.180 --> 00:47:06.180]   Yeah.
+[00:47:06.180 --> 00:47:10.620]   And one also thing we wanted to look at was, uh, the multilingual training.
+[00:47:10.620 --> 00:47:14.300]   So we were previously studying all of this on like English only, and we also wanted to
+[00:47:14.300 --> 00:47:18.060]   see how sparsity helps in the multilingual setting because, you know, we also felt like
+[00:47:18.060 --> 00:47:21.540]   this would be a very natural place for sparsity to work well, or potentially experts could
+[00:47:21.540 --> 00:47:23.060]   specialize across languages.
+[00:47:23.060 --> 00:47:25.500]   Um, and we do see strong results.
+[00:47:25.500 --> 00:47:30.500]   So on 91% of the languages, I think of like around a hundred languages, we see over like
+[00:47:30.500 --> 00:47:36.180]   at least a 4x speedup over the MT5, um, dense model.
+[00:47:36.180 --> 00:47:37.180]   Next slide.
+[00:47:37.180 --> 00:47:40.100]   Erwin, you want to go ahead?
+[00:47:40.100 --> 00:47:42.860]   Uh, no, go ahead.
+[00:47:42.860 --> 00:47:43.860]   Okay.
+[00:47:43.860 --> 00:47:44.860]   Yeah.
+[00:47:44.860 --> 00:47:47.300]   So another thing we wanted to talk about was, um, distillation.
+[00:47:47.300 --> 00:47:51.940]   So one downside of these sparse models is that they'll have a lot more parameters, which
+[00:47:51.940 --> 00:47:55.140]   means that, you know, if you're serving these things or something, you either need like
+[00:47:55.140 --> 00:47:59.300]   high throughput use cases, or you need to maybe distill it back down into like a smaller
+[00:47:59.300 --> 00:48:00.700]   dense model.
+[00:48:00.700 --> 00:48:03.980]   So here, what we do is we look at like the T5 base and switch base, and we look at its
+[00:48:03.980 --> 00:48:05.620]   pre-training performance.
+[00:48:05.620 --> 00:48:09.060]   And then we go through, um, some ablations of different distillation techniques and find
+[00:48:09.060 --> 00:48:14.180]   that like with the best techniques, we can keep around 30% of the quality improvements
+[00:48:14.180 --> 00:48:20.460]   of sparsity while distilling it back down into its, uh, dense, um, counterpart.
+[00:48:20.460 --> 00:48:22.420]   So next slide.
+[00:48:22.420 --> 00:48:24.420]   Yeah.
+[00:48:24.420 --> 00:48:26.380]   And then we kind of study this across multiple scales.
+[00:48:26.380 --> 00:48:32.340]   And again, we see like around like 30 to 40% of the gains can be, um, like, you know, kept
+[00:48:32.340 --> 00:48:35.980]   when going from a dense model and going from, you know, a sparse model and distilling it
+[00:48:35.980 --> 00:48:38.500]   back down until it gets flop match dense model.
+[00:48:38.500 --> 00:48:42.620]   So you can get, you know, get rid of up to 99% of the parameters and still keep like
+[00:48:42.620 --> 00:48:46.060]   around 30% of the improvements, which is very promising.
+[00:48:46.060 --> 00:48:47.060]   Next slide.
+[00:48:47.060 --> 00:48:48.060]   Wait, I'm sorry.
+[00:48:48.060 --> 00:48:49.060]   Yeah.
+[00:48:49.060 --> 00:48:50.060]   All right.
+[00:48:50.060 --> 00:48:51.060]   Sorry about that.
+[00:48:51.060 --> 00:48:52.940]   Can you say that last sentence again?
+[00:48:52.940 --> 00:48:56.900]   You said that you can keep the benefit 30% of the teachers benefit.
+[00:48:56.900 --> 00:48:57.900]   Yeah.
+[00:48:57.900 --> 00:48:58.900]   Basically.
+[00:48:58.900 --> 00:49:00.820]   So yeah, you, you, you, yeah, exactly.
+[00:49:00.820 --> 00:49:01.820]   So yeah.
+[00:49:01.820 --> 00:49:06.260]   So we're looking at like, yeah, you train a sparse model and then you just fill it back
+[00:49:06.260 --> 00:49:10.700]   down to a dense model and you're versus training a dense model from scratch.
+[00:49:10.700 --> 00:49:15.380]   And like you look at the gap between the sparse and dense model from scratch versus the, the,
+[00:49:15.380 --> 00:49:18.660]   the gap between the dense and then the distilled dense model.
+[00:49:18.660 --> 00:49:19.660]   Yeah.
+[00:49:19.660 --> 00:49:20.660]   Yeah.
+[00:49:20.660 --> 00:49:21.660]   Oh yeah.
+[00:49:21.660 --> 00:49:22.660]   Oh yeah.
+[00:49:22.660 --> 00:49:29.420]   Maybe let me just do like a quick high level summary again.
+[00:49:29.420 --> 00:49:34.580]   So what we're, what we'll do is for our comparisons is we'll train a dense model from scratch.
+[00:49:34.580 --> 00:49:38.740]   We'll train a sparse model from scratch and then we'll also run a third experiment where
+[00:49:38.740 --> 00:49:43.940]   we distill that sparse model down into a dense model.
+[00:49:43.940 --> 00:49:45.740]   What does distilling mean?
+[00:49:45.740 --> 00:49:50.660]   Like we're basically trying to match the like the teacher's logics, like the kind of standard
+[00:49:50.660 --> 00:49:54.940]   thing of like, you know, like matching the, like either the logics or like the soft probabilities
+[00:49:54.940 --> 00:49:56.980]   for each token or something like that.
+[00:49:56.980 --> 00:49:57.980]   Okay.
+[00:49:57.980 --> 00:50:05.420]   If I can jump in with my question.
+[00:50:05.420 --> 00:50:11.140]   So what I'm struggling with is how do I interpret the linements as percent of teacher and performance?
+[00:50:11.140 --> 00:50:12.140]   Yeah.
+[00:50:12.140 --> 00:50:13.140]   Okay.
+[00:50:13.140 --> 00:50:17.820]   So it's, it's basically looking at the, like the gap between the dense and sparse model.
+[00:50:17.820 --> 00:50:21.500]   So we'll have the dense model gets some performance, we'll have the sparse model gets some performance
+[00:50:21.500 --> 00:50:25.920]   and then the, the dense model that's still from the sparse model would be somewhere in
+[00:50:25.920 --> 00:50:28.020]   between that, that range.
+[00:50:28.020 --> 00:50:31.280]   And we're basically saying it's 30% through that range.
+[00:50:31.280 --> 00:50:35.340]   So it's like in like a zero to one interval, it's like 0.3 of the way from the dense to
+[00:50:35.340 --> 00:50:36.340]   the sparse model.
+[00:50:36.340 --> 00:50:37.340]   I see.
+[00:50:37.340 --> 00:50:40.540]   So this is not saying that the percent of teacher performance does not mean that if
+[00:50:40.540 --> 00:50:45.420]   the teacher say gets, if we use the teacher's guesses or predictions as the ground truth,
+[00:50:45.420 --> 00:50:50.540]   this is not saying that the distilled model gets matches with the teacher, 33% of the
+[00:50:50.540 --> 00:50:51.540]   time.
+[00:50:51.540 --> 00:50:52.540]   No, no, exactly.
+[00:50:52.540 --> 00:50:54.740]   It's basically saying you get like 30% of the quality improvements.
+[00:50:54.740 --> 00:50:55.740]   Yeah, exactly.
+[00:50:55.740 --> 00:50:56.740]   Okay, cool.
+[00:50:56.740 --> 00:51:00.660]   And then if we can back up a slide, I had a different question, but I didn't want to
+[00:51:00.660 --> 00:51:01.660]   interrupt.
+[00:51:01.660 --> 00:51:04.900]   When we were talking about all of these different T5 bases, and then also on a few slides before
+[00:51:04.900 --> 00:51:06.980]   this, I don't know that much about T5.
+[00:51:06.980 --> 00:51:13.860]   I'm curious, you know, when T5 is trained, is there a weight penalty in the loss function?
+[00:51:13.860 --> 00:51:15.580]   Is there a weight decay term?
+[00:51:15.580 --> 00:51:19.780]   No, there's no weight decay trained with any of those sparse or dense models.
+[00:51:19.780 --> 00:51:20.780]   I see.
+[00:51:20.780 --> 00:51:25.500]   So out of curiosity then, how do dense models perform compared to the switch model?
+[00:51:25.500 --> 00:51:31.180]   If you add some sort of weight regularization that incentivizes getting rid of useless weights?
+[00:51:31.180 --> 00:51:35.620]   Oh, so some kind of like maybe like L1 term or something like that?
+[00:51:35.620 --> 00:51:36.620]   Yeah.
+[00:51:36.620 --> 00:51:39.180]   So I'm wondering like how much of, because here we're talking about the benefits of sparsity,
+[00:51:39.180 --> 00:51:43.740]   and I'm wondering how much of this benefit from sparsity is due to the fact that just
+[00:51:43.740 --> 00:51:46.900]   some of this, I mean, effectively what the switch model is doing, if I understand correctly,
+[00:51:46.900 --> 00:51:50.500]   maybe I don't, what I understand is that the switch model, the feed forward layer, it's
+[00:51:50.500 --> 00:51:53.460]   just like you fixing the weights to be zero.
+[00:51:53.460 --> 00:51:55.860]   That's what it means to be sparse.
+[00:51:55.860 --> 00:51:59.220]   Well, actually, we're kind of really trying to like inject more weights.
+[00:51:59.220 --> 00:52:02.140]   So we're actually kind of trying to do, it's a little bit maybe like paradoxical, because
+[00:52:02.140 --> 00:52:05.700]   we're saying switch transformer, but our idea is to be like, hey, we actually want to just
+[00:52:05.700 --> 00:52:08.580]   have significantly more weights, not less weights.
+[00:52:08.580 --> 00:52:13.660]   It's kind of like you would zero out weights, but within a much larger weight matrix, if
+[00:52:13.660 --> 00:52:14.660]   that makes sense.
+[00:52:14.660 --> 00:52:15.660]   I see.
+[00:52:15.660 --> 00:52:16.660]   Yes.
+[00:52:16.660 --> 00:52:18.380]   And so to me, it seems like a relevant baseline to just ask what happens if I have the dense
+[00:52:18.380 --> 00:52:21.860]   matrix, but I incentivize it with, say, an L1 or L2 penalty on the weights.
+[00:52:21.860 --> 00:52:24.740]   And I would, I'd be curious to know how that compares.
+[00:52:24.740 --> 00:52:28.580]   Yeah, we didn't run this, but also that kind of gets rid of weights for the dense model.
+[00:52:28.580 --> 00:52:29.580]   So if any-
+[00:52:29.580 --> 00:52:30.580]   Sure, sure.
+[00:52:30.580 --> 00:52:31.580]   Yeah.
+[00:52:31.580 --> 00:52:32.580]   So, yeah.
+[00:52:32.580 --> 00:52:33.580]   Also-
+[00:52:33.580 --> 00:52:34.580]   Yeah.
+[00:52:34.580 --> 00:52:35.580]   Yeah.
+[00:52:35.580 --> 00:52:39.460]   Also, to me, it's like, if you just add like an L1 penalty loss, you're not going to have
+[00:52:39.460 --> 00:52:46.580]   structured sparsity, whereas like here we, you know, it's not random weights in your
+[00:52:46.580 --> 00:52:48.660]   giant weight matrix that are zeroed out, right?
+[00:52:48.660 --> 00:52:53.020]   It's like really like blocks depending, like blocks corresponding to each expo.
+[00:52:53.020 --> 00:52:54.020]   Right.
+[00:52:54.020 --> 00:52:55.020]   And so-
+[00:52:55.020 --> 00:53:00.700]   So that structure allows the whole like communication stuff and that's-
+[00:53:00.700 --> 00:53:01.700]   Yes.
+[00:53:01.820 --> 00:53:05.420]   That leverages the fact that you have multiple calls and so on, right?
+[00:53:05.420 --> 00:53:08.860]   I totally agree with that block structure and that's what I'm trying to say, is that
+[00:53:08.860 --> 00:53:12.780]   the switch has this very rich, it's not just sparse, it also has this rich structure.
+[00:53:12.780 --> 00:53:17.420]   And what I'm trying to do in my mind is disentangle, is the sparsity what's offering an advantage
+[00:53:17.420 --> 00:53:21.860]   or is this additional structure that you built in, is that what is the performance gain?
+[00:53:21.860 --> 00:53:23.740]   So that's why I'm asking.
+[00:53:23.740 --> 00:53:31.340]   So the block structure is what enables to leverage the fact that you have multiple calls.
+[00:53:31.340 --> 00:53:32.340]   Yes.
+[00:53:32.340 --> 00:53:36.980]   Like if you didn't have that block structure, you'd still have to route to everything.
+[00:53:36.980 --> 00:53:40.740]   And so you have more communication costs and so on.
+[00:53:40.740 --> 00:53:43.020]   And then your first question was what, sorry?
+[00:53:43.020 --> 00:53:45.780]   I'm not actually sure if there was a question, I guess what I'm trying to say is I'm trying
+[00:53:45.780 --> 00:53:46.780]   to-
+[00:53:46.780 --> 00:53:47.780]   Yeah.
+[00:53:47.780 --> 00:53:48.780]   Yeah, anyways.
+[00:53:48.780 --> 00:53:53.980]   But I agree, it's a little bit weird because sparsity kind of, there's a spectrum of meaning
+[00:53:53.980 --> 00:53:54.980]   for sparsity, right?
+[00:53:54.980 --> 00:54:00.220]   So it's like, for example, compression and like model pruning is a form of sparsity,
+[00:54:00.220 --> 00:54:07.340]   but also a switch transformer and MOE also referred to as sparsity and that kind of related,
+[00:54:07.340 --> 00:54:09.940]   but definitely they're aiming at different things, so.
+[00:54:09.940 --> 00:54:13.260]   This is a really interesting idea of it's sparse, but you have more parameters.
+[00:54:13.260 --> 00:54:14.900]   I'll have to think about it more.
+[00:54:14.900 --> 00:54:15.900]   Thank you.
+[00:54:15.900 --> 00:54:16.900]   Yeah.
+[00:54:16.900 --> 00:54:20.620]   So you have like sparse within this like giant weight matrix, which is-
+[00:54:20.620 --> 00:54:21.620]   Exactly.
+[00:54:21.620 --> 00:54:22.620]   Yeah.
+[00:54:22.620 --> 00:54:23.620]   Yeah, yeah, yeah.
+[00:54:23.620 --> 00:54:24.620]   I hadn't appreciated that.
+[00:54:24.620 --> 00:54:27.220]   So I appreciate you pointing that out.
+[00:54:27.220 --> 00:54:28.220]   Thank you.
+[00:54:28.220 --> 00:54:31.980]   I have a follow up question on distillation part.
+[00:54:31.980 --> 00:54:33.340]   Yeah, of course.
+[00:54:33.340 --> 00:54:34.340]   Okay.
+[00:54:34.340 --> 00:54:38.700]   So if you distill it back down, now you have like one technically, you're back to the dense
+[00:54:38.700 --> 00:54:42.620]   layer architecture, right?
+[00:54:42.620 --> 00:54:48.140]   So now the entire idea of expert is that certain tokens would be sent to different experts
+[00:54:48.140 --> 00:54:51.940]   because they just like, I don't know, are more specialized in figuring something out
+[00:54:51.940 --> 00:54:52.940]   about this token.
+[00:54:52.940 --> 00:55:04.140]   So now if you go back to this like dense layer, aren't you like basically only serving whichever
+[00:55:04.140 --> 00:55:09.020]   expert you base this dense layer on, like these tokens will probably perform well and
+[00:55:09.020 --> 00:55:13.140]   all the other tokens are kind of like left behind, right?
+[00:55:13.140 --> 00:55:19.500]   I'm actually, sorry, I don't think I'm fully understanding your question.
+[00:55:19.500 --> 00:55:24.060]   So are you kind of getting at like we're distilling this on a specific data set?
+[00:55:24.060 --> 00:55:25.060]   So that-
+[00:55:25.060 --> 00:55:27.620]   No, I'm thinking of how to use that, like why-
+[00:55:27.620 --> 00:55:28.620]   Yeah.
+[00:55:28.620 --> 00:55:29.620]   Yeah.
+[00:55:29.620 --> 00:55:30.620]   Yeah.
+[00:55:30.620 --> 00:55:31.620]   So maybe concretely, like let's, so like for super glue, right?
+[00:55:31.620 --> 00:55:34.380]   Like let's say you want to serve a model that does super glue well.
+[00:55:34.380 --> 00:55:38.040]   I think the idea is that like you distill the sparse model into a dense model on super
+[00:55:38.040 --> 00:55:39.040]   glue.
+[00:55:39.040 --> 00:55:42.740]   So then you kind of get this compressed dense model that now performs better than if you
+[00:55:42.740 --> 00:55:46.900]   were to just train it from scratch or train it from like a pre-trained dense model.
+[00:55:46.900 --> 00:55:47.900]   So then it's like-
+[00:55:47.900 --> 00:55:48.900]   Which model did you use though?
+[00:55:48.900 --> 00:55:50.900]   Say that again?
+[00:55:50.900 --> 00:55:52.740]   You have to pick one expert, right?
+[00:55:52.740 --> 00:55:53.740]   No, no, no.
+[00:55:53.740 --> 00:55:57.380]   You can just distill all of the, again, because you're just matching the model outputs.
+[00:55:57.380 --> 00:56:00.180]   So you can just treat the sparse model as kind of like a black box thing.
+[00:56:00.180 --> 00:56:03.540]   All we're doing is just trying to have the dense model match the actual like final like
+[00:56:03.540 --> 00:56:04.540]   token predictions.
+[00:56:04.540 --> 00:56:05.540]   Oh God.
+[00:56:05.540 --> 00:56:06.540]   Okay.
+[00:56:06.540 --> 00:56:07.540]   Got it.
+[00:56:07.540 --> 00:56:08.540]   Okay.
+[00:56:08.540 --> 00:56:09.540]   Yeah.
+[00:56:09.540 --> 00:56:10.540]   Okay.
+[00:56:10.540 --> 00:56:11.540]   Sorry.
+[00:56:11.540 --> 00:56:12.540]   I was not, I was not familiar with the idea of distillation.
+[00:56:12.540 --> 00:56:13.540]   So I think that was like my current confusion.
+[00:56:13.540 --> 00:56:14.540]   Okay.
+[00:56:14.540 --> 00:56:15.540]   Thanks.
+[00:56:15.540 --> 00:56:16.540]   Yeah, of course.
+[00:56:16.540 --> 00:56:17.540]   Yeah.
+[00:56:17.540 --> 00:56:24.660]   Um, I guess one motivation here is that, um, having experts can make solving a little bit
+[00:56:24.660 --> 00:56:29.300]   more difficult because, um, it requires bigger topologies.
+[00:56:29.300 --> 00:56:35.140]   Let's say you have eight experts, um, you need like, well, I guess you can have multiple
+[00:56:35.140 --> 00:56:41.500]   experts on fewer calls, but, um, you know, let's just say they're a little bit harder
+[00:56:41.500 --> 00:56:42.500]   to solve.
+[00:56:42.500 --> 00:56:48.700]   And so if we can, you know, get the benefits from sparsity at pre-training and then use
+[00:56:48.700 --> 00:56:54.740]   distillation to a dense model for solving, uh, that can be, that can be beneficial.
+[00:56:54.740 --> 00:57:01.340]   So I think that was sort of the motivation for that, uh, experiment, right, Derek?
+[00:57:01.340 --> 00:57:03.100]   Yeah, exactly.
+[00:57:03.100 --> 00:57:04.100]   Yeah.
+[00:57:04.100 --> 00:57:05.100]   Okay.
+[00:57:05.100 --> 00:57:06.100]   Well, are we, yeah.
+[00:57:06.100 --> 00:57:07.100]   Yeah.
+[00:57:07.100 --> 00:57:08.100]   So kind of just wrapping up.
+[00:57:08.100 --> 00:57:09.100]   Yeah, go ahead.
+[00:57:09.100 --> 00:57:10.100]   No, go ahead.
+[00:57:10.100 --> 00:57:11.100]   I just said, I think one more string kind of question.
+[00:57:11.100 --> 00:57:12.100]   So yeah.
+[00:57:12.100 --> 00:57:13.100]   Oh yeah.
+[00:57:13.100 --> 00:57:14.100]   Go ahead.
+[00:57:14.100 --> 00:57:15.100]   I feel free to ask it now.
+[00:57:15.100 --> 00:57:16.100]   Oh yeah.
+[00:57:16.100 --> 00:57:17.100]   Yeah.
+[00:57:17.100 --> 00:57:18.100]   Sounds good.
+[00:57:18.100 --> 00:57:19.100]   Um, yeah.
+[00:57:19.100 --> 00:57:20.100]   Thanks guys for the talk so far.
+[00:57:20.100 --> 00:57:24.100]   Uh, just a quick question.
+[00:57:24.100 --> 00:57:29.220]   Was wondering if you think there are any interesting directions around, uh, building models that
+[00:57:29.220 --> 00:57:33.660]   are like explicitly optimized for, for parallel training.
+[00:57:33.660 --> 00:57:38.420]   Um, I guess like the, the MOE model seems like, you know, it does a really good job
+[00:57:38.420 --> 00:57:39.420]   here.
+[00:57:39.420 --> 00:57:43.820]   And also like at, at inference time, it's very useful to like, you know, have fewer
+[00:57:43.820 --> 00:57:49.720]   flops per, per computation, um, or per forward pass.
+[00:57:49.720 --> 00:57:54.180]   But, um, I guess, do you think that there are any interesting directions around distributed
+[00:57:54.180 --> 00:58:00.060]   training where you might have like models that are explicitly are architected to have
+[00:58:00.060 --> 00:58:06.500]   a lot of, uh, parallel heads or, or other like features that are, you know, kind of
+[00:58:06.500 --> 00:58:12.420]   embarrassingly parallelizable or does just using like standard, you know, scale up the
+[00:58:12.420 --> 00:58:17.300]   models by adding more layers, uh, and then just, you know, get away with using model
+[00:58:17.300 --> 00:58:19.940]   and data parallelism work well enough.
+[00:58:19.940 --> 00:58:20.940]   Yeah.
+[00:58:20.940 --> 00:58:21.940]   So I think, so yeah.
+[00:58:21.940 --> 00:58:23.440]   So let me just make sure I'm fully understanding.
+[00:58:23.440 --> 00:58:26.780]   So yeah, I think also like, you know, right now, like even our models are definitely very
+[00:58:26.780 --> 00:58:29.900]   co-designed with the hardware and like the shapes and things, you know?
+[00:58:29.900 --> 00:58:33.760]   Um, so yeah, I, I, I think at a high level, like, yes, I think there's a ton of interesting
+[00:58:33.760 --> 00:58:39.020]   research on like co-designing the hardware, the partitioning algorithms and the models.
+[00:58:39.020 --> 00:58:43.540]   I think given, you know, that we have this kind of like SPMD mesh style partitioning,
+[00:58:43.540 --> 00:58:47.020]   we are already kind of designing our models in ways that fit it really well.
+[00:58:47.020 --> 00:58:50.380]   So for example, when we want to scale up our model, one of the first dimensions we go to
+[00:58:50.380 --> 00:58:52.980]   scale up is the internal hidden dimension.
+[00:58:52.980 --> 00:58:55.140]   Because there's some really nice properties of scaling up this dimension.
+[00:58:55.140 --> 00:58:59.040]   It basically becomes like, kind of, you know, independent to some of the communication costs.
+[00:58:59.040 --> 00:59:02.820]   It's really good when looking at the compute to memory operations on these, you know, like,
+[00:59:02.820 --> 00:59:04.940]   uh, compute devices and stuff.
+[00:59:04.940 --> 00:59:06.620]   So yeah, exactly.
+[00:59:06.620 --> 00:59:09.620]   Like I think when we're even designing these models, we're like really setting dimensions
+[00:59:09.620 --> 00:59:11.620]   such that it maps well into hardware.
+[00:59:11.620 --> 00:59:15.340]   Um, so it's almost like, you know, given that we have this model data parallelism, we're
+[00:59:15.340 --> 00:59:18.300]   like actually designing models more for it.
+[00:59:18.300 --> 00:59:22.100]   But I also think that there's a ton of new, interesting distributed algorithms and stuff
+[00:59:22.100 --> 00:59:24.020]   like that, which makes designing models very interesting.
+[00:59:24.020 --> 00:59:27.740]   Like I think one thing that I think is really cool is like the Microsoft zero partitioning
+[00:59:27.740 --> 00:59:31.780]   too, which also adds some really new, like nice implications for like how to design and
+[00:59:31.780 --> 00:59:32.900]   scale models and stuff.
+[00:59:32.900 --> 00:59:36.380]   So yeah, I think there's like, this is a very fruitful research direction.
+[00:59:36.380 --> 00:59:41.340]   Um, if that, if that kind of answered your question, yeah, no, that was super helpful.
+[00:59:41.340 --> 00:59:42.340]   Interesting.
+[00:59:42.340 --> 00:59:43.340]   Yeah.
+[00:59:43.340 --> 00:59:44.340]   Yeah, definitely.
+[00:59:44.340 --> 00:59:48.020]   Like I'm very optimistic on the future of us, like designing the hardware, the model,
+[00:59:48.020 --> 00:59:50.820]   the partitioning strategies altogether, because really to get it to work well, you kind of
+[00:59:50.820 --> 00:59:54.380]   have to know about all three and like kind of, you know, intertwined the development
+[00:59:54.380 --> 00:59:55.380]   of them.
+[00:59:55.380 --> 00:59:56.380]   Yeah.
+[00:59:56.380 --> 00:59:57.380]   Yeah.
+[00:59:57.380 --> 00:59:58.380]   That sounds awesome.
+[00:59:58.380 --> 00:59:59.380]   Cool.
+[00:59:59.380 --> 01:00:00.380]   Yeah.
+[01:00:00.380 --> 01:00:04.460]   So just to summarize, it's like, yeah, so switch transformer is like a nice simplification
+[01:00:04.460 --> 01:00:05.740]   over a mixture of experts.
+[01:00:05.740 --> 01:00:09.900]   And we're seeing that we get really strong speed up improvements on pre-training over
+[01:00:09.900 --> 01:00:13.140]   like a lot of the T5 models, which are very strong baselines.
+[01:00:13.140 --> 01:00:17.420]   We're seeing that we can, you know, efficiently distill the sparse models back to dense ones
+[01:00:17.420 --> 01:00:21.580]   and, you know, get improved both pre-training and fine tuning through some of these newer
+[01:00:21.580 --> 01:00:23.500]   techniques we talked about.
+[01:00:23.500 --> 01:00:27.260]   And we're also seeing that the models are working on multilingual data and that we can,
+[01:00:27.260 --> 01:00:31.700]   you know, now easily successfully train up to, you know, 1.6 trillion parameter models,
+[01:00:31.700 --> 01:00:35.500]   which is pretty promising and, um, next slide.
+[01:00:35.500 --> 01:00:38.540]   And so we also wanted to go into two slides about some like newer work about actually
+[01:00:38.540 --> 01:00:42.340]   using these kinds of models for computer vision, and actually also a little bit of how they
+[01:00:42.340 --> 01:00:47.060]   can be used to actually do some level of like adaptive computation where not only now each
+[01:00:47.060 --> 01:00:51.240]   input gets different weights, but also sometimes different inputs will have different amounts
+[01:00:51.240 --> 01:00:53.420]   of compute applied to it.
+[01:00:53.420 --> 01:00:58.340]   And so there was some really great work of doing this out of the Google Zurich team.
+[01:00:58.340 --> 01:01:01.420]   And yeah, there's just doing it for image classification and, you know, they're basically
+[01:01:01.420 --> 01:01:04.780]   seeing a lot of the similar types of scaling properties where, you know, scaling up the
+[01:01:04.780 --> 01:01:11.420]   number of experts and using sparsity allows them to get good performances on image classification.
+[01:01:11.420 --> 01:01:14.780]   Next slide.
+[01:01:14.780 --> 01:01:17.740]   And interestingly, one of the things they do is like, as we talk about the capacity
+[01:01:17.740 --> 01:01:22.100]   factor, so we were talking about values of like one, 1.25, 2.0, which means like at a
+[01:01:22.100 --> 01:01:27.260]   value of 2.0, there's buffer for, you know, two tokens per expert, but they actually study
+[01:01:27.260 --> 01:01:28.420]   it going less than one.
+[01:01:28.420 --> 01:01:31.660]   So that means that like at 0.5, that means there's only like room for half the number
+[01:01:31.660 --> 01:01:33.140]   of tokens.
+[01:01:33.140 --> 01:01:35.900]   And the nice part is, is that they did this for image classification.
+[01:01:35.900 --> 01:01:39.700]   And also in images, there's just a lot of redundancy and they noticed that you can actually
+[01:01:39.700 --> 01:01:45.320]   get really good performance by only allowing like, you know, up to one 10th of the parts
+[01:01:45.320 --> 01:01:47.340]   of the image to be processed by a sparse layer.
+[01:01:47.340 --> 01:01:51.540]   So yeah, we think this is like a really nice direction too, in terms of combining sparsity
+[01:01:51.540 --> 01:01:54.660]   along with like adaptive computation.
+[01:01:54.660 --> 01:01:55.660]   And yeah.
+[01:01:55.660 --> 01:01:56.660]   And yeah.
+[01:01:56.660 --> 01:01:57.660]   Thanks so much for having us.
+[01:01:57.660 --> 01:01:59.660]   That's the, that's the talk.
+[01:01:59.660 --> 01:02:08.300]   So thank you, Barrett and, sorry, Arifan, for coming here.
+[01:02:08.300 --> 01:02:17.180]   So I will just like ask a bunch of questions and then we can have like a, after the class,
+[01:02:17.180 --> 01:02:20.020]   open question panel for the students.
+[01:02:20.020 --> 01:02:23.700]   So one thing is like, have you tried using like, like more like linear attention mechanisms
+[01:02:23.700 --> 01:02:31.020]   like reformers and like other stuff to like scale the computation?
+[01:02:31.020 --> 01:02:34.620]   I personally haven't, I haven't personally done this.
+[01:02:34.620 --> 01:02:35.620]   Yeah.
+[01:02:35.620 --> 01:02:44.540]   So, oh, you know, I guess we can maybe comment on how, you know, the attention, the cost
+[01:02:44.540 --> 01:02:52.640]   coming from the attention maps isn't the dominant cause in, in this large transformers.
+[01:02:52.640 --> 01:02:58.260]   So you know, the motivation for using linear attention, like performance is that it reduces
+[01:02:58.260 --> 01:03:03.460]   the quadratic cost of attention maps, right.
+[01:03:03.460 --> 01:03:09.060]   But so far, I mean, at least, you know, in like sort of typical NLP setups, like superglue,
+[01:03:09.060 --> 01:03:17.260]   C4 and so on, as you scale the models, most of the memory comes from the model weights
+[01:03:17.260 --> 01:03:20.460]   as opposed to attention, to the attention maps.
+[01:03:20.460 --> 01:03:27.180]   That's also because, you know, using very long context or sequence length doesn't prove
+[01:03:27.180 --> 01:03:28.580]   that fruitful.
+[01:03:28.580 --> 01:03:34.220]   And so, you know, just, you know, working with the vanilla self-attention mechanism
+[01:03:34.220 --> 01:03:37.020]   is, is a very strong baseline already.
+[01:03:37.020 --> 01:03:38.020]   Got it.
+[01:03:38.020 --> 01:03:39.020]   Okay.
+[01:03:39.020 --> 01:03:43.660]   So another question is like, do you think this like mechanism is even more scalable?
+[01:03:43.660 --> 01:03:47.560]   Like, can you go on and be like 10 trillion parameter models, stuff like that?
+[01:03:47.560 --> 01:03:48.560]   Like what do you think?
+[01:03:48.560 --> 01:03:49.560]   Yeah, definitely.
+[01:03:49.560 --> 01:03:50.560]   I think, yeah, totally.
+[01:03:50.560 --> 01:03:55.300]   I think, honestly, the, one of the biggest constraints is that like, you know, and this
+[01:03:55.300 --> 01:03:59.860]   isn't even necessarily a constraint, it's just like, you have to fit the parameter somewhere
+[01:03:59.860 --> 01:04:01.780]   and there's just limited storage on devices.
+[01:04:01.780 --> 01:04:05.420]   But if you get enough devices such that, you know, yeah, you can just partition the weights.
+[01:04:05.420 --> 01:04:07.940]   It's like, yeah, I don't see anything stopping it.
+[01:04:07.940 --> 01:04:08.940]   Got it.
+[01:04:08.940 --> 01:04:14.120]   So what do you think, like, personally, is your, like, the thing, like, with the direction,
+[01:04:14.120 --> 01:04:18.480]   like, like scaling of transformers will go into, like, will there be more like works
+[01:04:18.480 --> 01:04:23.340]   that are trying to just like use this transformer, like mechanisms, like Mr. Experts, or do you
+[01:04:23.340 --> 01:04:25.860]   think there's like, you're going to be other things that the community needs?
+[01:04:25.860 --> 01:04:26.860]   Yeah.
+[01:04:26.860 --> 01:04:29.780]   I mean, I definitely think mixture of experts should find its way, or at least, you know,
+[01:04:29.780 --> 01:04:32.580]   sparse players like switch transformer and stuff will definitely, I think, find their
+[01:04:32.580 --> 01:04:34.120]   way into like the future of large models.
+[01:04:34.120 --> 01:04:38.780]   I think they really confer a lot of benefits and they're also very good in like high throughput
+[01:04:38.780 --> 01:04:39.780]   applications.
+[01:04:39.780 --> 01:04:43.300]   So I think the one thing, like, so the one downside is on sparsity is like, if you look
+[01:04:43.300 --> 01:04:47.700]   at the performance per model weight, they're going to always be worse than bonds models.
+[01:04:47.700 --> 01:04:51.120]   So it's like, if you really are constrained on like, I want to design the best model I
+[01:04:51.120 --> 01:04:55.140]   can to fit on as small of a device as I can, then they're probably not going to be the
+[01:04:55.140 --> 01:04:59.320]   best solution because the sparse weights just aren't as good as just the dense weight that's
+[01:04:59.320 --> 01:05:01.020]   being used for everything.
+[01:05:01.020 --> 01:05:04.660]   So I think it really depends on the application, but I'm very optimistic for when we're training
+[01:05:04.660 --> 01:05:07.740]   these models during pre-training with lots of data parallelism, and then we're serving
+[01:05:07.740 --> 01:05:10.220]   them in like medium to higher throughput examples.
+[01:05:10.220 --> 01:05:13.800]   I feel like they could actually just be a pretty big win.
+[01:05:13.800 --> 01:05:17.300]   So that that's kind of my thoughts on, on how I think sparsity will be used in terms
+[01:05:17.300 --> 01:05:18.300]   of other things.
+[01:05:18.300 --> 01:05:19.300]   Yeah, I think, I don't know.
+[01:05:19.300 --> 01:05:21.740]   There's a ton of exciting research, you know, from everything from, yeah, like a lot of
+[01:05:21.740 --> 01:05:27.260]   the linear attention stuff, adaptive computation, new pre-training objectives, you know, yeah,
+[01:05:27.260 --> 01:05:30.940]   it's hard to know what the future will look like, but yeah, a lot of exciting things to
+[01:05:30.940 --> 01:05:31.940]   look forward to.
+[01:05:31.940 --> 01:05:32.940]   Great.
+[01:05:32.940 --> 01:05:33.940]   Sounds good.
+[01:05:33.940 --> 01:05:34.940]   Okay.
+[01:05:34.940 --> 01:05:37.780]   So we can just now have like a round of student questions, so we'll just stop the recording.
+[01:05:37.780 --> 01:05:38.780]   Okay.
+[01:05:38.780 --> 01:05:39.780]   Okay.
+[01:05:39.780 --> 01:05:40.780]   Great.
+[01:05:40.780 --> 01:05:40.780]   Thank you.
+[01:05:40.780 --> 01:05:50.780]   [BLANK_AUDIO]
+

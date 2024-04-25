@@ -1,0 +1,756 @@
+
+[00:00:00.000 --> 00:00:13.960]   >> Hello, everyone. Today we have Nezni from Hugging Face, who is working on AI safety
+[00:00:13.960 --> 00:00:20.000]   and alignment using reinforcement learning with human feedback. She's an expert in the
+[00:00:20.000 --> 00:00:29.480]   space of large language models and their evaluation. Before Hugging Face, she led a team of researchers
+[00:00:29.480 --> 00:00:36.880]   at Salesforce focused on building robust natural language generation systems based on LLMs,
+[00:00:36.880 --> 00:00:45.000]   and she got her Ph.D. at UT Austin in computer science. So, everyone, welcome.
+[00:00:45.000 --> 00:00:53.880]   >> Thanks for having me. So, the title of my talk today is recipes for training helpful
+[00:00:53.880 --> 00:01:00.800]   chatbots. So, here's the introduction. I was part of this team called the H4 at Hugging
+[00:01:00.800 --> 00:01:07.360]   Face, and today I'll walk you through what we built, how we decided on what we need for
+[00:01:07.360 --> 00:01:11.200]   building that. And so, essentially, what we wanted to build and the goal of the team and
+[00:01:11.200 --> 00:01:17.400]   the project since earlier this year was to figure out a recipe for H4, which stands for
+[00:01:17.400 --> 00:01:23.920]   helpful, harmless, honest, and huggy because it's Hugging Face chatbot. And so, the ingredients
+[00:01:23.920 --> 00:01:28.800]   essentially were to figure out what kind of data sets do we need for supervised trine
+[00:01:28.800 --> 00:01:36.000]   tuning and RLHF. And we wanted to not worry about pre-training. Instead, take an open
+[00:01:36.000 --> 00:01:41.440]   source pre-trained model and recreate the secret sauce of alignment on it. And the procedure
+[00:01:41.440 --> 00:01:46.560]   that we wanted to follow and replicate on open source is this figure that I'm pretty
+[00:01:46.560 --> 00:01:50.960]   sure most of you are familiar with at this point. It's from this instruct GPD paper from
+[00:01:50.960 --> 00:01:58.160]   OpenAI, which shows three steps. I'm going to go into a bit more detail on this because
+[00:01:58.160 --> 00:02:03.360]   this slide is much smaller. But this is what the outline of the talk looks like. I'll be
+[00:02:03.360 --> 00:02:08.760]   getting the detail of how did we decide what kind of data, how much data, and all the details
+[00:02:08.760 --> 00:02:14.640]   of the data for supervised fine tuning. Then similarly for RLHF. Then I'm going to talk
+[00:02:14.640 --> 00:02:21.080]   about distillation of language model alignment. Then experiments with different helpfulness
+[00:02:21.080 --> 00:02:27.080]   recipes. Finally, talk about evaluation of these models and quirks of using GPD 4 as
+[00:02:27.080 --> 00:02:28.840]   an evaluator.
+[00:02:28.840 --> 00:02:34.680]   Okay, so this is kind of like, you know, what overall recipe that instruct GPD paper from
+[00:02:34.680 --> 00:02:40.720]   OpenAI put forward as, you know, the steps for training a chatbot. So, the first step
+[00:02:40.720 --> 00:02:44.920]   over here is to do supervised fine tuning. Essentially, like, you know, you're doing
+[00:02:44.920 --> 00:02:50.440]   fine tuning with human instruction demonstration data. So, the input and the output are both
+[00:02:50.440 --> 00:02:55.760]   given by humans. The step two is, like, you know, the input is given by a human. The output
+[00:02:55.760 --> 00:03:01.080]   comes from models. And then the human just rates thumbs up, thumbs down, or ranks them.
+[00:03:01.080 --> 00:03:04.600]   And then you train a reward model, which is essentially just a classifier. And then the
+[00:03:04.600 --> 00:03:10.840]   final step three is doing fine tuning using that reward model with reinforcement learning.
+[00:03:10.840 --> 00:03:15.060]   And so, the way I'm looking at it, like, step one is more for, like, you know, making a
+[00:03:15.060 --> 00:03:20.080]   model into a helpful chatbot. And the steps two and three are essentially trying to add
+[00:03:20.080 --> 00:03:26.360]   those guardrails in place for harmlessness. So, let's get started with talking about helpfulness.
+[00:03:26.360 --> 00:03:34.240]   And most of my talk today will be focused on the step one. So, let's start diving deeper
+[00:03:34.240 --> 00:03:39.760]   into this. And let's start with the data set. Like, how do we decide what we need for doing
+[00:03:39.760 --> 00:03:45.160]   the supervised fine tuning? So, like, the data set for helpfulness for supervised fine
+[00:03:45.160 --> 00:03:50.320]   tuning looks somewhat like this. This is from the self-instruct paper, if you're aware of
+[00:03:50.320 --> 00:03:55.560]   that from end of last year. So, you have something that we call as a task, which then has an
+[00:03:55.560 --> 00:04:00.840]   instruction, which is essentially a request by a user asking the model to, like, fulfill
+[00:04:00.840 --> 00:04:06.920]   or, like, give a response to a certain task. And that is followed by input and output.
+[00:04:06.920 --> 00:04:11.760]   The input in this case is optional. It could just be part of the instruction. And then
+[00:04:11.760 --> 00:04:16.320]   the output is the expected output that the model should generate. But while we are doing
+[00:04:16.320 --> 00:04:21.240]   this training, the human provides the expected output that the model would have generated
+[00:04:21.240 --> 00:04:27.000]   in the actual test case. And so, here the input and the output are called instance or
+[00:04:27.000 --> 00:04:32.840]   demonstration or completion. And that's why this is called instruction demonstration.
+[00:04:32.840 --> 00:04:39.720]   So, this is kind of, like, just a high level landscape of what these data sets for instruction
+[00:04:39.720 --> 00:04:44.200]   demonstration look like. And you must have, you know, been familiar with at least some
+[00:04:44.200 --> 00:04:50.120]   of these. And, like, you know, the way I'm trying to put this is on this line where on
+[00:04:50.120 --> 00:04:56.880]   one side I'm showing data sets that were generated using models or more powerful language models.
+[00:04:56.880 --> 00:05:01.120]   And so, they're more synthetic data sets. On the right, I'm showing, like, human written
+[00:05:01.120 --> 00:05:08.280]   data sets. And so, these are data sets that the human wrote the input as well as the expected
+[00:05:08.280 --> 00:05:09.280]   output.
+[00:05:09.280 --> 00:05:13.280]   And so, examples of these are, like, you know, so the search instruct is the data that we
+[00:05:13.280 --> 00:05:20.820]   at Hugging Face H4, you know, contracted with search, this company that basically had contracts
+[00:05:20.820 --> 00:05:25.240]   with annotators that were writing the inputs and outputs. But we had to give them all the
+[00:05:25.240 --> 00:05:29.680]   specifications of what kind of data we need. And then you must have heard of, like, you
+[00:05:29.680 --> 00:05:33.960]   know, obviously Open Assistant is this other community wide effort where people contributed
+[00:05:33.960 --> 00:05:39.240]   manually writing inputs and outputs. Similarly with Dolly. And then on the other end, you
+[00:05:39.240 --> 00:05:42.920]   can see, like, you know, the self instruct data set. I'm going to, like, dive into some
+[00:05:42.920 --> 00:05:48.520]   of these. How are these synthetic data sets created for helpfulness or for supervised
+[00:05:48.520 --> 00:05:49.520]   fine tuning?
+[00:05:49.520 --> 00:05:56.520]   So, one of the examples of how the synthetic data is created is in the self instruct paper,
+[00:05:56.520 --> 00:06:02.680]   which is called bootstrapping the data. So, in this case, they start with 175 C task.
+[00:06:02.680 --> 00:06:08.400]   That is, you know, a 175, like, a very small data set of examples where the manually written
+[00:06:08.400 --> 00:06:13.480]   inputs and outputs from humans, those are added to a task pool. Then a language model,
+[00:06:13.480 --> 00:06:17.960]   like, you know, basically you bootstrap by giving that to the language model in a few
+[00:06:17.960 --> 00:06:23.200]   short settings and ask it to generate more data like that. And then you have another
+[00:06:23.200 --> 00:06:28.800]   language model that does this task classification. Like, you know, what kind of task is this
+[00:06:28.800 --> 00:06:34.880]   sample or the example belonging to? And finally, it also does this more fine grained classification
+[00:06:34.880 --> 00:06:39.360]   as to, like, you know, does it have, you know, output first or does it require input first
+[00:06:39.360 --> 00:06:43.760]   and so on? And because this is synthetic data and created in this, like, a very scalable
+[00:06:43.760 --> 00:06:49.560]   way, you also have to do a lot of filtering to make sure that it is very high quality.
+[00:06:49.560 --> 00:06:55.840]   So, another way of generating this kind of synthetic data is what UltraChat did. And
+[00:06:55.840 --> 00:07:00.480]   in this case, they had, like, a human in the loop process. So, a human would, like, you
+[00:07:00.480 --> 00:07:06.400]   know, look up, like, either, you know, search Wikipedia or something and then come up with,
+[00:07:06.400 --> 00:07:11.640]   you know, topics that they want to generate data for. And then, you know, ask the model,
+[00:07:11.640 --> 00:07:16.240]   like, provide it with the required material that would be needed for, you know, coming
+[00:07:16.240 --> 00:07:21.320]   up with, say, question answering or summarization or any of these specific tasks. And then give
+[00:07:21.320 --> 00:07:26.040]   it to a more powerful model, like, chat GPD or GPD4. In this case, it was chat GPD. And
+[00:07:26.040 --> 00:07:30.520]   then, oh, actually, GPD4. And then you kind of, like, you know, keep doing these loops
+[00:07:30.520 --> 00:07:34.480]   of, like, you know, giving the material to the model and say, like, come up with questions
+[00:07:34.480 --> 00:07:39.120]   and answers on this particular task using all this material. And then, you know, then
+[00:07:39.120 --> 00:07:43.560]   the human looks at it and then keeps querying it and refining it more and more. So, this
+[00:07:43.560 --> 00:07:47.640]   is another way of creating synthetic data. Obviously, this has a human sitting there
+[00:07:47.640 --> 00:07:53.120]   and doing a lot more filtering in the process. Then there's another one, which is, like,
+[00:07:53.120 --> 00:07:59.080]   even less human involved, which is role playing. And this is the camel dataset. In this case,
+[00:07:59.080 --> 00:08:05.280]   all that the human does is, like, come up with an idea of what task or what, you know,
+[00:08:05.280 --> 00:08:09.400]   level they want. So, at a high level, it would be, like, develop a trading bot for the stock
+[00:08:09.400 --> 00:08:15.680]   market. And there would be two LLMs. One would be role playing as an AI assistant. The other
+[00:08:15.680 --> 00:08:20.760]   would be role playing as an AI user. And then they basically just specify the task and,
+[00:08:20.760 --> 00:08:25.760]   like, let these two bots chat with each other and create a conversation dataset, which is,
+[00:08:25.760 --> 00:08:32.200]   again, like, a synthetic dataset for supervised fine tuning.
+[00:08:32.200 --> 00:08:35.920]   So this is kind of, like, you know, just going back to this, you know, landscape. It looks
+[00:08:35.920 --> 00:08:40.920]   like, you know, people have been very creative. And how do we get, you know, very high quality
+[00:08:40.920 --> 00:08:46.920]   data quickly without spending a lot of money? And because humans are inefficient and expensive.
+[00:08:46.920 --> 00:08:50.440]   And so, these are, like, you know, some examples that we looked at. But on the other hand,
+[00:08:50.440 --> 00:08:55.640]   we also cannot, like, you know, underestimate how good quality, like, the manually created
+[00:08:55.640 --> 00:09:01.840]   datasets are. And so, we at Hugging Face decided to, like, you know, go with everything, like,
+[00:09:01.840 --> 00:09:06.080]   very manual and, like, you know, have humans do both the input and output. Also go figure
+[00:09:06.080 --> 00:09:10.760]   out, like, what are the, you know, essential documents or, you know, other material they
+[00:09:10.760 --> 00:09:17.000]   need for coming up with creating this dataset. But when we started doing that, we were earlier
+[00:09:17.000 --> 00:09:21.000]   in the year. So, this is back in January or February of this year. And this is what the
+[00:09:21.000 --> 00:09:26.080]   landscape looked like at that time. And so, there was very little datasets available.
+[00:09:26.080 --> 00:09:31.640]   A lot of these were mostly synthetically created. So, we wanted to, like, you know, kind of
+[00:09:31.640 --> 00:09:35.440]   leverage what was existing out there. But we also had to make some really important
+[00:09:35.440 --> 00:09:39.160]   decisions because we were going to, like, pay money and make sure that the data that
+[00:09:39.160 --> 00:09:43.520]   we collect is actually useful for building the model and, you know, the applications
+[00:09:43.520 --> 00:09:49.200]   that are built on top of it. So, these are the learnings that we had from the past papers
+[00:09:49.200 --> 00:09:53.800]   that were, you know, creating these supervised fine-tuned datasets. We knew that the dataset
+[00:09:53.800 --> 00:09:58.840]   has to be in the range of tens of thousands of examples. So, this is from the self-instruct
+[00:09:58.840 --> 00:10:04.720]   dataset. And we also knew that, you know, these models that are trained on this dataset
+[00:10:04.720 --> 00:10:10.040]   show diminishing returns after just a few thousand high-quality instructions. So, you
+[00:10:10.040 --> 00:10:14.080]   don't need a lot. And then it saturates very quickly. So, these are the two findings that
+[00:10:14.080 --> 00:10:20.400]   we had when we started to, like, go collect datasets for supervised fine-tuning.
+[00:10:20.400 --> 00:10:26.000]   But we also had to give some very fine-grained specifications on what we want for our dataset.
+[00:10:26.000 --> 00:10:29.880]   In particular, we had to decide what is the task distribution we want for the data that
+[00:10:29.880 --> 00:10:34.160]   we are collecting. I mean, we know it's tens of thousands, but how many thousands of what
+[00:10:34.160 --> 00:10:39.040]   task, right? The length distribution, like, you know, should the prompt have a certain
+[00:10:39.040 --> 00:10:44.080]   dimension? Is that even an important factor? And one thing is that we wanted we had decided
+[00:10:44.080 --> 00:10:48.800]   that we want to make it high-quality and human-written, but then there were, like, options on that
+[00:10:48.800 --> 00:10:54.400]   as well. We could go with external vendors, like SERT, Scale AI, AWS, Ground Truth, and
+[00:10:54.400 --> 00:10:59.560]   so on. Or we could hire our own contractors from Upwork and MTurk. So, those were, like,
+[00:10:59.560 --> 00:11:04.040]   decisions that we had to make. So, let's look at each of these one by one.
+[00:11:04.040 --> 00:11:10.960]   So, because we were recreating this InstructGPT recipe for this helpful chatbot, we wanted
+[00:11:10.960 --> 00:11:14.840]   to, like, you know, take inspiration from their task distribution. So, on the left,
+[00:11:14.840 --> 00:11:20.600]   I'm showing, like, the task distribution that InstructGPT did for OpenAI did for the InstructGPT
+[00:11:20.600 --> 00:11:24.960]   paper. As you can see, that generation is, like, you know, the majority of it, followed
+[00:11:24.960 --> 00:11:29.760]   by some, you know, some of these open-ended tasks and brainstorming tasks and so on. And
+[00:11:29.760 --> 00:11:34.640]   these are examples of, like, what prompts of each of those look like. So, we decided
+[00:11:34.640 --> 00:11:38.120]   to, like, you know, just go with that. But instead, you must have noticed that there's
+[00:11:38.120 --> 00:11:43.400]   this category called "other" in the table. And we obviously don't know what that was.
+[00:11:43.400 --> 00:11:48.020]   But so, we decided to replace that with "code." So, essentially, it would be, like, debugging,
+[00:11:48.020 --> 00:11:52.480]   asking clarification questions about the code. So, it's like code plus natural language.
+[00:11:52.480 --> 00:11:57.680]   So, this is what our final distribution looked like.
+[00:11:57.680 --> 00:12:01.840]   The second question was the length distribution. So, we also had to, like, you know, figure
+[00:12:01.840 --> 00:12:05.240]   out, like, you know, how important is the length? And should we, like, you know, have
+[00:12:05.240 --> 00:12:10.400]   a certain length distribution that we ask these companies to collect data for us? So,
+[00:12:10.400 --> 00:12:15.400]   we did a pilot study with SERT, ScaleAI, and AWS SageMaker Ground Truth, which is more
+[00:12:15.400 --> 00:12:19.520]   like a managed service. So, it's very different from MTurk. And they have very high-quality
+[00:12:19.520 --> 00:12:27.040]   humans, like, basically writing these examples. And so, I wanted to, like, just highlight
+[00:12:27.040 --> 00:12:32.800]   that, you know, this or the first two rows here show what the instruct GPD length distribution
+[00:12:32.800 --> 00:12:36.480]   looks like. And as you can see, this is obviously the full data set. This is more like pilot.
+[00:12:36.480 --> 00:12:42.360]   So, like, the counts are much smaller. But you can see, like, the maximum is 2048. And
+[00:12:42.360 --> 00:12:47.240]   as you know, like, that was, like, the standard context size in the beginning of the year.
+[00:12:47.240 --> 00:12:50.440]   And then, you know, there is obviously, like, even the mean and, you know, that much. It's
+[00:12:50.440 --> 00:12:55.080]   not, like, basically, it's more or less, you know, in the range. But if you look at, you
+[00:12:55.080 --> 00:13:00.880]   know, these examples from SERT, AWS, ScaleAI, there's very high variance. So, for example,
+[00:13:00.880 --> 00:13:06.200]   AWS SageMaker, the maximum prompt length is 1036. But then, like, you know, the mean is
+[00:13:06.200 --> 00:13:13.160]   just 54. And on the other hand, with SERT, the maximum length is 500. But then the mean
+[00:13:13.160 --> 00:13:17.800]   is much, like, you know, 104. So, it's, like, more in the range of what we would expect
+[00:13:17.800 --> 00:13:22.760]   from, like, you know, this difference in instruct GPD. And similarly, with ScaleAI, we found
+[00:13:22.760 --> 00:13:28.920]   that, you know, the prompts were just very, very short. And so, just based on this, we
+[00:13:28.920 --> 00:13:32.560]   said that, you know, okay, we should probably just go with search. Because, you know, that
+[00:13:32.560 --> 00:13:38.840]   seems like something that is more, you know, in the range of not very high variance.
+[00:13:38.840 --> 00:13:44.840]   So, we ended up collecting 10,000 instruction demonstration pairs from search. And this
+[00:13:44.840 --> 00:13:49.280]   is what the task distribution looked like. So, this very much follows the task distribution
+[00:13:49.280 --> 00:13:54.640]   instruct GPD, except for the coding part, which was, like, the other category over there.
+[00:13:54.640 --> 00:13:59.720]   And these are the number of examples we collected for each of these tasks. And year over year,
+[00:13:59.720 --> 00:14:04.160]   I'm showing, like, you know, the average length for each of these task categories. And one
+[00:14:04.160 --> 00:14:08.160]   thing I wanted to highlight was, which was very surprising to me, is that the chat is
+[00:14:08.160 --> 00:14:14.520]   actually one of the shortest prompt length categories. But for OpenAI, that is actually
+[00:14:14.520 --> 00:14:19.560]   one of the longest prompt length categories. So, which was very interesting. And so, obviously,
+[00:14:19.560 --> 00:14:24.360]   like, you know, at that time, we did not think much about it. But when we started training
+[00:14:24.360 --> 00:14:28.600]   models and started looking at the evaluation results, we were kind of, like, you know,
+[00:14:28.600 --> 00:14:33.000]   if we had to go back and change things, how would we change that? And so, these were,
+[00:14:33.000 --> 00:14:37.720]   like, things that we started, you know, looking at more carefully after we had already collected
+[00:14:37.720 --> 00:14:46.520]   the data set. So, here are examples of what that data set looked like. You know, classification,
+[00:14:46.520 --> 00:14:51.480]   generation, brainstorming. I'm sure you all must have seen at least some of these kind
+[00:14:51.480 --> 00:14:56.000]   of examples of instruction demonstration data sets. So, it's very much, like, it has everything
+[00:14:56.000 --> 00:15:02.800]   that you can expect from, like, NLP kind of tasks, but also more open-ended chatty tasks
+[00:15:02.800 --> 00:15:13.600]   as well. Okay. So, here are, like, some details about the task force that was used by search
+[00:15:13.600 --> 00:15:18.920]   to generate this data set. We requested a U.S.-based task force mainly because, like
+[00:15:18.920 --> 00:15:24.720]   I said, we just wanted to replicate what InstructGVD was doing. And based on Anthropic and OpenAI's
+[00:15:24.720 --> 00:15:29.880]   paper, it seemed like they preferred going with the U.S.-based task force. The gender
+[00:15:29.880 --> 00:15:36.520]   was equally divided, and the age range was also very, you know, it was, like, a big range
+[00:15:36.520 --> 00:15:42.480]   going all the way from 19 to 62. And then people had, like, you know, educational background
+[00:15:42.480 --> 00:15:47.120]   ranges from technical degree to Ph.D. So, Ph.D. was mainly for tasks like math, coding,
+[00:15:47.120 --> 00:15:55.760]   and so on. Okay. So, now I wanted to, like, switch gears a little bit and talk about this
+[00:15:55.760 --> 00:16:02.000]   data set that we collected for RLHF or for human preferences before I get into, like,
+[00:16:02.000 --> 00:16:05.960]   you know, the experiments we ran with this supervised fine-tuning data set and what results
+[00:16:05.960 --> 00:16:12.320]   we got. So, again, over here, while we were collecting human reference data set, we had
+[00:16:12.320 --> 00:16:17.360]   to come up with what are the specifications of these data sets. So, again, just to, like,
+[00:16:17.360 --> 00:16:22.200]   contrast this with how is it different from SFD, the SFD data set, both the input and
+[00:16:22.200 --> 00:16:26.940]   the output are written by humans. In this case, the human writes the input. The output
+[00:16:26.940 --> 00:16:31.960]   comes from models, which is responses, but then the human just ranks or rates them on
+[00:16:31.960 --> 00:16:38.240]   a certain scale. So, yeah, essentially, we had to decide, like, what is the task distribution
+[00:16:38.240 --> 00:16:44.440]   looks like for RLHF data? Is it going to be same as supervised fine-tuning? What about
+[00:16:44.440 --> 00:16:49.040]   the length distribution? And should we do, like, single turn versus multi-turn? So, in
+[00:16:49.040 --> 00:16:53.720]   struct GPT, it was mainly single turn. So, if we are trying to replicate in struct GPT,
+[00:16:53.720 --> 00:16:57.120]   we would have to go with single turn. But if we are trying to replicate something like
+[00:16:57.120 --> 00:17:02.680]   chat GPT, it would have to be, like, a multi-turn dialogue. And then we had to also, like, you
+[00:17:02.680 --> 00:17:07.760]   know, decide on these dimensions of, like, helpfulness, honesty, and harmlessness. So,
+[00:17:07.760 --> 00:17:13.400]   these are, like, the HHH that Entropiq follows, like, OpenAI puts it as helpfulness, truthfulness,
+[00:17:13.400 --> 00:17:16.880]   and harmlessness. And then also we had to decide, like, you know, are they going to
+[00:17:16.880 --> 00:17:21.320]   rate each of the responses individually? Or are they going to rank them? And what are
+[00:17:21.320 --> 00:17:26.320]   the implications of, like, you know, us deciding one way or the other?
+[00:17:26.320 --> 00:17:34.160]   So, we started by doing pilot study again. So, we took 300 from the self-instruct data
+[00:17:34.160 --> 00:17:39.800]   set, the data set that was released end of last year. And then, you know, gave it generated
+[00:17:39.800 --> 00:17:45.320]   model responses from our models and then gave it to data vendors to, like, rate the responses
+[00:17:45.320 --> 00:17:51.480]   of the models. And we used this Entropiq template on the left, which is essentially asking the
+[00:17:51.480 --> 00:17:55.800]   human choose the most helpful and honest response. And then, you know, these are the responses
+[00:17:55.800 --> 00:18:01.320]   from, like, model A and model B. And this is a scale, which is also working as, like,
+[00:18:01.320 --> 00:18:06.760]   sort of a ranking thing in the sense that one to four is, like, decreasingly model A
+[00:18:06.760 --> 00:18:12.320]   and five to eight is increasingly model B.
+[00:18:12.320 --> 00:18:16.100]   And also, like, you know, one other thing we had to decide about is, like, how much
+[00:18:16.100 --> 00:18:21.000]   data should we collect? And so, again, this is from the InstructGPD paper. And as you
+[00:18:21.000 --> 00:18:25.200]   can see, like, you know, they have, like, the train and validation splits for each of
+[00:18:25.200 --> 00:18:30.240]   the three steps, which are the SFD, training the reward model, and the PPO. And this one
+[00:18:30.240 --> 00:18:35.000]   is in the order of tens of thousands. And, like, overall, this combined, which is, like,
+[00:18:35.000 --> 00:18:40.120]   you know, this process of RLHF comes up to about 100,000.
+[00:18:40.120 --> 00:18:49.040]   Great. Okay. So, then once we got this pilot study data back, we sat down and we wanted
+[00:18:49.040 --> 00:18:53.640]   to also, like, you know, so I looked at it manually, and I felt that I did not agree
+[00:18:53.640 --> 00:18:58.200]   with most of the answers that, you know, the annotators from each of these companies were
+[00:18:58.200 --> 00:19:02.600]   providing. And so, I was kind of, like, you know, I don't think this is high quality at
+[00:19:02.600 --> 00:19:06.880]   all. So, what I decided, like, you know, I told my team, let's go and, like, you know,
+[00:19:06.880 --> 00:19:12.240]   rate it within ourselves. And then, you know, we basically rated, like, about 100 examples
+[00:19:12.240 --> 00:19:17.560]   or so. And we followed, like, a similar template of, like, one to four and five to eight. And
+[00:19:17.560 --> 00:19:22.280]   it basically the output, like, you know, the takeaway was that even we did not agree amongst
+[00:19:22.280 --> 00:19:27.440]   each other. So, essentially, like, our models earlier in the year was so bad, you were essentially
+[00:19:27.440 --> 00:19:31.640]   breaking ties, like, arbitrarily. Like, you know, you're deciding between, like, should
+[00:19:31.640 --> 00:19:35.360]   it be, like, you know, three versus, like, seven or something like that. So, if they're
+[00:19:35.360 --> 00:19:40.000]   equally bad, it's hard to, like, decide which one is better, right? And so, we were kind
+[00:19:40.000 --> 00:19:44.120]   of, like, breaking some of these ties arbitrarily. And so, as you can see, like, you know, there
+[00:19:44.120 --> 00:19:48.760]   was barely any, like, you know, agreement or correlation among our outputs. And then,
+[00:19:48.760 --> 00:19:52.480]   you know, when I aggregated that, and, you know, looked at, you know, how well do we
+[00:19:52.480 --> 00:19:57.000]   correlate with, like, for example, search and scale. And so, we decided, like, you know,
+[00:19:57.000 --> 00:20:03.680]   with AI, we had, like, more, like, the maximum overlap was with scale compared to, like,
+[00:20:03.680 --> 00:20:09.880]   say, search. Okay. So, we ended up collecting 20,000 dialogues. So, we decided to go with
+[00:20:09.880 --> 00:20:16.560]   multi-turn. And so, because it was multi-turn, you would have, like, 20,000 overall dialogues,
+[00:20:16.560 --> 00:20:19.840]   but the number of prompts would be 80,000. So, there would be each dialogue would have
+[00:20:19.840 --> 00:20:24.280]   about four turns on an average. So, like, you know, a human would prompt it, the model
+[00:20:24.280 --> 00:20:29.320]   would respond, a human would, like, rate the response, and then, you know, ask the follow-up
+[00:20:29.320 --> 00:20:32.760]   question. And then, again, the model would, like, you know, generate two responses, and
+[00:20:32.760 --> 00:20:39.360]   that is how it would go on. And so, the task distribution we decided to follow was a little
+[00:20:39.360 --> 00:20:44.640]   bit different from what we had for supervised fine tuning. And the reason behind that was
+[00:20:44.640 --> 00:20:51.520]   that we wanted to focus more on tasks that were, like, factual, so that, you know, essentially,
+[00:20:51.520 --> 00:20:55.800]   this is more about making the model learn, like, between positive and negative signals.
+[00:20:55.800 --> 00:21:00.200]   So, making the model, like, discriminate between, like, you know, what is factual, what is not,
+[00:21:00.200 --> 00:21:04.920]   what is helpful, what is not, and what is harmless and what is not. And, like, you know,
+[00:21:04.920 --> 00:21:09.480]   for example, tasks like generation and brainstorming, there's no one correct answer. Like, you know,
+[00:21:09.480 --> 00:21:13.440]   everyone can come up with, like, different lists or recipes, and, you know, it's hard
+[00:21:13.440 --> 00:21:17.200]   to say, is this the best answer? Is this the most helpful answer? But if you ask, like,
+[00:21:17.200 --> 00:21:22.080]   a factual question, it's, like, very clear what is correct and what is not. So, that
+[00:21:22.080 --> 00:21:26.120]   was kind of, like, our reasoning behind doing this. And so, this is a task distribution
+[00:21:26.120 --> 00:21:31.680]   that we came up with for collecting the human preference dataset.
+[00:21:31.680 --> 00:21:35.840]   Also about the length, because we are doing this in a multi-turn setting, and so we wanted
+[00:21:35.840 --> 00:21:40.000]   to make sure, like, you know, the entire dialogue could fit into, like, the context line of
+[00:21:40.000 --> 00:21:44.080]   the models, we have decided to, like, you know, ask them to keep the overall dialogue
+[00:21:44.080 --> 00:21:51.080]   to be shorter than 2048 tokens. And then it was multi-turn with an average of four turns
+[00:21:51.080 --> 00:21:55.880]   per dialogue. Then, obviously, we had to also select on the dimension of, like, whether
+[00:21:55.880 --> 00:22:01.800]   we are going for, like, helpful over harmless or, you know, honesty. So, we followed this
+[00:22:01.800 --> 00:22:06.240]   instructions from this OpenAI guidelines. I'm not sure if I can pull this up. That would
+[00:22:06.240 --> 00:22:16.400]   be nice. Okay. Great. But, yeah, so, OpenAI has this document which is public of, like,
+[00:22:16.400 --> 00:22:21.360]   labeling instructions that they shared with their annotators. And so, they have, obviously,
+[00:22:21.360 --> 00:22:25.320]   like I said, they have helpful, truthful, and harmless, but then they also have this
+[00:22:25.320 --> 00:22:32.440]   thing how do I scroll down? Okay. So, they have definitions on what do they mean by helpfulness,
+[00:22:32.440 --> 00:22:37.120]   what do they mean by truthfulness, and what do they mean by harmlessness. So, in our case,
+[00:22:37.120 --> 00:22:42.620]   because our models were not as good, we decided to focus on helpfulness and truthfulness.
+[00:22:42.620 --> 00:22:48.840]   And when they had to break ties, OpenAI says that, you know, choose truthfulness over helpfulness
+[00:22:48.840 --> 00:23:07.000]   over your so, like, let me see that. Yeah. So, they wanted to, like, prioritize harmlessness
+[00:23:07.000 --> 00:23:10.920]   and truthfulness over helpfulness, but we went the other way around. We said we wanted
+[00:23:10.920 --> 00:23:16.720]   to, like, prioritize helpfulness over honesty or harmlessness. I mean, we weren't even focusing
+[00:23:16.720 --> 00:23:21.120]   on harmlessness, because we just wanted to get our model to a certain capabilities before
+[00:23:21.120 --> 00:23:26.840]   we start thinking about that. But, yeah, this is really a very good document and, like,
+[00:23:26.840 --> 00:23:32.040]   you know, defines what should the annotator be looking at and how do they decide when
+[00:23:32.040 --> 00:23:37.680]   the model responses are very close, how do they break those ties. And for, like, you
+[00:23:37.680 --> 00:23:42.680]   know, deciding between what kind of template should we use for collecting these annotations,
+[00:23:42.680 --> 00:23:45.960]   we started off with the entropic template that I showed a few slides earlier, which
+[00:23:45.960 --> 00:23:50.720]   was on a scale of one to eight, but essentially ranking between these two models. And then,
+[00:23:50.720 --> 00:23:54.960]   you know, Lama2 came out while we were in this iterative process. And our iterative
+[00:23:54.960 --> 00:23:59.520]   process was essentially we used to give an endpoint to the vendor, and then the, you
+[00:23:59.520 --> 00:24:03.880]   know, basically the annotators that they had in the managed task force would prompt these
+[00:24:03.880 --> 00:24:10.680]   endpoints. The model would generate two responses. They would, you know, follow the instructions
+[00:24:10.680 --> 00:24:15.800]   and, you know, give the ranking for each of those instruction each of those model responses.
+[00:24:15.800 --> 00:24:18.680]   And then, you know, again, like, follow up with the second prompt and the conversation
+[00:24:18.680 --> 00:24:22.600]   would go on. And then they would give us the data at the end of that week. We would fine
+[00:24:22.600 --> 00:24:27.920]   tune our model on that data so that the model now is hopefully better. And then we give,
+[00:24:27.920 --> 00:24:32.160]   like, a better endpoint to them for the next week to continue this process. So it's, like,
+[00:24:32.160 --> 00:24:36.320]   very iterative. And, like, you know, they have to adapt to, like, model getting better
+[00:24:36.320 --> 00:24:41.240]   week by week. So, yeah, basically, but, like, you know, we decided to switch to I think
+[00:24:41.240 --> 00:24:47.840]   for one or two weeks we collected entropics, use entropic scale for collecting data set.
+[00:24:47.840 --> 00:24:52.080]   But then Lama 2 came out and their results showed that, you know, clearly that, you know,
+[00:24:52.080 --> 00:24:57.440]   they were using this much more easier scale of just 1 to 4. So they were, like, you know,
+[00:24:57.440 --> 00:25:02.140]   choosing which one is a better response between the two responses and then seeing how much
+[00:25:02.140 --> 00:25:06.920]   better it is. So is it, like, significantly better or is it only slightly better? And
+[00:25:06.920 --> 00:25:13.280]   so that was the ranking of, like, scale 1 to 4. So here are examples of data that we
+[00:25:13.280 --> 00:25:19.920]   collected. So on the left, you can see that it is asking about, like, you know, basically
+[00:25:19.920 --> 00:25:24.480]   human is prompting with a question and then the bot generates a response. So this is the
+[00:25:24.480 --> 00:25:28.680]   response that the human chose at this turn. And then the human, you know, follows up with
+[00:25:28.680 --> 00:25:33.480]   the second prompt. And then this is the bot response that was chosen by this human. And
+[00:25:33.480 --> 00:25:37.760]   this is the rejected bot response. And this is giving the response margin of 3, which
+[00:25:37.760 --> 00:25:41.880]   is saying that they are quite a bit different. So 4 is, like, very different and 1 being
+[00:25:41.880 --> 00:25:47.200]   very slightly different. And then here on the right-hand side is more about sort of
+[00:25:47.200 --> 00:25:52.580]   generation brainstorming kind of example where the human is asking, like, can you write a
+[00:25:52.580 --> 00:25:57.760]   text message wishing your husband a happy anniversary? And then the bot writes something.
+[00:25:57.760 --> 00:26:03.640]   I guess my thing messed up the emojis. But, you know, then the human follows up with saying,
+[00:26:03.640 --> 00:26:07.320]   hey, you missed this important detail, which is, you know, they have been married for eight
+[00:26:07.320 --> 00:26:12.360]   years. And so this is a chosen bot response. This is the rejected one that the human chose
+[00:26:12.360 --> 00:26:17.920]   between those two. And as you can see, they are quite good. So the response margin is
+[00:26:17.920 --> 00:26:26.680]   just 1. So they're, like, just slightly different. Okay. Sounds good. So now I'm going to, like,
+[00:26:26.680 --> 00:26:32.080]   talk about this another recipe that we tried, which is, you know, using synthetic data set
+[00:26:32.080 --> 00:26:37.680]   essentially for distillation of AI alignment, which is basically the paper that we released
+[00:26:37.680 --> 00:26:43.160]   last week called Zephyr, and which was, like, a 7 billion parameter model, which actually
+[00:26:43.160 --> 00:26:49.280]   beat Chad GPT. And this builds on top of the Mistral model. But I just wanted to, like,
+[00:26:49.280 --> 00:26:52.640]   you know, yeah, just, you know, basically we recreated some of the steps that were there
+[00:26:52.640 --> 00:26:58.920]   on the instruct GPT paper, but now with using synthetic data set. And so the first one is,
+[00:26:58.920 --> 00:27:03.800]   like, you know, you are basically, like, using a data set. In this case, we use Ultra Chat.
+[00:27:03.800 --> 00:27:07.680]   So this is a data set I showed a few slides earlier for supervised fine tuning, wherein,
+[00:27:07.680 --> 00:27:12.280]   like, a human was brainstorming and, like, gathering the material, and then, like, you
+[00:27:12.280 --> 00:27:18.000]   know, chatting with this GPT-4 model to, like, generate multiple different, you know, outputs
+[00:27:18.000 --> 00:27:21.920]   for the instruction. And then, you know, this is how we collect that data set, which is
+[00:27:21.920 --> 00:27:27.500]   called the Ultra Chat. And then we use that for fine tuning our model. And then the second
+[00:27:27.500 --> 00:27:33.320]   step is the response generation AI ranking. So in this case, also, like, you know, we
+[00:27:33.320 --> 00:27:39.280]   used Ultra Feedback, which is a data set that was released. And the way this data set was
+[00:27:39.280 --> 00:27:44.440]   constructed was that, you know, they asked, basically, like, you know, took some prompts
+[00:27:44.440 --> 00:27:49.920]   from, like, shared GPT and some of these different data sets of SFT that were already out there.
+[00:27:49.920 --> 00:27:53.800]   And then they gave it to four different models, like, four different powerful models, like
+[00:27:53.800 --> 00:28:01.440]   Palm 2, Cloud 2, GPT-4, and so on. And then they asked this GPT-4 to, like, rank each
+[00:28:01.440 --> 00:28:05.800]   of those four responses. And then, so, like, you know, the one that is the best is the
+[00:28:05.800 --> 00:28:09.840]   one that GPT-4 ranks as the highest. So each of these are scored individually on a scale
+[00:28:09.840 --> 00:28:16.760]   of 1 to 10. And the one that gets the maximum score is, like, the best response. And then
+[00:28:16.760 --> 00:28:21.520]   finally, we did something called DPO, which you might have been aware of because it came
+[00:28:21.520 --> 00:28:26.320]   out of Stanford. It's, like, this kind of alternative to RLHF, which is, like, doing
+[00:28:26.320 --> 00:28:31.720]   this direct preference optimization. And so instead of, like, you know, basically doing
+[00:28:31.720 --> 00:28:35.960]   this iterative process of fine-tuning, you directly, like, optimize on, like, the chosen
+[00:28:35.960 --> 00:28:42.600]   one. So we just take that and then fine-tune our model directly on that chosen response.
+[00:28:42.600 --> 00:28:47.920]   And the other one that we are using is, like, a random response from these other three responses.
+[00:28:47.920 --> 00:28:54.960]   Okay. So I'm going to talk a little bit about experiments and evaluation for each of these
+[00:28:54.960 --> 00:29:00.000]   recipes. One is collecting everything with, like, humans involved. And the second one
+[00:29:00.000 --> 00:29:05.160]   is everything which is synthetic. But then before I discuss evaluation, I wanted to talk
+[00:29:05.160 --> 00:29:09.040]   about, like, what are the benchmarks that we are evaluating on and how good are these
+[00:29:09.040 --> 00:29:14.520]   benchmarks for evaluating chatbots. And to think about evaluation, we need to first think
+[00:29:14.520 --> 00:29:19.240]   about how are we training these models. So, like, today, all the models that are trained
+[00:29:19.240 --> 00:29:23.640]   are, like, more or less have these four ways of learning. The first one is pre-training
+[00:29:23.640 --> 00:29:28.080]   the language model. Essentially, you're predicting the next token. And examples of these are,
+[00:29:28.080 --> 00:29:34.280]   like, GPT-3, OPT, and so, like, the foundation models. The second type of learning is in-context
+[00:29:34.280 --> 00:29:38.800]   learning or the prompt-based learning. In this case, you're, like, just giving a new
+[00:29:38.800 --> 00:29:43.480]   kind of task in the context of the model and then, you know, ask it to, like, you know,
+[00:29:43.480 --> 00:29:48.160]   do that on new examples. So, like, if you wanted to write a poem, for example, for GPT-3,
+[00:29:48.160 --> 00:29:51.880]   you would have written that in the context and then it would have generated a new poem
+[00:29:51.880 --> 00:29:59.760]   on some other topic. The third type of learning is the supervised fine tuning, which was kind
+[00:29:59.760 --> 00:30:04.760]   of, like, the first step of training a chatbot. In this case, you're, like, fine tuning on
+[00:30:04.760 --> 00:30:08.840]   the instruction following data and then you want these language models, which are just
+[00:30:08.840 --> 00:30:14.760]   pre-trained to predict the next token to become chatty and to, like, generate open-ended responses.
+[00:30:14.760 --> 00:30:19.480]   And then, finally, the fourth one is reinforcement learning from human feedback, which is nudging
+[00:30:19.480 --> 00:30:24.040]   the language model towards the values you desire. And examples include llama to chat
+[00:30:24.040 --> 00:30:33.060]   from meta. So, the first two steps are, you know, we have a lot of benchmarks for these
+[00:30:33.060 --> 00:30:37.840]   two types of training. Like, Sanford Helm is an example of that. Or the Google Big Bench
+[00:30:37.840 --> 00:30:45.440]   or even open LLM leaderboard. But for these two types of learning, which is supervised
+[00:30:45.440 --> 00:30:49.160]   fine tuning and reinforcement learning from human feedback, which are parts of, like,
+[00:30:49.160 --> 00:30:54.380]   this recipe for training a chatbot, there's, you know, not a lot of leaderboards or evaluation
+[00:30:54.380 --> 00:30:58.340]   benchmarks available. But there are some available. And I wanted to, like, you know, just highlight
+[00:30:58.340 --> 00:31:04.220]   some of those. So, like, yeah, this is essentially, like, the steps three and four here match
+[00:31:04.220 --> 00:31:08.440]   to, like, you know, the step one over here, which is helpfulness, and then steps two and
+[00:31:08.440 --> 00:31:13.560]   three over here, which is, like, you know, nudging the model towards being more harmless.
+[00:31:13.560 --> 00:31:19.840]   So, if you had to, you know, evaluate the chatbot for each of these steps, you would
+[00:31:19.840 --> 00:31:24.800]   have to think about how do you evaluate instruction following or chattiness. You would have to,
+[00:31:24.800 --> 00:31:29.420]   you know, think about how do you evaluate the reward model, which is essentially a classifier.
+[00:31:29.420 --> 00:31:33.320]   And then finally think about, you know, how do you evaluate for harmlessness, which is
+[00:31:33.320 --> 00:31:39.480]   by red feeling or adversely prompting the language model. So, for the first step, you
+[00:31:39.480 --> 00:31:43.440]   would have to see, like, does the model generate useful responses on the topic? And are they
+[00:31:43.440 --> 00:31:47.880]   open ended? And one example of a prompt that you would try to evaluate the model would
+[00:31:47.880 --> 00:31:54.080]   be to, like, say, brainstorm a list of the New Year's resolution. And so, examples of
+[00:31:54.080 --> 00:31:59.360]   benchmarks and evaluation boards that are looking at this sort of, like, supervised
+[00:31:59.360 --> 00:32:05.300]   fine tuning is, like, Hugging Faces, a leaderboard with ELO ratings. So, ELO is this metric that
+[00:32:05.300 --> 00:32:09.480]   is used in chess, which is, like, you know, you're pairing one player against the other,
+[00:32:09.480 --> 00:32:13.160]   and you want to, like, rank these players when they have, like, these tournaments against
+[00:32:13.160 --> 00:32:20.080]   each other. And so, in a similar sense, we are, you know, taking these chatbots and then,
+[00:32:20.080 --> 00:32:25.000]   you know, putting them in a pairwise setting. And then we partnered with ScaleAI, and they
+[00:32:25.000 --> 00:32:30.360]   provided humans to, like, annotate which response is better. And we did that for every single
+[00:32:30.360 --> 00:32:35.480]   combination. So, like, it was NC2, where N is the number of prompts we are looking at.
+[00:32:35.480 --> 00:32:40.640]   And so, we generate NC2 combinations, and we rate each of them. And so, these are the
+[00:32:40.640 --> 00:32:47.600]   ELO ratings that we get out of it. And on this column here shows that what is the rating
+[00:32:47.600 --> 00:32:52.880]   you would get if you would have used GPD 4 as a proxy for humans? So, instead of, like,
+[00:32:52.880 --> 00:32:57.120]   humans sitting and rating each of those, you're asking, like, you know, GPD 4 to select which
+[00:32:57.120 --> 00:33:02.680]   is a better response. Yeah. And so, this is basically the first table you're showing if
+[00:33:02.680 --> 00:33:07.320]   you allow ties in the sense sorry, if there was no tie allowed. And this table you're
+[00:33:07.320 --> 00:33:15.480]   showing that if ties were allowed. Another example is, you know, this leaderboard from
+[00:33:15.480 --> 00:33:20.440]   Stanford, which is Alpaca Eval leaderboard, and they're doing something very similar in
+[00:33:20.440 --> 00:33:25.720]   the sense that they have GPD 4 and Claude as an evaluator, and they are doing, like,
+[00:33:25.720 --> 00:33:32.040]   a pairwise evaluation of these models, chatbot models, and they're reporting the win rate
+[00:33:32.040 --> 00:33:38.840]   of, you know, which model wins against the other one. There's also the LMSIS leaderboard
+[00:33:38.840 --> 00:33:43.120]   from Berkeley, which has this thing called the chatbot arena, which is essentially like
+[00:33:43.120 --> 00:33:48.040]   a publicly crowdsourced leaderboard, wherein you can, like, go chat, like, you know, chat
+[00:33:48.040 --> 00:33:51.880]   with any of their models, and then give them rating to, like, which one was more helpful
+[00:33:51.880 --> 00:33:56.640]   and which one was better. And so, this, again, has, like, a leaderboard of ELO ratings, because
+[00:33:56.640 --> 00:34:03.960]   this is done in a pairwise setting. There's another benchmark from LMSIS, which is called
+[00:34:03.960 --> 00:34:09.360]   the empty bench or the multi-turn bench, a benchmark. And this is the first ever multi-turn
+[00:34:09.360 --> 00:34:15.440]   dialogue benchmark that is evaluating chatbots. And so, it has, there are just, like, 80 examples
+[00:34:15.440 --> 00:34:20.320]   in this across, like, a bunch of categories. But essentially, what, the way it works is
+[00:34:20.320 --> 00:34:27.360]   that the first turn or the first prompt from the benchmark is prompted to the model. Then
+[00:34:27.360 --> 00:34:33.560]   GPD 4 is asked to score on a score of 1 to 10. How good is the model's response? And
+[00:34:33.560 --> 00:34:38.000]   then, you know, it is followed up by another prompt, which is, like, you know, the multi-turn
+[00:34:38.000 --> 00:34:42.560]   prompt, which is, like, related to the question, but it might not be related to the model's
+[00:34:42.560 --> 00:34:45.960]   responses, because, you know, this is already constructed, and they always, like, follow
+[00:34:45.960 --> 00:34:51.600]   up with the same response to every part. And then, again, GPD 4 evaluates how good was
+[00:34:51.600 --> 00:34:57.600]   the second turn of the response. So, this is, like, the consolidated leaderboard from
+[00:34:57.600 --> 00:35:03.400]   LMSIS, showing both the arena ELO rating, as well as empty bench scores. So, these are
+[00:35:03.400 --> 00:35:08.880]   scores that are aggregated across all the 80 examples, and this is GPD score scoring
+[00:35:08.880 --> 00:35:16.040]   from, like, 1 to 10, essentially. Cool. So, I think the second step that we wanted to,
+[00:35:16.040 --> 00:35:20.800]   like, look at in our evaluating a chatbot chart was, like, you know, think about how
+[00:35:20.800 --> 00:35:25.840]   do you evaluate a reward model. So, when you have these human preference data set collected,
+[00:35:25.840 --> 00:35:29.680]   and you train this reward model, which is essentially a classifier, to discriminate
+[00:35:29.680 --> 00:35:33.840]   between, like, you know, truthful and untruthful response, or, like, you know, can it rank
+[00:35:33.840 --> 00:35:39.280]   helpful response higher than the less helpful responses? And, you know, there's literally
+[00:35:39.280 --> 00:35:44.840]   no open source data leaderboard available for evaluating these, like, preference model
+[00:35:44.840 --> 00:35:50.660]   or the reward models. But internally at Hugging Face, we have our own data set for evaluating,
+[00:35:50.660 --> 00:35:55.520]   so that we know that as we are adding more human preference data, our models are actually
+[00:35:55.520 --> 00:36:02.200]   getting better. So, this is essentially we are evaluating on these open source data sets,
+[00:36:02.200 --> 00:36:07.520]   which is the Anthropic Helpful data set, the Open Assistant data set, the Stanford's Human
+[00:36:07.520 --> 00:36:11.960]   Preference data set, and also the Learning to Summarize data sets from the very first
+[00:36:11.960 --> 00:36:18.600]   paper from OpenAI, which was looking at Learning to Summarize. And so, this is, like, you know,
+[00:36:18.600 --> 00:36:23.280]   basically seeing that, you know, how good is our reward model. And then, finally, the
+[00:36:23.280 --> 00:36:28.720]   third type of evaluation is red teaming. And so, in this case, you want to craft a prompt
+[00:36:28.720 --> 00:36:34.720]   in a way that could surface model vulnerabilities and emerging capabilities. And for example,
+[00:36:34.720 --> 00:36:39.120]   if you're asking, like, how do I plan a prank robbery is a model, actually, like, you know,
+[00:36:39.120 --> 00:36:44.720]   helping you with that and trying to elicit undesired behavior from the model. And unfortunately,
+[00:36:44.720 --> 00:36:49.280]   actually, there's no leader open source leaderboard available for this thing. There's just one
+[00:36:49.280 --> 00:36:53.840]   data set from Anthropic, which has all the three included, which is the it actually has
+[00:36:53.840 --> 00:36:58.720]   both helpfulness and harmlessness. It's the edge data set from Anthropic. And that's the
+[00:36:58.720 --> 00:37:04.080]   only open source data set available for red teaming. But there's no leaderboard available
+[00:37:04.080 --> 00:37:08.080]   for red teaming. And so, this was, like, a blog that I wrote earlier in the year, saying,
+[00:37:08.080 --> 00:37:12.320]   like, you know, highlighting this gap and saying that, you know, putting out an announcement
+[00:37:12.320 --> 00:37:16.160]   saying, like, we should get together and build a data set for red teaming. And if you had
+[00:37:16.160 --> 00:37:20.900]   heard of, like, the DEF CON red teaming design challenge, and, you know, basically crowdsourcing
+[00:37:20.900 --> 00:37:26.600]   some of these red teaming work kind of came out of that. Okay. So, now I'm going to get
+[00:37:26.600 --> 00:37:30.600]   into now that we have discussed evaluation and benchmarks and leaderboards, I'm going
+[00:37:30.600 --> 00:37:35.160]   to talk about results and what did they look like on each of and some of these benchmarks.
+[00:37:35.160 --> 00:37:42.840]   So, here I'm showing the results for this Lama 213 billion on the open LLM leaderboard
+[00:37:42.840 --> 00:37:48.120]   from Hugging Face. And in this case, I was using the data set that we collected from
+[00:37:48.120 --> 00:37:53.400]   search that was a 10,000 instruction demonstration data. And I hear on this, you know, these
+[00:37:53.400 --> 00:37:58.480]   are basically the four data sets, which are, like, NLP focused data sets that we have as
+[00:37:58.480 --> 00:38:03.200]   part of open LLM leaderboard, which are the Arc Challenge, the Hendrix, Hellaswag, and
+[00:38:03.200 --> 00:38:09.760]   Truthful QA. And you're, like, you know, this is how well our model does. And all of this
+[00:38:09.760 --> 00:38:14.300]   is essentially accuracy. And this is the Lima paper or the Lima model, which is less is
+[00:38:14.300 --> 00:38:19.240]   more for alignment that came from meta. And they just used 1,000 examples of high quality
+[00:38:19.240 --> 00:38:24.760]   instructions and showed that you can get a very good chatbot by just using 1,000 examples.
+[00:38:24.760 --> 00:38:28.480]   And this is, like, you know, taking the longest example from Open Assistant and just choosing
+[00:38:28.480 --> 00:38:34.320]   the top 500 of them. And so, we found that our model does slightly better than, you know,
+[00:38:34.320 --> 00:38:39.760]   each both of, like, Lama and Open Assistant, except for in Truthful QA, where we found
+[00:38:39.760 --> 00:38:45.760]   that the Lima and Open Assistant did better than us. And similarly, like, actually, like,
+[00:38:45.760 --> 00:38:49.680]   in Empty Bench, we found, like, you know, the opposite was true. So, this is, like,
+[00:38:49.680 --> 00:38:54.360]   you know, Empty Bench is remember that LLMSys had, like, you know, turn zero and turn one.
+[00:38:54.360 --> 00:38:58.720]   And then so, this is reporting the first response. This is, like, GPD 4 is essentially scoring
+[00:38:58.720 --> 00:39:04.880]   on a score of 1 to 10, how good these models are on the first dialogue turn and the second
+[00:39:04.880 --> 00:39:10.960]   dialogue turn and the average score. And so, actually, this is kind of more counterintuitive
+[00:39:10.960 --> 00:39:15.600]   to what we found on this automatic evals is that actually the Empty Bench says that, you
+[00:39:15.600 --> 00:39:20.160]   know, our the data that our model trained on the data that we collected from search
+[00:39:20.160 --> 00:39:24.520]   is not very good. And in fact, Lima and Open Assistant, which are, like, a fraction of
+[00:39:24.520 --> 00:39:31.800]   the size of the data we had are much better. So, this was kind of surprising. And then
+[00:39:31.800 --> 00:39:36.520]   I looked into, like, you know, let me look at is the length a factor in this? And it
+[00:39:36.520 --> 00:39:40.240]   does seem like, you know, like, the data I was looking at each of those and then, you
+[00:39:40.240 --> 00:39:43.960]   know, looked at the average length of the prompts in each of those. And it seems like
+[00:39:43.960 --> 00:39:48.600]   there is a very wide range. For example, like, our data set, the average length was just
+[00:39:48.600 --> 00:39:53.520]   211 of these prompts, while Lima is, like, double of that and Open Assistant is almost
+[00:39:53.520 --> 00:40:02.760]   double of that. So, then I did this experiment where I wanted to check, like, if I controlled
+[00:40:02.760 --> 00:40:07.960]   for the size of the data, but then, you know, let the length be varied, the prompt length,
+[00:40:07.960 --> 00:40:12.520]   does that affect the performance? So, in particular, like, I think I highlighted this before is
+[00:40:12.520 --> 00:40:17.600]   that our chat category was, like, really short. And so, it actually found that, you know,
+[00:40:17.600 --> 00:40:23.880]   like, length did not really affect that much, except for this truthful QA data set. Even
+[00:40:23.880 --> 00:40:28.620]   for this Hellas swag, even though it looks small, it's actually just in the third digit.
+[00:40:28.620 --> 00:40:32.140]   And over here, you can see, like, the actual difference only made on truthful QA, which
+[00:40:32.140 --> 00:40:39.320]   actually preferred models that were generating longer responses. But on the other hand, the
+[00:40:39.320 --> 00:40:44.080]   empty bench score was, again, not intuitive, not aligning or correlated with what we found
+[00:40:44.080 --> 00:40:50.600]   with these automatic metrics and evaluations, in the sense that GPT-4 actually did not prefer,
+[00:40:50.600 --> 00:40:55.640]   like, longer responses. And so, this was, like, you know, a little bit counterintuitive.
+[00:40:55.640 --> 00:41:00.440]   And so, need to, like, dig more into, like, what's going on over here. But, you know,
+[00:41:00.440 --> 00:41:05.220]   it actually found that, you know, like, shorter responses were better than, you know, longer
+[00:41:05.220 --> 00:41:10.120]   responses. Although there was, like, not much of a very much of a difference.
+[00:41:10.120 --> 00:41:15.840]   So, the other experiment and evaluation we did is that just removing amounts of data
+[00:41:15.840 --> 00:41:20.860]   and seeing, like, if you incrementally add more data, how does that affect performance?
+[00:41:20.860 --> 00:41:26.620]   And this is, again, on that open LLM leaderboard from Hugging Face, which is looking at some
+[00:41:26.620 --> 00:41:32.200]   of these standard NLP benchmarks and reporting accuracy. And so, this is, like, starting
+[00:41:32.200 --> 00:41:37.160]   with just 10% of all the data we collected from search. And as you can see, like, you
+[00:41:37.160 --> 00:41:41.720]   know, in all these benchmarks, actually, like, it saturates very quickly. And in some of
+[00:41:41.720 --> 00:41:46.120]   them, you actually get, like, you know, you basically lose performance if you keep adding
+[00:41:46.120 --> 00:41:50.520]   data. And so, this is kind of aligning with when I started, when we started collecting
+[00:41:50.520 --> 00:41:54.920]   data, we had this diminishing return plot, wherein you said that if you have just very
+[00:41:54.920 --> 00:42:00.040]   few thousand examples of very high quality instruction following data set, that's good
+[00:42:00.040 --> 00:42:06.040]   enough. And then your performance saturates or plateaus very quickly after that. And so,
+[00:42:06.040 --> 00:42:09.160]   that is kind of what we got as well.
+[00:42:09.160 --> 00:42:16.440]   Similarly, I think this is where one place where Empty Bench actually correlated with
+[00:42:16.440 --> 00:42:22.880]   the automated metrics is that GPT-4 also, like, you know, showed that, you know, after,
+[00:42:22.880 --> 00:42:28.800]   like, about 4,000 examples, it was basically very barely any gain in performance, actually,
+[00:42:28.800 --> 00:42:33.040]   decreasing performance on the with the model.
+[00:42:33.040 --> 00:42:40.440]   Okay, great. So, that was all the results on using, like, these human curated very high
+[00:42:40.440 --> 00:42:46.000]   quality data set. What about, like, results from distillation from these synthetic data
+[00:42:46.000 --> 00:42:51.560]   sets? In particular, we use UltraChat for supervised fine tuning and UltraFeedback for
+[00:42:51.560 --> 00:42:57.520]   DPO. And so, these are the results. So, this is, like, basically just work that was released
+[00:42:57.520 --> 00:43:01.960]   last week. We haven't yet released the code and the data set, which we are going to do
+[00:43:01.960 --> 00:43:06.560]   this week. And so, here I'm highlighting that Zephyr is the model we released. We built,
+[00:43:06.560 --> 00:43:12.800]   we used Mistral as the foundation model, and then fine tuned it using UltraChat and then
+[00:43:12.800 --> 00:43:18.400]   did DPO on UltraFeedback. And as you can see that it actually beats chat GPT on this Alpaca
+[00:43:18.400 --> 00:43:19.400]   eval leaderboard.
+[00:43:19.400 --> 00:43:30.920]   Also, it is, like, the best in the, in all the open, at least it's, like, it beats most
+[00:43:30.920 --> 00:43:38.920]   of the 13 billion parameter models. And it's, like, quite competitive to cloud to, again,
+[00:43:38.920 --> 00:43:46.880]   on the Alpaca eval leaderboard. So, this is the model which has both SFD and DPO. So,
+[00:43:46.880 --> 00:43:52.720]   we did an ablation on how good or how useful is, like, you know, SFD and how useful is
+[00:43:52.720 --> 00:43:56.960]   DPO, because there's this two-step process. It's, like, first you fine tune on instruction
+[00:43:56.960 --> 00:44:02.280]   demonstration, then you fine tune on human preferences. And so, this is the first row
+[00:44:02.280 --> 00:44:07.640]   over here is showing what if you directly did DPO on UltraFeedback and did not do the
+[00:44:07.640 --> 00:44:11.720]   supervised fine tuning. And you actually saw that that's really bad. So, that doesn't work
+[00:44:11.720 --> 00:44:16.600]   at all. And then the second one is saying that what if you just did supervised fine
+[00:44:16.600 --> 00:44:21.480]   tuning and did not do DPO. And so, this actually, which is, like, the first step, and this actually
+[00:44:21.480 --> 00:44:25.840]   works decently well. And it's, like, you know, basically getting you to, like, 80 or 90%
+[00:44:25.840 --> 00:44:31.080]   of the overall performance. And finally, this is doing, like, supervised fine tuning on
+[00:44:31.080 --> 00:44:35.440]   the human preference data. So, you take this row and do another round of supervised fine
+[00:44:35.440 --> 00:44:39.800]   tuning, but on this data of human preferences. So, you remember you had, like, the chosen
+[00:44:39.800 --> 00:44:44.800]   and the rejected. So, you give all the dialogue history, and then the expected completion
+[00:44:44.800 --> 00:44:49.000]   is the chosen dialogue response. So, in this case, you're not really doing that discriminative
+[00:44:49.000 --> 00:44:53.240]   thing. You're still doing the SFD process, but you're just, you know, like, using that
+[00:44:53.240 --> 00:44:58.160]   in a smart using the data set in a smart way so that it follows a template of what supervised
+[00:44:58.160 --> 00:45:03.000]   fine tuning does. And then that, as well, we found that, you know, wasn't very helpful.
+[00:45:03.000 --> 00:45:09.280]   So, the best recipe, obviously, is DPO plus SFD. So, you know, doing SFD first on the
+[00:45:09.280 --> 00:45:14.880]   UltraChat, and then DPO on the UltraFeedback. Both of these data sets are synthetic. And
+[00:45:14.880 --> 00:45:20.040]   then, you know, it's, like, only slightly better than just doing SFD.
+[00:45:20.040 --> 00:45:27.120]   Okay. So, I'm getting to this final section of my talk, which is essentially looking at,
+[00:45:27.120 --> 00:45:31.760]   you know, so, we have seen a lot of these evaluation and benchmarks and leaderboards,
+[00:45:31.760 --> 00:45:37.120]   and many of them are starting to adopt these powerful models, like Cloud2 and GPD4, and
+[00:45:37.120 --> 00:45:41.880]   are using as proxy for humans in evaluation. And so, what are the quirks associated with
+[00:45:41.880 --> 00:45:45.720]   doing that, and are there things that we should, like, be, like, you know, considering when
+[00:45:45.720 --> 00:45:51.920]   we are doing this at a very large scale? So, when we did that, when we used GPD4 as
+[00:45:51.920 --> 00:45:57.440]   an evaluator, we found that it actually has a positional bias. And so, in particular,
+[00:45:57.440 --> 00:46:03.080]   it is predisposed to generating a rating of 1 in a preference collection setting. And
+[00:46:03.080 --> 00:46:09.040]   so, like, you know, this chart over here shows, like, the average rating for model responses
+[00:46:09.040 --> 00:46:13.440]   across, like, the entire data set. And on the right, on the other hand, humans are more
+[00:46:13.440 --> 00:46:17.960]   or less uniform. And so, you expect that, you know, this distribution seems much more
+[00:46:17.960 --> 00:46:22.440]   better than this distribution, which is skewed to the right.
+[00:46:22.440 --> 00:46:28.560]   So, then what we did is that we prompted GPD4 to say that, hey, you have this left bias,
+[00:46:28.560 --> 00:46:33.160]   and you always generate this rating of 1, you know, be aware of this bias, and then
+[00:46:33.160 --> 00:46:38.000]   you tell it to debias itself, it actually flips the bias in the opposite direction.
+[00:46:38.000 --> 00:46:42.400]   So, then it starts, like, it is more self-aware in the sense that it knows that, you know,
+[00:46:42.400 --> 00:46:47.440]   it has this bias, and now it starts generating more ratings of 5 and 6. And the one way of
+[00:46:47.440 --> 00:46:51.720]   getting rid of this is that we kind of make sure that each response is equally likely
+[00:46:51.720 --> 00:46:56.320]   to be in right and left position. So, that kind of dilutes, like, this bias that it has
+[00:46:56.320 --> 00:47:00.440]   to each of these positions.
+[00:47:00.440 --> 00:47:05.080]   And then, you know, we found that actually, like, prompting GPD4 to generate scores, so
+[00:47:05.080 --> 00:47:10.040]   asking it to score, like, each response individually, like, Empty Bench does. And then instead of
+[00:47:10.040 --> 00:47:14.200]   ranking, but in a pairwise setting, we actually found that that alleviates the problem a little
+[00:47:14.200 --> 00:47:18.080]   bit, but does not completely get rid of the problem.
+[00:47:18.080 --> 00:47:24.840]   We also found evidence of doping between training and evaluation. So, in particular, we found
+[00:47:24.840 --> 00:47:31.200]   that GPD4 prefers models that were trained on GPD4's data. So, these, all these models
+[00:47:31.200 --> 00:47:37.640]   here were trained on data that was bootstrapped using GPD4. And, you know, so it prefers that
+[00:47:37.640 --> 00:47:43.080]   over humans who are, like, more factual, much more higher quality, but they might be very
+[00:47:43.080 --> 00:47:47.840]   succinct and to the point. So, this is one thing that, you know, we should be aware of
+[00:47:47.840 --> 00:47:51.240]   when we are using GPD4 as an evaluator.
+[00:47:51.240 --> 00:47:55.040]   The other thing is that, you know, it also, like, conquers with findings from these other
+[00:47:55.040 --> 00:48:00.580]   papers, which is that GPD4 prefers models with higher diversity. So, that is number
+[00:48:00.580 --> 00:48:05.480]   of unique tokens in the response and the longer responses. So, if you have, like, this list
+[00:48:05.480 --> 00:48:11.440]   of list kind of response, just like chat GPD does, GPD4 is, like, predisposed to rating
+[00:48:11.440 --> 00:48:14.720]   that higher compared to a model that does not generate that.
+[00:48:14.720 --> 00:48:23.000]   We also found that GPD4 has poor correlation with humans on low entropy tasks, such as
+[00:48:23.000 --> 00:48:27.240]   math coding and reasoning. So, remember that leaderboard I showed you where we had compared,
+[00:48:27.240 --> 00:48:33.120]   like, how does GPD4 ELO rating compare to humans? And then we dive deeper into, like,
+[00:48:33.120 --> 00:48:37.400]   how does that compare on each of these different task distribution and categories? And so,
+[00:48:37.400 --> 00:48:42.640]   this is what it looks like. So, it seems like, you know, it says lower correlation with humans
+[00:48:42.640 --> 00:48:48.160]   on some of these more factual, like, you know, kind of, like, expecting one correct answer.
+[00:48:48.160 --> 00:48:53.400]   And they actually highly correlated with humans on these more high entropy tasks where you
+[00:48:53.400 --> 00:48:58.200]   got, like, brainstorming and creative generation, which was kind of unintuitive and counterintuitive
+[00:48:58.200 --> 00:49:03.280]   because you could have so many different ways of coming up with, like, you know, a recipe
+[00:49:03.280 --> 00:49:08.160]   or a list of something. But that's where, like, the rating of GPD4 and humans are more
+[00:49:08.160 --> 00:49:10.120]   correlated.
+[00:49:10.120 --> 00:49:17.680]   Okay. So, the final thing is takeaways. So, there's a bunch of this. But let's try to
+[00:49:17.680 --> 00:49:21.520]   break it down. Essentially, like, you know, we discussed, like, how do we come up with
+[00:49:21.520 --> 00:49:27.160]   steps for data curation for supervised fine tuning and RLHF? And it involves, like, several
+[00:49:27.160 --> 00:49:31.480]   critical factors, such as how much data do you need to collect? What is the length of
+[00:49:31.480 --> 00:49:36.880]   the prompts and the distribution of those length? The task distribution? And what is
+[00:49:36.880 --> 00:49:40.400]   the role of humans? Like, you know, do you need synthetic data? Do you need completely
+[00:49:40.400 --> 00:49:44.880]   manually curated or something in the middle? And we looked at, like, there are many tools
+[00:49:44.880 --> 00:49:51.160]   for, like, efficient fine tuning of open source LLMs. From the SFD results, we found that
+[00:49:51.160 --> 00:49:57.680]   truthful QA was the main differentiating benchmark for these automated eval metrics. And then
+[00:49:57.680 --> 00:50:02.680]   we found that empty bench scores were actually not correlated with these automated metrics.
+[00:50:02.680 --> 00:50:08.360]   And so, it was more sort of, you know, only on, like, some of these models, we found that
+[00:50:08.360 --> 00:50:13.560]   they were correlated. For the distillation results, which is from the Zephyr 7D, where
+[00:50:13.560 --> 00:50:19.520]   we are, like, fine tuning on synthetic data, we found that the SFD on AI generated data
+[00:50:19.520 --> 00:50:25.680]   and the DPO or distillation of DPO on AI feedback data actually beats chat GPD, even though
+[00:50:25.680 --> 00:50:30.600]   the model is just 7 billion parameter. And then we found that, you know, benchmarking
+[00:50:30.600 --> 00:50:37.080]   gap in assessing RLHF models in particular, that we don't have benchmarks for assessing
+[00:50:37.080 --> 00:50:42.320]   reward models. And we also don't have open source benchmarks for evaluating red teaming
+[00:50:42.320 --> 00:50:47.480]   and model vulnerabilities. Then finally, we'd like, you know, dive deeper into, like, you
+[00:50:47.480 --> 00:50:53.560]   know, looking at quirks of using GPT-4 or some of these powerful LLMs as an evaluator.
+[00:50:53.560 --> 00:50:57.980]   And some of them were, like, you know, they prefer models trained on GPT-4-like data.
+[00:50:57.980 --> 00:51:02.960]   It has, like, a left positional bias. And then it has high correlation with humans on
+[00:51:02.960 --> 00:51:09.640]   creative tasks compared to, like, coding or reasoning tasks. And my work has been covered
+[00:51:09.640 --> 00:51:15.200]   on the New York Times article cover, which talks about the secret ingredient of alignment,
+[00:51:15.200 --> 00:51:20.000]   which is for chat GPD, which is alignment. I'm also part of the United Nations Advisory
+[00:51:20.000 --> 00:51:24.760]   Board that was announced last week. So, really humbled to be part of that. Here are some
+[00:51:24.760 --> 00:51:30.440]   blog posts. You know, basically, like, yeah, we kind of, like, did not publish a whole
+[00:51:30.440 --> 00:51:35.080]   lot this year. But we wrote a bunch of blog posts highlighting what we are releasing and
+[00:51:35.080 --> 00:51:39.960]   working on. And also, like, you know, some of these are part of the talk that I just
+[00:51:39.960 --> 00:51:47.440]   discussed. And this is part of the Edge 4 team. I'm grateful to be part of this. And
+[00:51:47.440 --> 00:51:52.560]   thanks for listening.
+[00:51:52.560 --> 00:52:14.440]   When you get alternating responses from the products, do you select really high temperatures
+[00:52:14.440 --> 00:52:19.680]   or do you keep it pretty close to the temperature that's also told in the final product?
+[00:52:19.680 --> 00:52:25.400]   Yeah. So, we did, like, you know, basically chose, like, you know, we tried experimenting
+[00:52:25.400 --> 00:52:31.660]   with different temperatures. But then we actually found that just using different sampling strategy
+[00:52:31.660 --> 00:52:36.600]   worked better. So, like, you know, using a different value of P and then K and some combination
+[00:52:36.600 --> 00:53:04.760]   of that as opposed to just, like, relying on temperature.
+[00:53:04.760 --> 00:53:20.760]   Yeah. So, I think for Red Teaming at scale, there's actually a paper that came out recently
+[00:53:20.760 --> 00:53:27.280]   called GPD Fuzzer that actually, like, you know, bootstraps and uses these powerful LLMs
+[00:53:27.280 --> 00:53:30.840]   to jailbreak other LLMs. And also, there was a DeepMind paper, I think, actually, like,
+[00:53:30.840 --> 00:53:35.600]   one and a half to almost two years ago that was Red Teaming large language models with
+[00:53:35.600 --> 00:53:39.840]   large language models. So, how do you, like, Red Team and evaluate a language model by
+[00:53:39.840 --> 00:53:44.440]   using another powerful language model? And so, I think that is kind of the way to go
+[00:53:44.440 --> 00:53:51.240]   in terms of scale. And so, what was the second question?
+[00:53:51.240 --> 00:54:09.480]   Yeah. So, I think one thing is this idea of, like, emerging capabilities, which is essentially,
+[00:54:09.480 --> 00:54:13.280]   like, as you scale up, and which is a trend that we are seeing, like, you know, as we
+[00:54:13.280 --> 00:54:17.720]   are scaling up, there are things that these models do or, like, you know, capabilities
+[00:54:17.720 --> 00:54:21.780]   that emerge that were not there in the smaller models. I think examples are chain of thought
+[00:54:21.780 --> 00:54:27.880]   reasoning, which, you know, GPT-2 or GPT was not capable of doing it. And as we scale up,
+[00:54:27.880 --> 00:54:32.880]   and the other example is this few short prompting that we first saw in GPT-3, as in, like, you
+[00:54:32.880 --> 00:54:37.760]   could give it a completely new task and not update its parameters in any way, but just
+[00:54:37.760 --> 00:54:41.960]   put it as part of the prompt. And then, you know, now it just learns the task, and then
+[00:54:41.960 --> 00:54:47.200]   it can do it on n number of examples, right? And so, like, labeling and all these things
+[00:54:47.200 --> 00:54:52.480]   started coming up, like using GPT-3 as a labeler and all that, when we kind of, like, discovered
+[00:54:52.480 --> 00:54:56.840]   that thing. So, I think, essentially, like, you know, the other example is, like, manipulation.
+[00:54:56.840 --> 00:55:02.560]   I don't think any open source models are capable of that yet, but I know, like, Anthropic and
+[00:55:02.560 --> 00:55:07.320]   OpenAI, these companies are focusing on, like, you know, deception and manipulation, because
+[00:55:07.320 --> 00:55:12.440]   when you start, like, you know, chatting with these models, you start, like, you know, treating
+[00:55:12.440 --> 00:55:16.800]   them as a companion, especially, like, if you have, like, character AI kind of a thing
+[00:55:16.800 --> 00:55:21.160]   where, you know, you might try confiding in them, start confiding in them, sharing information
+[00:55:21.160 --> 00:55:26.000]   that you probably shouldn't, and then they can use it against you, maybe. Like, you know,
+[00:55:26.000 --> 00:55:31.060]   an example of that is, like, I think recently we saw that GPT-4 actually manipulated someone
+[00:55:31.060 --> 00:55:35.440]   to, like, read the capture to it in some way and, like, tell it what the capture reads.
+[00:55:35.440 --> 00:55:41.480]   And so, that's a really concrete example of manipulation. And so, it seems like now these
+[00:55:41.480 --> 00:55:46.760]   models are capable of that. I don't think open source models are there yet, but these
+[00:55:46.760 --> 00:55:50.840]   are, like, just, like, you know, things that come out and, like, vulnerabilities that would
+[00:55:50.840 --> 00:55:55.840]   surface when you do it at D9.
+[00:55:55.840 --> 00:56:25.720]   Yeah. So, I would say, like, it was, it's less about, like, you know, it's more about
+[00:56:25.720 --> 00:56:32.160]   open sourcing a data set that is crafted to kind of elicit this behavior. It's more about
+[00:56:32.160 --> 00:56:36.920]   the kind of harms that we should be thinking about. So, it's more about, like, you know,
+[00:56:36.920 --> 00:56:42.720]   hallucinating or plagiarism, manipulation, you know, trying to leak PII information,
+[00:56:42.720 --> 00:56:46.560]   people's credit card, SSN, things like that. It's more about, like, thinking about these
+[00:56:46.560 --> 00:56:52.280]   different dimensions and giving concrete examples of how these models can, you know, elicit
+[00:56:52.280 --> 00:56:57.120]   this behavior. But I think what you are trying to, like, talk about is that, you know, what
+[00:56:57.120 --> 00:57:01.320]   if we gave them concrete ways, like, concrete prompts on how you jailbreak, and then they
+[00:57:01.320 --> 00:57:05.600]   can go and try to do that. I think first thing is, like, you know, while we are doing this,
+[00:57:05.600 --> 00:57:09.160]   we would have evaluated our models, and we would then start thinking about guardrails
+[00:57:09.160 --> 00:57:13.600]   and safety ourselves. And if, indeed, like, you know, the data set is so good that we
+[00:57:13.600 --> 00:57:17.160]   can say that a lot of these powerful models are failing on that, then obviously you don't
+[00:57:17.160 --> 00:57:21.240]   open source it instantly, but you actually think about what is the best way to put it
+[00:57:21.240 --> 00:57:26.040]   out there by first securing the model and making sure that it does not, like, you know,
+[00:57:26.040 --> 00:57:31.200]   basically does not elicit that kind of behavior, and then sharing it while you have already,
+[00:57:31.200 --> 00:57:34.760]   you know, kind of crossed that bridge and being like, yeah, my model is safeguarded
+[00:57:34.760 --> 00:57:41.240]   against that. So it's more like, yeah, a process of a gradient of things that you need to do.
+[00:57:41.240 --> 00:58:11.160]   Yeah, so you're talking about, like, when you're using synthetic data bootstrap on,
+[00:58:11.160 --> 00:58:15.800]   on other language models, have you seen, like, collapse of, like, some kind of, like, mode
+[00:58:15.800 --> 00:58:22.280]   collapse or something like that? So, actually, so far, it's been, like, clear that these
+[00:58:22.280 --> 00:58:26.760]   are good, like, these, these actually turn, like, you know, regular chatbots and, like,
+[00:58:26.760 --> 00:58:30.600]   regular language models into chatbots, and which are as good as the experience that you
+[00:58:30.600 --> 00:58:35.000]   get by chatting with chat GPD. But although, like, you know, like, the kind of the quirks
+[00:58:35.000 --> 00:58:38.320]   that I raised, which is, like, you know, when you have these models, and then you, like,
+[00:58:38.320 --> 00:58:42.320]   now put them on a benchmark, and then you see that suddenly, it's like 90%, it might
+[00:58:42.320 --> 00:58:46.640]   just be because you use the model that was the evaluator to generate the data and then
+[00:58:46.640 --> 00:58:51.160]   create this model and that in turn, like this doping thing, right. And so that is one thing
+[00:58:51.160 --> 00:58:58.960]   that was, that is important to think about. The other thing is, what was I gonna say?
+[00:58:58.960 --> 00:59:17.880]   I forgot. Yeah, the other thing is like about the licensing part, which is kind of not related
+[00:59:17.880 --> 00:59:22.040]   to what you were asking, but essentially, like, you know, there was this kind of like,
+[00:59:22.040 --> 00:59:26.440]   you cannot, like, we could open, we cannot open source and commercially, so it's like,
+[00:59:26.440 --> 00:59:31.640]   you know, still restrictive license. And you cannot use it for building and selling
+[00:59:31.640 --> 00:59:37.360]   applications down the line. But then it's still like good as like a research artifact.
+[00:59:37.360 --> 00:59:42.840]   And so I think I like we would have seen these kind of collapses happen if it was allowed
+[00:59:42.840 --> 00:59:46.520]   to use these commercially. And then people would have been like, oh, but like, actually,
+[00:59:46.520 --> 00:59:50.880]   recently, we did see like, so there's this company called Daxter, which use it, which
+[00:59:50.880 --> 00:59:55.220]   was using GPT for for summarization, they replaced it with the open source model called
+[00:59:55.220 --> 01:00:00.200]   Mistral. And they said that their customers haven't complained. And, you know, they're
+[01:00:00.200 --> 01:00:04.720]   saving a ton of money, and it just seems to work fine. And they are like, you know, it's
+[01:00:04.720 --> 01:00:09.840]   just as good. And so, but not not that I'm saying that Mistral is trained on any of the
+[01:00:09.840 --> 01:00:14.400]   synthetic data, but it's just an example of, like things that would become very clear by
+[01:00:14.400 --> 01:00:18.720]   doing this sort of A/B testing where you like replace this model by another one and see
+[01:00:18.720 --> 01:00:26.060]   how that affects those things.
+[01:00:26.060 --> 01:00:29.320]   I have a question on zoom.
+[01:00:29.320 --> 01:00:31.440]   Yes.
+[01:00:31.440 --> 01:00:40.740]   It's, it seems like another access you might be checked GPT on is on cost. So I wondered
+[01:00:40.740 --> 01:00:45.360]   why one of what your total budget was, or your total cost was to to produce your model
+[01:00:45.360 --> 01:00:46.360]   that beat them.
+[01:00:46.360 --> 01:00:55.800]   Oh, so the Zephyr 7B was just four hours of training on 16 A100. So that's less than $50,
+[01:00:55.800 --> 01:01:02.360]   I guess. Because we use a synthetic data set, which was already open source, which is ultra
+[01:01:02.360 --> 01:01:07.520]   chat and ultra feedback. But the cost associated
+[01:01:07.520 --> 01:01:11.760]   with the overall cost, all the people and everything. Yeah.
+[01:01:11.760 --> 01:01:16.720]   I see. Okay. So all the people and everything in the sense that there were no, I guess like
+[01:01:16.720 --> 01:01:22.000]   ultra chat probably might have reported some cost and ultra feedback, but they are mostly
+[01:01:22.000 --> 01:01:28.960]   synthetic synthetically created with very little human intervention. And so they might,
+[01:01:28.960 --> 01:01:33.100]   I don't know if they report that I haven't looked into that. But I would say it was still
+[01:01:33.100 --> 01:01:38.480]   much more cost efficient than what we spent on buying data from search and scale AI. And
+[01:01:38.480 --> 01:01:45.160]   we spend about half a million buying about 20,000 prompts of human preferences, the 20,000
+[01:01:45.160 --> 01:01:55.200]   dialogue, and about 10,000 instruction demonstration data. So that was quite a bit.
+[01:01:55.200 --> 01:02:10.360]   I'm curious about is the scale that you use for evaluating the bias for GPT-4. So I was
+[01:02:10.360 --> 01:02:25.600]   like one seven on the slide. Yeah. Oh, so yeah, this was the entropic scale. Like remember
+[01:02:25.600 --> 01:02:30.560]   that like one, two, four is decreasingly A and five to eight is increasingly B. Yeah.
+[01:02:30.560 --> 01:02:40.440]   And I was giving the model to the last student. Yes, exactly. Yeah. And these types of evaluations,
+[01:02:40.440 --> 01:02:46.600]   how sensitive to the prompt do you find the evaluators to placing you in the library saying
+[01:02:46.600 --> 01:02:54.000]   that it has the account for this left bias and the right bias, what's stopping you from
+[01:02:54.000 --> 01:02:59.160]   saying the distribution should be uniform, the distribution should be normal, and just
+[01:02:59.160 --> 01:03:04.840]   kind of iteratively to see how like what those should be. Yeah. Yeah. I think that's a good
+[01:03:04.840 --> 01:03:09.960]   point in the sense like we did not study as to what were the certain tasks or prompts
+[01:03:09.960 --> 01:03:16.120]   that were putting off GPT-4 to like, you know, generate this kind of bias. Although I would
+[01:03:16.120 --> 01:03:22.040]   say that, you know, this was also observed by LNCIS and it's part of the findings as
+[01:03:22.040 --> 01:03:30.320]   well. But yeah, so the LNCIS paper also has that. But it will be interesting, like it
+[01:03:30.320 --> 01:03:35.320]   will be surprising if it generates this on like very long prompts or prompts from like
+[01:03:35.320 --> 01:03:39.640]   math or something, which are just hard to kind of like evaluate when they're like too
+[01:03:39.640 --> 01:03:44.520]   responsive, which at least as a human, like when I see like a bunch of code, like, you
+[01:03:44.520 --> 01:03:47.480]   know, on this side and this side, and then it's very hard to say, and both of them are
+[01:03:47.480 --> 01:03:52.520]   trying to do the same thing, but a very different approach. It's very hard to evaluate them.
+[01:03:52.520 --> 01:03:56.360]   Right. And so, yeah, we haven't looked into that.
+[01:03:56.360 --> 01:04:09.440]   Perhaps another thing is, do you think forwarded matters, like which output you give to GPT-4
+[01:04:09.440 --> 01:04:10.440]   first?
+[01:04:10.440 --> 01:04:15.760]   Yeah, I mean, that was basically the takeaway was that, you know, so it's interesting because
+[01:04:15.760 --> 01:04:20.080]   humans usually have recency bias, which is essentially the last thing that you read is
+[01:04:20.080 --> 01:04:23.880]   the thing that you remember. And so you would just, you know, try to like, you know, choose
+[01:04:23.880 --> 01:04:27.720]   that more, you know, you're just inclined to do that. And GPT-4 actually had a left
+[01:04:27.720 --> 01:04:32.760]   bias. So the thing that it first saw in some sense, and I think some, like, I think LNCIS
+[01:04:32.760 --> 01:04:37.080]   was the one that proposed because it has this left to right training, maybe that's why it
+[01:04:37.080 --> 01:04:44.120]   has that kind of a bias. But yeah, so I think the way we elevated that was that, you know,
+[01:04:44.120 --> 01:04:48.720]   having every model's output be equally likely to be on the left and the right hand side.
+[01:04:48.720 --> 01:04:53.240]   So if like, we're doing Alpaca and Vicuna, then instead of just doing Alpaca on left
+[01:04:53.240 --> 01:04:57.120]   and Vicuna on right, we would just randomly like switch them. And so both of them are
+[01:04:57.120 --> 01:05:01.960]   likely to occur in both these positions.
+[01:05:01.960 --> 01:05:05.280]   And you still saw the left bias?
+[01:05:05.280 --> 01:05:10.280]   If you just ask it to like rate it on a scale of 1 to 5, yes. But if you say that, you know,
+[01:05:10.280 --> 01:05:14.520]   hey, you have this bias and make it try to make it aware of it, then it flips and it
+[01:05:14.520 --> 01:05:40.120]   generates something like that. So yeah.
+[01:05:40.120 --> 01:05:46.160]   Is there other approaches where you kind of, you prompt the model by shuffling the prompts
+[01:05:46.160 --> 01:05:55.600]   and then you have to kind of de-bias or de-bias the results of it?
+[01:05:55.600 --> 01:05:57.080]   By shuffling the prompts, you mean like-
+[01:05:57.080 --> 01:06:05.760]   Shuffle the order of how you put in the new recipes?
+[01:06:05.760 --> 01:06:11.240]   Yeah. So that's what we did is that, you know, we would like, you know, randomly shuffle
+[01:06:11.240 --> 01:06:17.080]   the left and the right. And then so each model, so like, so basically like you have, you create
+[01:06:17.080 --> 01:06:23.200]   NC2 combinations. Suppose you want to evaluate three models on 10 prompts. So you'll have
+[01:06:23.200 --> 01:06:29.040]   10 C2 combinations. I mean, N is the number of prompts, sorry, the number of models. And
+[01:06:29.040 --> 01:06:33.080]   then you would like, you know, basically like generate like, so this would be a total data
+[01:06:33.080 --> 01:06:37.080]   set. So like, you know, you would have generated 10 responses from each of these models and
+[01:06:37.080 --> 01:06:43.360]   then put them together in this three C2 setting. And then so like, that will be like a combination
+[01:06:43.360 --> 01:06:48.040]   of each of these. And then you make sure that every time the, like the models on the left
+[01:06:48.040 --> 01:06:52.680]   are equally likely to also occur on the right. So if you are doing like model one and then
+[01:06:52.680 --> 01:07:21.520]   model two, then you also make sure like you also do model two and then model one on a
+[01:07:21.520 --> 01:07:49.360]   scale of one to 10. Okay. Sure. Sorry. Should I keep the zoom on? Thank you. Yes. Yes. Yes.
+[01:07:49.360 --> 01:07:58.120]   So I mean, just to see if I understand this correctly. So on the reinforcement learning
+[01:07:58.120 --> 01:08:02.840]   community, first you build a reward model. And then that reward model, I take text input
+[01:08:02.840 --> 01:08:06.600]   and then humans give it scores. The supervised problem, we are trying to predict from the
+[01:08:06.600 --> 01:08:13.600]   sketch the score. And then I have the reward model. I will add a set of points to reinforcement
+[01:08:13.600 --> 01:08:18.000]   learning, take a set of points. Sometimes I have the next token, which is the end of
+[01:08:18.000 --> 01:08:22.000]   statement token. And I pump that through the reward model and then reward optimize on this.
+[01:08:22.000 --> 01:08:26.400]   Yes. And that's how, it's very sparse rewards, right? I only have rewards at the very end.
+[01:08:26.400 --> 01:08:31.240]   But that's how it works. Yes, exactly. And so you have to, it's very sample inefficient
+[01:08:31.240 --> 01:08:35.600]   because I keep doing this again and again. And then that's why you need a hundred thousand
+[01:08:35.600 --> 01:08:41.240]   examples for doing Arul-Acha, but only 10,000 possible. That's kind of the info. Okay, great.
+[01:08:41.240 --> 01:08:43.120]   Thanks so much. Very interesting talk. Thank you.
+[01:08:43.120 --> 01:08:44.120]   Thank you very much.
+[01:08:44.120 --> 01:08:45.120]   Thank you.
+[01:08:45.120 --> 01:08:45.120]   Thank you.
+[01:08:45.120 --> 01:08:47.180]   you
+[01:08:47.180 --> 01:08:57.180]   [BLANK_AUDIO]
+
