@@ -69,23 +69,6 @@ def update_video_files(new_ids, existing_ids, done_file_path, in_file_path):
         with open(in_file_path, "w") as f:
             f.write("")
 
-    # if new_ids:
-    #     with open(data_dir / channel["file"], "w") as f:
-    #         for vid in reversed(new_ids):
-    #             f.write(f"{vid}\n")
-    #         for existing in existing_ids:
-    #             f.write(f"{existing}\n")
-
-    #     # Step 5: Write new video ids to in_file.txt
-    #     with open(data_dir / channel["in_file"], "w") as f:
-    #         for vid in reversed(new_ids):
-    #             f.write(f"{vid}\n")
-    # else:
-    #     logging.info("No new videos found")
-    #     # make sure in_file.txt is blank
-    #     with open(data_dir / channel["in_file"], "w") as f:
-    #         f.write("")
-
 
 # Download other videos (manual list)
 # Step 2: Load existing video ids from the done file
@@ -135,6 +118,7 @@ for channel in channels:
         "financial_samurai",
         "latent_space",
         "radical_personal_finance",
+        "surpassing_value",
     ]:
         cmd = f"yt-dlp -v --flat-playlist --print url {channel['url']}"
     else:
