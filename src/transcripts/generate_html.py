@@ -290,6 +290,8 @@ def generate_master_index(
         )
         f.write("<ul>")
 
+        # TODO: Add all transcripts to the index page
+
         for channel in config:
             channel_index_file = f'index_{channel["name"]}.html'
             channel_link = channel_index_file
