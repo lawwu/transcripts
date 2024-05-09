@@ -280,15 +280,14 @@ def generate_master_index(
     index_html = html_dir / "index.html"
     with open(index_html, "w") as f:
         # Writing the HTML content
-        f.write("<html><head><title>Channel Index</title>")
+        f.write("<!DOCTYPE html><html><head><title>Channel Index</title>")
         f.write(css_styles)  # Include CSS styles
-        f.write(add_google_analytics())  # Include Google Analytics
+        f.write('<script async src="https://cse.google.com/cse.js?cx=2770efcdf5435447c"></script>')  # Google CSE script
         f.write("</head><body>")
         f.write("<div class='container'>")
         f.write("<h1>Whisper Transcripts</h1>")
-        f.write(
-            "<p>These transcripts are automatically generated using Whisper.</p>"
-        )
+        f.write('<div class="gcse-search"></div>')  # Google CSE Search Box
+        f.write("<p>These transcripts are automatically generated using Whisper.</p>")
         f.write("<ul>")
 
         # Add link to the all channels index page
