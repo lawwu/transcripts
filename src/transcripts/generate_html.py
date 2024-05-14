@@ -659,6 +659,8 @@ if __name__ == "__main__":
                 "8aV44LTsw3k",
                 "Gfg3wVVecYI",
                 "https://traffic.libsyn.com/secure/financialsamurai/FS_212_-_Kathy_Fang-2.mp3?dest-id=1377836",
+                "DnZPgopXQGM",
+                "RcJ1YXHLv5o",
             ]
             if id in private_videos:
                 continue
