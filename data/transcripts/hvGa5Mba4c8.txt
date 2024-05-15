@@ -1,0 +1,492 @@
+
+[00:00:00.000 --> 00:00:04.480]   Hello guys, welcome back to my channel. Today we are gonna talk about DPO, which stands
+[00:00:04.480 --> 00:00:08.760]   for Direct Preference Optimization. It's a new technique that came out in the middle
+[00:00:08.760 --> 00:00:17.320]   of last year, in 2023, to align language models. Let's review the topics of today. I will start
+[00:00:17.320 --> 00:00:21.700]   with a short introduction to language models, as usual, so we can review how language models
+[00:00:21.700 --> 00:00:27.660]   work. Then we will introduce the topic of AI alignment, so what we mean by AI alignment.
+[00:00:27.660 --> 00:00:31.780]   And then we will review reinforcement learning. Now, you may be wondering why are we reviewing
+[00:00:31.780 --> 00:00:36.340]   reinforcement learning if the whole point of DPO is to remove reinforcement learning
+[00:00:36.340 --> 00:00:42.220]   from language models. Well, the reason is that, actually, even if DPO does not use reinforcement
+[00:00:42.220 --> 00:00:47.040]   learning algorithms, they are still interconnected, especially when we talk about the reward model
+[00:00:47.040 --> 00:00:51.840]   and the predatory model. So in order to understand the reward model and the predatory model,
+[00:00:51.840 --> 00:00:56.560]   we need to review reinforcement learning and how the reward model affected the process
+[00:00:56.560 --> 00:01:02.760]   in reinforcement learning from human feedback. In the last part of the video, we will derive
+[00:01:02.760 --> 00:01:11.240]   the DPO loss, so we will understand where does it come from. I will also show you the
+[00:01:11.240 --> 00:01:18.440]   code on how to compute the log probability, so how we actually can use this loss in practice.
+[00:01:18.440 --> 00:01:21.920]   Now what are the prerequisites for watching this video? Well, for sure that you are familiar
+[00:01:21.920 --> 00:01:28.420]   with a little bit of probability and statistics, not much, for example, conditional probability.
+[00:01:28.420 --> 00:01:33.900]   We are familiar with deep learning, so what we mean by gradient descent and loss functions.
+[00:01:33.900 --> 00:01:37.400]   It's really great if you have watched my previous video on reinforcement learning from human
+[00:01:37.400 --> 00:01:42.760]   feedback in which I explain all the aspects of the reward model and the reinforcement
+[00:01:42.760 --> 00:01:49.040]   learning framework and the DPO. But it's not necessary for this video because I will review
+[00:01:49.040 --> 00:01:53.000]   most of the part that are needed to understand the DPO, but it's really great if you have
+[00:01:53.000 --> 00:01:58.960]   already watched that video so you can compare the two methods. And also that you're familiar
+[00:01:58.960 --> 00:02:03.360]   with the transformer model because we will be using it in practice when we want to compute
+[00:02:03.360 --> 00:02:09.440]   the log probabilities. Otherwise, we don't know how to use the loss of the DPO. Let's
+[00:02:09.440 --> 00:02:15.240]   start our journey. So what is a language model? Well, a language model is a probabilistic
+[00:02:15.240 --> 00:02:21.440]   model that assigns the probabilities to a sequence of words. In practice, given a prompt,
+[00:02:21.440 --> 00:02:27.080]   for example, a language model allow us, let me use the laser. So given a prompt, for example,
+[00:02:27.080 --> 00:02:34.320]   Shanghai is a city in a language model tells us the probability of what is maybe the next
+[00:02:34.320 --> 00:02:39.760]   token or word. Now, in my videos, I always make the simplification that a token is a
+[00:02:39.760 --> 00:02:44.520]   word and the word is a token. This is actually not the case in most language models, but
+[00:02:44.520 --> 00:02:50.640]   it's useful for explanation purposes. So what is the probability that the next token
+[00:02:50.640 --> 00:02:56.120]   is China or the next token is Beijing or the next token is cat or pizza given a particular
+[00:02:56.120 --> 00:03:02.200]   prompt? This is the only thing that a language model does. And the language model gives us
+[00:03:02.200 --> 00:03:06.840]   this probability. Now, you may be wondering, how can we use this language model to generate
+[00:03:06.840 --> 00:03:13.080]   a text? Well, we do it with an iterative process. So we take a prompt, for example, where is
+[00:03:13.080 --> 00:03:16.920]   Shanghai? We give it to the language model. The language model will give us a list of
+[00:03:16.920 --> 00:03:22.000]   probabilities or what is the possible next word or token. Suppose that we choose the
+[00:03:22.000 --> 00:03:27.880]   token with the most, with the highest probability score. So suppose it's Shanghai. We take this
+[00:03:27.880 --> 00:03:32.560]   token, we select it and we put it back into the prompt and we ask again, the language
+[00:03:32.560 --> 00:03:37.180]   model, what is the next token? Then the language model again will give us a list of probabilities
+[00:03:37.180 --> 00:03:42.960]   over what is the possible next token. We select the one that we think is the most relevant.
+[00:03:42.960 --> 00:03:49.720]   Usually we select the one that is most probable and we put it back into the prompt and we
+[00:03:49.720 --> 00:03:54.200]   ask again, the language model, et cetera, et cetera, until we reach a specified number
+[00:03:54.200 --> 00:03:59.440]   of generated tokens or we reach the end of sentence token, which is a special token.
+[00:03:59.440 --> 00:04:05.240]   In this case, after four tokens generated, the language model will probably say Shanghai
+[00:04:05.240 --> 00:04:13.120]   is in China, which is the answer to our question. What do we mean by AI alignment? Now when
+[00:04:13.120 --> 00:04:18.680]   we train language model, we train it on a massive amount of data. For example, thousands
+[00:04:18.680 --> 00:04:24.740]   of books, billions of web pages and the entire Wikipedia, et cetera. This gives the language
+[00:04:24.740 --> 00:04:33.160]   model a vast knowledge to complete any prompt in a reasonable way. However, this does not
+[00:04:33.160 --> 00:04:39.240]   teach the language model to behave in a particular way. For example, the pre-training does not
+[00:04:39.240 --> 00:04:44.120]   teach the language model to be polite or to not use any offensive language or to not use
+[00:04:44.120 --> 00:04:48.200]   any racist expressions, et cetera, because the language model will just behave based
+[00:04:48.200 --> 00:04:52.720]   on the data that it has seen. If you feed the internet data, the language model will
+[00:04:52.720 --> 00:04:57.680]   behave very, very, very badly actually. We need to kind of align the language model to
+[00:04:57.680 --> 00:05:02.040]   a desired behavior. We don't want the language model to use any offensive language. We don't
+[00:05:02.040 --> 00:05:06.840]   want it to be racist. We want the language model to be helpful to the user, so to answer
+[00:05:06.840 --> 00:05:12.400]   questions like an assistant, et cetera, et cetera. And this is the goal of AI alignment.
+[00:05:12.400 --> 00:05:17.760]   Now let's talk about reinforcement learning. So reinforcement learning is an area of AI
+[00:05:17.760 --> 00:05:23.400]   that is concerned with training intelligent agents to perform actions in an environment
+[00:05:23.400 --> 00:05:29.040]   in order to maximize a reward that they receive from this environment. Let me show you with
+[00:05:29.040 --> 00:05:34.440]   a very concrete example. I usually always use my cat, Oleo, for examples, so let's talk
+[00:05:34.440 --> 00:05:39.860]   about Oleo. Oleo is the agent in this case, in this reinforcement learning scenario, and
+[00:05:39.860 --> 00:05:45.980]   he lives in a very simple world. Let's call it a grid world that is made of cells in which
+[00:05:45.980 --> 00:05:52.220]   the cat's position is indicated by two coordinates, the X position and the Y position. This can
+[00:05:52.220 --> 00:05:57.800]   also be treated as the state of the agent because at every position corresponds to a
+[00:05:57.800 --> 00:06:04.360]   particular state. The agent, when it is in a particular state, it can take some actions.
+[00:06:04.360 --> 00:06:11.680]   In the case of the cat, it can go right, left, up or down. For every action that the agent
+[00:06:11.680 --> 00:06:17.360]   takes, it will receive some reward from the environment. It will for sure change its state
+[00:06:17.360 --> 00:06:22.200]   to a new one. So for example, when the cat moves down, it will change to a new state,
+[00:06:22.200 --> 00:06:26.800]   to a new position, and it will receive some reward according to a reward model that we
+[00:06:26.800 --> 00:06:31.980]   specified. In my case, I have specified the following reward model. So when the cat moves
+[00:06:31.980 --> 00:06:37.400]   to an empty cell, it receives a reward of zero. If it moves towards the broom, it receives
+[00:06:37.400 --> 00:06:44.240]   a reward of minus one. If somehow it arrives to the bathtub, it will receive a reward of
+[00:06:44.240 --> 00:06:48.720]   minus 10 because my cat is very scared of water. And if it arrives to the meat, which
+[00:06:48.720 --> 00:06:57.400]   is the cat's dream, it will receive a reward of plus 100. Now, what dictates what action
+[00:06:57.400 --> 00:07:03.480]   the agent will take given a particular state or position? Well, it is the policy. The policy
+[00:07:03.480 --> 00:07:09.400]   indicates what is the probability of the next action among all the actions that are available
+[00:07:09.400 --> 00:07:15.220]   that the agent can take given a particular state. And we usually write it like this,
+[00:07:15.220 --> 00:07:21.360]   so that the next action at time step t is distributed like the distribution induced
+[00:07:21.360 --> 00:07:28.760]   by the policy according to the state the agent is in. Now, what is the goal in reinforcement
+[00:07:28.760 --> 00:07:33.900]   learning? The goal in reinforcement learning is to select a policy or to optimize a policy
+[00:07:33.900 --> 00:07:41.840]   in order for the agent to maximize the expected return when it acts according to this policy.
+[00:07:41.840 --> 00:07:50.020]   So imagine we have such a policy that is optimized. Well, our policy, for sure, if the goal is
+[00:07:50.020 --> 00:07:54.780]   to maximize the expected reward when using this policy, for sure, we will have a policy
+[00:07:54.780 --> 00:08:00.240]   that will take us on average to the meat because that's one way to maximize the expected reward.
+[00:08:00.240 --> 00:08:04.880]   And for sure, it will be a policy that will allow us to minimize the chance of ending
+[00:08:04.880 --> 00:08:11.340]   up in the water here or to the broom here. Now, you may be wondering, okay, the cat can
+[00:08:11.340 --> 00:08:15.380]   be seen as a reinforcement learning agent, as a physical agent that takes some actions.
+[00:08:15.380 --> 00:08:19.900]   But what is the connection between reinforcement learning and language models? Well, as we
+[00:08:19.900 --> 00:08:24.860]   saw before, in reinforcement learning, we have this thing called policy, in which given
+[00:08:24.860 --> 00:08:31.780]   a state, the policy tells us what is the probability over the action space of the next action.
+[00:08:31.780 --> 00:08:36.700]   So what possible next action we can take and the probability of each action. This is also
+[00:08:36.700 --> 00:08:40.420]   something similar to what we do with language models, because in language models, we also
+[00:08:40.420 --> 00:08:44.740]   have some kind of state, which is our prompt. And we ask the language model to give us the
+[00:08:44.740 --> 00:08:50.180]   probability of the next token, or we can consider it the next action that the language model
+[00:08:50.180 --> 00:08:58.260]   can take. And we want to reward this language model for selecting tokens in such a way that
+[00:08:58.260 --> 00:09:03.220]   they end up generating good responses. And we don't want to reward the language model
+[00:09:03.220 --> 00:09:09.140]   for selecting sequence of tokens that end up giving us bad responses. Now, imagine we
+[00:09:09.140 --> 00:09:15.620]   are trying to train a language model that needs to act like an AI assistant. So for
+[00:09:15.620 --> 00:09:21.220]   sure we want the language model to be helpful, to answer questions in a meaningful way, so
+[00:09:21.220 --> 00:09:26.420]   not just output garbage. We want the language model to not be racist or not use any offensive
+[00:09:26.420 --> 00:09:30.900]   language. So this is all good behaviors that we want from this language model. So we may
+[00:09:30.900 --> 00:09:36.620]   want to build a reward model that will treat good responses, for example, responses that
+[00:09:36.620 --> 00:09:42.060]   actually answer the question asked by the user. And we will reward them with a high
+[00:09:42.060 --> 00:09:48.860]   reward. And we give maybe zero reward or negative reward to all those answers that are not coherent
+[00:09:48.860 --> 00:09:57.660]   with what we want. So for example, if the language model generates dirty jokes or racist
+[00:09:57.660 --> 00:10:06.340]   jokes, for example, we can give zero reward to those responses. So the language model
+[00:10:06.340 --> 00:10:11.540]   acts also as a policy because the policy is something that, given a prompt, tells you
+[00:10:11.540 --> 00:10:15.780]   what is the probability over the action space, or in this case, the probability over the
+[00:10:15.780 --> 00:10:21.780]   token space. So we want to optimize this policy. So we want to optimize the language model
+[00:10:21.780 --> 00:10:28.260]   to maximize the probability, to maximize the expected return or the expected reward that
+[00:10:28.260 --> 00:10:33.300]   it receives from our reward model. So we want to optimize our language model to generate
+[00:10:33.300 --> 00:10:39.580]   good response, because that's one way to obtain a high reward from the reward model. Now you
+[00:10:39.580 --> 00:10:44.780]   may be wondering, OK, but how to define the reward model for a language model? Well, one
+[00:10:44.780 --> 00:10:50.380]   way would be, OK, we can have a list of questions and answers generated by the language model,
+[00:10:50.380 --> 00:10:54.460]   and then we can give a numerical reward to each one of them. And then we can use some
+[00:10:54.460 --> 00:10:59.420]   reinforcement learning algorithm to feed this reward model to the language model to optimize
+[00:10:59.420 --> 00:11:05.260]   it. But the problem is, what kind of reward can we give to each of these pairs of questions
+[00:11:05.260 --> 00:11:09.860]   and answers? Because, for example, let's look at the first question. Where is Shanghai?
+[00:11:09.860 --> 00:11:13.700]   The answer, suppose it is generated by the language model, is that Shanghai is a city
+[00:11:13.700 --> 00:11:19.260]   in China. Now, in my opinion, this is a good response because it's short and up to the
+[00:11:19.260 --> 00:11:25.660]   point. But some other people maybe think that only the word China is enough because the
+[00:11:25.660 --> 00:11:29.860]   user just asked, where is Shanghai? So there is no need to repeat the word Shanghai. But
+[00:11:29.860 --> 00:11:34.940]   someone else maybe think that this response is too short and the assistant should say,
+[00:11:34.940 --> 00:11:40.940]   hello, I think that the answer to your question is Shanghai is a city in China. So different
+[00:11:40.940 --> 00:11:46.260]   people will have different opinions on what reward to assign to this particular pair of
+[00:11:46.260 --> 00:11:51.660]   question and answer. Because we humans are not very good at finding a common ground for
+[00:11:51.660 --> 00:11:56.620]   agreement. But unfortunately, we are very good at comparing. And we will exploit this
+[00:11:56.620 --> 00:12:03.980]   fact. So instead of building a data set that is made of questions and answers and the rewards,
+[00:12:03.980 --> 00:12:09.100]   because we do not know what kind of reward to assign, we will build a data set of questions
+[00:12:09.100 --> 00:12:15.420]   and multiple answers. And then we ask people to choose an answer that they like, according
+[00:12:15.420 --> 00:12:19.860]   to some preference that we have. So we want to generate, for sure, a language model that
+[00:12:19.860 --> 00:12:24.920]   is helpful. So we want the general language model to give responses that are correct.
+[00:12:24.920 --> 00:12:29.860]   And we want the language model to be polite, for example. So for example, imagine we have
+[00:12:29.860 --> 00:12:35.300]   a list of questions. And then we ask the language model by using, for example, a high temperature
+[00:12:35.300 --> 00:12:40.020]   to generate multiple answers. And then we ask people to choose which one they like.
+[00:12:40.020 --> 00:12:44.960]   In this case, for example, where is Shanghai? For sure, most people will choose the answer
+[00:12:44.960 --> 00:12:49.860]   number one, because Shanghai is a city in China, it's the correct one. For this question
+[00:12:49.860 --> 00:12:54.660]   here, for example, most people will probably choose this question here, even if it's very
+[00:12:54.660 --> 00:13:00.660]   short because the other one is probably wrong. So using a data set like this, we can actually
+[00:13:00.660 --> 00:13:06.780]   train a model to transform a pair of questions and answers into a numeric reward. Let's see
+[00:13:06.780 --> 00:13:12.740]   how it is done. If you have a pet, you probably know that to teach a particular behavior to
+[00:13:12.740 --> 00:13:20.340]   your cat or to your dog, you need to use biscuits or some treats. So you ask the cat to do something.
+[00:13:20.340 --> 00:13:25.140]   And if the cat does it, then you give it a treat. So it will reinforce this memory in
+[00:13:25.140 --> 00:13:29.620]   your cat. And then the next time the cat is more likely to do it because it will remember
+[00:13:29.620 --> 00:13:34.740]   that it received some treat. And so it will again perform that action again. So it can
+[00:13:34.740 --> 00:13:39.780]   probably receive another treat. This is exactly what we do in reinforcement learning. We want
+[00:13:39.780 --> 00:13:46.380]   to give some digital biscuits to our reinforcement learning agent so that it is more likely to
+[00:13:46.380 --> 00:13:53.140]   perform that action or that series of actions again in order to receive more reward. However,
+[00:13:53.140 --> 00:13:58.580]   the data set that we have built so far is made up of preferences. So we have a question,
+[00:13:58.580 --> 00:14:03.940]   multiple answers, and then we ask people to choose which answer they like. We need to
+[00:14:03.940 --> 00:14:10.620]   convert this data set of preferences into a numeric score that we can give as a reward
+[00:14:10.620 --> 00:14:18.620]   to our language model to choose more likely the answer that was chosen by the people and
+[00:14:18.620 --> 00:14:25.180]   to make it less likely to choose the answer that was not liked by the people, by our annotators.
+[00:14:25.180 --> 00:14:30.820]   And this can be done through a preference model. In DPO and also in reinforcement learning
+[00:14:30.820 --> 00:14:36.300]   from human feedback, we make use of the Bradley-Terry model. So the Bradley-Terry model is a way
+[00:14:36.300 --> 00:14:42.460]   of converting a data set of preferences into a numeric score called reward that is given
+[00:14:42.460 --> 00:14:49.500]   for each pair of questions and answers. Our goal is to train a model that given a question
+[00:14:49.500 --> 00:14:57.100]   and answer or a prompt and the text generated text to give a score that resembles the preferences
+[00:14:57.100 --> 00:15:03.940]   that have been chosen by our annotators. This is the expression of the Bradley-Terry model.
+[00:15:03.940 --> 00:15:09.460]   So it is a model meaning that we choose to model our preferences like this. And actually
+[00:15:09.460 --> 00:15:14.980]   it makes sense because it is a probability. So that's why, for example, we use explanations
+[00:15:14.980 --> 00:15:22.140]   because we want the probability has to be non-negative. And also the probability that
+[00:15:22.140 --> 00:15:28.780]   the assigned to the correct preferences. So the probability of choosing the correct answer
+[00:15:28.780 --> 00:15:33.900]   over the wrong answer. So the one that is chosen by the annotators over the one that
+[00:15:33.900 --> 00:15:39.300]   was not chosen by the annotators. Here, I call it the winner and loser because also
+[00:15:39.300 --> 00:15:44.420]   in the DPO paper, they call it winner and loser. It is modeled like this. So it is proportional
+[00:15:44.420 --> 00:15:52.020]   to the reward to the exponential of the reward that was assigned to the winning answer. Now,
+[00:15:52.020 --> 00:15:58.580]   how to train a model to convert a dataset of preferences into a numeric reward? We take
+[00:15:58.580 --> 00:16:04.560]   this expression and we can use a maximum likelihood estimation. Now, it doesn't matter if you
+[00:16:04.560 --> 00:16:10.260]   don't know what is maximum likelihood estimation. The point is we want to maximize the probability
+[00:16:10.260 --> 00:16:16.580]   of assigning the correct ordering in our preferences. So we want to maximize the probability of
+[00:16:16.580 --> 00:16:24.220]   choosing the correct answer over the wrong answer. And suppose that we are maximizing
+[00:16:24.220 --> 00:16:29.580]   this expression here. Let's see how we can derive the loss to maximize this expression
+[00:16:29.580 --> 00:16:35.980]   here. If you look at the DPO paper, you will see that they go from the Bradley Terry model,
+[00:16:35.980 --> 00:16:40.940]   which is this one, directly to the loss here, but they don't show you the derivation. So
+[00:16:40.940 --> 00:16:50.020]   I will show you how to derive the loss that maximizes this probability here. The derivation
+[00:16:50.020 --> 00:16:55.260]   is very simple actually. So first of all, as you can see in the loss, you can see this
+[00:16:55.260 --> 00:17:00.180]   function here. It's a sigmoid function. The expression of the sigmoid function is this
+[00:17:00.180 --> 00:17:04.540]   one and this is the graph of the sigmoid. So the expression of the sigmoid function
+[00:17:04.540 --> 00:17:11.980]   is one over one plus e to the power of minus x. The first step of the derivation is to
+[00:17:11.980 --> 00:17:20.180]   prove that two exponentials, so a fraction of this expression here, so exponential divided
+[00:17:20.180 --> 00:17:26.260]   by the sum of two exponentials can be written as a sigmoid of a minus b. So here I call
+[00:17:26.260 --> 00:17:34.340]   all this part here. So let me use the pen. I think it's easier. So this part here, so
+[00:17:34.340 --> 00:17:41.820]   the reward assigned to the, let's say the winning answer is, we call it a, and the reward
+[00:17:41.820 --> 00:17:48.780]   assigned to the losing answer, we call it b. So this expression can be written as e
+[00:17:48.780 --> 00:17:54.860]   to the power of a divided by e to the power of a plus e to the power of b. And we will
+[00:17:54.860 --> 00:18:03.280]   prove that it can be written as the sigmoid of a minus b through the following step. So
+[00:18:03.280 --> 00:18:09.940]   first we can divide, we take this expression, which is basically this one. We just replace
+[00:18:09.940 --> 00:18:16.580]   the rewards with a and b because it makes it simpler to visualize. We divide the numerator
+[00:18:16.580 --> 00:18:25.360]   and denominator by the same quantity, e to the power of a. We can do it. Then we can,
+[00:18:25.360 --> 00:18:29.860]   at the numerator, e to the power of a cancels out with e to the power of a and it becomes
+[00:18:29.860 --> 00:18:36.460]   a one. Then in the denominator, we add and subtract one. We can do it because it's like
+[00:18:36.460 --> 00:18:41.460]   adding zero. And then we collect the minus one. So we don't change anything. We just
+[00:18:41.460 --> 00:18:48.860]   put the parentheses. This is possible through the associative property. Then we do the common
+[00:18:48.860 --> 00:18:55.260]   denominator for these two expressions. And we arrive to this one. We can simplify e to
+[00:18:55.260 --> 00:18:59.580]   the power of a with minus e to the power of a. So it becomes e to the power of b divided
+[00:18:59.580 --> 00:19:04.580]   by e to the power of a, which thanks to the property of the exponentials can be written
+[00:19:04.580 --> 00:19:09.980]   as e to the power of b minus a. Then we can take a minus sign outside. And this expression
+[00:19:09.980 --> 00:19:15.020]   here is exactly the expression of the sigmoid function you can see here. So it's one over
+[00:19:15.020 --> 00:19:21.220]   one plus e to the power of minus something. So it becomes the sigmoid of that something
+[00:19:21.220 --> 00:19:27.380]   here a minus b. And this is exactly the loss that you see here. So it is the sigmoid of
+[00:19:27.380 --> 00:19:35.460]   the reward assigned to the winning answer minus the reward assigned to the losing answer.
+[00:19:35.460 --> 00:19:41.220]   Here we also see a log because usually we do not model the probability directly but
+[00:19:41.220 --> 00:19:46.740]   we model the log probability. So we have also this log because we want to model the log
+[00:19:46.740 --> 00:19:52.980]   probabilities. It is something that we can do because the logarithm is a monotonic function.
+[00:19:52.980 --> 00:19:58.300]   And also you may be wondering why do we have this minus sign here? This is because we want
+[00:19:58.300 --> 00:20:04.780]   to maximize this expression. But as you know in deep learning frameworks like PyTorch,
+[00:20:04.780 --> 00:20:09.460]   we have an optimizer that is always minimizing a loss. So instead of maximizing something
+[00:20:09.460 --> 00:20:14.900]   we can minimize the negative expression of the objective function which is the same thing.
+[00:20:14.900 --> 00:20:20.300]   So basically we take this loss function and if we apply it to a reward model which is
+[00:20:20.300 --> 00:20:27.540]   a neural network, it will be trained to maximize the probability of giving the correct ordering
+[00:20:27.540 --> 00:20:33.740]   to our preferences which can only happen when it assigns a high reward to the winning answer
+[00:20:33.740 --> 00:20:38.900]   and a low reward to the losing answer. Because if you look at this expression here, as you
+[00:20:38.900 --> 00:20:44.500]   can see the probability is maximized when in the numerator we have the reward assigned
+[00:20:44.500 --> 00:20:48.660]   to the winning answer. So the reward assigned to the winning answer is higher than the one
+[00:20:48.660 --> 00:20:55.100]   assigned to the losing answer. And if you are wondering how to read an expression like
+[00:20:55.100 --> 00:21:02.060]   this, so let me cancel because we will use it a lot, this kind of convention. This one.
+[00:21:02.060 --> 00:21:08.020]   This basically means that we have a data set of preferences where we have a prompt, a winning
+[00:21:08.020 --> 00:21:13.700]   answer and a losing answer and they belong to our data set of preferences and we train
+[00:21:13.700 --> 00:21:21.060]   a model with a gradient descent for each of these preferences we calculate this loss here,
+[00:21:21.060 --> 00:21:26.340]   this expression here. And if we minimize this loss with the gradient descent we will have
+[00:21:26.340 --> 00:21:33.340]   a neural network that is trained for the following, the Bradley-Tarry model basically.
+[00:21:33.340 --> 00:21:40.100]   Okay, now that we have built a reward model, which means that we have a model that given
+[00:21:40.100 --> 00:21:45.660]   a question and answer can assign a numeric reward to the language model if the response
+[00:21:45.660 --> 00:21:50.300]   is correct or looks good according to the behavior that we want from our language model
+[00:21:50.300 --> 00:21:55.900]   or looks bad according to the behavior that we want from our language model. Now we can
+[00:21:55.900 --> 00:22:02.900]   train our language model. So as you recall, what is the goal in reinforcement learning?
+[00:22:02.900 --> 00:22:07.660]   In reinforcement learning, the goal is to optimize a language model, which is also the
+[00:22:07.660 --> 00:22:14.340]   policy of our reinforcement learning agent, in order to maximize the cumulative reward
+[00:22:14.340 --> 00:22:20.760]   when the agent acts according to this policy. In other words, if we, let me use the pen,
+[00:22:20.760 --> 00:22:27.460]   so let's ignore for now this green part here. Suppose there is no green part here. So this
+[00:22:27.460 --> 00:22:32.940]   doesn't exist. Imagine we have a language model, let's call it Pi Theta because it's
+[00:22:32.940 --> 00:22:39.780]   a policy and we want to optimize this policy. So we want to optimize this language model
+[00:22:39.780 --> 00:22:45.660]   in order to maximize the reward that it receives from the reward model. It means that the language
+[00:22:45.660 --> 00:22:51.700]   model will generate answers that give good reward and how they get good reward if the
+[00:22:51.700 --> 00:22:57.100]   answers are, looks good. They, for example, are not racist. They are not using any sexual
+[00:22:57.100 --> 00:23:04.020]   jokes and they are actually answering the question that was asked. However, and this
+[00:23:04.020 --> 00:23:09.860]   is the goal in reinforcement learning from human feedback, for example. That's why it's
+[00:23:09.860 --> 00:23:18.280]   called the reinforcement learning from human feedback. Now, if we use a model, if we use
+[00:23:18.280 --> 00:23:26.340]   an objective like this, that is, we only want to maximize the reward, then the language
+[00:23:26.340 --> 00:23:33.860]   model may become greedy and just output garbage that gives it good reward. So imagine we have
+[00:23:33.860 --> 00:23:39.420]   a reward model that rewards the language model for being polite. The language model may just
+[00:23:39.420 --> 00:23:44.660]   start saying a list of "thank you, thank you, thank you" or "please, please, please" and
+[00:23:44.660 --> 00:23:49.700]   a lot of "please" or a lot of "thank you's" just to get high reward. Because probably
+[00:23:49.700 --> 00:23:57.100]   the word "thank you" and "please" are highly rewarded by the reward model. But we don't
+[00:23:57.100 --> 00:24:02.940]   want the language model to just output garbage to get reward. We want the language model
+[00:24:02.940 --> 00:24:12.780]   to also output something that was according to its training data. So it's a pre-training,
+[00:24:12.780 --> 00:24:18.380]   but we want to change it a little bit so that it also acts according to our reward model,
+[00:24:18.380 --> 00:24:23.900]   so to our data set of preferences. So it is more polite, but without forgetting what it
+[00:24:23.900 --> 00:24:32.260]   has learned from the pre-training. And this is why we add this KL divergence in the objective.
+[00:24:32.260 --> 00:24:36.820]   So let me use the pen again. So we change the objective a little bit. So we want the
+[00:24:36.820 --> 00:24:42.500]   language model to maximize the reward it gets from the reward model. But at the same time,
+[00:24:42.500 --> 00:24:48.300]   we add a constraint to the language model through a KL divergence. Now the KL divergence
+[00:24:48.300 --> 00:24:52.500]   can be thought of as a distance metric. It is not a distance metric, but can be thought
+[00:24:52.500 --> 00:25:00.740]   of as a distance metric between two distributions in which we have a pre-trained model. So a
+[00:25:00.740 --> 00:25:05.140]   language model that was not fine-tuned through reinforcement learning from human feedback
+[00:25:05.140 --> 00:25:10.580]   or DPO. So it's just a language model that has been pre-trained on the Wikipedia, on
+[00:25:10.580 --> 00:25:15.220]   the books, and on the internet web pages. And then we have the language model that we
+[00:25:15.220 --> 00:25:20.700]   are optimizing. So this pi theta, and we want them to be very similar. So we want the language
+[00:25:20.700 --> 00:25:26.220]   model to not change much compared to what it was before the reinforcement learning from
+[00:25:26.220 --> 00:25:32.100]   human feedback or before the DPO training. And this is why we add this KL divergence.
+[00:25:32.100 --> 00:25:37.900]   So we want the language model to maximize its reward, but at the same time, not forget
+[00:25:37.900 --> 00:25:46.740]   or not change too much its output in getting this reward. Now that we know the reinforcement
+[00:25:46.740 --> 00:25:51.860]   learning objective, which is basically also the same objective that we have in DPO, because
+[00:25:51.860 --> 00:25:57.500]   also in DPO we want to train a language model that maximizes a reward, but at the same time
+[00:25:57.500 --> 00:26:03.100]   does not forget its training data. Let's look at what does it mean to actually maximize
+[00:26:03.100 --> 00:26:06.780]   an objective function, because this is an objective function that we have and we want
+[00:26:06.780 --> 00:26:14.820]   to maximize it. But what does it mean to maximize an objective? Let's see. Maximizing a function
+[00:26:14.820 --> 00:26:21.540]   means to find the values of some variable such that the value of the function is maximized.
+[00:26:21.540 --> 00:26:27.500]   For example, if I give you the following function, f of x is equal to minus x minus three plus
+[00:26:27.500 --> 00:26:34.260]   four, whose graph is very simple. It's just a parabola facing down. To maximize these
+[00:26:34.260 --> 00:26:41.820]   functions means to find the value of the x variable such that the function, the y basically,
+[00:26:41.820 --> 00:26:48.380]   the y of this function is maximized. How to do that analytically? Well, we calculate the
+[00:26:48.380 --> 00:26:54.740]   derivative of this function here. We set the derivative equal to zero and we find the values
+[00:26:54.740 --> 00:27:00.860]   of x for which this derivative is zero. And that is also the value for which the function
+[00:27:00.860 --> 00:27:06.620]   will be maximized. So the derivative of this simple function is minus two x plus six. And
+[00:27:06.620 --> 00:27:11.980]   the value of x that makes this derivative zero is the value three, x equal to three,
+[00:27:11.980 --> 00:27:17.780]   which is also the value of the, as you can see in the graph, that maximizes the function.
+[00:27:17.780 --> 00:27:23.820]   Now the objective function that we saw before, so this one, so in which we want to maximize
+[00:27:23.820 --> 00:27:31.420]   a reward, but at the same time, we want the language model to not be too much different
+[00:27:31.420 --> 00:27:37.100]   from the unaligned language model. So the language model that is not aligned through
+[00:27:37.100 --> 00:27:42.980]   reinforcement learning from human feedback or DPO, it is called a constrained optimization
+[00:27:42.980 --> 00:27:48.460]   problem because we want to maximize the reward, but at the same time, we want to put some
+[00:27:48.460 --> 00:27:55.620]   constraint on this objective function. We don't want the KL divergence to be too big.
+[00:27:55.620 --> 00:28:04.580]   We want it to be constrained in some limit. Now, the point is, okay, there are many techniques
+[00:28:04.580 --> 00:28:09.260]   for constrained optimization and we will not see them because there are university PhDs
+[00:28:09.260 --> 00:28:16.220]   on optimization, but one thing you may notice is that, okay, this one here looks like the
+[00:28:16.220 --> 00:28:21.900]   objective function looks like a loss function. So why cannot we just use, for example, gradient
+[00:28:21.900 --> 00:28:28.940]   descent to optimize this objective function here such that we can train our language model
+[00:28:28.940 --> 00:28:35.460]   to behave in a particular way to maximize this reward? Well, we could, but as you know,
+[00:28:35.460 --> 00:28:41.380]   in deep learning and especially with backpropagation, we need an objective function or a loss function
+[00:28:41.380 --> 00:28:47.340]   that is a differentiable. The following, this objective function is not differentiable.
+[00:28:47.340 --> 00:28:53.900]   Why? Because as you can see from the expression here, this is an estimation of all the prompts
+[00:28:53.900 --> 00:29:01.380]   in our dataset and then a output that is generated by the language model. Now, to generate the
+[00:29:01.380 --> 00:29:05.700]   output of the language model, as we saw before, we need to use an iterative process in which
+[00:29:05.700 --> 00:29:12.460]   we feed one token at a time into the prompt. We sample one token at a time from the language
+[00:29:12.460 --> 00:29:15.940]   model. We take this token and we put it back into the prompt, feed it again to the language
+[00:29:15.940 --> 00:29:20.580]   model, et cetera, and we use many strategies for selecting the next token. Sometimes we
+[00:29:20.580 --> 00:29:24.180]   use the greedy strategy. Sometimes we use the beam search. Sometimes we use the top
+[00:29:24.180 --> 00:29:29.340]   case, top P, et cetera, et cetera. Now, this sampling operation that we do on the language
+[00:29:29.340 --> 00:29:34.500]   model to sample the answer of the language model is not differentiable. That's why we
+[00:29:34.500 --> 00:29:40.140]   cannot run reinforcement learning to maximize this objective or to minimize the negative
+[00:29:40.140 --> 00:29:44.940]   objective in case we treat it as a loss. And that's why in reinforcement learning, we were
+[00:29:44.940 --> 00:29:55.700]   forced to use algorithms like PPO. Now, let's see how DPO handles this. In the DPO paper,
+[00:29:55.700 --> 00:30:01.060]   they start with a very simple introduction to the reinforcement learning objective. As
+[00:30:01.060 --> 00:30:09.860]   we saw before, the reinforcement learning objective is to select a policy that maximizes
+[00:30:09.860 --> 00:30:14.300]   the expected reward when using this policy, so the policy is the language model, and at
+[00:30:14.300 --> 00:30:19.560]   the same time puts a constraint on how much this policy can change during this training,
+[00:30:19.560 --> 00:30:24.860]   this optimization. And in the DPO paper, they say, okay, there is an exact solution to this
+[00:30:24.860 --> 00:30:30.660]   optimization problem, and it is the following. It is the equation four in the DPO paper.
+[00:30:30.660 --> 00:30:37.020]   And exact solution, I mean that there is an analytical solution to this constrained optimization
+[00:30:37.020 --> 00:30:44.820]   problem. Just like we had an analytical solution for the maximization problem of this parabola,
+[00:30:44.820 --> 00:30:49.140]   so we could find through the derivative and setting the derivative equal to zero, we could
+[00:30:49.140 --> 00:30:55.820]   find the value of x such that this function here is maximized. And for using the same
+[00:30:55.820 --> 00:31:03.140]   reasoning but different techniques, we also have an analytical solution for the constrained
+[00:31:03.140 --> 00:31:08.500]   optimization problem that we saw before, and this is the solution. Now, you may be wondering,
+[00:31:08.500 --> 00:31:13.780]   okay, great, we have an exact solution just like the parabola, so now we are all set,
+[00:31:13.780 --> 00:31:21.060]   right? Yes. The problem is we have an exact solution, but it's not easily computable,
+[00:31:21.060 --> 00:31:27.440]   so it's not easy to compute. So mathematically, it exists, it makes sense, but it's not easy
+[00:31:27.440 --> 00:31:34.460]   to compute. Why? Because we have this z of x term here. Now, this z of x term here, if
+[00:31:34.460 --> 00:31:41.420]   you look at how it's defined, it's the summation of all possible y's that are generated by
+[00:31:41.420 --> 00:31:45.760]   the reference model. So as you know, when we do reinforcement learning from human feedback
+[00:31:45.760 --> 00:31:51.380]   or DPO, we have two models. One is the language model that we are trying to optimize, and
+[00:31:51.380 --> 00:31:56.740]   one is the frozen model that we don't optimize, but we use it as a reference for the KL divergence.
+[00:31:56.740 --> 00:32:03.420]   So this is called the PyRef. So all the outputs generated by PyRef multiplied by the exponential
+[00:32:03.420 --> 00:32:09.460]   of the reward. Now, the problem is this summation is done over all possible y's. It means that
+[00:32:09.460 --> 00:32:18.700]   we need to sample all possible outputs from our language model, given all the prompts
+[00:32:18.700 --> 00:32:24.340]   that we have in our data set of preferences. Now, to generate all possible outputs is very,
+[00:32:24.340 --> 00:32:29.300]   very, very expensive. Imagine you need to generate, your language model can generate
+[00:32:29.300 --> 00:32:36.500]   2,000 tokens for each prompt. It means that, and you have a vocabulary size of 30,000,
+[00:32:36.500 --> 00:32:41.420]   it means that for the first position, you have 30,000 possibilities, for the second
+[00:32:41.420 --> 00:32:45.580]   position, you have 30,000 possibilities, for the third position, you have 30,000 possibilities,
+[00:32:45.580 --> 00:32:50.900]   and then you multiply all these possibilities. So it becomes a lot, a lot, a lot of outputs
+[00:32:50.900 --> 00:32:55.780]   that you need to generate to evaluate this Z of X term. So the analytical solution to
+[00:32:55.780 --> 00:33:01.820]   the constraint optimization problem that we saw before exists, but it's not easy to compute.
+[00:33:01.820 --> 00:33:08.340]   However, one thing is interesting from this expression. Imagine that somehow, magically,
+[00:33:08.340 --> 00:33:14.140]   we have access to an optimal policy. So this solution to the optimization problem allow
+[00:33:14.140 --> 00:33:20.140]   us to compute what is the optimal policy, given the optimal reward model and the reference
+[00:33:20.140 --> 00:33:25.180]   policy, so the reference language model. But imagine that for some reason, some magically,
+[00:33:25.180 --> 00:33:31.260]   we have access to, we have this term here. So if we have this term here, we can compute
+[00:33:31.260 --> 00:33:39.660]   the optimal reward model with respect to the optimal policy. How? Well, we can just isolate
+[00:33:39.660 --> 00:33:44.820]   this R of X and Y term from this expression here. And it's very easy to compute because
+[00:33:44.820 --> 00:33:50.260]   we can apply the logarithm on the left and the right side of this expression. So let's
+[00:33:50.260 --> 00:33:58.940]   do it step by step. We can apply the log on the left side and on the right side of this
+[00:33:58.940 --> 00:34:05.860]   expression here. So this expression here, and we will get that the log of a product,
+[00:34:05.860 --> 00:34:11.260]   as you know, is the sum of the logs and the log of the ratio is the difference of the
+[00:34:11.260 --> 00:34:17.700]   logs. So this Z term is in the denominator. So it becomes a minus log of Z of X. This
+[00:34:17.700 --> 00:34:22.180]   one is in the numerator and this one is in the numerator. So they become sums of logs.
+[00:34:22.180 --> 00:34:29.100]   So this one plus this log here, then the log and the exponential can cancel out because
+[00:34:29.100 --> 00:34:35.300]   they're inverse functions. So this allow us to isolate this R of X, Y term with respect
+[00:34:35.300 --> 00:34:41.120]   to all the other terms, and we can write it like this. So we can calculate R of X and
+[00:34:41.120 --> 00:34:47.060]   Y with respect to an optimal policy that we think we have access to. We do not have access
+[00:34:47.060 --> 00:34:52.500]   to it, but we pretend we have access to it. Okay. So there are two things that we do not
+[00:34:52.500 --> 00:34:57.420]   have in this expression. We do not have the reward model, the optimal reward model, and
+[00:34:57.420 --> 00:35:04.180]   we do not have the optimal policy, but we pretend that we have the optimal policy. Why?
+[00:35:04.180 --> 00:35:10.740]   Let's see the next step that they do in the DPO paper. The next step is, they say, okay,
+[00:35:10.740 --> 00:35:15.420]   do you remember the Bradley Terry model? As you remember, the Bradley Terry model is our
+[00:35:15.420 --> 00:35:21.580]   reward model, right? Is the model that given a data set of preferences, allow us to compute
+[00:35:21.580 --> 00:35:30.820]   a numeric score, a numeric reward. Well, this Bradley Terry model is based on a reward that
+[00:35:30.820 --> 00:35:38.860]   we assign, right? So what if we plug the reward that we have computed from the constraint
+[00:35:38.860 --> 00:35:44.580]   optimization problem into the Bradley Terry model? Well, we can do it. So we have this
+[00:35:44.580 --> 00:35:49.660]   reward that we obtained from the constraint optimization problem by inverting the formula
+[00:35:49.660 --> 00:35:54.500]   and we plug it inside the Bradley Terry model. So if you remember, the Bradley Terry model
+[00:35:54.500 --> 00:36:01.660]   can also be written as a sigmoid and we prove it before in the previous slide. So what we
+[00:36:01.660 --> 00:36:08.140]   do is, okay, the Bradley Terry model can be written as a difference of rewards in the
+[00:36:08.140 --> 00:36:17.300]   sigmoid function. So if we plug the reward here, so the reward obtained by the constraint
+[00:36:17.300 --> 00:36:25.420]   optimization problem solution, we will see that the two Z of X terms, because this is
+[00:36:25.420 --> 00:36:30.820]   a difference of rewards, as you can see, if we plug here for the reward assigned to the
+[00:36:30.820 --> 00:36:37.700]   winning response, and here the reward assigned to the losing response, we have these two
+[00:36:37.700 --> 00:36:45.220]   Z of X terms, so plus beta log of Z of X and minus beta log of Z of X that will cancel
+[00:36:45.220 --> 00:36:53.340]   out because they are one the opposite of the other. This way we can obtain a formula that
+[00:36:53.340 --> 00:37:00.740]   does not contain the Z of X term and it's now computable. So basically, if we use the
+[00:37:00.740 --> 00:37:07.260]   loss of the Bradley Terry model, so as you remember, the Bradley Terry model is a model
+[00:37:07.260 --> 00:37:15.460]   that allow us to train a language model to model the reward, right? And if we use the
+[00:37:15.460 --> 00:37:23.900]   loss of the Bradley Terry model in which the reward is coming with respect to the optimal
+[00:37:23.900 --> 00:37:32.460]   policy, we can use it to optimize the policy to adhere implicitly to the reward model according
+[00:37:32.460 --> 00:37:39.660]   to the Bradley Terry model. And this is the whole idea of the DPO paper. So we can plug
+[00:37:39.660 --> 00:37:46.060]   the exact solution of the constraint optimization of the reinforcement learning objective, we
+[00:37:46.060 --> 00:37:50.700]   can invert it to get the reward, we plug it into the Bradley Terry model, because the
+[00:37:50.700 --> 00:37:57.940]   Bradley Terry model only depends on the difference of rewards assigned to the winning answer
+[00:37:57.940 --> 00:38:04.960]   and to the losing answer, the uncomputable term Z of X cancels out and then it becomes
+[00:38:04.960 --> 00:38:11.140]   computable. And now we can use it to train a language model that will act according to
+[00:38:11.140 --> 00:38:17.620]   the reward model of the Bradley Terry model, so to the preference model given by the Bradley
+[00:38:17.620 --> 00:38:27.140]   Terry model. So it will favor good responses and at the same time it will be less likely
+[00:38:27.140 --> 00:38:32.900]   to output the preferences that were not chosen. And at the same time it will put a constraint
+[00:38:32.900 --> 00:38:38.020]   onto the KL divergence, so at the same time it will put a restriction on how much the
+[00:38:38.020 --> 00:38:43.320]   language model can change with respect to the reference model, so the language model
+[00:38:43.320 --> 00:38:49.460]   that was not optimized with reinforcement learning from humanist feedback or DPO. So
+[00:38:49.460 --> 00:38:56.300]   basically with the DPO we are doing kind of the same thing that we are doing in reinforcement
+[00:38:56.300 --> 00:39:02.220]   learning but without using the reinforcement learning algorithms. So the goal in both of
+[00:39:02.220 --> 00:39:07.340]   them is the same, so we want to optimize a policy, we want to optimize a language model
+[00:39:07.340 --> 00:39:12.600]   to maximize a cumulative reward but at the same time we want to put a constraint on how
+[00:39:12.600 --> 00:39:16.940]   much it can change using the KL divergence. In the case of reinforcement learning from
+[00:39:16.940 --> 00:39:23.340]   humanist feedback we are using the PPO algorithm to optimize this objective, to optimize this
+[00:39:23.340 --> 00:39:28.380]   policy, but in the case of DPO we do not have to use reinforcement learning from humanist
+[00:39:28.380 --> 00:39:37.100]   feedback because we found a loss that implicitly is already mapping this reward objective through
+[00:39:37.100 --> 00:39:47.500]   this loss. Let's see how to actually now compute the log probability, so how to actually use
+[00:39:47.500 --> 00:39:51.900]   this loss, because first of all let's look at the expression of this loss. This loss
+[00:39:51.900 --> 00:40:00.740]   says that if you have a data set of preferences in which X is the prompt, YW is the chosen
+[00:40:00.740 --> 00:40:06.240]   answer and YL is the not chosen answer because as you remember this data set is made up of
+[00:40:06.240 --> 00:40:13.700]   preferences of question and two answers and then we asked some annotators to tell us which
+[00:40:13.700 --> 00:40:19.860]   answer they prefer. So if we have this data set we can run a gradient descent using this
+[00:40:19.860 --> 00:40:26.620]   data set over this loss here, this loss here. Now to calculate this loss, okay the logarithm
+[00:40:26.620 --> 00:40:31.460]   we can always calculate, it's just a function, the sigmoid is a function we can calculate,
+[00:40:31.460 --> 00:40:36.040]   but the logarithm and the beta are, the beta is a hyperparameter that indicates how much
+[00:40:36.040 --> 00:40:40.140]   we want the language model to change with respect to the reference language model or
+[00:40:40.140 --> 00:40:45.180]   how much we want to constrain it and then we have to compute these log probabilities,
+[00:40:45.180 --> 00:40:53.300]   so the log of the probability of generating this YW when the language model is prompted
+[00:40:53.300 --> 00:41:00.140]   with the prompt X and also for the Pyref, so also for the language model that is not
+[00:41:00.140 --> 00:41:09.080]   being optimized by DPO. Let's see how to practically compute these log probabilities. So when you
+[00:41:09.080 --> 00:41:14.820]   run DPO it's very simple, so imagine for example you are using a hugging face, it's just a
+[00:41:14.820 --> 00:41:19.780]   matter of using this class, so DPO trainer, in which you pass the language model that
+[00:41:19.780 --> 00:41:23.940]   you're optimizing, the frozen version of the language model that you don't want to optimize
+[00:41:23.940 --> 00:41:29.500]   but it's the reference language model that is used to compute the log probabilities to
+[00:41:29.500 --> 00:41:35.340]   calculate the KL divergence, then you can give some other training arguments, you can
+[00:41:35.340 --> 00:41:39.900]   have the list of them on the website of hugging face and then this beta parameter which indicates
+[00:41:39.900 --> 00:41:46.540]   the strength on how much you want the language model to change and also in the website of
+[00:41:46.540 --> 00:41:53.820]   hugging face they also give you what is the typical range for this hyperparameter. Now
+[00:41:53.820 --> 00:42:00.220]   what will happen inside the library of the DPO trainer, so inside the hugging face library
+[00:42:00.220 --> 00:42:05.580]   when you use the DPO trainer, they compute this loss, so they calculate these log probabilities
+[00:42:05.580 --> 00:42:10.100]   you can see here, so for example this log probability you can see here, but how do they
+[00:42:10.100 --> 00:42:21.020]   actually compute, well as you know a language model usually, in most cases it is a transformer
+[00:42:21.020 --> 00:42:29.380]   model and to compute these log probabilities as you know they use a prompt, a question,
+[00:42:29.380 --> 00:42:34.140]   the answer that is chosen and the answer that is not chosen, so the winning and the losing
+[00:42:34.140 --> 00:42:39.420]   answer, suppose that we want to generate the log probabilities for the winning answer,
+[00:42:39.420 --> 00:42:44.220]   so this one, so we have a language model, we give it a prompt and the answer that was
+[00:42:44.220 --> 00:42:49.940]   generated and we want to calculate this log probabilities, what we can do is we can combine
+[00:42:49.940 --> 00:42:56.740]   the question and the answer in the same string, in the same input for the language model,
+[00:42:56.740 --> 00:43:07.100]   so imagine the question is where is Shanghai, question mark, and the answer is Shanghai
+[00:43:07.100 --> 00:43:14.460]   is in China, now let me use the laser, ok, we can feed all of this to our language model,
+[00:43:14.460 --> 00:43:21.420]   so the pi theta, language model is a transformer model, most of the cases, and it will generate
+[00:43:21.420 --> 00:43:26.900]   as you know the transformer model generates some hidden states, so it takes some input
+[00:43:26.900 --> 00:43:34.140]   which are embeddings, and it outputs some embeddings that are contextualized also according
+[00:43:34.140 --> 00:43:38.940]   to the self-attention mask, now if you don't know how this works, I highly recommend you
+[00:43:38.940 --> 00:43:43.500]   watch my previous video on the transformer in which I show the self-attention mechanism,
+[00:43:43.500 --> 00:43:47.780]   but basically the transformer model is a model that takes some embeddings and through the
+[00:43:47.780 --> 00:43:53.300]   self-attention mechanism output embeddings, then we take these embeddings and we can project
+[00:43:53.300 --> 00:43:58.580]   them into logits using a linear layer, and we can do that for all the tokens that we
+[00:43:58.580 --> 00:44:03.940]   give to the input, usually we only apply the linear layer to the last token when generating
+[00:44:03.940 --> 00:44:10.980]   the tokens because we are interested in generating the next token, but we can do it for all the
+[00:44:10.980 --> 00:44:17.540]   hidden states, we are not forced to only use the last one because each hidden state encapsulates
+[00:44:17.540 --> 00:44:25.580]   information about itself and all the tokens that come before it, so we can take this logits
+[00:44:25.580 --> 00:44:31.300]   and then we can also convert them into probabilities, but we do not want probabilities, we want
+[00:44:31.300 --> 00:44:35.540]   log probabilities because as you can see here we have this log function here, so instead
+[00:44:35.540 --> 00:44:41.180]   of applying the softmax we can apply the log softmax to each of these logits, now when
+[00:44:41.180 --> 00:44:49.140]   we apply the softmax, it will become a distribution over the entire vocabulary, one for each token
+[00:44:49.140 --> 00:44:55.620]   in the vocabulary, but we want only the probability corresponding to the token that was actually
+[00:44:55.620 --> 00:45:00.740]   chosen to generate this particular answer, and we also know which token it was because
+[00:45:00.740 --> 00:45:05.340]   we have the answer, so to the question where is Shanghai, we know what is the answer because
+[00:45:05.340 --> 00:45:10.740]   it's in our data set of preferences, so we know that the answer is Shanghai is in China,
+[00:45:10.740 --> 00:45:15.340]   so how to compute these log probabilities, so we can compute the log probabilities over
+[00:45:15.340 --> 00:45:21.300]   the entire dictionary, over the entire vocabulary, and then we only select the log probability
+[00:45:21.300 --> 00:45:27.940]   corresponding to the token that was actually selected in the answer, so for this question
+[00:45:27.940 --> 00:45:33.620]   for example, we select for example the last hidden state for the question, which corresponds
+[00:45:33.620 --> 00:45:37.540]   to what should be the next token, and we know what is the next token, the next token is
+[00:45:37.540 --> 00:45:43.100]   Shanghai, so we take the log probability only corresponding to Shanghai, for this prompt
+[00:45:43.100 --> 00:45:47.580]   here, so where is Shanghai, question mark Shanghai, we know that the next token should
+[00:45:47.580 --> 00:45:53.140]   be is, because it is already present, so we take the log probability only corresponding
+[00:45:53.140 --> 00:45:59.140]   to the token is, etc, etc, and we do it for all the tokens that are in the answer, and
+[00:45:59.140 --> 00:46:06.660]   this gives us all the log probabilities of the tokens of the answer for this given question,
+[00:46:06.660 --> 00:46:12.060]   and then we can sum them up, why we need to sum them up, because it's a log probabilities,
+[00:46:12.060 --> 00:46:17.260]   usually if they are probabilities we multiply them, but because they are log probabilities
+[00:46:17.260 --> 00:46:25.420]   we sum them up, because the logarithm transforms products into summations, and this is exactly
+[00:46:25.420 --> 00:46:30.860]   what happens inside the HuggingFace library, so inside the HuggingFace library to compute
+[00:46:30.860 --> 00:46:35.460]   the log probabilities, to calculate this loss, they actually do what I described, so they
+[00:46:35.460 --> 00:46:41.380]   take the logits, and they use the labels, what are the labels, just the tokens corresponding
+[00:46:41.380 --> 00:46:46.000]   to the answer, for example to the winning answer or to the losing answer, depending
+[00:46:46.000 --> 00:46:50.340]   on which term you are computing, this one or this one, and the model that we are using,
+[00:46:50.340 --> 00:46:55.820]   so the reference model or the model that we are trying to optimize, and then they select
+[00:46:55.820 --> 00:47:03.120]   here, in this line here, they check the log probabilities only corresponding to the labels,
+[00:47:03.120 --> 00:47:09.420]   so to the next token that we already know what is it, and then they sum them up, as
+[00:47:09.420 --> 00:47:15.900]   you can see here, and here they also apply a loss, because we don't want all the log
+[00:47:15.900 --> 00:47:21.620]   probabilities, but only the one corresponding to the tokens that are belonging to the answer,
+[00:47:21.620 --> 00:47:28.140]   not to the one that belong to the question, and this is how DPO works, thank you guys
+[00:47:28.140 --> 00:47:33.340]   for watching my video, I hope you learned a lot, I tried to simplify as much as possible
+[00:47:33.340 --> 00:47:39.460]   the math of DPO, but the basic idea is that we want to remove reinforcement learning to
+[00:47:39.460 --> 00:47:45.020]   align language models, this makes the tractation much simpler, because it just becomes a simple
+[00:47:45.020 --> 00:47:48.900]   loss in which you can run a gradient descent, and you don't have to worry about training
+[00:47:48.900 --> 00:47:53.040]   a separate reward model, which is something that we did in reinforcement learning from
+[00:47:53.040 --> 00:47:59.420]   Deque, so if you watched my previous video, as you remember, the math is much more hard
+[00:47:59.420 --> 00:48:06.820]   and much more topics to introduce on how to optimize the objective that we saw, and please
+[00:48:06.820 --> 00:48:10.980]   come back to my channel for more videos like this, I usually try to make videos that are
+[00:48:10.980 --> 00:48:17.820]   very deep, very in depth for every topic, sometimes they can be a little hard, but I
+[00:48:17.820 --> 00:48:22.260]   try to simplify as much as possible, also depending on my knowledge, and also depending
+[00:48:22.260 --> 00:48:29.060]   on how much it is possible to simplify a difficult topic, and if you have any questions, please
+[00:48:29.060 --> 00:48:36.020]   leave it in the comments, and I will probably keep publishing more videos like this, but
+[00:48:36.020 --> 00:48:39.620]   if you want videos that are more simpler, please let me know, and also let me know in
+[00:48:39.620 --> 00:48:44.420]   the comments what kind of topics you would like me to explore next, thank you guys and
+[00:48:44.420 --> 00:48:45.020]   have a nice day!
+
