@@ -1,0 +1,611 @@
+
+[00:00:00.000 --> 00:00:04.000]   Hello guys, welcome back to my channel. Today we are gonna talk about quantization.
+[00:00:04.000 --> 00:00:09.000]   Let's review the topics of today. I will start by showing what is quantization
+[00:00:09.000 --> 00:00:13.400]   and why we need quantization and later we will briefly introduce what are the
+[00:00:13.400 --> 00:00:16.560]   numerical representation for integers and floating-point numbers in our
+[00:00:16.560 --> 00:00:21.920]   hardware, so in CPUs and GPUs. I will show you later what is quantization at the
+[00:00:21.920 --> 00:00:27.000]   neural network level by giving you some examples and later we will go into the
+[00:00:27.000 --> 00:00:30.120]   detail of the types of quantization, so the asymmetric and the symmetric
+[00:00:30.120 --> 00:00:34.400]   quantization, what we mean by the range and the granularity and later we will
+[00:00:34.400 --> 00:00:38.540]   see also post-training quantization and quantization-aware training. For all of
+[00:00:38.540 --> 00:00:42.560]   these topics I will also show you the Python, the PyTorch and the Python code
+[00:00:42.560 --> 00:00:46.840]   on how to do it from scratch. So actually we will build the asymmetric and the
+[00:00:46.840 --> 00:00:50.000]   quantization and the symmetric quantization from scratch using PyTorch
+[00:00:50.000 --> 00:00:53.600]   and then later we will also apply it to a sample neural network using
+[00:00:53.600 --> 00:00:57.380]   post-training quantization and quantization-aware training. What do I
+[00:00:57.380 --> 00:01:01.320]   expect you guys to already know before watching this video is basically you
+[00:01:01.320 --> 00:01:05.740]   have some basic understanding of neural networks and then you have some
+[00:01:05.740 --> 00:01:11.060]   background in mathematics, just high school mathematics is enough. So let's
+[00:01:11.060 --> 00:01:15.680]   start our journey. Let's see what is quantization first of all. So quantization
+[00:01:15.680 --> 00:01:19.720]   aims to solve a problem. The problem is that most modern deep neural networks
+[00:01:19.720 --> 00:01:24.480]   are made up of millions if not billions of parameters. For example the smallest
+[00:01:24.480 --> 00:01:30.600]   Lama 2 has a 7 billion parameters. Now if every parameter is a 32-bit then we
+[00:01:30.600 --> 00:01:35.900]   need 28 gigabyte just to store the parameters on the disk. Also when we
+[00:01:35.900 --> 00:01:39.320]   inference the model we need to load all the parameters of the model in the
+[00:01:39.320 --> 00:01:42.660]   memory. If we are using the CPU for example for inference then we need to
+[00:01:42.660 --> 00:01:46.240]   load it in the RAM but if you are using the GPU we need to load it in the memory
+[00:01:46.240 --> 00:01:52.640]   of the GPU. Of course big models cannot easily be loaded inside the CPU, the RAM
+[00:01:52.640 --> 00:01:56.480]   or the GPU in case we are using a standard PC or small device like a
+[00:01:56.480 --> 00:02:03.080]   smartphone. And also just like humans computers are slow at computing
+[00:02:03.080 --> 00:02:07.320]   floating-point operations compared to integer operations. For example if you
+[00:02:07.320 --> 00:02:14.560]   try to do mentally 3 multiplied by 6 and also mentally 1.21 multiplied by 2.897
+[00:02:14.560 --> 00:02:19.360]   of course you are able to do much faster the 3 by 6 multiplication and the same
+[00:02:19.360 --> 00:02:25.000]   goes on with computers. So the solution is quantization. Quantization basically
+[00:02:25.000 --> 00:02:30.280]   aims to reduce the number of the amount of bits required to represent each
+[00:02:30.280 --> 00:02:34.800]   parameter using by usually by converting the floating-point numbers into
+[00:02:34.800 --> 00:02:39.320]   integers. This way for example a model that normally occupies many gigabyte
+[00:02:39.320 --> 00:02:44.840]   can be compressed to much less smaller size. Also please note that
+[00:02:44.840 --> 00:02:48.600]   quantization doesn't mean that we just round up or round down all the
+[00:02:48.600 --> 00:02:52.300]   floating-point numbers to the nearest integer, this is not what quantization
+[00:02:52.300 --> 00:02:57.120]   does. We will see later how it works so please don't be confused. And the
+[00:02:57.120 --> 00:03:00.520]   quantization can also speed up computation because as working with
+[00:03:00.520 --> 00:03:04.720]   smaller data types is faster for example the computer is much faster as
+[00:03:04.720 --> 00:03:09.360]   multiplying matrices made up of integers than two matrices made up of
+[00:03:09.360 --> 00:03:13.720]   floating-point numbers. And later we will see actually how this matrix
+[00:03:13.720 --> 00:03:18.720]   multiplication works at the GPU level also. So what is the advantage of
+[00:03:18.720 --> 00:03:22.560]   quantization? First of all we have less memory consumption when loading models
+[00:03:22.560 --> 00:03:27.720]   so the model can be compressed into a much smaller size and we have less
+[00:03:27.720 --> 00:03:32.440]   inference time because of using simpler data types so for example integers
+[00:03:32.440 --> 00:03:36.720]   instead of floating-point numbers. And these two combinations lead to less
+[00:03:36.720 --> 00:03:40.000]   energy consumption which is very important for like for example
+[00:03:40.000 --> 00:03:46.000]   smartphones. Okay now let's go review how numbers are represented in the
+[00:03:46.000 --> 00:03:52.120]   hardware so in the CPU level or in the GPU level. So computers use a
+[00:03:52.120 --> 00:03:56.880]   fixed number of bits to represent any piece of data. For example to represent a
+[00:03:56.880 --> 00:04:00.800]   number or a character or a pixel color we always use the fixed number of bit. A
+[00:04:00.800 --> 00:04:05.360]   bit string that is made up of n bits can represent up to 2 to the power of n
+[00:04:05.360 --> 00:04:10.720]   distinct numbers. For example with 3 bit we can represent 8 possible numbers
+[00:04:10.720 --> 00:04:16.560]   from 0 to 7 and for each number you can see its binary representation. We can
+[00:04:16.560 --> 00:04:20.960]   always convert the binary representation in the decimal representation by
+[00:04:20.960 --> 00:04:27.960]   multiplying each digit with the power of 2 to the power of its position to the
+[00:04:27.960 --> 00:04:34.240]   to the position of the digit inside the bit string. And in most CPUs actually the
+[00:04:34.240 --> 00:04:38.200]   numbers the integer numbers are represented using the twos complement
+[00:04:38.200 --> 00:04:43.480]   which means that the first bit of the number indicates the sign so 0 means
+[00:04:43.480 --> 00:04:49.000]   positive and 1 means negative while the rest of the bits indicate the absolute
+[00:04:49.000 --> 00:04:52.360]   value of the number in case it's positive or its complement in case it's
+[00:04:52.360 --> 00:04:57.120]   negative. The reason we use the twos complement is because we want one unique
+[00:04:57.120 --> 00:05:00.920]   representation for the zero so the plus zero and the minus zero have the same
+[00:05:00.920 --> 00:05:06.200]   binary representation. But of course you may argue okay computers use a fixed
+[00:05:06.200 --> 00:05:11.800]   number of bits to represent numbers but how can Python handle such big numbers
+[00:05:11.800 --> 00:05:17.200]   without any problems like when you run 2 to the power of 9 9 9 9 on Python you
+[00:05:17.200 --> 00:05:23.080]   will get a result which is much bigger than any 64-bit number and how can
+[00:05:23.080 --> 00:05:27.760]   Python handle these huge numbers without any problem? Well Python uses the so
+[00:05:27.760 --> 00:05:34.280]   called the big num arithmetic so as we saw before in this table the number 6
+[00:05:34.280 --> 00:05:38.520]   when it's represented in base 10 only needs one digit but when it's
+[00:05:38.520 --> 00:05:43.880]   represented in a base 2 it reads three digits so this is actually a rule so the
+[00:05:43.880 --> 00:05:47.880]   smaller the base the bigger the number of digits we need to represent the
+[00:05:47.880 --> 00:05:53.000]   number and Python does the inverse so it saves all these numbers as an
+[00:05:53.000 --> 00:05:58.040]   array of digits in which each digit is the digit of the number in base 2 to the
+[00:05:58.040 --> 00:06:02.960]   power of 30 so overall we need less digits to store very big numbers for
+[00:06:02.960 --> 00:06:07.600]   example if this number which is the result of 2 to the power of 9 9 9 9 is
+[00:06:07.600 --> 00:06:12.720]   represented as a decimal number we would need an array of 3,000 digits to store
+[00:06:12.720 --> 00:06:19.240]   it in memory while Python stores this number as an array of digits in base 2
+[00:06:19.240 --> 00:06:26.880]   to the power of 30 so it only needs 334 elements in which all the elements are
+[00:06:26.880 --> 00:06:31.880]   zero except the most significant one which is equal to 512 and as a matter of
+[00:06:31.880 --> 00:06:38.360]   fact you can check by yourself that by doing 512 multiplied by the base so 2 to
+[00:06:38.360 --> 00:06:44.480]   the power of 30 then to the power of the position of this digit in the array we
+[00:06:44.480 --> 00:06:49.760]   will obtain the number 2 to the power of 9 9 9 9 I also want you to notice that
+[00:06:49.760 --> 00:06:53.760]   this is something that is implemented by CPython which is the Python
+[00:06:53.760 --> 00:06:58.400]   interpreter not by the CPU so it's not the CPU that is doing this big num
+[00:06:58.400 --> 00:07:02.440]   arithmetic for us it's the Python interpreter for example when you compile
+[00:07:02.440 --> 00:07:08.080]   C++ code the code will run directly on the hardware on the CPU which means also
+[00:07:08.080 --> 00:07:13.320]   that the C++ code is compiled for the specific hardware it will run
+[00:07:13.320 --> 00:07:17.760]   on while Python code we never compile it because the CPython will take care of
+[00:07:17.760 --> 00:07:22.920]   translating our Python instructions into machine code and in a process called
+[00:07:22.920 --> 00:07:28.560]   just-in-time compilation okay let's review how floating-point numbers are
+[00:07:28.560 --> 00:07:34.240]   represented now decimal numbers are just numbers that also include the negative
+[00:07:34.240 --> 00:07:39.640]   powers of the base for example the number 85.612 can be written as each
+[00:07:39.640 --> 00:07:44.400]   number multiplied so each digit multiplied by a power of the base which
+[00:07:44.400 --> 00:07:49.880]   is 10 but the decimal part have negative powers of 10 as you can see 10 to the
+[00:07:49.880 --> 00:07:54.800]   power of minus 1 minus 2 and minus 3 and this same reasoning is used to in the
+[00:07:54.800 --> 00:08:00.320]   standard IEEE 754 which defines the representation of floating-point
+[00:08:00.320 --> 00:08:06.200]   numbers in 32-bit basically we divided the 32-bit string into three parts the
+[00:08:06.200 --> 00:08:11.920]   first bit indicates the sign so 0 means positive the next 8 bit indicated the
+[00:08:11.920 --> 00:08:15.560]   exponent which also indicates the magnitude of the number so how big is
+[00:08:15.560 --> 00:08:21.520]   the number and the last 23 bits indicate the fractional part of the number so all
+[00:08:21.520 --> 00:08:27.880]   the digits corresponding to the negative powers of 2 to convert this bit string
+[00:08:27.880 --> 00:08:32.660]   into a value decimal value we just need to do this so the sign multiplied by 2
+[00:08:32.660 --> 00:08:39.240]   to the power of the exponent minus 127 multiplied by the fraction 1 plus all
+[00:08:39.240 --> 00:08:47.680]   the negative powers of 2 and should correspond to the number 0.15625
+[00:08:47.680 --> 00:08:54.360]   most modern GPUs also support a 16-bit floating-point number but of course this
+[00:08:54.360 --> 00:08:58.160]   results in less precision because we have less bits dedicated to the
+[00:08:58.160 --> 00:09:03.140]   fractional part the last bit dedicated to the exponent and of course they are
+[00:09:03.140 --> 00:09:07.800]   smaller so they have less it means that they can represent the floating-point
+[00:09:07.800 --> 00:09:12.160]   numbers with less precision so we don't we cannot have too many digits after the
+[00:09:12.160 --> 00:09:19.920]   comma for example okay let's go inside the details of quantization now first of
+[00:09:19.920 --> 00:09:24.180]   all we review how neural networks work so we start with an input which could be
+[00:09:24.180 --> 00:09:28.200]   a tensor and we give it to a layer which could be a linear layer for example
+[00:09:28.200 --> 00:09:33.780]   which then maps to another linear layer and finally we have an output we have
+[00:09:33.780 --> 00:09:38.440]   usually a target we compare the output and the target through a loss function
+[00:09:38.440 --> 00:09:42.360]   and we calculate the gradient of the loss function with respect to each
+[00:09:42.360 --> 00:09:48.960]   parameter and we run back propagation to update these parameters the neural
+[00:09:48.960 --> 00:09:53.340]   network can be made up of many different layers for example a linear layer is
+[00:09:53.340 --> 00:09:57.320]   made up of two matrices one is called the weight and one is called the bias
+[00:09:57.320 --> 00:10:02.120]   which are commonly represented using floating-point numbers quantization
+[00:10:02.120 --> 00:10:06.960]   aims to use integer numbers to represent these two matrices while maintaining the
+[00:10:06.960 --> 00:10:12.180]   accuracy of the model let's see how so this linear layer for example the first
+[00:10:12.180 --> 00:10:16.080]   linear layer of this neural network represents an operation which is the
+[00:10:16.080 --> 00:10:22.200]   input multiplied by a weight matrix which are the parameters of this linear
+[00:10:22.200 --> 00:10:28.520]   layer plus a bias which are also the parameters of this linear layer and we
+[00:10:28.520 --> 00:10:34.280]   the goal of the quantization is to quantize the input the weight matrix and
+[00:10:34.280 --> 00:10:39.720]   the bias matrix into integers such that we perform all these operations here as
+[00:10:39.720 --> 00:10:44.080]   integer operations because they are much faster compared to floating-point
+[00:10:44.080 --> 00:10:49.640]   operations we take then the output we dequantize it and we feed it to the next
+[00:10:49.640 --> 00:10:54.840]   layer and we dequantize in such a way that the next layer should not even
+[00:10:54.840 --> 00:10:58.360]   realize that there have been a quantization in the previous layer so we
+[00:10:58.360 --> 00:11:02.640]   want to do quantization in such a way that the model's output should not
+[00:11:02.640 --> 00:11:07.600]   change because of quantization so we want to keep the model's performance the
+[00:11:07.600 --> 00:11:11.840]   accuracy of the model but we want to perform all these operations using
+[00:11:11.840 --> 00:11:16.440]   integers so we need to find a mapping between floating-point numbers and
+[00:11:16.440 --> 00:11:21.000]   integers and a reversible mapping of course so we can go from floating-point
+[00:11:21.000 --> 00:11:25.640]   to integers and from integers to floating-point but in such a way that we
+[00:11:25.640 --> 00:11:31.200]   don't lose the precision of the model but at the same time we want to optimize
+[00:11:31.200 --> 00:11:36.640]   the space occupation of the model inside the RAM and on the disk and we want to
+[00:11:36.640 --> 00:11:39.880]   make it faster to compute these operations because as we saw before
+[00:11:39.880 --> 00:11:44.600]   computing integer operations is much faster than computing floating-point
+[00:11:44.600 --> 00:11:50.160]   operations the main benefit is that the integer operations is much faster in
+[00:11:50.160 --> 00:11:55.040]   most hardware than floating-point operations plus in most embedding
+[00:11:55.040 --> 00:11:59.000]   hardware especially very very small embedded device we don't even have a
+[00:11:59.000 --> 00:12:03.880]   floating-point numbers so we are forced to use integer operations in those
+[00:12:03.880 --> 00:12:09.240]   devices okay let's see how it works so this hidden layer here for example may
+[00:12:09.240 --> 00:12:14.080]   have a weight matrix which could be a 5 by 5 matrix that we can see here the
+[00:12:14.080 --> 00:12:20.760]   goal of quantization is to reduce the precision of each number that we see in
+[00:12:20.760 --> 00:12:25.960]   this matrix by mapping it into a range that occupies less bits so this is a
+[00:12:25.960 --> 00:12:32.720]   floating-point number and occupies 4 bytes so 32 bits we want to
+[00:12:32.720 --> 00:12:37.400]   quantize using only 8 bits so each number should be represented only using
+[00:12:37.400 --> 00:12:45.240]   8 bit now with 8 bit we can represent the range from -128 to +127 but
+[00:12:45.240 --> 00:12:51.200]   usually we sacrifice the -128 to obtain a symmetric range so we map each
+[00:12:51.200 --> 00:12:56.600]   number into its 8 bit representation in such a way that we can then map back to
+[00:12:56.600 --> 00:13:00.640]   the original array in an operation that is first called quantization and the
+[00:13:00.640 --> 00:13:04.840]   second is called dequantization now during the quantization we should
+[00:13:04.840 --> 00:13:11.000]   obtain the original array the original tensor or matrix but we usually lose
+[00:13:11.000 --> 00:13:15.040]   some precision so for example if you look at the first value it's exactly the
+[00:13:15.040 --> 00:13:19.840]   same as the original matrix but the second value here is similar but not
+[00:13:19.840 --> 00:13:25.140]   exactly the same and this is to say that with quantization we introduce some
+[00:13:25.140 --> 00:13:31.720]   error so the model will not be as accurate as the not quantized model but
+[00:13:31.720 --> 00:13:36.000]   we want to make it the quantization process in such a way that we lose the
+[00:13:36.000 --> 00:13:40.720]   least accuracy possible so we don't want to lose precision so we want to minimize
+[00:13:40.720 --> 00:13:47.240]   this error that we introduce okay let's go into the details of quantization now
+[00:13:47.240 --> 00:13:52.120]   so by reviewing the types of quantization we have available first of
+[00:13:52.120 --> 00:13:54.760]   all I will show you the difference between asymmetric and symmetric
+[00:13:54.760 --> 00:13:59.760]   quantization so imagine we have a tensor which is made up of 10 values that you
+[00:13:59.760 --> 00:14:04.640]   can see here the goal of asymmetric quantization is to map the original
+[00:14:04.640 --> 00:14:10.880]   tensor which is distributed between this range so minus 44.23 which is the
+[00:14:10.880 --> 00:14:15.360]   smallest number in this tensor and 43.31 which is the
+[00:14:15.360 --> 00:14:20.320]   biggest number in this tensor we want to map it into another range that is made
+[00:14:20.320 --> 00:14:26.200]   up of integers that are between 0 and 255 which are the integers that we can
+[00:14:26.200 --> 00:14:31.640]   represent using 8-bit for example and if we do this operation we will obtain a
+[00:14:31.640 --> 00:14:36.560]   new tensor that will map for example this first number into 255 this number
+[00:14:36.560 --> 00:14:43.720]   here into 0 this number here into 130 etc the other type of quantization is
+[00:14:43.720 --> 00:14:51.040]   the symmetric quantization which aims to map a symmetric range so we take this
+[00:14:51.040 --> 00:14:57.400]   tensor and we we treat it as a symmetric range even if it's not symmetric
+[00:14:57.400 --> 00:15:03.000]   because as you can see the biggest value here is 43.31 and the smallest value is
+[00:15:03.000 --> 00:15:08.960]   minus 44.93 so they are not symmetric with respect to the zero but if they are
+[00:15:08.960 --> 00:15:13.400]   then we can use a symmetric range which aims to basically map the original
+[00:15:13.400 --> 00:15:18.960]   symmetric range into another symmetric range also using 8-bit in our case such
+[00:15:18.960 --> 00:15:22.800]   that however this gives you the advantage that the zero is always mapped
+[00:15:22.800 --> 00:15:28.840]   into the zero in the quantized numbers I will show you later how actually we do
+[00:15:28.840 --> 00:15:34.680]   this computation so how do we compute the quantized version using the original
+[00:15:34.680 --> 00:15:40.560]   tensor and also how to de-quantize back so let's go in the case of a symmetric
+[00:15:40.560 --> 00:15:46.600]   quantization imagine we have an original tensor that is like this so these 10
+[00:15:46.600 --> 00:15:52.660]   items we can see here we quantize using the following formula so the quantized
+[00:15:52.660 --> 00:15:56.680]   version of each of these numbers is equal to the floating point number so
+[00:15:56.680 --> 00:16:00.640]   the original floating point number divided by a parameter called S which
+[00:16:00.640 --> 00:16:08.080]   stands for scale we round down or round up to the nearest integer plus a
+[00:16:08.080 --> 00:16:15.560]   number Z and if the result of this operation is smaller than zero then we
+[00:16:15.560 --> 00:16:20.040]   clamp it to zero and if it's bigger than 2 to the power of n minus 1 then we
+[00:16:20.040 --> 00:16:25.600]   clamp it to 2 to the power of n minus 1 what is n? n is the number of bits that
+[00:16:25.600 --> 00:16:29.840]   we want to use for quantization so we want to quantize for example all these
+[00:16:29.840 --> 00:16:35.080]   floating point numbers into 8 bits so we will choose n equal to 8 how to
+[00:16:35.080 --> 00:16:39.920]   calculate this S parameter the S parameter is given by alpha minus beta
+[00:16:39.920 --> 00:16:44.680]   divided by the range of the the output range basically so how many numbers the
+[00:16:44.680 --> 00:16:50.640]   output range can represent what is beta and alpha they are the biggest number in
+[00:16:50.640 --> 00:16:54.600]   the original tensor and the smallest number in the original tensor so we take
+[00:16:54.600 --> 00:17:00.040]   basically the range of the original tensor and we squeeze it into the output
+[00:17:00.040 --> 00:17:05.200]   range by means of this scale parameter and then we center it using the Z
+[00:17:05.200 --> 00:17:12.160]   parameter this Z parameter is computed as minus 1 multiplied by beta divided by
+[00:17:12.160 --> 00:17:17.120]   S and then rounded to the nearest integer so the Z parameter is an integer
+[00:17:17.120 --> 00:17:21.440]   while the scale parameter is not an integer it is a floating point
+[00:17:21.440 --> 00:17:26.320]   number if we do this operation so we take each floating point and we run it
+[00:17:26.320 --> 00:17:33.800]   through this formula we will obtain this quantized vector what we can see first
+[00:17:33.800 --> 00:17:37.040]   of all the biggest number using a symmetric quantization is always mapped
+[00:17:37.040 --> 00:17:40.520]   to the biggest number in the output range and the smallest number is always
+[00:17:40.520 --> 00:17:45.760]   mapped to the zero in the output range the zero number in the original vector
+[00:17:45.760 --> 00:17:50.320]   is mapped into the Z parameter so this 130 is actually the Z parameter if you
+[00:17:50.320 --> 00:17:55.160]   compute it and all the other numbers are mapped into something that is in between
+[00:17:55.160 --> 00:18:02.040]   0 and 255 we can then dequantize using the following formula so to
+[00:18:02.040 --> 00:18:05.360]   dequantize to obtain the floating point number back we just need to take
+[00:18:05.360 --> 00:18:11.720]   multiply the scale multiplied by the quantized number minus Z and we should
+[00:18:11.720 --> 00:18:17.320]   obtain the original tensor but you should see that the numbers are similar
+[00:18:17.320 --> 00:18:21.600]   but not exactly the same because the quantization introduces some error
+[00:18:21.600 --> 00:18:26.400]   because we are trying to squeeze a range that could be very big because with 32
+[00:18:26.400 --> 00:18:30.880]   bit we can represent a very big range into a range that is much smaller with
+[00:18:30.880 --> 00:18:36.400]   8 bit so of course we will introduce some error let's see the symmetric
+[00:18:36.400 --> 00:18:41.280]   quantization symmetric quantization as we saw before we aim to transform a
+[00:18:41.280 --> 00:18:45.800]   symmetric input range into a symmetric output range so imagine we still have
+[00:18:45.800 --> 00:18:51.440]   this tensor what we do we compute the quantized values as follows so each
+[00:18:51.440 --> 00:18:56.360]   number the floating point number divided by a parameter S so the scale and
+[00:18:56.360 --> 00:19:01.000]   clamped between these two limits this one and this one where n is the number
+[00:19:01.000 --> 00:19:05.400]   of bits that we want to use for quantizing and the S parameter is
+[00:19:05.400 --> 00:19:10.160]   calculated as the absolute value of alpha where alpha is the biggest number
+[00:19:10.160 --> 00:19:16.060]   here in absolute terms in this case it's the number minus 44.93 because in
+[00:19:16.060 --> 00:19:23.480]   absolute terms is the biggest value and we can then quantize this tensor and we
+[00:19:23.480 --> 00:19:27.840]   should obtain something like this we should notice that the the zero in this
+[00:19:27.840 --> 00:19:34.040]   case is mapped into the zero which is very useful we can then dequantize using
+[00:19:34.040 --> 00:19:38.000]   the formula we can see here so to obtain the floating point number we take the
+[00:19:38.000 --> 00:19:42.400]   quantized number multiplied by the scale parameter so the S parameter and we
+[00:19:42.400 --> 00:19:47.880]   should obtain the original vector but of course we will lose some precision so we
+[00:19:47.880 --> 00:19:52.280]   lose some as you can see the original number was for 43.31 the
+[00:19:52.280 --> 00:19:57.920]   dequantized number is a 43.16 so we lost some precision but our
+[00:19:57.920 --> 00:20:02.440]   goal of course is to have have it as similar as possible to the original
+[00:20:02.440 --> 00:20:07.640]   array and there are of course the best ways to just increase the number of
+[00:20:07.640 --> 00:20:13.680]   bits of the quantization but of course we cannot just choose any number of
+[00:20:13.680 --> 00:20:18.120]   bits because as we saw before we want to run this the matrix multiplication in
+[00:20:18.120 --> 00:20:22.960]   the linear layer to be accelerated by the CPU and the CPU always works with
+[00:20:22.960 --> 00:20:26.360]   the fixed number of bits and the operations in the side of the CPU are
+[00:20:26.360 --> 00:20:30.680]   optimized for a fixed number of bits so for example we have optimization for 8
+[00:20:30.680 --> 00:20:36.440]   bits 16 bit 32 bit and 64 bit but of course if we choose 11 bits as the for
+[00:20:36.440 --> 00:20:42.440]   quantization the CPU may not support the acceleration of operations using 11 bits
+[00:20:42.440 --> 00:20:46.600]   so we have to be careful to choose a good compromise between the number of
+[00:20:46.600 --> 00:20:52.240]   bits and also the availability of the hardware later we will also see how the
+[00:20:52.240 --> 00:20:59.280]   GPU computes the matrix multiplication in the accelerated form okay I have
+[00:20:59.280 --> 00:21:02.720]   shown you the symmetric and the asymmetric quantization now it's time to
+[00:21:02.720 --> 00:21:07.160]   actually look at the code on how it is implemented in reality let's have a look
+[00:21:07.160 --> 00:21:14.560]   okay I created a very simple notebook in which basically I generated 20 random
+[00:21:14.560 --> 00:21:20.440]   numbers between -50 and 150 I modified these numbers in such a way that the
+[00:21:20.440 --> 00:21:24.480]   first number is the biggest one and the second number is the smallest one and
+[00:21:24.480 --> 00:21:28.080]   then the third is a zero so we can check the effect of the quantization on the
+[00:21:28.080 --> 00:21:32.440]   biggest number on the smallest number and on the zero suppose this is the
+[00:21:32.440 --> 00:21:37.520]   original numbers so this array of 20 numbers we define the functions that
+[00:21:37.520 --> 00:21:43.200]   will quantize this vector so asymmetric quantization basically it will
+[00:21:43.200 --> 00:21:47.160]   compute the alpha as the maximum value the beta as the minimum value it will
+[00:21:47.160 --> 00:21:50.800]   calculate the scale and the zero using the formula that we saw on the slide
+[00:21:50.800 --> 00:21:55.080]   before and then it will quantize using the same formula that we saw before and
+[00:21:55.080 --> 00:21:59.120]   the same goes for the symmetric quantization we calculate the alpha the
+[00:21:59.120 --> 00:22:04.000]   scale parameter the upper bound and the lower bound for clamping and we can
+[00:22:04.000 --> 00:22:07.840]   also dequantize using the same formula that we saw on the slide so in the case
+[00:22:07.840 --> 00:22:11.520]   of asymmetric is this one with the zero and in the case of symmetric we don't
+[00:22:11.520 --> 00:22:16.080]   have the zero because the zero is always mapped into the zero we can also
+[00:22:16.080 --> 00:22:19.840]   calculate the quantization error by comparing the original values and the
+[00:22:19.840 --> 00:22:24.960]   dequantized values by using the mean squared error so let's try to see what
+[00:22:24.960 --> 00:22:29.040]   is the effect on quantization so this is our original array of floating point
+[00:22:29.040 --> 00:22:32.880]   numbers if we quantize it using asymmetric quantization we will obtain
+[00:22:32.880 --> 00:22:39.360]   this array here in which we can see that the biggest value is mapped into 255
+[00:22:39.360 --> 00:22:43.960]   which is the biggest value of the output range the smallest value is mapped into
+[00:22:43.960 --> 00:22:49.000]   the zero and the zero is mapped into the Z parameter which is a 61 and as you
+[00:22:49.000 --> 00:22:55.320]   can see the zero is mapped into the 61 while with the symmetric quantization we
+[00:22:55.320 --> 00:22:59.080]   have that the zero is mapped into the zero so the third element of the
+[00:22:59.080 --> 00:23:02.600]   original vector is mapped into the third element of the symmetric range and it's
+[00:23:02.600 --> 00:23:08.760]   the zero if we dequantize back the quantized parameters we will see that
+[00:23:08.760 --> 00:23:14.640]   they are similar to the original vector but not exactly the same as you can see
+[00:23:14.640 --> 00:23:18.640]   we lose a little bit of the precision and we can measure this precision using
+[00:23:18.640 --> 00:23:22.800]   the mean squared error for example and we can see that the error is much bigger
+[00:23:22.800 --> 00:23:28.680]   for the symmetric quantization why because the original vector is not
+[00:23:28.680 --> 00:23:35.120]   symmetric the original vector is between -50 and 150 so what we are doing with
+[00:23:35.120 --> 00:23:39.440]   symmetric quantization is that we are calculating let's see here with
+[00:23:39.440 --> 00:23:44.960]   symmetric quantization basically we are checking the biggest value in absolute
+[00:23:44.960 --> 00:23:50.320]   terms so the biggest value in absolute terms is 127 which will means that the
+[00:23:50.320 --> 00:23:57.620]   symmetric quantization will map a range that is between -127 and +127 but all the
+[00:23:57.620 --> 00:24:03.840]   numbers between -127 and -40 don't do not appear in this array so we are
+[00:24:03.840 --> 00:24:08.160]   sacrificing a lot of the range will be unused and that's why all the other
+[00:24:08.160 --> 00:24:14.040]   numbers will suffer from this bad distribution let's say and this is why
+[00:24:14.040 --> 00:24:19.160]   the symmetric quantization has a bigger error okay let's review again how the
+[00:24:19.160 --> 00:24:24.280]   quantization will work in our case of the linear layer so if we never quantize
+[00:24:24.280 --> 00:24:29.560]   this network we will have a weight matrix a bias matrix the output of this
+[00:24:29.560 --> 00:24:34.760]   layer will be a weight multiplied by the input of this layer plus the bias and
+[00:24:34.760 --> 00:24:37.640]   the output will be another floating-point number so all of these
+[00:24:37.640 --> 00:24:43.560]   matrices are floating-point numbers but when we quantize we quantize the weight
+[00:24:43.560 --> 00:24:47.300]   matrix which is a fixed matrix because we pretend the network has already been
+[00:24:47.300 --> 00:24:52.320]   trained so the weight matrix is fixed and we can quantize it by calculating
+[00:24:52.320 --> 00:24:55.900]   the alpha and the beta that we saw before using the symmetric quantization
+[00:24:55.900 --> 00:25:00.960]   or the asymmetric quantization the beta parameters can also be quantized because
+[00:25:00.960 --> 00:25:06.080]   it's a fixed vector and we can calculate the alpha and the beta of this vector
+[00:25:06.080 --> 00:25:12.080]   and we can quantize using 8 bits we want our goal is to perform all these
+[00:25:12.080 --> 00:25:16.880]   operations using integers so how can we quantize the X matrix because this is
+[00:25:16.880 --> 00:25:22.480]   the X matrix is an input which depends on the input the network receives one
+[00:25:22.480 --> 00:25:26.720]   way is called the dynamic quantization dynamic quantization means that for
+[00:25:26.720 --> 00:25:32.000]   every input we receive on the fly we calculate the alpha and the beta because
+[00:25:32.000 --> 00:25:35.440]   we have a vector so we can calculate the alpha and the beta and then we can
+[00:25:35.440 --> 00:25:41.020]   quantize it on the fly okay now we have quantized also the input matrix by using
+[00:25:41.020 --> 00:25:45.240]   for example dynamic quantization we can perform this matrix multiplication
+[00:25:45.240 --> 00:25:50.620]   will be which will become a integer matrix multiplication the output will be
+[00:25:50.620 --> 00:25:57.280]   Y which is an integer matrix but this matrix here is not the original
+[00:25:57.280 --> 00:26:02.640]   floating-point number of the not quantized network it's a quantized value
+[00:26:02.640 --> 00:26:09.340]   how can we map it back to the original floating-point number well we need to do
+[00:26:09.340 --> 00:26:14.600]   a process called calibration calibration means that we take the point the
+[00:26:14.600 --> 00:26:19.220]   network we run some input through the network and we check what are the
+[00:26:19.220 --> 00:26:24.880]   typical values of Y by using these typical values of Y we can check what
+[00:26:24.880 --> 00:26:29.680]   could be a reasonable alpha and the reasonable beta for these values that we
+[00:26:29.680 --> 00:26:35.040]   observe of Y and then we can use the output of this integer matrix
+[00:26:35.040 --> 00:26:41.660]   multiplication and use the scale and the zero parameter that we have computed by
+[00:26:41.660 --> 00:26:48.520]   visual by collecting statistics about this Y to dequantize this output matrix
+[00:26:48.520 --> 00:26:53.880]   here such that it's mapped back into a floating-point number such that the
+[00:26:53.880 --> 00:26:59.780]   network output doesn't differ too much from what is the not quantized network
+[00:26:59.780 --> 00:27:04.620]   so the goal of quantization is to reduce the number of bits required to represent
+[00:27:04.620 --> 00:27:09.720]   each parameter and also to speed up the computation but our goal is to obtain
+[00:27:09.720 --> 00:27:14.600]   the same output for the same input or at least to obtain a very similar output
+[00:27:14.600 --> 00:27:19.120]   for the same input so we don't want to lose the precision so we need to find a
+[00:27:19.120 --> 00:27:24.520]   way to of course map back into the floating-point numbers each output of
+[00:27:24.520 --> 00:27:30.000]   each linear layer and this is how we do it so the input matrix we can observe it
+[00:27:30.000 --> 00:27:34.440]   every time by using dynamic quantization so on the fly we can quantize it the
+[00:27:34.440 --> 00:27:39.000]   output we can observe it for a few samples so we know what are the typical
+[00:27:39.000 --> 00:27:44.160]   maximum and the minimum values such that we can then use them as alpha and
+[00:27:44.160 --> 00:27:49.520]   beta and then we can dequantize the output Y using these values that we have
+[00:27:49.520 --> 00:27:52.880]   observed we will see later this practically with the post-training
+[00:27:52.880 --> 00:27:58.680]   quantization we will actually watch the code of how it works I also want to
+[00:27:58.680 --> 00:28:04.440]   give you a glimpse into how GPU perform matrix multiplication so when we
+[00:28:04.440 --> 00:28:09.760]   calculate the product X multiplied by W plus B which is a matrix multiplication
+[00:28:09.760 --> 00:28:15.240]   followed by a matrix addition the result is a list of dot products between each
+[00:28:15.240 --> 00:28:21.720]   row of the X matrix and each column of the Y matrix summing the corresponding
+[00:28:21.720 --> 00:28:27.140]   element of the bias vector B this operation so the matrix multiplication
+[00:28:27.140 --> 00:28:32.600]   plus bias can be accelerated by the GPU using a block called the multiply
+[00:28:32.600 --> 00:28:37.480]   accumulate in which for example imagine each matrix is made up of vectors of
+[00:28:37.480 --> 00:28:43.680]   four elements so we load the vector of the X the first row of the VEX matrix
+[00:28:43.680 --> 00:28:50.080]   and then the first column of the W matrix and we compute the corresponding
+[00:28:50.080 --> 00:28:57.320]   product so X 1 1 with W 1 1 then X 1 2 with W 1 2 X 1 3 with W 3 1 etc etc and
+[00:28:57.320 --> 00:29:03.080]   then we sum all this value into a register called the accumulator now here
+[00:29:03.080 --> 00:29:10.720]   this is a 8-bit integer this is an 8-bit integer because we quantize them so the
+[00:29:10.720 --> 00:29:15.920]   result of a multiplication of two 8-bit integers may not be an 8-bit integer is
+[00:29:15.920 --> 00:29:22.720]   of course can be 16-bit or more and for this reason we use the accumulator here
+[00:29:22.720 --> 00:29:29.440]   is used as is a usually 32-bit and this is also the reason we quantize this
+[00:29:29.440 --> 00:29:34.680]   vector here as a 32-bit because the accumulator here is initialized already
+[00:29:34.680 --> 00:29:39.840]   with the bias element so this GPU will perform this operation in
+[00:29:39.840 --> 00:29:45.400]   parallel for every row and column of the initial matrices using many blocks
+[00:29:45.400 --> 00:29:48.800]   like this and this is how the GPU acceleration works for matrix
+[00:29:48.800 --> 00:29:53.520]   multiplication if you are interested in how this happens on low level on
+[00:29:53.520 --> 00:29:58.680]   algorithmic level I recommend watching this article from Google in their
+[00:29:58.680 --> 00:30:02.640]   general matrix multiplication library which is a low precision matrix
+[00:30:02.640 --> 00:30:09.560]   multiplication library okay now that we have seen what is the difference between
+[00:30:09.560 --> 00:30:14.840]   symmetric and asymmetric quantization we may also want to understand how do we
+[00:30:14.840 --> 00:30:19.000]   choose the beta and the alpha parameter we saw before one way of course is to
+[00:30:19.000 --> 00:30:22.460]   choose for in the case of asymmetric quantization to choose beta and alpha to
+[00:30:22.460 --> 00:30:26.560]   be the smallest and the biggest value and for the symmetric for example
+[00:30:26.560 --> 00:30:30.860]   quantization to choose alpha as the biggest value in absolute terms but this
+[00:30:30.860 --> 00:30:34.360]   is not the only strategy and they have pros and cons so let's review all the
+[00:30:34.360 --> 00:30:38.680]   strategies we have the strategies that we use before is called the minimax
+[00:30:38.680 --> 00:30:41.720]   strategy which means that we choose alpha as the biggest value in the
+[00:30:41.720 --> 00:30:46.520]   original tensor and beta as the minimum value in the original tensor this
+[00:30:46.520 --> 00:30:51.320]   however is a sensitive to outliers because imagine we have a vector that is
+[00:30:51.320 --> 00:30:56.680]   more or less distributed around the minus 50 and plus 50 but then we have an
+[00:30:56.680 --> 00:31:01.280]   outlier that is a very big number here the problem with this strategy is that
+[00:31:01.280 --> 00:31:07.840]   the outlier will make the quantization so the quantization error of all the
+[00:31:07.840 --> 00:31:12.760]   numbers very big so all the numbers as you can see when we quantize and then
+[00:31:12.760 --> 00:31:18.320]   dequantize using asymmetric quantization with minimax strategy we see that all
+[00:31:18.320 --> 00:31:21.840]   the numbers are not very similar to the original they are actually quite
+[00:31:21.840 --> 00:31:26.920]   different so this is 43.31 this is 45.08 so actually it's a quite a big
+[00:31:26.920 --> 00:31:32.720]   error for the quantization a better strategy to avoid the outliers ruining
+[00:31:32.720 --> 00:31:37.960]   the original the input range is to use the percentile strategy so we set the
+[00:31:37.960 --> 00:31:42.760]   range alpha and beta basically to be a percentile of the original distribution
+[00:31:42.760 --> 00:31:47.080]   so not the maximum or the minimum but using the percent for example the 99%
+[00:31:47.080 --> 00:31:53.440]   percentile and if we use the percentile we will see that the quantization error
+[00:31:53.440 --> 00:31:57.480]   is reduced for all the terms and the only term that will suffer a lot from
+[00:31:57.480 --> 00:32:02.560]   the quantization error is the outlier itself okay let's have a look at the
+[00:32:02.560 --> 00:32:08.480]   code to see how this minimax strategy and percentile strategy differ so we
+[00:32:08.480 --> 00:32:15.820]   open this one in which we again have a lot of numbers so 10,000 numbers
+[00:32:15.820 --> 00:32:20.640]   distributed between -50 and 150 and then we introduce an outlier let's say the
+[00:32:20.640 --> 00:32:25.040]   last number is an outlier so it's equal to 1000 all the other numbers are
+[00:32:25.040 --> 00:32:31.300]   distributed between -50 and 150 we compare these two strategies so the
+[00:32:31.300 --> 00:32:34.960]   asymmetric quantization using the minimax strategy and the asymmetric
+[00:32:34.960 --> 00:32:37.960]   quantization using the percentile strategy as you can see the only
+[00:32:37.960 --> 00:32:42.280]   modification between these two methods is how we compute alpha and beta here
+[00:32:42.280 --> 00:32:45.920]   alpha is computed as the maximum value here alpha is computed as a percentile
+[00:32:45.920 --> 00:32:55.320]   percentile of 99.99 and we can compare what are the quantized value we can see
+[00:32:55.320 --> 00:33:01.280]   here and then we can dequantize and when we dequantize we will see that the
+[00:33:01.280 --> 00:33:06.640]   all the values using the minimax strategy suffer from a big quantization
+[00:33:06.640 --> 00:33:10.040]   error while when we use the percentile we will see that the only value that
+[00:33:10.040 --> 00:33:15.880]   suffers from a big quantization error is the outlier itself and as we can see if
+[00:33:15.880 --> 00:33:19.440]   we exclude the outlier and we compute the quantization error on the other
+[00:33:19.440 --> 00:33:24.120]   terms we will see that with the percentile we have a much smaller error
+[00:33:24.120 --> 00:33:28.440]   while with the minimax strategy we have a very big error for all the numbers
+[00:33:28.440 --> 00:33:33.480]   except the outlier. Other two strategies that are commonly used for choosing
+[00:33:33.480 --> 00:33:37.560]   alpha and beta are the mean squared error and the cross entropy. Mean squared
+[00:33:37.560 --> 00:33:41.120]   error means that we choose alpha and beta such that the mean squared error
+[00:33:41.120 --> 00:33:46.160]   between the original values and the quantized values is minimized so we
+[00:33:46.160 --> 00:33:51.760]   usually use a grid search for this and the cross entropy is used as a strategy
+[00:33:51.760 --> 00:33:55.640]   whenever we are dealing for example with a language model as you know in the
+[00:33:55.640 --> 00:33:59.240]   language model we have the last layer which is a linear layer plus softmax
+[00:33:59.240 --> 00:34:05.040]   which allow us to choose a token from the vocabulary. The goal of this
+[00:34:05.040 --> 00:34:08.680]   softmax layer is to create a distribution probability distribution
+[00:34:08.680 --> 00:34:12.560]   in which usually we use the grid strategy or the top of the strategy so
+[00:34:12.560 --> 00:34:16.920]   what we are concerned about are not the values inside this distribution but
+[00:34:16.920 --> 00:34:21.400]   they actually the distribution itself so the biggest number should remain the
+[00:34:21.400 --> 00:34:24.760]   biggest number also in the quantized values and the intermediate numbers
+[00:34:24.760 --> 00:34:28.720]   should not change the relative distribution and for this case we use
+[00:34:28.720 --> 00:34:32.680]   the cross entropy strategy which means that we choose alpha and beta such that
+[00:34:32.680 --> 00:34:37.240]   the cross entropy between the quantized value and the dequantized, not
+[00:34:37.240 --> 00:34:41.760]   quantized value so the original values and the dequantized value is minimized
+[00:34:41.760 --> 00:34:48.480]   and another topic when we are doing quantization which comes to play every
+[00:34:48.480 --> 00:34:52.440]   time we have a convolutional layer is the granularity. As you know convolutional
+[00:34:52.440 --> 00:34:57.560]   layers are made up of many filters or kernels and each kernel is run through
+[00:34:57.560 --> 00:35:03.280]   the for example the image to calculate specific features. Now for example these
+[00:35:03.280 --> 00:35:08.160]   kernels are made of parameters which may be distributed differently for example
+[00:35:08.160 --> 00:35:12.640]   we may have a kernel that is distributed for example between minus 5 and plus 5
+[00:35:12.640 --> 00:35:17.680]   another one that is distributed between minus 10 and plus 10 and another one
+[00:35:17.680 --> 00:35:23.040]   that is distributed for example between minus 6 and plus 6. If we use the same
+[00:35:23.040 --> 00:35:28.840]   alpha and beta for all of them we will have that some kernels are wasting their
+[00:35:28.840 --> 00:35:34.480]   quantization range here and here for example so in this case it's better to
+[00:35:34.480 --> 00:35:39.040]   perform a channel wise quantization which means that for each kernel we will
+[00:35:39.040 --> 00:35:43.800]   calculate an alpha and beta and they will be different for each basic kernel
+[00:35:43.800 --> 00:35:48.800]   which results in a higher quality quantization so we lose less precision
+[00:35:48.800 --> 00:35:54.320]   this way. And now let's look at what is post training quantization. So post
+[00:35:54.320 --> 00:35:58.040]   training quantization means that we have a pre-trained model that we want to
+[00:35:58.040 --> 00:36:03.040]   quantize. How do we do that? Well we need the pre-trained model and we need some
+[00:36:03.040 --> 00:36:07.560]   data which is unlabeled data so we don't we do not need the original training
+[00:36:07.560 --> 00:36:11.800]   data we just need some data that we can run inference on. For example imagine
+[00:36:11.800 --> 00:36:16.560]   that the pre-trained model is a model that can classify dogs and cats what we
+[00:36:16.560 --> 00:36:20.640]   need as data we just need some pictures of dogs and cats which may also not come
+[00:36:20.640 --> 00:36:27.000]   from the training set and what we do is basically we take this pre-trained model
+[00:36:27.000 --> 00:36:33.040]   and we attach some observers that will collect some statistics while we are
+[00:36:33.040 --> 00:36:38.440]   running inference on the model and this statistics will be used to
+[00:36:38.440 --> 00:36:44.160]   calculate the Z and the S parameter for each layer of the model and then we can
+[00:36:44.160 --> 00:36:50.680]   use it to quantize the model. Let's see how this works in code. In this case I
+[00:36:50.680 --> 00:36:55.280]   will be creating a very simple model so first we import some libraries but
+[00:36:55.280 --> 00:37:00.800]   basically just a torch and then we import the data set we will be using
+[00:37:00.800 --> 00:37:06.160]   MNIST in our case. I define a very simple model for classifying MNIST
+[00:37:06.160 --> 00:37:11.340]   digits which is made up of three linear layers with ReLU activations. I
+[00:37:11.340 --> 00:37:16.780]   create this network I run a training on this network so this is just a basic
+[00:37:16.780 --> 00:37:25.480]   training training loop you can see here and we save this network as in this file
+[00:37:25.480 --> 00:37:29.640]   so we train it for I don't remember how many epochs for five epochs and then we
+[00:37:29.640 --> 00:37:36.040]   save it in a file. We define the testing loop which is just for validating the
+[00:37:36.040 --> 00:37:41.560]   what is the accuracy of this model. So first let's look at the model the not
+[00:37:41.560 --> 00:37:46.120]   quantized model so the pre-trained model for example. In this case let's look at
+[00:37:46.120 --> 00:37:49.840]   the weights of the first linear layer. In this case we can see that the linear
+[00:37:49.840 --> 00:37:53.800]   layer is made up of a weight matrix which is made up of many numbers which
+[00:37:53.800 --> 00:37:59.800]   are floating point of 32 bits. Floating point numbers of 32 bits. The size of the
+[00:37:59.800 --> 00:38:07.120]   model before quantization is 360 kilobyte. If we run the
+[00:38:07.120 --> 00:38:12.360]   testing loop on this model we will see that the accuracy is 96% which is not
+[00:38:12.360 --> 00:38:17.000]   bad. Of course our goal is to quantize which means that we want to speed up the
+[00:38:17.000 --> 00:38:20.460]   computation we want to reduce the size of the model but while maintaining the
+[00:38:20.460 --> 00:38:25.520]   accuracy. Let's see how it works. The first thing we do is we create a copy of
+[00:38:25.520 --> 00:38:31.940]   the model by introducing some observers. So as you can see this is a quantization
+[00:38:31.940 --> 00:38:36.960]   stub and this is a de-quantization stub that is used by PyTorch to do
+[00:38:36.960 --> 00:38:43.080]   quantization on the fly. And then we introduce also some observers in all the
+[00:38:43.080 --> 00:38:48.480]   intermediate layers. So we take this new model that is with observers we
+[00:38:48.480 --> 00:38:53.600]   basically take the weights from the pre-trained model and copy it into this
+[00:38:53.600 --> 00:38:57.000]   new model that we have created. So we are not training a new model we are just
+[00:38:57.000 --> 00:39:01.280]   copying the weights of the pre-trained model into this new model that we have
+[00:39:01.280 --> 00:39:05.840]   defined which is exactly the same as the original one just with some observers.
+[00:39:05.840 --> 00:39:12.120]   And we also insert some observers in all the intermediate layers. Let's see
+[00:39:12.120 --> 00:39:18.560]   these observers basically they are the some special class of objects made
+[00:39:18.560 --> 00:39:22.440]   available by PyTorch that for each linear layer they will observe some
+[00:39:22.440 --> 00:39:27.760]   statistics when we run some inference on this model. And as you can see what
+[00:39:27.760 --> 00:39:31.540]   the statistic they collect is just the minimum value they see and the maximum
+[00:39:31.540 --> 00:39:36.520]   value they see for each layer also for the input and this is why we have this
+[00:39:36.520 --> 00:39:42.680]   quant stub as input. And we calibrate the model using the test. So if we run
+[00:39:42.680 --> 00:39:46.720]   inference on the model using the test set for example which is we just need
+[00:39:46.720 --> 00:39:51.160]   some data to run inference on the model so that these observers will collect
+[00:39:51.160 --> 00:39:57.520]   statistics. We do it so this will calculate the this will run inference of
+[00:39:57.520 --> 00:40:01.960]   all the test set on the model so we are not training anything we're just running
+[00:40:01.960 --> 00:40:07.760]   inference. The observers after running inference we will have collected some
+[00:40:07.760 --> 00:40:11.720]   statistics so for example the input observer here has collected some
+[00:40:11.720 --> 00:40:16.160]   statistics. The observer for the first linear layer also have collected some
+[00:40:16.160 --> 00:40:22.160]   statistics the second and the third etc etc. We can use the statistics that we
+[00:40:22.160 --> 00:40:27.160]   have collected to create the quantized model so the actual quantization happens
+[00:40:27.160 --> 00:40:31.760]   after we have collected these statistics and then we run this method which is
+[00:40:31.760 --> 00:40:37.440]   quantization.convert which will create the quantized model. And we can now
+[00:40:37.440 --> 00:40:42.880]   see that after we quantize it each layer will become a quantized layer so
+[00:40:42.880 --> 00:40:46.720]   before quantization it's just a linear layer but after they become a quantized
+[00:40:46.720 --> 00:40:52.500]   linear layer. Each of them has some special parameter that is the S and the
+[00:40:52.500 --> 00:40:58.320]   Z parameter that we saw in the slide so the scale and the zero point. And we can
+[00:40:58.320 --> 00:41:01.600]   also print the weight matrix after quantization and we can see that the
+[00:41:01.600 --> 00:41:07.040]   weight matrix has become an integer of 8 bits so as you can see here. We can
+[00:41:07.040 --> 00:41:11.200]   compare the dequantized weights and the original weights so the original weights
+[00:41:11.200 --> 00:41:18.560]   were floating-point numbers of 32 bits while the dequantized weights so after
+[00:41:18.560 --> 00:41:22.640]   we dequantize of course we obtain back the floating-point numbers so these are
+[00:41:22.640 --> 00:41:27.720]   the how they are stored on the disk but of course when we want to dequantize we
+[00:41:27.720 --> 00:41:32.360]   obtain something that is very similar to the original weight matrix but not
+[00:41:32.360 --> 00:41:36.560]   exactly the same because we introduce some error because of the quantization.
+[00:41:36.560 --> 00:41:41.360]   So the dequantized weights are very similar to the original number but not
+[00:41:41.360 --> 00:41:46.160]   exactly the same. For example the first number is quite different the second one
+[00:41:46.160 --> 00:41:51.920]   is quite similar the third one is quite similar etc etc. We can check the size of
+[00:41:51.920 --> 00:41:55.560]   the model after it's been quantized and we can see that the new size of the
+[00:41:55.560 --> 00:42:02.040]   model is 94 kilobyte. Originally it was 360 if I remember correctly so it has
+[00:42:02.040 --> 00:42:06.480]   been reduced by four times. Why? Because each number instead of being a
+[00:42:06.480 --> 00:42:11.960]   floating-point number of 32 bits is now an integer plus some overhead because we
+[00:42:11.960 --> 00:42:16.720]   need to save some other data because for example we need to save all this scale
+[00:42:16.720 --> 00:42:22.040]   the scale value the zero point value and also PyTorch saves some other values.
+[00:42:22.040 --> 00:42:26.360]   We can also check the accuracy of the quantized model and we see that the
+[00:42:26.360 --> 00:42:31.320]   model didn't suffer much from actually didn't suffer at all from from the
+[00:42:31.320 --> 00:42:35.480]   quantization so the accuracy remained practically the same. In reality okay
+[00:42:35.480 --> 00:42:39.040]   this is a very simple example and the model is quite big so I think the model
+[00:42:39.040 --> 00:42:46.720]   has plenty of parameters to to predict well. But in reality usually when
+[00:42:46.720 --> 00:42:51.120]   we quantize a model we will lose some accuracy and we will see later a
+[00:42:51.120 --> 00:42:56.000]   training approach that makes the model more robust to quantization
+[00:42:56.000 --> 00:43:02.240]   which is called the quantization aware training. So this is the post-training
+[00:43:02.240 --> 00:43:06.920]   quantization and that's all for this one. Let's look at the next quantization
+[00:43:06.920 --> 00:43:11.960]   strategy which is the quantization aware training. What we do basically is that we
+[00:43:11.960 --> 00:43:16.760]   insert some fake modules in the computational graph of the model to
+[00:43:16.760 --> 00:43:20.400]   simulate the effect of quantization during training. So before we were
+[00:43:20.400 --> 00:43:26.000]   talking about how to quantize a model after we have already trained it. In this
+[00:43:26.000 --> 00:43:30.640]   case we want to train a model such that the model is more robust to the
+[00:43:30.640 --> 00:43:36.560]   quantization effect. So this is done during training not after the
+[00:43:36.560 --> 00:43:42.640]   training. And basically what we do is we have our model which has input then we
+[00:43:42.640 --> 00:43:46.480]   have some linear layers, we have output, we have a target, we compute the loss.
+[00:43:46.480 --> 00:43:53.620]   What we do basically is we insert between each layer some special
+[00:43:53.620 --> 00:43:58.120]   operations of quantize and dequantize operations, some fake operations. So
+[00:43:58.120 --> 00:44:02.080]   actually we are not quantizing the model or the weights because the model is
+[00:44:02.080 --> 00:44:06.800]   getting trained. But we do some quantization on the fly. So
+[00:44:06.800 --> 00:44:10.280]   every time we see an input here we quantize it and dequantize it
+[00:44:10.280 --> 00:44:14.920]   immediately and run it to the next layer. Then this will produce some output. We
+[00:44:14.920 --> 00:44:18.520]   quantize it and dequantize it immediately and we give it to the next
+[00:44:18.520 --> 00:44:23.360]   because this will introduce some quantization error and we hope that the
+[00:44:23.360 --> 00:44:28.500]   loss function will learn to be more robust to handle this
+[00:44:28.500 --> 00:44:32.360]   quantization error that is introduced by this fake quantization that we are
+[00:44:32.360 --> 00:44:36.640]   introducing. So the goal of introducing these operations is just to introduce
+[00:44:36.640 --> 00:44:42.920]   some quantization error so that the loss function can get ready to counter
+[00:44:42.920 --> 00:44:49.960]   affect the effects of quantization. Let's look at the code of how it is done.
+[00:44:49.960 --> 00:44:56.440]   So we go to quantization aware training. Okay we import the necessary libraries
+[00:44:56.440 --> 00:45:01.760]   just like before. We import the data set, in our case it's MNIST. We define a
+[00:45:01.760 --> 00:45:05.760]   model which is exactly the same as before but we notice that here we
+[00:45:05.760 --> 00:45:10.300]   already start with a quantization model that is ready for quantization because
+[00:45:10.300 --> 00:45:14.720]   here we want to train the model in a way that it's already aware of the
+[00:45:14.720 --> 00:45:19.520]   quantization. That's why it's called quantization aware training and the rest
+[00:45:19.520 --> 00:45:23.720]   of the structure of the model is the same as before. We insert the minimax
+[00:45:23.720 --> 00:45:28.240]   observers in the model for every layer so as you can see this model is not
+[00:45:28.240 --> 00:45:33.880]   trained and we are insert already some observers. These observers are not
+[00:45:33.880 --> 00:45:37.400]   calibrated because we never run any inference or we never run any training
+[00:45:37.400 --> 00:45:43.400]   on this model so all these values are plus and minus infinity. Then we
+[00:45:43.400 --> 00:45:50.760]   train the model using the MNIST and we train it for one epoch and we check the
+[00:45:50.760 --> 00:45:56.200]   statistics collected by these observers during training and we can see that
+[00:45:56.200 --> 00:46:00.000]   during training they have collected some statistics so the minimum and the
+[00:46:00.000 --> 00:46:05.360]   maximum value and you can see that when we do quantization aware training we
+[00:46:05.360 --> 00:46:10.360]   have this weight fake quant so this is actually all the fake quantization
+[00:46:10.360 --> 00:46:15.280]   observers that we have introduced during the training and they have collected
+[00:46:15.280 --> 00:46:22.160]   some some values or some statistics. We can then quantize the model by using the
+[00:46:22.160 --> 00:46:27.160]   statistics that have been collected during training and we can print the
+[00:46:27.160 --> 00:46:32.520]   values scale and zero point of the quantized model and we can see them here.
+[00:46:32.520 --> 00:46:37.040]   We can also print the weights of the quantized model and you can see that the
+[00:46:37.040 --> 00:46:41.720]   weight matrix of the first linear layer is actually an integer matrix and we can
+[00:46:41.720 --> 00:46:47.200]   also run the accuracy and we can see that the accuracy of this model is 0.952
+[00:46:47.200 --> 00:46:52.320]   okay in this case it's a little worse than the other case but this is not the
+[00:46:52.320 --> 00:46:56.200]   rule usually quantization aware training makes the model more robust to the
+[00:46:56.200 --> 00:47:01.200]   effects of quantization so usually when we do post training quantization the
+[00:47:01.200 --> 00:47:06.000]   model loses more accuracy compared to quantization when we train a model with
+[00:47:06.000 --> 00:47:12.420]   quantization aware training. Let's go back to the slides. Now there is one
+[00:47:12.420 --> 00:47:15.800]   thing that we should notice that with quantization aware training we are
+[00:47:15.800 --> 00:47:22.520]   introducing some observers between each layer some special quantized and
+[00:47:22.520 --> 00:47:27.400]   dequantized operation between each layer and then we do it while training. This
+[00:47:27.400 --> 00:47:32.220]   means that the backpropagation algorithm should also be able to calculate the
+[00:47:32.220 --> 00:47:37.840]   gradient of the loss function with respect to this operation that we are
+[00:47:37.840 --> 00:47:42.520]   doing but we do this the operation of quantization is not differentiable so
+[00:47:42.520 --> 00:47:47.120]   how can the backpropagation algorithm algorithm calculate the gradient of the
+[00:47:47.120 --> 00:47:53.920]   quantization operation that we are doing during the forward loop? Well we usually
+[00:47:53.920 --> 00:47:58.360]   approximate the gradient using the straight through estimator which means
+[00:47:58.360 --> 00:48:04.720]   that for all the values that fall in between the beta and the alpha parameter
+[00:48:04.720 --> 00:48:09.520]   we give a gradient of 1 and for all the other values that are outside of this
+[00:48:09.520 --> 00:48:16.040]   range we approximate the gradient with 0 and this is because the quantization
+[00:48:16.040 --> 00:48:19.800]   operation is not differentiable this is why we need to approximate the gradient
+[00:48:19.800 --> 00:48:26.840]   using this approximator. The next thing that we should notice is why does
+[00:48:26.840 --> 00:48:31.200]   quantization aware training works I mean what is the effect of quantization aware
+[00:48:31.200 --> 00:48:35.520]   training on the loss function because as I told you before our goal is to
+[00:48:35.520 --> 00:48:40.200]   introduce the quantization error during training such that the loss function can
+[00:48:40.200 --> 00:48:46.040]   react to it but how? Now imagine we do post training quantization when we train
+[00:48:46.040 --> 00:48:51.920]   a model that that has no notion of quantization imagine we only have a one
+[00:48:51.920 --> 00:48:58.000]   weight and the loss function is computed for this particular weight the goal of
+[00:48:58.000 --> 00:49:03.580]   the backpropagation algorithm or the gradient descent is actually to of the
+[00:49:03.580 --> 00:49:08.520]   gradient descent algorithm is to calculate the weights of the model such
+[00:49:08.520 --> 00:49:14.240]   that we minimize the loss and usually suppose we end up meaning this is the
+[00:49:14.240 --> 00:49:19.240]   loss function and we end up in this local minima here. The goal of
+[00:49:19.240 --> 00:49:25.400]   quantization aware training is to make the model reach a local minima that is
+[00:49:25.400 --> 00:49:31.800]   more wide. Why? Because the weight value here after we quantize
+[00:49:31.800 --> 00:49:37.280]   it will change and for example if we do it without quantization aware training
+[00:49:37.280 --> 00:49:42.520]   if the loss was here and the weight value was here after quantization this
+[00:49:42.520 --> 00:49:46.360]   weight value will be changed of course so it may go here but the loss will
+[00:49:46.360 --> 00:49:51.480]   increase a lot for example but with quantization aware training we choose a
+[00:49:51.480 --> 00:49:56.820]   local minima or a minima that is more wide so that if the weight after the
+[00:49:56.820 --> 00:50:02.320]   quantization moves a little bit the loss will not increase by much and this is
+[00:50:02.320 --> 00:50:07.600]   why quantization aware training works. Thank you guys for watching my video I
+[00:50:07.600 --> 00:50:11.400]   hope you enjoyed learning about quantization I didn't talk about
+[00:50:11.400 --> 00:50:18.080]   advanced topic like GPTQ or AWQ which I hope to do in my next videos. If you
+[00:50:18.080 --> 00:50:21.560]   liked the video please subscribe and like the video and share it with your
+[00:50:21.560 --> 00:50:27.840]   friends or colleagues and the students. I have other videos about deep learning
+[00:50:27.840 --> 00:50:30.760]   and machine learning so please let me know if there is something you don't
+[00:50:30.760 --> 00:50:37.200]   understand and be free to connect with me on LinkedIn or on social media
+[00:50:37.200 --> 00:50:39.260]   you
+[00:50:39.260 --> 00:50:41.320]   you
+[00:50:41.320 --> 00:50:43.380]   you
+[00:50:43.380 --> 00:50:45.440]   you
+[00:50:45.440 --> 00:50:47.500]   you
+[00:50:47.500 --> 00:50:49.560]   you
+[00:50:49.560 --> 00:50:51.620]   you
+[00:50:51.620 --> 00:50:53.680]   you
+

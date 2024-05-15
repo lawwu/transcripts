@@ -1,0 +1,199 @@
+
+[00:00:00.000 --> 00:00:04.880]   Hello guys, welcome to my new video about the diffusion models. In this video I will be
+[00:00:04.880 --> 00:00:11.520]   introducing the diffusion model as described in the original paper, the DDPM paper, and I will
+[00:00:11.520 --> 00:00:16.960]   show you the structure of these models, how they work, why they were invented in the first place,
+[00:00:16.960 --> 00:00:22.640]   and also we will go inside some code to see how they are actually implemented. And we will see
+[00:00:22.640 --> 00:00:27.280]   that the code is actually very simple, even if the math and everything there looks very hard,
+[00:00:27.280 --> 00:00:32.640]   and I will also not go very much into the math because I feel like this video is more about
+[00:00:32.640 --> 00:00:38.160]   teaching concepts and how to actually work with these models instead of teaching the math
+[00:00:38.160 --> 00:00:43.840]   derivations, which you can find also online or in the paper. So let's start by reviewing why we
+[00:00:43.840 --> 00:00:50.480]   needed the DDPM model in the first place. Before we had all these fancy models like the GAN and
+[00:00:50.480 --> 00:00:58.080]   the DDPM etc, we basically had simple models like the autoencoder. And the autoencoder had a very
+[00:00:58.080 --> 00:01:03.520]   simple task, that is to compress data. So if we have some data and we run it through the encoder,
+[00:01:03.520 --> 00:01:09.520]   the encoder will transform the data into some smaller representation of the data. And if this
+[00:01:09.520 --> 00:01:15.600]   data, this code is passed through the decoder, hopefully it will rebuild the original data.
+[00:01:15.600 --> 00:01:19.600]   So for example, if we have a picture of a tomato and we run it through the encoder,
+[00:01:19.600 --> 00:01:24.800]   it will be converted into a vector of numbers that represents that particular picture.
+[00:01:24.800 --> 00:01:29.600]   And if we run this vector into the decoder, hopefully it will build up the original image.
+[00:01:29.600 --> 00:01:35.360]   And if we run multiple images into an autoencoder, each of them will have an associated code,
+[00:01:35.360 --> 00:01:41.840]   different for each image. However, there was a problem with these autoencoders, that is,
+[00:01:41.840 --> 00:01:47.520]   the autoencoder did not catch any semantic relationship between the data. So for example,
+[00:01:47.520 --> 00:01:53.040]   the code associated with the picture of the tomato, or the code associated with the picture
+[00:01:53.040 --> 00:01:58.480]   of the zebra, maybe they were very similar, even if the two images, they have no semantic
+[00:01:58.480 --> 00:02:04.400]   relationship. Because the autoencoder was never told to learn this semantic relationship between
+[00:02:04.400 --> 00:02:12.160]   the data. Its only job was to compress data, and it was pretty good at it. But of course,
+[00:02:12.160 --> 00:02:18.480]   we wanted to learn some representation. So this code, we wanted to transform into a latent space.
+[00:02:18.480 --> 00:02:22.480]   And that's why we introduced the variational autoencoder. In the variational autoencoder,
+[00:02:22.480 --> 00:02:26.800]   we don't just learn how to compress data, we actually learn a latent space,
+[00:02:26.800 --> 00:02:35.120]   which is basically parameters of a multivariate distribution, in such a way that this latent
+[00:02:35.120 --> 00:02:41.680]   space actually catches also some relationship between the data. For example, the code associated
+[00:02:41.680 --> 00:02:45.520]   with the picture of the tomato, and the code associated with the picture of the egg, maybe
+[00:02:45.520 --> 00:02:52.480]   they are similar to each other, at least more similar compared to the picture of the egg and
+[00:02:52.480 --> 00:02:58.320]   zebra, for example. And the most important property of a latent space is that we can sample from it,
+[00:02:58.320 --> 00:03:03.360]   just like we sample from a Gaussian distribution. And if we sample, for example, something from
+[00:03:03.360 --> 00:03:08.720]   this part of the space, hopefully we will get a picture of food. And if we sample,
+[00:03:08.720 --> 00:03:13.360]   for example, here, we hopefully we will get a picture of animals. And if we sample from here,
+[00:03:13.360 --> 00:03:18.560]   hopefully we get a picture of a car, etc. So the most important property of these latent
+[00:03:18.560 --> 00:03:25.840]   spaces is that we can sample from it to generate new data. So why is it called a latent space,
+[00:03:25.840 --> 00:03:32.720]   this representation? Because basically, we model our data as x, as a variable x, which is conditioned
+[00:03:32.720 --> 00:03:38.720]   on another variable z that we cannot observe, but we want to infer some properties about it.
+[00:03:38.720 --> 00:03:45.440]   If we model the variable z as a Gaussian, we want to learn its mean and the variance.
+[00:03:45.440 --> 00:03:52.480]   Let me give you some more concrete examples on this latent space. I will use the Plato's
+[00:03:52.480 --> 00:03:58.160]   allegory of the cave for that purpose. And in this allegory, we have to imagine that there
+[00:03:58.160 --> 00:04:04.720]   are some people, and these people here, who are born and lived all their life in this small
+[00:04:04.720 --> 00:04:11.520]   section of a cave. And these people cannot leave the cave, they are chained in it. And these people
+[00:04:11.520 --> 00:04:16.400]   observe some objects on these walls, and they believe this is reality. So for them, the horse
+[00:04:16.400 --> 00:04:21.680]   is something black that moves like this, and the bird is something black that moves like this,
+[00:04:21.680 --> 00:04:28.320]   etc. However, we know, as external observers, that this is not the real reality. This is actually the
+[00:04:28.320 --> 00:04:33.440]   projections through this fire of these real objects. So for example, these people, they can
+[00:04:33.440 --> 00:04:41.440]   see the real objects, right? So basically, we have to think that our data is the only variable that
+[00:04:41.440 --> 00:04:48.480]   we can observe. And this variable is conditioned on another variable that we cannot observe. And
+[00:04:48.480 --> 00:04:56.160]   this variable is hidden. So that's why it's called the latent. Latent means hidden. Now, this was
+[00:04:56.160 --> 00:05:02.800]   true for the variational autoencoder. For diffusion model, we have to go deeper. And I will tell you
+[00:05:02.800 --> 00:05:10.240]   why. Imagine these people here, they believe that they hold the true objects, right? But imagine
+[00:05:10.240 --> 00:05:15.680]   these people themselves, they didn't hold the true objects, but they were themselves prisoners of a
+[00:05:15.680 --> 00:05:23.680]   cave, and they were watching some projection of some real objects. So they were just like these
+[00:05:23.680 --> 00:05:31.760]   people. That is, we start from some people who can observe the real object, okay? So this is the
+[00:05:31.760 --> 00:05:38.880]   real object, and we will say it's time step zero. And these people projected some other people
+[00:05:38.880 --> 00:05:46.800]   inside an inner cave, this real object. So these people here, they think they are seeing the real
+[00:05:46.800 --> 00:05:52.080]   object, but actually, they are watching what is the projection of the real object. So it's more
+[00:05:52.080 --> 00:05:58.320]   noisy, just like through the fire, we projected the shadows, which is a more noisy version of
+[00:05:58.320 --> 00:06:03.360]   the real object, right? And these people themselves, they actually projected to some other people
+[00:06:03.360 --> 00:06:09.040]   inside an inner cave. So it becomes a noisy version of something that was already noisy,
+[00:06:09.040 --> 00:06:16.800]   so an even noisier version. And we do it again and again and again for 1000 steps. And the last step
+[00:06:16.800 --> 00:06:24.160]   is called the T, capital T, until it becomes pure noise. This process of noisification is called
+[00:06:24.160 --> 00:06:30.960]   forward process. And then we also want the reverse process, that is, if we have some noise, can we
+[00:06:30.960 --> 00:06:37.760]   infer something about the object that was noisified? So for example, if we are here at the
+[00:06:37.760 --> 00:06:44.880]   last time step, can we get some information about the previous time step, which is T capital minus
+[00:06:44.880 --> 00:06:50.720]   one, but in this case is 500. Okay. And these people, of course, they also want to infer
+[00:06:50.720 --> 00:06:56.480]   something about the object that projected the one they are watching, and these people, etc, etc.
+[00:06:57.280 --> 00:07:03.920]   And we do this for 1000 time steps, each step can only watch the previous one. And each noisy
+[00:07:03.920 --> 00:07:10.080]   version comes from a previous noisified version. So this is the forward process. And this is the
+[00:07:10.080 --> 00:07:15.440]   reverse process in blue. The forward process is quite easy, because we can always add noise to
+[00:07:15.440 --> 00:07:20.800]   something. For example, you can give the picture of the Mona Lisa to a three years old, and he or
+[00:07:20.800 --> 00:07:26.960]   she will add all the noise that you want. However, the reverse process is hard, because we want to
+[00:07:26.960 --> 00:07:33.120]   remove noise from something and observe the real object. And because it's hard, we will train a
+[00:07:33.120 --> 00:07:41.280]   neural network to do it. So mathematically, we have some real data that we call it x zero, and
+[00:07:41.280 --> 00:07:47.440]   this x zero is conditioned on a latent variable z one, that actually is also conditioned on a z two
+[00:07:47.440 --> 00:07:53.200]   variable, which is itself conditioned on another variable z three, until in this chain of
+[00:07:54.320 --> 00:08:00.640]   conditioning, we have the last variable, which is pure noise. And the process of
+[00:08:00.640 --> 00:08:05.520]   noisification is called the forward process. And the process of denoisification is called
+[00:08:05.520 --> 00:08:11.760]   reverse process. And the forward process, as I said before, it's fixed. So we know how to
+[00:08:11.760 --> 00:08:18.640]   go from less noise to more noise. But we don't know how to go from more noise to less noise.
+[00:08:18.640 --> 00:08:25.280]   That's why we will train a more neural network to do it. Another thing to notice is that with
+[00:08:25.280 --> 00:08:30.720]   zero time step zero, we indicate the original image with time step T capital, we indicate
+[00:08:30.720 --> 00:08:37.200]   pure noise. So higher number means higher noise, less, smaller number means less noise.
+[00:08:37.200 --> 00:08:45.280]   Now we need to, of course, look at some maths, I will try to avoid any derivation, I will try to
+[00:08:45.280 --> 00:08:51.200]   teach the concept behind the math, because this way, you can also read the paper and follow
+[00:08:51.200 --> 00:08:56.640]   through the paper easily. Even if you don't understand each step, you will actually grasp
+[00:08:56.640 --> 00:09:03.280]   the meaning of all the parts described in the paper. That's why I'm actually quoting the paper
+[00:09:03.280 --> 00:09:08.880]   itself. We start with the forward process. Now the forward process, as I said before,
+[00:09:08.880 --> 00:09:16.640]   this is the original paper, DDPM paper from Ho and the other authors, which was released in 2020.
+[00:09:16.640 --> 00:09:23.200]   And the forward process is called Q. And as you can see, the forward process, which is different
+[00:09:23.200 --> 00:09:28.160]   from the reverse process that we will see later, has no parameter. So it's not Q of theta, which
+[00:09:28.160 --> 00:09:34.160]   is like the reverse process is P of theta. But Q has no parameter to learn because it's fixed,
+[00:09:34.160 --> 00:09:38.640]   we decide the parameters for it. It's not like the neural network has to learn anything about it.
+[00:09:39.200 --> 00:09:44.480]   And basically, they describe how to go from a less noisy version, so a less noise, so smaller
+[00:09:44.480 --> 00:09:51.200]   number, less noise, to a more noisy version, bigger noise, okay. And they model it as steps
+[00:09:51.200 --> 00:09:59.200]   of a chain, which is a Markov chain of Gaussian variables, in which we know the mean and the
+[00:09:59.200 --> 00:10:07.200]   variance of each one of them. And the mean is this one, so the square root of 1 minus beta t
+[00:10:07.200 --> 00:10:14.400]   multiplied by the previous version, and also we know the variance. Now this beta, this one for
+[00:10:14.400 --> 00:10:19.520]   each time step is fixed, we decide it. And the sequence of beta is called a schedule.
+[00:10:19.520 --> 00:10:28.560]   And all then we have also the reverse process P. As I said before, this P has a theta here,
+[00:10:28.560 --> 00:10:34.000]   because we want to learn the parameters of this reverse process. So this basically means that
+[00:10:34.000 --> 00:10:39.920]   from a more noisy version, if we want to go to a less noisy version, we want to learn this mean
+[00:10:39.920 --> 00:10:45.520]   and this covariance matrix, because it's also modeled as a Gaussian variable, and actually as
+[00:10:45.520 --> 00:10:51.280]   a Markov chain of Gaussian variables. Another interesting property of the forward process is,
+[00:10:51.280 --> 00:10:58.960]   because it's fixed, we can always go from the original image to the image noisified at the
+[00:10:58.960 --> 00:11:05.600]   time step t, whatever t is, without doing all the intermediate step, just with one step,
+[00:11:05.600 --> 00:11:14.320]   that is using this formula here. And alpha t is basically 1 minus beta t, so beta t is defined,
+[00:11:14.320 --> 00:11:22.640]   so also alpha t is defined. And alpha t with the hat is the product of all the alphas from 1 to the
+[00:11:22.640 --> 00:11:33.120]   t, time step t. And how do we actually learn a neural network to model our reverse process?
+[00:11:33.120 --> 00:11:37.600]   Basically, we do just like what we did for the variational autoencoder. That is,
+[00:11:37.600 --> 00:11:45.520]   we model our data. So P of theta of x0 is the latent space that we want to learn. And we know
+[00:11:45.520 --> 00:11:54.320]   that our x0 is conditioned on a chain of latent variables. Here they are called x1, x2, xT,
+[00:11:54.320 --> 00:12:04.480]   xT. But basically, they are z1, z2, zT. And basically, we want to learn this latent space.
+[00:12:04.480 --> 00:12:11.360]   So what we did is, let me go here, we do what we did for the variational autoencoder. So we
+[00:12:11.360 --> 00:12:17.120]   want to maximize the log likelihood of our data. What we do is, we basically find something that
+[00:12:17.120 --> 00:12:23.840]   is a lower bound for this log likelihood, which is called ELBO. And ELBO is also written here in
+[00:12:23.840 --> 00:12:30.240]   the paper, which is this expression here, which will be further expanded to arrive to the loss
+[00:12:30.240 --> 00:12:36.000]   function. And what we do with our neural network is that we maximize this ELBO. Because if you
+[00:12:36.000 --> 00:12:42.640]   maximize a lower bound, so this one, you also maximize the variable that is bounded. So basically,
+[00:12:42.640 --> 00:12:48.560]   we maximize the ELBO, or we minimize the negative term of the ELBO. And this is exactly what we did
+[00:12:48.560 --> 00:12:53.040]   for the variational autoencoder. Now, I will not show you the derivation on how to arrive to the
+[00:12:53.040 --> 00:12:57.280]   loss. I just told you the concept. So if you want to learn more about it, you can read the paper.
+[00:12:57.280 --> 00:13:04.720]   There are many tutorials online on how the math of diffusion works. Now let's go to the training
+[00:13:04.720 --> 00:13:09.440]   loop. This is from the paper also. And in the paper, they describe the training loop. That is,
+[00:13:09.440 --> 00:13:17.600]   we start basically from a picture sampled from our dataset or a batch of pictures sampled from
+[00:13:17.600 --> 00:13:24.320]   our dataset. And for each picture, we choose a time step of noisification. So we generate,
+[00:13:24.320 --> 00:13:29.360]   because the time step of noisification can be between one and capital T, we can choose for each
+[00:13:29.360 --> 00:13:35.360]   one of this picture a random time step. And then we sample some noise. Basically, what we do is,
+[00:13:35.360 --> 00:13:44.320]   we take this noise, okay, and we add this noise at the time step T to each picture. And our model,
+[00:13:44.320 --> 00:13:50.480]   which is this epsilon of theta, because as you remember, the reverse process has the theta
+[00:13:50.480 --> 00:13:59.120]   parameters, has to predict the noise in this noisified version of the image. So basically,
+[00:14:00.080 --> 00:14:04.160]   why do we have this formula here? Let's go back to the paper.
+[00:14:04.160 --> 00:14:13.440]   As you can show, as we saw here, we can always go from the X zero. So from the original image to the
+[00:14:13.440 --> 00:14:20.800]   noisified image at time step T. And what we are doing here is exactly the same, we are going from
+[00:14:20.800 --> 00:14:30.240]   the picture X zero, that is here to the noisified version. And why do we do like this? Because of
+[00:14:30.240 --> 00:14:36.640]   the property of the Gaussian variables. And our model will, this is the output of this. So this
+[00:14:36.640 --> 00:14:43.360]   is the output of our model that given a noisified image and the time step T, at which it was
+[00:14:43.360 --> 00:14:49.520]   noisified, has to predict the noise that was added. So basically, we compare the predicted noise from
+[00:14:49.520 --> 00:14:55.760]   our model with the noise that we added to the image. And that's it, this is the training loop.
+[00:14:55.760 --> 00:15:02.160]   So our model has to just predict the noise that we add to an image at the time step T.
+[00:15:02.160 --> 00:15:10.000]   And if we do it, we will learn that latent space. The sampling, that is how do we generate
+[00:15:10.000 --> 00:15:17.040]   new samples using our latent space, is also described in the paper. We start with some noise,
+[00:15:17.040 --> 00:15:25.440]   and we denoise progressively this initial noise for these time steps until we arrive what is the
+[00:15:25.440 --> 00:15:31.680]   X zero. But of course, this X zero does not belong to our dataset, we actually sample something new,
+[00:15:31.680 --> 00:15:36.720]   just like we did for the variational autoencoder. So if you remember previously, let's go back
+[00:15:42.080 --> 00:15:47.040]   here. Our goal with the variational autoencoder, but also with the diffusion model, is actually
+[00:15:47.040 --> 00:15:51.840]   to sample new stuff. So we want to be able to sample from this space to generate new data.
+[00:15:51.840 --> 00:15:58.880]   And also we want our latent space to actually represent features, to capture features from
+[00:15:58.880 --> 00:16:05.680]   our data. So the sampling basically means that we are actually creating, generating new samples
+[00:16:05.680 --> 00:16:11.920]   from our latent space. That's why there is a sampling. And why we do it that way? Because
+[00:16:11.920 --> 00:16:18.240]   basically, we start from noise, and we progressively denoise it. So we keep doing
+[00:16:18.240 --> 00:16:28.480]   T time step in total. And we do it with this, okay, with this algorithm here. And it's also
+[00:16:28.480 --> 00:16:34.800]   coming from the paper. Now, this still maybe looks a little abstract to you. So let's go inside the
+[00:16:34.800 --> 00:16:43.360]   code. But before that, let's review the model that we use to model our latent space. So the model
+[00:16:43.360 --> 00:16:50.800]   that has to predict the reverse process of the diffusion model is the unit. So why did the
+[00:16:50.800 --> 00:16:58.240]   authors choose the unit? Because the unit was introduced in 2015, as image segmentation model
+[00:16:58.240 --> 00:17:04.480]   for medical applications. And this model looks like, if you look at the structure looks like an
+[00:17:04.480 --> 00:17:10.400]   autoencoder. So you start with the original image, it gets compressed until it becomes very small in
+[00:17:10.400 --> 00:17:18.240]   this bottleneck here. And then we up sample to reconstruct the original image. And the authors
+[00:17:18.240 --> 00:17:24.320]   of the DDPM paper also use the unit for the purpose of training the reverse process. And
+[00:17:24.320 --> 00:17:29.440]   however, with some modifications, that we will see also in the code. So the modification, the
+[00:17:29.440 --> 00:17:34.720]   first modification is that, as you saw in the sampling, and also in the training, there are
+[00:17:34.720 --> 00:17:42.560]   two parameters from our model, epsilon theta. The first is the image noisified at the time step t,
+[00:17:42.560 --> 00:17:49.280]   and the second is the time step t itself. So we need to tell our model what is the time step t.
+[00:17:49.280 --> 00:17:56.400]   And how do we do it? Well, basically, at each down sampling and up sampling operation,
+[00:17:56.400 --> 00:18:02.640]   we also concat, for example, this one with the positional encoding that from the transformer
+[00:18:02.640 --> 00:18:08.080]   model. So if you remember from the transformer model, we have a way of encoding the position
+[00:18:08.080 --> 00:18:12.800]   of a token inside of the sentence, which is actually a vector that tells the position.
+[00:18:12.800 --> 00:18:18.480]   And we use the same vector to tell the model what is the position, what is the time step at which
+[00:18:18.480 --> 00:18:25.920]   the image was noisified. The second modification is that we do also attention, self attention. So
+[00:18:25.920 --> 00:18:32.880]   at each down sampling, we can do some, we can do the self attention. Let's look at the training
+[00:18:32.880 --> 00:18:37.840]   code. Now the training code, as we have already saw the logic of the training code before now,
+[00:18:37.840 --> 00:18:43.120]   I will compare it with a Python code. So basically, we start from some samples taken from
+[00:18:43.120 --> 00:18:50.320]   our data set. So a batch of sample. For each sample, we generate a time step t, which is from
+[00:18:50.320 --> 00:18:57.040]   one to t. And we also sample some noise, some random noise, we create the noisified version of
+[00:18:57.040 --> 00:19:05.120]   the image using this noise and the time steps t. And then we pass it through the unit, this is the
+[00:19:05.120 --> 00:19:12.000]   unit, okay, in which we pass the noisified image and the time steps t. And then we our loss is
+[00:19:12.000 --> 00:19:18.640]   basically predicting the difference between the predicted noise, so e hat, this e, this one,
+[00:19:18.640 --> 00:19:25.760]   theta actually not hat. And the epsilon that we used as the initial noise. That's it. This is the
+[00:19:25.760 --> 00:19:32.240]   training code. And the sampling code, sampling code is also simple. So basically, we start with
+[00:19:33.120 --> 00:19:43.360]   some random noise. And which is here x. And then we progressively denoise at the this is done for
+[00:19:43.360 --> 00:19:48.960]   only the inner loop. So this code is actually only the inner loop of this for loop here. So basically,
+[00:19:48.960 --> 00:19:55.360]   we denoise it continuously for these time steps. And this is the same, you can see also the names
+[00:19:55.360 --> 00:20:02.720]   are same here. And as you can see, the code is not so hard. And it's quite simple. Plus another
+[00:20:02.720 --> 00:20:08.960]   thing I want you to notice is that we use the unit, not because we have to use the unit, but
+[00:20:08.960 --> 00:20:14.800]   because the unit works well with this kind of model. So actually, the authors of the DDPM paper,
+[00:20:14.800 --> 00:20:19.360]   they chose the unit because it actually works well with this kind of model, but we don't have to use
+[00:20:19.360 --> 00:20:26.800]   it. So we can use any model, any structure that is good at predicting noise, given the noisified
+[00:20:26.800 --> 00:20:32.080]   version and the time steps t. It can be as simple as you want, or as complex as you want, but it
+[00:20:32.080 --> 00:20:39.120]   doesn't have to be the unit. The full code is available on my GitHub. And I also want to special
+[00:20:39.120 --> 00:20:45.120]   thank to two other repositories from which I took the unit model. Now the unit model here was very
+[00:20:45.120 --> 00:20:49.600]   complete with a lot of features, but I removed a lot of them to simplify it as much as possible.
+[00:20:49.600 --> 00:20:54.960]   So that it becomes simple to understand. And the diffusion model I took from here.
+[00:20:54.960 --> 00:21:00.160]   The problem with this implementation, however, was that the unit was too simple and actually
+[00:21:00.160 --> 00:21:06.080]   not reflecting the unit actually used by the DDPM paper. Thank you guys for watching
+[00:21:06.080 --> 00:21:11.200]   and stay tuned for more amazing content on deep learning and machine learning.
+

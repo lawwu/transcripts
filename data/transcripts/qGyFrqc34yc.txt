@@ -1,0 +1,1688 @@
+
+[00:00:00.000 --> 00:00:04.800]   Hello guys, welcome back to my channel. Today we are going to talk about reinforcement learning from human feedback and PPO
+[00:00:04.800 --> 00:00:11.440]   So reinforcement learning from human feedback is a technique that is used to align the behavior of a language model to what we want
+[00:00:11.440 --> 00:00:13.440]   The language model to output for example
+[00:00:13.440 --> 00:00:19.440]   We don't want the language model to use curse words or we don't want the language model to behave in an impolite way to the user
+[00:00:19.440 --> 00:00:24.960]   So we need to do some kind of alignment and reinforcement learning from human feedback is one of the most famous technique
+[00:00:24.960 --> 00:00:29.680]   Even if there are now new techniques like dpo, which I will talk about in another video
+[00:00:30.400 --> 00:00:34.560]   Now reinforcement learning from human feedback is also how they created chat gpt
+[00:00:34.560 --> 00:00:38.320]   So how they align chat gpt to the behavior they wanted
+[00:00:38.320 --> 00:00:45.280]   In the topics of today are first I will introduce a little bit the language models how they are used and how they work
+[00:00:45.280 --> 00:00:49.780]   Then we will talk about the topic of ai alignment why it's important
+[00:00:49.780 --> 00:00:54.880]   And later we will do a deep dive into reinforcement learning from human feedback in particular
+[00:00:54.960 --> 00:01:01.200]   I will introduce first of all, what is reinforcement learning then I will describe all the setup of the reinforcement learning
+[00:01:01.200 --> 00:01:08.260]   So the reward model what are trajectories in particular, we will see the policy gradient optimization and we will derive the algorithm
+[00:01:08.260 --> 00:01:15.280]   We will see also the problems with it. So how to reduce the variance the advantage estimation important sampling of policy learning, etc, etc
+[00:01:15.280 --> 00:01:20.320]   The goal for today's video is actually to derive the loss of the ppo
+[00:01:20.400 --> 00:01:25.680]   So I don't want to just throw the formula at you. I want to actually derive step by step all the
+[00:01:25.680 --> 00:01:30.640]   Algorithm of ppo and also show you all the history that led to it
+[00:01:30.640 --> 00:01:35.600]   So what were the problems that ppo was trying to solve mathematical from a mathematical point of view?
+[00:01:35.600 --> 00:01:37.280]   and
+[00:01:37.280 --> 00:01:43.920]   In the final part of the video, we will go through the code of an actual implementation of reinforcement learning from human feedback with ppo
+[00:01:43.920 --> 00:01:45.760]   and
+[00:01:45.760 --> 00:01:49.200]   I will actually not code from uh by line by line
+[00:01:49.200 --> 00:01:52.800]   I will actually explain the code line by line and in particular I will show the
+[00:01:52.800 --> 00:01:55.680]   Implementation as done by the HuggingFace team
+[00:01:55.680 --> 00:02:01.680]   So I will not show you how to use the HuggingFace library to use reinforcement learning from human feedback
+[00:02:01.680 --> 00:02:07.840]   But we will go inside the code of the HuggingFace library and see how it was implemented by the HuggingFace team
+[00:02:07.840 --> 00:02:12.000]   This way we can combine the theory that we have learned with practice
+[00:02:12.400 --> 00:02:17.360]   Now the code written by the HuggingFace team is kind of obscure and complex to understand
+[00:02:17.360 --> 00:02:24.080]   So I deleted some parts and I also commented with my own comments some other parts that were not easy to understand this way
+[00:02:24.080 --> 00:02:27.760]   I hope to make it easier for everyone to follow the code
+[00:02:27.760 --> 00:02:30.880]   Now there are some prerequisites before watching this video
+[00:02:30.880 --> 00:02:37.060]   First of all, I hope that you have some notions of probability and statistics. Not much. At least, you know, what is an expectation?
+[00:02:37.060 --> 00:02:40.640]   um, we we need to know so of course some
+[00:02:41.440 --> 00:02:44.800]   Knowledge from deep learning for example gradient descent. What is the loss function?
+[00:02:44.800 --> 00:02:49.200]   And the fact that in gradient descent we calculate some kind of gradient etc
+[00:02:49.200 --> 00:02:54.880]   We need to have some basic knowledge of reinforcement learning even if I will review most of it
+[00:02:54.880 --> 00:02:58.640]   So at least you know, what is an agent, the state, the environment and the reward
+[00:02:58.640 --> 00:03:04.160]   One important aspect of this video is that we will be using the transformer model a lot
+[00:03:04.160 --> 00:03:06.960]   So I recommend you watch my previous video on the transformer
+[00:03:06.960 --> 00:03:14.000]   If you have not if you're not familiar with the concept of self-attention or the causal mask, which will be key to understanding this video
+[00:03:14.000 --> 00:03:18.640]   So the goal of this video is actually to combine theory with practice
+[00:03:18.640 --> 00:03:24.240]   So I will make sure that I will always kind of give an intuition to formulas that are complex
+[00:03:24.240 --> 00:03:28.240]   And don't worry if you don't understand everything at the beginning
+[00:03:28.240 --> 00:03:33.920]   Why? Because I will be giving a lot of theory at the beginning because later I will be showing the code
+[00:03:34.240 --> 00:03:37.600]   I cannot show the code without giving the theoretical knowledge
+[00:03:37.600 --> 00:03:41.760]   So don't be scared if you don't understand everything because when we will look at the code
+[00:03:41.760 --> 00:03:45.680]   I will go back to the theory line by line so that we can combine
+[00:03:45.680 --> 00:03:51.200]   You know the practical and the theoretical aspect of this knowledge. So let's start our journey
+[00:03:51.200 --> 00:03:53.360]   Okay
+[00:03:53.360 --> 00:03:54.560]   What is a language model?
+[00:03:54.560 --> 00:04:01.040]   First of all a language model is a probabilistic model that assigns probabilities to sequence of words in particular
+[00:04:01.120 --> 00:04:06.960]   A language model allows us to compute the probability of the next token given the input sequence
+[00:04:06.960 --> 00:04:12.320]   In particular, for example, if we have a prompt that says shanghai is a city in
+[00:04:12.320 --> 00:04:15.680]   What is the probability that the next word is china?
+[00:04:15.680 --> 00:04:19.360]   Or what is the probability that the next word is beijing or cat or pizza?
+[00:04:19.360 --> 00:04:23.040]   This is the kind of probability that the language model is modeling
+[00:04:23.040 --> 00:04:26.400]   Now in my tractation of language model
+[00:04:26.400 --> 00:04:31.520]   I always make a simplification which is that each word is a token and each token is a word
+[00:04:31.520 --> 00:04:37.520]   This is not always the case because it depends on the tokenizer that we are using and actually in most cases. It's not
+[00:04:37.520 --> 00:04:39.360]   like this
+[00:04:39.360 --> 00:04:44.960]   But for simplicity, we will always consider for the rest of the video that each word is a token and each token is a word
+[00:04:44.960 --> 00:04:50.240]   Now you may be wondering how can we use the language models to generate text?
+[00:04:50.480 --> 00:04:53.600]   well, we do it iteratively which means that if we have a
+[00:04:53.600 --> 00:04:58.640]   Prompt for example a question like where is shanghai then we ask the language model
+[00:04:58.640 --> 00:05:03.540]   What is the next token and for example greedily we select the token with the most probability
+[00:05:03.540 --> 00:05:09.200]   So we select for example the word shanghai then we take this word shanghai. Let me use the laser
+[00:05:09.200 --> 00:05:12.640]   We put it back into the input and we ask again the language model
+[00:05:12.640 --> 00:05:18.000]   What is the next token and the language model will tell us what are the probability of the next token and we select the one
+[00:05:18.000 --> 00:05:20.240]   that is more probable suppose it's the word is
+[00:05:20.240 --> 00:05:24.480]   We take it and we put it back in the input and again we ask the language model
+[00:05:24.480 --> 00:05:27.360]   What is the next token suppose the next token is in
+[00:05:27.360 --> 00:05:31.440]   We take it we put it back in the input and we ask again the language model
+[00:05:31.440 --> 00:05:36.100]   What is the next token etc until we reach a number of tokens that we have generated?
+[00:05:36.100 --> 00:05:39.040]   Or we believe that the answer is complete
+[00:05:39.040 --> 00:05:41.360]   So in this case we can stop for example
+[00:05:41.360 --> 00:05:46.320]   Because we can see that the answer is shanghai is in china is the answer generated by the language model
+[00:05:46.560 --> 00:05:52.800]   So this is an iterative process of generating text with the language model and all language models actually work like this
+[00:05:52.800 --> 00:05:57.280]   Now with what is the topic of ai alignment
+[00:05:57.280 --> 00:06:02.320]   A language model is usually pre-trained on a vast amount of data
+[00:06:02.320 --> 00:06:08.000]   which means that it has been pre-trained on billions of web pages or the entire of wikipedia or
+[00:06:08.000 --> 00:06:10.160]   thousands of books
+[00:06:10.160 --> 00:06:14.800]   This gives the language model a lot of knowledge from which it can retrieve
+[00:06:15.920 --> 00:06:19.360]   And it can learn to complete a prompt in a reasonable way
+[00:06:19.360 --> 00:06:24.640]   However, this does not teach the language model to behave in a particular way. For example
+[00:06:24.640 --> 00:06:30.560]   Just by pre-training we do not teach the language model to not use offensive language or to not use
+[00:06:30.560 --> 00:06:33.520]   racist expressions or to not use curse words
+[00:06:33.520 --> 00:06:40.400]   To do this and to create for example a chat assistant that is friendly to the user
+[00:06:40.400 --> 00:06:42.400]   We need to do some kind of alignment
+[00:06:42.720 --> 00:06:48.340]   So the topic of ai alignment is to align the model's behavior with some desired behavior
+[00:06:48.340 --> 00:06:55.920]   Let's talk about reinforcement learning. So reinforcement learning is an area of artificial intelligence that is concerned with training an
+[00:06:55.920 --> 00:07:04.080]   Intelligent agent to take actions in an environment in order to maximize some reward that it receives from the environment
+[00:07:04.080 --> 00:07:06.480]   Let me give you a concrete example
+[00:07:06.480 --> 00:07:10.000]   So imagine we have a cat that lives in a very simple world
+[00:07:10.080 --> 00:07:16.720]   Suppose it's a room made up of many grids and this cat can move from one cell to another
+[00:07:16.720 --> 00:07:22.720]   now in this case our agent is the cat and this agent has a state and
+[00:07:22.720 --> 00:07:26.880]   Which describes for example the position of this agent
+[00:07:26.880 --> 00:07:31.680]   In this case the state of the cat can be described by two variables
+[00:07:31.680 --> 00:07:36.640]   One is the x coordinate and one is the y coordinate of the position of this cat
+[00:07:37.360 --> 00:07:40.640]   Based on the state the cat can choose to do some actions
+[00:07:40.640 --> 00:07:45.680]   Which could be for example to move down, move left, move right or move up
+[00:07:45.680 --> 00:07:52.000]   Based on the state the cat can take some actions and every time the cat takes some action
+[00:07:52.000 --> 00:07:57.140]   It will receive some reward from the environment. It will for sure move to a new position
+[00:07:57.140 --> 00:08:01.140]   And at the same time will receive some reward from the environment
+[00:08:01.140 --> 00:08:04.720]   And the reward is according to this reward model
+[00:08:04.800 --> 00:08:08.800]   So if the cat moves to an empty cell it will receive a reward of zero
+[00:08:08.800 --> 00:08:10.800]   If it moves to the broom, for example
+[00:08:10.800 --> 00:08:14.800]   It will receive a reward of -1 because my cat is scared of the broom
+[00:08:14.800 --> 00:08:19.040]   if somehow after a series of states and actions the cat arrives to the
+[00:08:19.040 --> 00:08:25.760]   Bathtub it will receive a reward of -10 because my cat is super scared of water
+[00:08:25.760 --> 00:08:31.620]   However, if the cat somehow manages to arrive to the meat it will receive a big reward of +100
+[00:08:33.120 --> 00:08:34.800]   How should the cat move?
+[00:08:34.800 --> 00:08:42.160]   Well, there is a policy that tells what is the probability of the next action given the current state
+[00:08:42.160 --> 00:08:46.880]   So the policy describes for each position. So for each state of the cat
+[00:08:46.880 --> 00:08:52.160]   With what probability the cat should move up or down or left or right?
+[00:08:52.160 --> 00:08:56.320]   And then the agent can choose to either choose a randomly an action
+[00:08:56.320 --> 00:09:02.560]   Or it can choose to select the action with the most probability for example, which is a greedy strategy etc etc
+[00:09:03.040 --> 00:09:05.680]   now the goal of reinforcement learning is to
+[00:09:05.680 --> 00:09:09.060]   Learn a probability so to optimize a policy
+[00:09:09.060 --> 00:09:16.640]   Such that we maximize the expected return when the agent acts according to this policy
+[00:09:16.640 --> 00:09:23.600]   which means that we should have a policy that with very high probability takes us to the meat because that's one way to
+[00:09:23.600 --> 00:09:27.280]   Maximize the expected return in this case
+[00:09:28.080 --> 00:09:34.560]   Now you may be wondering okay the cat I can see it as a reinforcement learning agent and the reinforcement learning setup
+[00:09:34.560 --> 00:09:37.840]   Makes sense for the cat and the meat and all these rewards
+[00:09:37.840 --> 00:09:44.080]   But what is the connection between reinforcement learning and language models? Let's try to clarify this
+[00:09:44.080 --> 00:09:45.680]   so
+[00:09:45.680 --> 00:09:49.520]   You can think of the language model as a policy itself
+[00:09:49.520 --> 00:09:53.440]   So as we saw before the policy is something that given the state
+[00:09:53.440 --> 00:09:57.920]   Tells you what is the probability of the action that you should take in that state
+[00:09:58.480 --> 00:10:02.880]   In the case of the language model. We know that the language model tells you given a prompt
+[00:10:02.880 --> 00:10:05.680]   What is the probability of the next token?
+[00:10:05.680 --> 00:10:12.640]   So we can think of the prompt as the state and the next token as the action that the language model can choose to perform
+[00:10:12.640 --> 00:10:17.040]   Which will lead to a new state because every time we sample a next token
+[00:10:17.040 --> 00:10:22.400]   We put it back into the prompt then we can ask the language model again. What is the next next token etc
+[00:10:22.800 --> 00:10:29.040]   So as you can see we can think of the language model as the reinforcement learning agent itself and also as the policy itself
+[00:10:29.040 --> 00:10:32.880]   in which the state is the prompt and the action is the
+[00:10:32.880 --> 00:10:38.080]   Next token that the language model will choose according to some strategy which could be the greedy one
+[00:10:38.080 --> 00:10:41.120]   Which could be the top p or the top k or etc, etc
+[00:10:41.120 --> 00:10:44.800]   The only thing that we are missing here is the reward model
+[00:10:44.800 --> 00:10:50.480]   How can we reward the language model for good responses and how can we kind of?
+[00:10:50.860 --> 00:10:55.340]   Penalize the language model for bad responses. This is
+[00:10:55.340 --> 00:10:59.980]   Done through a reward model that we have to build. Let's see how
+[00:10:59.980 --> 00:11:05.820]   Okay, imagine we want to create a reward model for our language model, which will become our
+[00:11:05.820 --> 00:11:13.580]   Reinforcement learning agent. Now to reward the model for generating a particular answer for questions
+[00:11:13.580 --> 00:11:19.180]   We could create a dataset like this of questions and answers generated by the model
+[00:11:19.660 --> 00:11:26.140]   For example, imagine we ask the model where is shanghai the model language model could say. Okay. Shanghai is a city in china. We should
+[00:11:26.140 --> 00:11:30.540]   Give some reward to this answer. So how good this answer is?
+[00:11:30.540 --> 00:11:37.340]   Now in my case, I would give it a high reward because I believe that the answer is short and to the point
+[00:11:37.340 --> 00:11:41.420]   But some other people may think that this answer is too short. So they maybe want
+[00:11:41.420 --> 00:11:46.380]   They prefer an answer that is a little longer or in this case, for example
+[00:11:46.380 --> 00:11:49.980]   What is two plus two suppose that our language model only says the word four
+[00:11:49.980 --> 00:11:53.820]   Now some in my case, I believe this answer is too short
+[00:11:53.820 --> 00:11:57.980]   so it could be a little more elaborate, but some other people may think that this answer is
+[00:11:57.980 --> 00:12:05.020]   Is good enough now what kind of reward should we give to this answer or this answer as you can see
+[00:12:05.020 --> 00:12:09.660]   It's not easy to come up with a number that can be accepted by everyone
+[00:12:09.660 --> 00:12:14.380]   So us humans are not very good at finding a common ground for agreement
+[00:12:14.380 --> 00:12:22.060]   But unfortunately, we are very good at comparing so we will exploit this fact to create our data set for training our reward model
+[00:12:22.060 --> 00:12:28.940]   So what if instead of generating one answer we could generate multiple answers using the same language model
+[00:12:28.940 --> 00:12:34.940]   This can be done for example by using a high temperature and then we can ask a group of people
+[00:12:34.940 --> 00:12:41.260]   So expert labelers experts in this field to choose which answer they prefer
+[00:12:41.900 --> 00:12:44.460]   and having this data set of
+[00:12:44.460 --> 00:12:52.860]   Preferences we can then create a model that will generate a numeric reward for each question and answer
+[00:12:52.860 --> 00:12:57.340]   So first we create a data set of questions
+[00:12:57.340 --> 00:13:00.940]   Then we ask the language model to generate multiple answers for the same question
+[00:13:00.940 --> 00:13:06.140]   For example by using a high temperature and then we ask people to choose which answer they prefer
+[00:13:06.140 --> 00:13:11.180]   Now our goal is to create a neural network, which will act as a reward model
+[00:13:11.180 --> 00:13:16.780]   so a model that given a question and an answer will generate a numeric value for
+[00:13:16.780 --> 00:13:19.740]   in such a way that the
+[00:13:19.740 --> 00:13:25.100]   Answer that has been chosen should have a high reward and the answer that has not been chosen
+[00:13:25.100 --> 00:13:29.820]   Which is something that we don't like should have a low reward. Let's see how it is done
+[00:13:29.820 --> 00:13:34.620]   What we do in practice is that we take a pre-trained language model
+[00:13:34.620 --> 00:13:41.180]   For example, we can take the pre-trained llama and we feed the language model the question and answer
+[00:13:41.180 --> 00:13:46.700]   So the input tokens here you can see are the questions and the answer concatenated together
+[00:13:46.700 --> 00:13:51.820]   We give it to the language model as input the language model. It's a transformer model
+[00:13:51.820 --> 00:13:56.140]   So it will generate some output embeddings. These are called hidden states
+[00:13:56.140 --> 00:14:00.560]   So as you know, the input are the tokens which are converted into embeddings
+[00:14:00.940 --> 00:14:03.980]   Then the positional encoding then we feed it to the transformer layer
+[00:14:03.980 --> 00:14:09.020]   The transformer layer will actually output some embeddings which are called hidden states
+[00:14:09.020 --> 00:14:14.060]   And usually for text generation, we take the last hidden state
+[00:14:14.060 --> 00:14:18.300]   We send it to some linear layer which will project it into the vocabulary
+[00:14:18.300 --> 00:14:21.180]   Then we use the softmax and then we select the next token
+[00:14:21.180 --> 00:14:25.820]   But instead of selecting because here we are we do not want to generate a text
+[00:14:25.820 --> 00:14:27.980]   We just want to generate a numeric reward
+[00:14:28.540 --> 00:14:34.940]   We can substitute the linear layer that is projecting the last hidden state into the vocabulary
+[00:14:34.940 --> 00:14:39.180]   But instead we replace it with another linear layer with only one output feature
+[00:14:39.180 --> 00:14:45.020]   So that it will take an input embedding as input and generate only one value as output
+[00:14:45.020 --> 00:14:53.740]   Which will be the reward assigned to the answer for the particular given question
+[00:14:54.620 --> 00:14:58.700]   Of course this is the architecture of the model. We also need to train it
+[00:14:58.700 --> 00:15:04.380]   So we also need to tell this model that it has to generate a high reward for answers that are chosen
+[00:15:04.380 --> 00:15:07.420]   And low reward for answers that are not chosen
+[00:15:07.420 --> 00:15:11.100]   Let's see what is the loss function that we will use to train this model
+[00:15:11.100 --> 00:15:14.780]   The loss function that we will be using is this one here
+[00:15:14.780 --> 00:15:21.580]   So you can see it's minus the log of the sigmoid of the reward assigned to the good answer
+[00:15:21.740 --> 00:15:24.700]   Minus the reward assigned to the bad answer
+[00:15:24.700 --> 00:15:26.860]   now
+[00:15:26.860 --> 00:15:29.580]   Let's analyze this loss function here. So
+[00:15:29.580 --> 00:15:32.300]   Pen, okay
+[00:15:32.300 --> 00:15:35.420]   So there are two possibilities either this difference here
+[00:15:35.420 --> 00:15:40.140]   So he is a negative or it is positive which means that either
+[00:15:40.140 --> 00:15:44.140]   The response assigned to the so how do we train it?
+[00:15:44.140 --> 00:15:49.020]   First of all basically because our data set is made up of questions and possible answers
+[00:15:49.100 --> 00:15:53.100]   I suppose there are only two possible answers. One is a good one. And one is the bad one
+[00:15:53.100 --> 00:15:56.140]   We take each question answers
+[00:15:56.140 --> 00:16:03.500]   We feed the question to the model along with the answer concatenated to it and we general model will generate some reward
+[00:16:03.500 --> 00:16:09.740]   We do it for the good question and for the sorry for the good answer and also for the bad answer
+[00:16:09.740 --> 00:16:16.060]   And it will generate two rewards suppose. This is the reward for the good one. So let's write good one
+[00:16:17.180 --> 00:16:19.900]   And this is the reward associated with the bad one
+[00:16:19.900 --> 00:16:27.900]   Now either the model assigned a high reward to the good one and a low reward to the bad one
+[00:16:27.900 --> 00:16:31.020]   So this difference will be positive and this is good
+[00:16:31.020 --> 00:16:33.500]   So in this case the loss will be like this
+[00:16:33.500 --> 00:16:39.260]   So if the reward given to the good answer is higher than the reward given to the bad answer
+[00:16:39.260 --> 00:16:41.100]   the
+[00:16:41.100 --> 00:16:47.100]   This difference will be positive. So let's see the sigmoid function. How does it behave when the input is positive?
+[00:16:47.100 --> 00:16:52.000]   So when the input is positive the sigmoid gives an output value that is between 0.5
+[00:16:52.000 --> 00:16:57.440]   And one so this stuff here will be between 0.5
+[00:16:57.440 --> 00:17:05.360]   And one when the log receives any because here you can think of as having a parenthesis
+[00:17:05.820 --> 00:17:11.820]   When the log sees an input that is between 0.5 and 1 will generate a number negative number
+[00:17:11.820 --> 00:17:15.180]   That is more or less between 0 and minus 1 more or less
+[00:17:15.180 --> 00:17:17.260]   so
+[00:17:17.260 --> 00:17:21.900]   With the minus sign here, it will become a positive number between 0 and 1
+[00:17:21.900 --> 00:17:28.940]   So the loss in this case will be small because it will be a number between more or less between 0 and 1
+[00:17:29.980 --> 00:17:37.660]   I maybe it's two or three but okay depends on the graph of the log. I don't remember. What is the exact value for the
+[00:17:37.660 --> 00:17:40.220]   0.5 here
+[00:17:40.220 --> 00:17:42.540]   However, let's see if the model
+[00:17:42.540 --> 00:17:49.260]   Gave a high score to the bad response and the low score to the good response. So let's start again
+[00:17:49.260 --> 00:17:52.380]   Okay
+[00:17:52.380 --> 00:17:54.380]   And
+[00:17:54.380 --> 00:17:56.380]   Okay, here is the bad
+[00:17:57.740 --> 00:18:00.080]   Response and here is the good response
+[00:18:00.080 --> 00:18:06.620]   Now what happens if this value here is smaller than this value here
+[00:18:06.620 --> 00:18:12.880]   So this difference will be negative when the sigmoid receives as input something that is negative
+[00:18:12.880 --> 00:18:17.440]   It will return an output that is between 0 and 0.5
+[00:18:17.440 --> 00:18:23.500]   The log when it sees an input that is between 0 and 0.5
+[00:18:23.660 --> 00:18:30.380]   So more or less here it will return a number negative number that is between minus infinity and more or less one
+[00:18:30.380 --> 00:18:32.140]   so
+[00:18:32.140 --> 00:18:37.420]   It will return because there is a minus sign here. It will become a very big number in the negative range
+[00:18:37.420 --> 00:18:41.260]   So the loss in this case will be big so big loss
+[00:18:41.260 --> 00:18:45.340]   Here it was a small loss
+[00:18:45.340 --> 00:18:48.140]   small
+[00:18:48.140 --> 00:18:49.580]   Loss
+[00:18:49.580 --> 00:18:50.620]   Okay
+[00:18:50.620 --> 00:18:57.660]   Now as you can see when the reward model is real is giving a high reward to the good answer and a bad
+[00:18:57.660 --> 00:19:04.140]   A low score to the bad answer. The loss is small. However, when the reward
+[00:19:04.140 --> 00:19:11.980]   model gives a high reward to the bad answer and a low score to the good answer the loss is very big
+[00:19:11.980 --> 00:19:18.780]   What does that what does it mean this for the model that it will force the model to always give
+[00:19:19.260 --> 00:19:24.140]   High rewards to the winning response and low reward to the losing response
+[00:19:24.140 --> 00:19:31.180]   So it because that's the only way for the model to minimize the loss because the goal of the model always during training is to minimize
+[00:19:31.180 --> 00:19:33.420]   The loss so the model will be forced to give
+[00:19:33.420 --> 00:19:39.420]   High reward to the chosen answer and the low reward to the not chosen answer or the bad answer
+[00:19:39.420 --> 00:19:47.900]   In hugging face you we can this reward model is implemented in the reward trainer class
+[00:19:48.380 --> 00:19:55.020]   So if you want to train your own reward model, you need to use this reward trainer class and it will take as input
+[00:19:55.020 --> 00:20:00.300]   A auto model for sequence classification, which is exactly this architecture here
+[00:20:00.300 --> 00:20:05.420]   So it's a transformer model with instead of having the linear layer that projects into the vocabulary
+[00:20:05.420 --> 00:20:09.660]   It has a linear layer with only one output feature that gives the reward
+[00:20:09.660 --> 00:20:14.300]   And if you look at the code on how this is implemented in the hugging face library
+[00:20:14.300 --> 00:20:19.500]   You will see that they first generate the reward for the chosen answer
+[00:20:19.500 --> 00:20:27.020]   So for the good answer, then they generate the reward for the bad answer. So for the rejected response here, it's called
+[00:20:27.020 --> 00:20:31.020]   And then they calculated the loss exactly using the formula that we saw
+[00:20:31.020 --> 00:20:38.460]   So the log sigmoid of the rewards given to the chosen one minus the rewards given to the rejected one
+[00:20:38.460 --> 00:20:41.180]   Let's talk about trajectories now
+[00:20:41.900 --> 00:20:48.060]   Now as I said previously in reinforcement learning the goal is to select a policy or to optimize a policy
+[00:20:48.060 --> 00:20:54.700]   That maximizes the expected return of the agent when the agent acts according to this policy
+[00:20:54.700 --> 00:20:59.740]   More formally we can write it as follows that we want to select a policy pi
+[00:20:59.740 --> 00:21:07.260]   That gives us the maximum expected reward when the agent acts according to this policy pi
+[00:21:07.980 --> 00:21:12.620]   Now, what is the expected return? The expected return of the policy is the
+[00:21:12.620 --> 00:21:18.860]   Expected return over all possible trajectories that the agent can have when using this policy
+[00:21:18.860 --> 00:21:24.220]   So it's the expected return over all possible trajectories as you know
+[00:21:24.220 --> 00:21:28.940]   The expectation can also be written as an integral. So it is the probability of the
+[00:21:28.940 --> 00:21:35.200]   Particular trajectory using this policy multiplied by the return over that particular trajectory
+[00:21:35.980 --> 00:21:40.860]   Now, what is a trajectory first of all and later we will see what is the probability of a trajectory
+[00:21:40.860 --> 00:21:44.620]   So the trajectory is a series of states and actions
+[00:21:44.620 --> 00:21:51.980]   Which means that a trajectory you can think of in the case of the cat as a path that the cat can take
+[00:21:51.980 --> 00:21:56.460]   Suppose that each of the trajectory have a maximum length. So we don't want the
+[00:21:56.460 --> 00:22:00.540]   agent to perform more than 10 steps to
+[00:22:01.340 --> 00:22:08.860]   To arrive to its goal. Now the cat can go to the meat for example using this path here or it can choose this path here
+[00:22:08.860 --> 00:22:12.700]   Or it can use this path here or this one here or for example
+[00:22:12.700 --> 00:22:17.580]   It can go forward and then go backward and then stop because it has already used the 10 steps
+[00:22:17.580 --> 00:22:24.300]   Or it can go like this etc etc. So there are many many many paths. What we want is we want to
+[00:22:24.300 --> 00:22:27.260]   we want to find a policy that
+[00:22:28.100 --> 00:22:33.880]   Maximizes the expected return so the return that we get along each of these paths
+[00:22:33.880 --> 00:22:37.960]   Now, we will also model the
+[00:22:37.960 --> 00:22:39.800]   the
+[00:22:39.800 --> 00:22:46.840]   The the next state of the cat has been stochastic. So first of all, let's introduce what is the these states and actions
+[00:22:46.840 --> 00:22:48.920]   So let me give you an example
+[00:22:48.920 --> 00:22:54.120]   Suppose that our cat is starting from some state s0 which is the initial state
+[00:22:54.680 --> 00:22:59.080]   The policy tells us what is the next action that we should take given the state
+[00:22:59.080 --> 00:23:00.920]   So the cat will ask the policy
+[00:23:00.920 --> 00:23:03.080]   What is the next action that it should take?
+[00:23:03.080 --> 00:23:09.800]   And because the policy is a stochastic this policy will tell us what is the probability of the next action. So
+[00:23:09.800 --> 00:23:16.680]   Just like in the case of the language model we given a prompt we select what is the probability of the next token
+[00:23:16.680 --> 00:23:20.920]   So imagine that the policy tells us that the cat should move down
+[00:23:21.240 --> 00:23:28.760]   So action down for example with very high probability or it should move right with lower probability
+[00:23:28.760 --> 00:23:34.380]   It should move left with even lower probability or it should move up with an even lower probability
+[00:23:34.380 --> 00:23:38.920]   Suppose that we select to move down it will result in a new state
+[00:23:38.920 --> 00:23:44.200]   That may not be exactly this one. Why? Because we model the
+[00:23:44.760 --> 00:23:47.640]   Cat as being drunk, which means that the cat
+[00:23:47.640 --> 00:23:54.600]   Wants to move down but may not always move down and we will see later why this is helpful
+[00:23:54.600 --> 00:23:56.680]   But another case could be for example
+[00:23:56.680 --> 00:24:03.080]   Imagine we have a robot and the robot wants to move down but the wheels of the robot are broken
+[00:24:03.080 --> 00:24:06.760]   So the robot will not actually move down. It will remain in the same state
+[00:24:06.760 --> 00:24:12.200]   So we always model the next state not as being deterministically determined
+[00:24:12.280 --> 00:24:17.240]   But as being stochastic given the current state and the action that we choose to perform
+[00:24:17.240 --> 00:24:20.600]   So imagine that we choose to perform the action down
+[00:24:20.600 --> 00:24:26.380]   The cat may arrive to a new state s1 which will be according to some probability distribution
+[00:24:26.380 --> 00:24:29.800]   Then we can ask again the policy. What is the next action I should do?
+[00:24:29.800 --> 00:24:31.320]   Policy might say okay
+[00:24:31.320 --> 00:24:38.920]   You should move right with very high probability and you should move down with a lower probability or you should move left with an even lower
+[00:24:38.920 --> 00:24:44.840]   Probability etc etc. So as you can see, we are creating a trajectory which is a series of states and actions
+[00:24:44.840 --> 00:24:50.700]   Which define how our cat will move in a particular trajectory
+[00:24:50.700 --> 00:24:54.120]   Okay
+[00:24:54.120 --> 00:24:55.080]   Let's see
+[00:24:55.080 --> 00:24:59.960]   Now, what is the probability of a trajectory? The probability of a trajectory as you can see here
+[00:24:59.960 --> 00:25:05.560]   The fact that we chose a particular action depends only on the state we were in
+[00:25:05.960 --> 00:25:12.040]   And the fact that we arrived to this state here depended on the state we were in and the action that we have chosen
+[00:25:12.040 --> 00:25:13.880]   and then
+[00:25:13.880 --> 00:25:17.640]   The fact that we have chosen this action here depended only on this state
+[00:25:17.640 --> 00:25:23.720]   We were in because the policy only takes as input the state and gives us what is the probability of the action that we should take
+[00:25:23.720 --> 00:25:28.600]   So we can because they are independent from each other these events
+[00:25:28.600 --> 00:25:32.620]   We can multiply them together to get the probability of the trajectory
+[00:25:32.840 --> 00:25:39.400]   So the probability of the trajectory is the probability of starting from a particular starting point. So from this state zero here
+[00:25:39.400 --> 00:25:45.500]   Then for each step that we have take so for each action state of this particular trajectory
+[00:25:45.500 --> 00:25:47.880]   We have the probability of choosing
+[00:25:47.880 --> 00:25:52.840]   This the action given the state and then to arriving a new state
+[00:25:52.840 --> 00:26:00.120]   Given that we were at this state at time step t and we chose action 80 at time step t
+[00:26:00.760 --> 00:26:05.160]   And we multiply all these probabilities together because they are independent from each other
+[00:26:05.160 --> 00:26:09.400]   Another thing that we will consider is that is when
+[00:26:09.400 --> 00:26:13.100]   How do we calculate the reward of a trajectory?
+[00:26:13.100 --> 00:26:19.800]   A very simple way to calculate the reward of a trajectory is to just sum all the rewards that we get along this trajectory
+[00:26:19.800 --> 00:26:26.200]   For example, imagine the cat to arrive to the meat follows this trajectory. You could say that the reward is zero here
+[00:26:26.360 --> 00:26:33.880]   So it's zero zero zero zero zero zero zero and then suddenly it becomes plus 100 when we reach the meat
+[00:26:33.880 --> 00:26:36.760]   If the cat for example follows this path here
+[00:26:36.760 --> 00:26:43.880]   We could say okay, it will receive minus one because the cat is scared of the broom then zero zero zero zero zero one hundred
+[00:26:43.880 --> 00:26:48.280]   Actually, this is not how we will calculate the reward of a trajectory
+[00:26:48.280 --> 00:26:55.080]   We will actually calculate the reward as a discounted which means that we prefer immediate rewards instead of future rewards
+[00:26:55.560 --> 00:26:59.560]   To give you an intuition in why this happens. First. Let me talk about money
+[00:26:59.560 --> 00:27:02.120]   So if I give you ten thousand dollars today
+[00:27:02.120 --> 00:27:05.800]   You prefer receiving it today instead of receiving it in one year
+[00:27:05.800 --> 00:27:10.360]   Why because you could put the ten thousand dollars in the bank. It will generate some interest
+[00:27:10.360 --> 00:27:13.560]   So at the end of the year, you will have more than ten thousand dollars
+[00:27:13.560 --> 00:27:17.640]   And in the case of reinforcement learning, this is helpful also for another case
+[00:27:17.640 --> 00:27:21.560]   For example, imagine the cat can only take 10 steps to arrive to the meat
+[00:27:22.920 --> 00:27:28.840]   Or 20 steps. So one way for the cat to arrive to the meat is to just go directly to the meat like this
+[00:27:28.840 --> 00:27:30.840]   And this is one trajectory
+[00:27:30.840 --> 00:27:33.320]   But another way for the cat is to go like this
+[00:27:33.320 --> 00:27:37.480]   For example, go here then go here then go here then go here and then go here
+[00:27:37.480 --> 00:27:42.520]   So in this case, we prefer the cat to go directly to the meat instead of
+[00:27:42.520 --> 00:27:47.820]   Taking this longer route. Why? Because we modeled the next state as being stochastic
+[00:27:48.520 --> 00:27:56.040]   And if we take a longer route the probability of ending up in one of these obstacles is higher the longer the route is
+[00:27:56.040 --> 00:28:01.080]   So we prefer having shorter routes in this case
+[00:28:01.080 --> 00:28:06.780]   And this is also convenient from a mathematical point of view to have this discounted rewards
+[00:28:06.780 --> 00:28:14.200]   Because this series which is infinite in some cases, okay, we will not work with infinite series
+[00:28:14.200 --> 00:28:18.280]   but it's helpful because this series can converge if this
+[00:28:18.280 --> 00:28:24.520]   Element of the series is becoming smaller and smaller and smaller
+[00:28:24.520 --> 00:28:29.880]   So let me give you a practical example of how to calculate the reward in a discounted case
+[00:28:29.880 --> 00:28:34.440]   so imagine the cat starts from here and it goes to the
+[00:28:34.440 --> 00:28:37.640]   follows this path so
+[00:28:37.640 --> 00:28:39.960]   to calculate the reward of this trajectory
+[00:28:40.680 --> 00:28:44.920]   We will do like this. So it is the reward at time step zero, which is
+[00:28:44.920 --> 00:28:52.440]   Arriving to the broom multiplied by gamma to the power of one. So it will be gamma multiplied by minus one
+[00:28:52.440 --> 00:28:54.360]   then
+[00:28:54.360 --> 00:28:57.880]   All these rewards are 0 0 0 so they will not be summed up
+[00:28:57.880 --> 00:29:05.880]   And finally we arrive here at where the reward is plus 100 at time step 1 2 3 4 5 6 7 8
+[00:29:06.920 --> 00:29:10.780]   So it will be gamma to the power of 8 multiplied by 100
+[00:29:10.780 --> 00:29:17.240]   So gamma is usually chosen. Not usually. It's always something that is between 0 and 1
+[00:29:17.240 --> 00:29:21.100]   So it's a number smaller than 1. So it means that we are decaying
+[00:29:21.100 --> 00:29:25.640]   this reward by gamma to the power of 8 so it will be
+[00:29:25.640 --> 00:29:31.960]   Smaller the longer we take to reach it. This is the intuition behind discounted rewards
+[00:29:31.960 --> 00:29:36.120]   Now you may be wondering
+[00:29:36.120 --> 00:29:38.440]   The trajectories make sense in the case of the cat
+[00:29:38.440 --> 00:29:44.040]   So I can see that the cat will follow some path to arrive to the meat and it can take many paths to arrive to the
+[00:29:44.040 --> 00:29:47.720]   Meat to so so we know what is the trajectory in the case of the cat
+[00:29:47.720 --> 00:29:50.520]   But what are the trajectories in case of language model?
+[00:29:50.520 --> 00:29:56.520]   Well, as I saw before, we want to we have a policy which is the language model itself
+[00:29:56.520 --> 00:30:01.800]   So because the policy tells us given the state what is the next action and in the case of language model
+[00:30:01.800 --> 00:30:09.320]   We can see that the language model itself is a policy and we want to optimize this policy such that it selects
+[00:30:09.320 --> 00:30:14.360]   The next token in such a way as to maximize a cumulative reward
+[00:30:14.360 --> 00:30:20.360]   According to the reward model that we have built before using the data set of preferences that I saw before
+[00:30:20.360 --> 00:30:25.480]   Also in the case of the language model the trajectory is a series of states and actions
+[00:30:25.480 --> 00:30:31.480]   What are the states in the case of the language model? Are they prompts? What are the actions? Are the next tokens?
+[00:30:31.880 --> 00:30:36.280]   So imagine we have a question like this too for the language model. So where is shanghai?
+[00:30:36.280 --> 00:30:41.960]   Of course, we will ask the language model. What is the next token which will this will become the initial prompt?
+[00:30:41.960 --> 00:30:45.320]   So the initial state of the language model we will ask the language model
+[00:30:45.320 --> 00:30:49.960]   What is the next token and that will become our action the token that we choose
+[00:30:49.960 --> 00:30:55.400]   But then we feed it back to the language model. So it will become the new state of the language model
+[00:30:55.400 --> 00:30:58.600]   And then we ask the language model again. What is the next token?
+[00:30:59.080 --> 00:31:04.280]   It will be for example, the word is and this will become again the input of the language model
+[00:31:04.280 --> 00:31:08.840]   So the next state and then we ask the language model again. What is the next token?
+[00:31:08.840 --> 00:31:15.880]   For example, we choose the token in and then the concatenation of all these tokens will become the new state of the language model
+[00:31:15.880 --> 00:31:21.000]   So we ask the language model again. What is the next token, etc, etc until we generate an answer
+[00:31:21.000 --> 00:31:23.720]   So as you can see also in the case of the language model
+[00:31:23.720 --> 00:31:28.760]   We have trajectories which are the series of prompts and the tokens that we have chosen
+[00:31:29.720 --> 00:31:34.520]   Now imagine that we have a policy because we our goal is to optimize our language model
+[00:31:34.520 --> 00:31:41.240]   Which is a policy such that we maximize a cumulative reward according to some reward model that we have built in the past
+[00:31:41.240 --> 00:31:43.480]   now
+[00:31:43.480 --> 00:31:48.600]   Our more formally our goal is this so we want to maximize this function here
+[00:31:48.600 --> 00:31:53.720]   Which is the expected return over all possible trajectories that our language model can generate
+[00:31:54.120 --> 00:31:58.840]   And we also saw that before the trajectory is a series of prompts and next tokens
+[00:31:58.840 --> 00:32:01.960]   Now when we
+[00:32:01.960 --> 00:32:05.880]   Use stochastic gradient descent. So for example when we try to optimize the neural network
+[00:32:05.880 --> 00:32:09.800]   We use stochastic gradient descent, which means that we have some kind of loss function
+[00:32:09.800 --> 00:32:15.000]   We calculate the gradient of the loss function with respect to the parameters of the model
+[00:32:15.000 --> 00:32:20.380]   And we change the parameters of the model such that we move against the direction of this gradient
+[00:32:21.800 --> 00:32:29.400]   So we take little steps against the direction of the gradient to optimize the parameters of the model to minimize this loss function
+[00:32:29.400 --> 00:32:35.720]   In our case, we do not want to minimize a loss function. We want to maximize a function which is here
+[00:32:35.720 --> 00:32:40.860]   And this is can also be thought of as an objective function that we want to maximize
+[00:32:40.860 --> 00:32:44.760]   So instead of using a gradient descent, we will use a gradient ascent
+[00:32:44.760 --> 00:32:49.880]   The only difference between the two is that instead of having a minus sign here. We have a plus sign
+[00:32:50.760 --> 00:32:55.740]   Now, this algorithm is called the policy gradient optimization
+[00:32:55.740 --> 00:32:59.720]   And the point is we need to calculate the gradient of this
+[00:32:59.720 --> 00:33:06.760]   Function here of our objective function. So what is the gradient with respect to the parameters of our model?
+[00:33:06.760 --> 00:33:08.680]   So our language model
+[00:33:08.680 --> 00:33:10.680]   what is the gradient of the
+[00:33:10.680 --> 00:33:16.920]   Expected return over all possible trajectories with respect to the parameters of the model
+[00:33:16.920 --> 00:33:21.560]   We need to find an expression of this gradient so that we can calculate it
+[00:33:21.560 --> 00:33:25.800]   And use it to optimize the parameters of the model using gradient ascent
+[00:33:25.800 --> 00:33:29.000]   Using also a learning rate alpha you can see here
+[00:33:29.000 --> 00:33:35.640]   Now, let's see how to derive the expression of the gradient of this objective function that we have
+[00:33:35.640 --> 00:33:41.740]   Now the gradient of the objective function is the gradient of this expectation
+[00:33:41.880 --> 00:33:46.280]   so it's the expectation over all possible trajectory of multiplied by the
+[00:33:46.280 --> 00:33:50.700]   The return over the particular trajectory
+[00:33:50.700 --> 00:33:53.720]   As we know the expectation is also an integral
+[00:33:53.720 --> 00:33:59.900]   So it can be written as the gradient of the integral of the probability of following a particular trajectory
+[00:33:59.900 --> 00:34:03.020]   Multiplied by the return over this trajectory
+[00:34:03.020 --> 00:34:11.080]   as you know from high school the gradient of a sum is equal to the sum of the gradients or the
+[00:34:11.720 --> 00:34:17.480]   You may recall it as the derivative. So the derivative of a sum of a function is equal to the
+[00:34:17.480 --> 00:34:20.040]   sum of the derivatives
+[00:34:20.040 --> 00:34:25.400]   So we can bring this gradient sign inside and it can it can be written like this
+[00:34:25.400 --> 00:34:31.080]   Now we will use a trick called the log derivative trick to expand this expression
+[00:34:31.080 --> 00:34:37.400]   So p of tau given theta into this expression here. Let me show you how it works
+[00:34:37.400 --> 00:34:41.320]   Let's use the pen
+[00:34:41.480 --> 00:34:43.000]   Okay
+[00:34:43.000 --> 00:34:46.300]   You may recall also from calculus that the gradient
+[00:34:46.300 --> 00:34:53.720]   with respect to theta of the log function of the log of a function in this case of
+[00:34:53.720 --> 00:34:57.640]   p of tau given theta
+[00:34:57.640 --> 00:35:04.520]   Is equal to so the gradient of the derivative of the log function is one over the function
+[00:35:06.200 --> 00:35:12.840]   p of tau given theta multiplied by the gradient with respect to theta
+[00:35:12.840 --> 00:35:16.040]   of the function that is inside the log so p of
+[00:35:16.040 --> 00:35:19.240]   tau given theta
+[00:35:19.240 --> 00:35:25.800]   We can take this term to the left side multiply it here and this expression here
+[00:35:25.800 --> 00:35:32.600]   Will become equal to the this expression multiplied by this expression and this is exactly what you see here
+[00:35:32.760 --> 00:35:37.900]   So we can replace this expression that we see in the equation above. So this expression
+[00:35:37.900 --> 00:35:41.320]   with this expression we can see here in the
+[00:35:41.320 --> 00:35:43.720]   equation below
+[00:35:43.720 --> 00:35:45.720]   now
+[00:35:45.720 --> 00:35:53.480]   We can this integral we can write it back as an expectation over all possible trajectories of this quantity here now
+[00:35:53.480 --> 00:35:56.520]   Because the probability is only this term here
+[00:35:56.520 --> 00:35:59.900]   So we can write it back as a expectation
+[00:36:01.000 --> 00:36:05.560]   Now we need to expand this term here. So what is the gradient of the log?
+[00:36:05.560 --> 00:36:08.440]   So this this expression here
+[00:36:08.440 --> 00:36:15.320]   So what is the gradient of the log of probability of a particular trajectory given the parameters of the model?
+[00:36:15.320 --> 00:36:17.000]   Let's expand it
+[00:36:17.000 --> 00:36:19.000]   we saw before that the
+[00:36:19.000 --> 00:36:22.280]   probability of a trajectory is just the product of all the
+[00:36:22.280 --> 00:36:29.000]   Probabilities of the state actions that are in this trajectory. So the probability of starting from a particular state
+[00:36:29.540 --> 00:36:34.740]   Multiplied by the probability of taking a particular action given the state we are in
+[00:36:34.740 --> 00:36:39.780]   multiplied by the probability of ending up in a new state given that we started from
+[00:36:39.780 --> 00:36:44.340]   The state at time step t and we took action at time step t
+[00:36:44.340 --> 00:36:48.840]   And we do it for all the state actions that we have in this trajectory
+[00:36:48.840 --> 00:36:56.260]   If we apply a log to this expression here, the product here will become a sum
+[00:36:57.060 --> 00:37:00.980]   And let's do it actually. Okay, so we circle the log
+[00:37:00.980 --> 00:37:05.060]   of p of tau
+[00:37:05.060 --> 00:37:08.500]   given pi
+[00:37:08.500 --> 00:37:11.140]   Pi theta actually because we model our
+[00:37:11.140 --> 00:37:17.540]   Policy pi as parameterized by parameter theta here. I forgot the theta but doesn't matter
+[00:37:17.540 --> 00:37:20.500]   It's equal to the log
+[00:37:20.500 --> 00:37:26.580]   Of all this expression. So it's the log of a series of products so it can be written as the log of
+[00:37:27.220 --> 00:37:29.220]   p
+[00:37:29.220 --> 00:37:31.220]   0 of s 0
+[00:37:31.220 --> 00:37:34.020]   plus
+[00:37:34.020 --> 00:37:36.020]   the summation
+[00:37:36.020 --> 00:37:39.460]   The log of
+[00:37:39.460 --> 00:37:44.340]   p
+[00:37:44.340 --> 00:37:46.340]   of s
+[00:37:46.340 --> 00:37:48.180]   t plus 1
+[00:37:48.180 --> 00:37:50.180]   Given that we are in st
+[00:37:50.180 --> 00:37:52.260]   plus
+[00:37:52.260 --> 00:37:53.540]   at
+[00:37:53.540 --> 00:37:54.900]   not plus
+[00:37:54.900 --> 00:37:56.900]   and at
+[00:37:56.900 --> 00:37:59.060]   And we are in we took action at
+[00:37:59.060 --> 00:38:02.100]   plus the log
+[00:38:02.100 --> 00:38:05.220]   Of
+[00:38:05.220 --> 00:38:11.860]   This the action that we took according to our policy at given that we were in st
+[00:38:11.860 --> 00:38:20.020]   Okay. Now we are also taking the gradient of this expression and as you can see here there is no term that depends on
+[00:38:20.020 --> 00:38:22.980]   Theta so it can be deleted
+[00:38:23.220 --> 00:38:25.460]   Also in this case, we do not have any
+[00:38:25.460 --> 00:38:32.420]   Expression that in this expression here. We do not have anything that depends on theta. So this can be deleted
+[00:38:32.420 --> 00:38:38.500]   Because the derivative of something that does not have the variable being
+[00:38:38.500 --> 00:38:42.980]   Derived is a constant so it can be deleted because it will be zero
+[00:38:42.980 --> 00:38:50.100]   So the only term surviving in the summation is only these terms here because it's the only one that contains the theta
+[00:38:50.260 --> 00:38:56.660]   As you can see here. So in the final expression is this one here. So this summation now, let me delete
+[00:38:56.660 --> 00:39:00.820]   So we have derived
+[00:39:00.820 --> 00:39:07.940]   An expression that allow us to calculate the gradient of the objective function because why we need the gradient of the objective function?
+[00:39:07.940 --> 00:39:09.940]   Because we want to run gradient ascent
+[00:39:09.940 --> 00:39:15.880]   Now one thing that we can see here. We still have this expectation over all possible trajectories
+[00:39:15.880 --> 00:39:18.260]   now
+[00:39:18.260 --> 00:39:21.940]   To calculate over all possible trajectories in the case of the cat
+[00:39:21.940 --> 00:39:27.460]   It means that we need to calculate this gradient over all the possible paths that the cat can take of
+[00:39:27.460 --> 00:39:33.460]   Length, for example, 10 steps. So if we want to model trajectories of only length 10
+[00:39:33.460 --> 00:39:38.340]   It means that we need to calculate all the possible paths that the cat can take of length 10
+[00:39:38.340 --> 00:39:41.540]   And it could be a huge number in the case of language model
+[00:39:41.540 --> 00:39:48.100]   It's even bigger because usually imagine we want to generate trajectories of size 100. It means that what are the possible
+[00:39:48.100 --> 00:39:54.660]   All the possible texts that we can generate of size 100 tokens using our language model
+[00:39:54.660 --> 00:40:00.820]   And for each of them we need to calculate the reward and the log action probabilities, which I will show later how to calculate
+[00:40:00.820 --> 00:40:05.860]   Now as you can see the problem is this expectation is over a lot of terms
+[00:40:06.420 --> 00:40:12.020]   So it's intractable computationally to calculate them to calculate this expression because we would generate
+[00:40:12.020 --> 00:40:17.540]   Need to generate a lot a lot a lot of text for the language model. So one way to
+[00:40:17.540 --> 00:40:26.280]   To calculate this expectation is to approximate it with the sample mean so we can always approximate
+[00:40:26.280 --> 00:40:33.000]   An expectation with the sample mean so instead of calculating it over all the possible trajectories
+[00:40:33.300 --> 00:40:37.380]   We can calculate it over some trajectories. So in the case of the cat it means that we
+[00:40:37.380 --> 00:40:44.020]   Take the cat and we ask it to move using the policy for some number of steps and each
+[00:40:44.020 --> 00:40:46.900]   And we will generate one trajectory
+[00:40:46.900 --> 00:40:51.620]   We do it many times and it will generate some trajectories in the case of the language model
+[00:40:51.620 --> 00:40:55.140]   We have some prompt we ask the language model to generate some text
+[00:40:55.140 --> 00:40:59.780]   Then we do it many times using different temperatures and different sampling strategies
+[00:40:59.860 --> 00:41:06.100]   For example by sampling randomly instead of using the greedy strategy. We can use the top p so it will generate many texts
+[00:41:06.100 --> 00:41:13.140]   Each text will represent a trajectory. We do not have to do it over all the possible text that the language model can generate
+[00:41:13.140 --> 00:41:16.740]   But only some so it means that we will generate some trajectories
+[00:41:16.740 --> 00:41:22.120]   So we can calculate this expression here only on some trajectory that our language model will generate
+[00:41:22.120 --> 00:41:24.520]   And this will give us an approximation
+[00:41:24.520 --> 00:41:27.220]   of this gradient here
+[00:41:27.620 --> 00:41:33.160]   Once we have this gradient here, we can evaluate it over the trajectories that we have sampled
+[00:41:33.160 --> 00:41:35.700]   And then run gradient ascent on it
+[00:41:35.700 --> 00:41:40.020]   So practically it works like this in the case of the cat
+[00:41:40.020 --> 00:41:46.260]   We have some kind of neural network that defines the policy which is taking the state of the cat
+[00:41:46.260 --> 00:41:52.420]   Which is the position of the cat tells us what is the probability of the next action that the cat should take
+[00:41:53.220 --> 00:41:58.180]   We can use this policy, which is not optimized to generate some trajectories
+[00:41:58.180 --> 00:42:01.220]   So for example, we start from here. We ask the policy
+[00:42:01.220 --> 00:42:05.300]   Where should I go and we for example, we use the greedy strategy and we move down
+[00:42:05.300 --> 00:42:07.060]   then
+[00:42:07.060 --> 00:42:08.820]   Or we use the top p for example
+[00:42:08.820 --> 00:42:16.340]   Also in this case, we can use top p to sample randomly the action given the probabilities generated by the network
+[00:42:16.340 --> 00:42:20.980]   So imagine the cat goes down and then we ask again the policy. Where should I go?
+[00:42:21.620 --> 00:42:26.760]   Policy may say okay move right move down move right move right etc. So we will generate one trajectory
+[00:42:26.760 --> 00:42:32.760]   We do it many times by sampling always randomly according to the probabilities generated by the policy
+[00:42:32.760 --> 00:42:37.700]   For each state actions, we will generate many trajectories in this case
+[00:42:37.700 --> 00:42:45.060]   Then we can evaluate because we also know the rewards that we accumulate over each state actions. We calculate the reward
+[00:42:45.060 --> 00:42:49.860]   We also know the log probabilities of the each action because for each state we have
+[00:42:50.420 --> 00:42:55.540]   The log what is what was the probability of taking that action and we choose it
+[00:42:55.540 --> 00:43:01.140]   And we need to calculate also the gradient of this log probabilities
+[00:43:01.140 --> 00:43:08.020]   This is done by automatically by pytorch when you run lost dot backwards. So pytorch actually will calculate the gradient for you
+[00:43:08.020 --> 00:43:13.400]   We do it for all the other possible trajectories. This will give us the approximated
+[00:43:15.200 --> 00:43:18.340]   Gradient of over the trajectories that we have collected
+[00:43:18.340 --> 00:43:25.540]   We run gradient ascent and we optimize the parameters of the model using a step towards the gradient
+[00:43:25.540 --> 00:43:28.480]   Now then we need to go
+[00:43:28.480 --> 00:43:32.180]   We do we need to do it again. So we need to collect more trajectories
+[00:43:32.180 --> 00:43:38.560]   We evaluate them. We evaluate the gradient of the log probabilities. We run a gradient ascent
+[00:43:38.880 --> 00:43:42.740]   So we take one little step towards the direction of the gradient
+[00:43:42.740 --> 00:43:49.760]   And then we do it again. We go again collect some trajectories. We evaluate this expression here to
+[00:43:49.760 --> 00:43:54.180]   Calculate the gradient of the policy with respect to the parameters
+[00:43:54.180 --> 00:44:00.880]   And we run again gradient ascent so a little step towards the direction of the gradient
+[00:44:00.880 --> 00:44:05.220]   This is known as the reinforcement learning algorithm in literature
+[00:44:05.840 --> 00:44:11.040]   And we can use it also to optimize our language model. So in the case of the language model
+[00:44:11.040 --> 00:44:13.780]   We we have to also generate some trajectories
+[00:44:13.780 --> 00:44:19.040]   So one way to generate the trajectories would be to for example use the database of
+[00:44:19.040 --> 00:44:22.800]   Questions and answers that we have built before for the reward model
+[00:44:22.800 --> 00:44:25.680]   Which means that we have some questions
+[00:44:25.680 --> 00:44:30.720]   So we ask the language model to generate some answer for each question
+[00:44:31.280 --> 00:44:37.200]   Using for example the top piece strategy. So it will generate according to the temperature many different
+[00:44:37.200 --> 00:44:39.840]   answers for the same given question
+[00:44:39.840 --> 00:44:48.080]   This will be a series of trajectories because the language model generation process is an iterative process made up of states
+[00:44:48.080 --> 00:44:51.520]   So prompts and actions and which are the next tokens
+[00:44:51.520 --> 00:44:56.000]   And this will result in a list of trajectories for which we have
+[00:44:56.320 --> 00:45:01.840]   The log probabilities because the language model generates a list of probabilities over the next token
+[00:45:01.840 --> 00:45:05.440]   And we can also calculate the gradient of this state
+[00:45:05.440 --> 00:45:11.620]   Log probabilities using PyTorch because when we run loss.backward it will calculate the gradient
+[00:45:11.620 --> 00:45:15.360]   But how do we do it in practice? Let's see
+[00:45:15.360 --> 00:45:18.960]   Now we want to calculate this term here
+[00:45:18.960 --> 00:45:24.400]   So the log probabilities of the action given the state for language models
+[00:45:24.400 --> 00:45:28.480]   Which means what is the probability of the next token given a particular prompt?
+[00:45:28.480 --> 00:45:32.560]   Imagine that our language model has generated the following response
+[00:45:32.560 --> 00:45:38.160]   So we asked the language model where is Shanghai and the language model said Shanghai is in China
+[00:45:38.160 --> 00:45:42.240]   Our language model is a transformer model. So it is a
+[00:45:42.240 --> 00:45:45.280]   transformer layer
+[00:45:45.280 --> 00:45:49.300]   And it will generate a given an input sequence of embeddings. It will generate
+[00:45:49.300 --> 00:45:55.440]   An output sequence of embeddings which are called hidden states one for each input token
+[00:45:55.440 --> 00:46:00.080]   As you know the language model when we use it for text generation
+[00:46:00.080 --> 00:46:05.440]   It has a linear layer that allow us to calculate the logits for each position
+[00:46:05.440 --> 00:46:11.200]   So usually we calculate the logits only of the last token because we want to understand what is the next token
+[00:46:11.520 --> 00:46:14.560]   But actually we can calculate the logits for each position
+[00:46:14.560 --> 00:46:19.600]   So for example, we can also calculate the logits for this position and the logits for this position will indicate
+[00:46:19.600 --> 00:46:22.240]   What is the most likely next token?
+[00:46:22.240 --> 00:46:26.000]   Given this input. So where is Shanghai?
+[00:46:26.000 --> 00:46:28.540]   question mark Shanghai is
+[00:46:28.540 --> 00:46:34.240]   So this is because of the causal mask that we apply during the self-attention mechanism
+[00:46:34.240 --> 00:46:41.200]   So each hidden state actually encapsulates information about the current token. So in this case of the token is
+[00:46:41.840 --> 00:46:48.640]   And also all the previous tokens. This is a property of the transformer model that is used during training
+[00:46:48.640 --> 00:46:51.860]   So during training as you know, we do not calculate
+[00:46:51.860 --> 00:46:54.560]   The output of the language model step by step
+[00:46:54.560 --> 00:47:00.080]   We just give it the input sentence the output sentence, which is the shifted version of the input sentence
+[00:47:00.080 --> 00:47:02.880]   we calculate the
+[00:47:02.880 --> 00:47:07.200]   For we do the forward pass and then we calculate the log using only one forward pass
+[00:47:07.600 --> 00:47:11.760]   We can use the same mechanism to calculate the log probabilities for each
+[00:47:11.760 --> 00:47:19.040]   States and actions in this trajectory, which as I showed you is a series of prompts and next tokens
+[00:47:19.040 --> 00:47:24.800]   Now we can calculate the logits for this position for this position for this position and for this position
+[00:47:24.800 --> 00:47:29.280]   then we usually we apply the softmax to understand what is the
+[00:47:29.280 --> 00:47:34.080]   Probability of the next token, but in this case, we want the log probabilities
+[00:47:34.080 --> 00:47:38.160]   So we can apply the log softmax for each position. This will give us
+[00:47:38.160 --> 00:47:42.720]   What is the log probability of the next token given only the previous tokens?
+[00:47:42.720 --> 00:47:44.640]   Compared to the current one
+[00:47:44.640 --> 00:47:50.880]   So for this position it will give us the log probability of the next token given that the input is only where is shanghai?
+[00:47:50.880 --> 00:47:53.360]   question mark shanghai
+[00:47:53.360 --> 00:47:56.240]   Of course, we do not want all the log probabilities
+[00:47:56.240 --> 00:48:01.360]   We only want the log probability of the token that actually has been chosen in this trajectory
+[00:48:01.440 --> 00:48:05.220]   What is the actual token that has been chosen for this particular?
+[00:48:05.220 --> 00:48:13.360]   Position. Well, we know it. It's the word is so we only selected the log probability corresponding to the word is
+[00:48:13.360 --> 00:48:20.020]   This will return us the log probability for the entire trajectory because now we have the log probability of selecting
+[00:48:20.020 --> 00:48:24.580]   The word shanghai given the state where is shanghai?
+[00:48:24.580 --> 00:48:28.960]   We have the log probability of selecting the word is given the input
+[00:48:29.120 --> 00:48:31.360]   Where is shanghai question mark shanghai?
+[00:48:31.360 --> 00:48:38.080]   We have the log probability of selecting the word in given the input where is shanghai question mark shanghai is etc, etc
+[00:48:38.080 --> 00:48:41.440]   So now we have the log probabilities of each
+[00:48:41.440 --> 00:48:47.140]   Of each position of each state action in this trajectory
+[00:48:47.140 --> 00:48:50.720]   When we have this stuff here, we can always ask
+[00:48:50.720 --> 00:48:53.520]   PyTorch to run
+[00:48:54.160 --> 00:49:01.440]   The backward step to calculate the gradients and then we multiply each gradient by the reward that we receive
+[00:49:01.440 --> 00:49:06.400]   From our reward model we can then calculate this expression and then we can run
+[00:49:06.400 --> 00:49:12.100]   Gradient ascent to optimize our policy based on this approximated gradient
+[00:49:12.100 --> 00:49:16.020]   Let's see how to calculate the reward now for the trajectory
+[00:49:16.020 --> 00:49:21.440]   So calculating the reward is a similar process as you saw before we have a reward model
+[00:49:21.440 --> 00:49:26.960]   That is a transformer model with a linear layer on top that it has only one output feature
+[00:49:26.960 --> 00:49:29.280]   So imagine our sentence is the same. So
+[00:49:29.280 --> 00:49:35.040]   Where is shanghai shanghai is in china. This is the trajectory that has been generated by our language model
+[00:49:35.040 --> 00:49:41.840]   Now we give it to the reward model. The reward model will generate some hidden states because it's a transformer model
+[00:49:41.840 --> 00:49:49.840]   And we apply the linear layer to all the positions that are corresponding to the action that are in this trajectory
+[00:49:49.840 --> 00:49:54.400]   So first action is the selection of this word. The second action is this one the third and the fourth
+[00:49:54.400 --> 00:49:57.600]   So we can generate the reward for each time step
+[00:49:57.600 --> 00:50:04.960]   We can just sum these rewards to generate the total reward of the trajectory or we can sum the discounted reward
+[00:50:04.960 --> 00:50:08.080]   Which means that we will calculate something like this. For example
+[00:50:08.080 --> 00:50:10.400]   We will calculate
+[00:50:10.400 --> 00:50:14.400]   Let's write it. So it will be the reward at time step zero plus
+[00:50:15.120 --> 00:50:21.760]   gamma multiplied by the reward at time step one plus gamma multiplied by the reward at time gamma to the power of two multiplied at
+[00:50:21.760 --> 00:50:27.840]   By the reward at time step two plus gamma to the power of three multiplied by the reward at time step three, etc
+[00:50:27.840 --> 00:50:31.620]   Etc. So now we also know how to calculate the reward for each trajectory
+[00:50:31.620 --> 00:50:34.480]   So now we know how to evaluate
+[00:50:34.480 --> 00:50:41.680]   This expression you can see here. So now we know also how to run gradient ascent to optimize our language model
+[00:50:42.560 --> 00:50:49.600]   The algorithm that I have described before is called the gradient policy optimization and it works fine for very small problems
+[00:50:49.600 --> 00:50:55.060]   But it exhibits problems. It is not perfect for bigger problems. So for example language modeling
+[00:50:55.060 --> 00:51:02.400]   And the problem is very simple. The problem is that we are approximating. So let's write here something so
+[00:51:02.400 --> 00:51:10.100]   We as you saw before our objective function, which is j of theta, which is an expectation
+[00:51:11.520 --> 00:51:16.580]   Over all possible trajectories that are sampled according to our policy
+[00:51:16.580 --> 00:51:22.740]   And expectation each one with its reward along the trajectory
+[00:51:22.740 --> 00:51:28.320]   So we are approximating the expectation with a sample mean so we do not
+[00:51:28.320 --> 00:51:33.040]   Calculate this expression over all possible trajectories. We calculate it only
+[00:51:33.040 --> 00:51:35.440]   on some trajectories
+[00:51:35.440 --> 00:51:37.120]   now this is
+[00:51:37.120 --> 00:51:44.500]   Fair, it means that the result that we will get will be an approximation that on average will converge to the true expectation
+[00:51:44.500 --> 00:51:50.660]   So it means that on the long term it will converge to the true expectation, but it exhibits high variance
+[00:51:50.660 --> 00:51:55.760]   So to give you an intuition into what this means, let's talk about something more simple
+[00:51:55.760 --> 00:51:59.040]   For example, imagine I ask you to calculate the average
+[00:51:59.040 --> 00:52:05.440]   age of the American population. Now the American population is made up of 330 million people
+[00:52:06.240 --> 00:52:12.080]   To calculate the average age means that you need to go to every person ask what is their birthday calculate the
+[00:52:12.080 --> 00:52:17.600]   Age and then sum all these ages that you collect divide by the number of people
+[00:52:17.600 --> 00:52:21.120]   And this will give you the true average age of the American population
+[00:52:21.120 --> 00:52:26.880]   But of course as you can see, this is not easy to compute because you would need to interview 330 million people
+[00:52:26.880 --> 00:52:32.560]   Another idea would be say okay. I don't go to every American person
+[00:52:32.640 --> 00:52:38.720]   I only go to some Americans and I calculate their average age which could give me a good
+[00:52:38.720 --> 00:52:42.020]   indication of what is the average age of the American population
+[00:52:42.020 --> 00:52:49.440]   But the result of this approximation depends on how many people you interview because if you only interview one person
+[00:52:49.440 --> 00:52:56.260]   It may not be representative of the whole population. Even if you interview 10 people, it may not be representative of the whole population
+[00:52:56.640 --> 00:53:03.840]   So the more people you interview the better and this is actually a result that is statistically proven by the central limit theorem
+[00:53:03.840 --> 00:53:07.280]   So let's talk about the variance
+[00:53:07.280 --> 00:53:12.340]   Of this estimator. So we want to calculate the average age of the American population
+[00:53:12.340 --> 00:53:18.320]   Suppose that the average age of the American population is 40 years or 45 years or whatever
+[00:53:20.560 --> 00:53:28.240]   If we approximate it using a sample mean which means that we do not ask every American but some Americans what is their average age
+[00:53:28.240 --> 00:53:34.640]   We need to sample randomly some people and ask what their age. Suppose that we only interview one person because we are
+[00:53:34.640 --> 00:53:37.040]   We do not have time
+[00:53:37.040 --> 00:53:43.040]   Suppose that we are unlucky and this person happens to be a kindergarten student and this person will probably say
+[00:53:43.040 --> 00:53:49.700]   The age is a six. So we will get a result that is very far from the true mean of the population
+[00:53:50.500 --> 00:53:55.700]   On the other hand, we may ask again some random people and these people happen to be for example
+[00:53:55.700 --> 00:54:01.540]   All people from retirement homes. So we will get some number that is very high which is for example 80 years
+[00:54:01.540 --> 00:54:04.200]   Which is also not representative of the true population
+[00:54:04.200 --> 00:54:11.700]   So the smaller the sample the more unlucky we are in getting these values that are very far from the true mean
+[00:54:11.700 --> 00:54:14.740]   So one way is to increase the sample size
+[00:54:14.900 --> 00:54:21.940]   So if we ask 1000 people what is their average age very probably we'll get something that is closer to this 40 years old
+[00:54:21.940 --> 00:54:24.020]   because we cannot be
+[00:54:24.020 --> 00:54:26.020]   so unlucky to get six or
+[00:54:26.020 --> 00:54:30.180]   That all of them happen to be in the kindergarten or in the retirement age
+[00:54:30.180 --> 00:54:32.500]   in the retirement home
+[00:54:32.500 --> 00:54:38.100]   This happens also when we approximate an estimation with a sample mean here
+[00:54:38.580 --> 00:54:44.820]   The quality of this approximation depends on how many trajectories we choose
+[00:54:44.820 --> 00:54:47.060]   and as you saw before
+[00:54:47.060 --> 00:54:51.860]   Choosing too many trajectories from language models is not easy because it means that you need to run
+[00:54:51.860 --> 00:54:55.880]   Inference on the language model many times to calculate these trajectories
+[00:54:55.880 --> 00:54:59.300]   Now
+[00:54:59.300 --> 00:55:02.100]   So the problem is we cannot easily
+[00:55:02.100 --> 00:55:06.660]   Increase the number of trajectories, but we need to find a way to reduce this value
+[00:55:06.660 --> 00:55:08.660]   so we do not because this is the
+[00:55:08.660 --> 00:55:14.420]   This tells us what is the direction of the gradient that we will use to run a gradient ascent
+[00:55:14.420 --> 00:55:17.380]   We want to find the true direction of the gradient
+[00:55:17.380 --> 00:55:22.740]   so imagine the true direction of the gradient is this one if we have high variance it means that sometimes the
+[00:55:22.740 --> 00:55:28.180]   This approximation may tell us that the gradient is actually pointing in this direction or it's pointing in this direction
+[00:55:28.180 --> 00:55:30.020]   Or it's pointing in this direction
+[00:55:30.020 --> 00:55:32.500]   But if we increase the reduce the variance
+[00:55:32.740 --> 00:55:36.580]   It will probably tell us something that is more closer to the true direction of the gradient
+[00:55:36.580 --> 00:55:40.020]   So we will move our weights in a way that is moving
+[00:55:40.020 --> 00:55:45.700]   To maximize the objective function because we are moving according to the true direction of the gradient
+[00:55:45.700 --> 00:55:49.080]   So this is why we want to reduce the variance of this estimator
+[00:55:49.080 --> 00:55:56.740]   Now, let's see what are the techniques that we can use to reduce the variance of this estimator without increasing the sample size
+[00:56:01.460 --> 00:56:04.580]   The first thing that we should notice is that okay
+[00:56:04.580 --> 00:56:10.740]   First of all, we had this expectation that we approximate using the sample mean you can see here
+[00:56:10.740 --> 00:56:18.680]   Now each of these log probabilities. So this log probabilities here are multiplied by the reward over the entire trajectory
+[00:56:18.680 --> 00:56:25.700]   Now the first thing that we should notice is that each action cannot alter the reward that it
+[00:56:25.700 --> 00:56:29.140]   That we received in previous steps. So imagine
+[00:56:30.020 --> 00:56:34.100]   We have a series of states and actions. So for example, we started from state zero
+[00:56:34.100 --> 00:56:36.740]   And then we take action one
+[00:56:36.740 --> 00:56:41.860]   Which led us to action zero and then this led us to state one
+[00:56:41.860 --> 00:56:50.180]   In which we we took action one which led us to state two in which we took action two, etc, etc, etc
+[00:56:50.180 --> 00:56:55.220]   For each state action we receive a reward because when we take an action it will
+[00:56:55.780 --> 00:57:00.420]   For example in the cat it will move to a new cell or remain in the same cell and it will receive some reward
+[00:57:00.420 --> 00:57:06.500]   And also for this one we will have some reward. So reward one and for this one we will have reward two
+[00:57:06.500 --> 00:57:14.340]   Now when we take this action here, for example action number two, it cannot alter the reward that we already received in the past
+[00:57:14.340 --> 00:57:18.100]   So when we multiply by this term reward of tau
+[00:57:18.100 --> 00:57:24.180]   We do not consider all the rewards that came before the action that we are considering in this summation
+[00:57:24.580 --> 00:57:26.580]   So instead of calculating the reward
+[00:57:26.580 --> 00:57:29.540]   For the trajectory starting from zero
+[00:57:29.540 --> 00:57:37.060]   We can calculate the reward starting from the time step of the action that we are considering for the log probabilities of the action
+[00:57:37.060 --> 00:57:45.700]   This term here is known as the rewards to go which means what is the total reward if I start from this state
+[00:57:45.700 --> 00:57:51.240]   And take this action and then act according to the policy for the rest of the trajectories
+[00:57:51.240 --> 00:57:54.100]   Why do we want to do this?
+[00:57:54.100 --> 00:57:56.100]   Because as you can see
+[00:57:56.100 --> 00:58:03.780]   This expression here is an approximation of the true expectation here
+[00:58:03.780 --> 00:58:09.140]   The less terms we have the better because we will have less noise
+[00:58:09.140 --> 00:58:12.260]   Why? Because first of all
+[00:58:12.260 --> 00:58:19.860]   As we know each action cannot alter the rewards that we received in the past
+[00:58:20.260 --> 00:58:25.460]   Which means that on average all these past terms will cancel out with each other
+[00:58:25.460 --> 00:58:33.380]   But so we if we do not consider them we avoid adding some noise in this approximation that will send our gradient in
+[00:58:33.380 --> 00:58:36.520]   Directions that are further from the true gradient
+[00:58:36.520 --> 00:58:40.340]   So if we can remove some terms from this expression
+[00:58:40.340 --> 00:58:46.660]   It is better because we have less chance of introducing noise that sends our gradient in two directions that are far from
+[00:58:46.980 --> 00:58:50.840]   The one that is the true gradient that would be given by this expectation
+[00:58:50.840 --> 00:58:58.660]   So the first thing we do is we instead of calculating the reward over all the trajectory. We only calculate the reward
+[00:58:58.660 --> 00:59:04.980]   For each state action of the reward starting from that state action onwards
+[00:59:04.980 --> 00:59:07.780]   Until we reach the end of the trajectory
+[00:59:07.780 --> 00:59:11.060]   So this T big T here you can see here capital T
+[00:59:11.380 --> 00:59:17.480]   Indicates from the time of the current state action that we are considering here until the end of the trajectory
+[00:59:17.480 --> 00:59:21.060]   Now this is one way to reduce the
+[00:59:21.060 --> 00:59:24.740]   variance of the estimator
+[00:59:24.740 --> 00:59:28.100]   Another way is to introduce a baseline. So
+[00:59:28.100 --> 00:59:36.500]   You can introduce it has been proven in the research of reinforcement learning that introducing a constant here
+[00:59:37.140 --> 00:59:43.860]   Reduces the variance and it doesn't have to be a constant but it can also be something that depends on the state
+[00:59:43.860 --> 00:59:46.260]   So it could be also a function of the state
+[00:59:46.260 --> 00:59:54.020]   For which we are calculating the reward of the trajectory. So for each log probability we multiply by a term here
+[00:59:54.020 --> 01:00:00.200]   That indicates the rewards to go so the reward from this state action until the end of the trajectory
+[01:00:00.200 --> 01:00:03.220]   minus a baseline that does not have to be
+[01:00:03.220 --> 01:00:06.580]   Constant, but it can also be a function of the state
+[01:00:07.300 --> 01:00:11.860]   And the function that we will choose is called the value function
+[01:00:11.860 --> 01:00:18.180]   So this baseline we will there are many baselines, but with the one we will choose is the value function the value function
+[01:00:18.180 --> 01:00:20.740]   tells us
+[01:00:20.740 --> 01:00:27.540]   Of S according to some policy pi tells us what is the expected reward if you start from S
+[01:00:27.540 --> 01:00:34.260]   And then act according to the policy for the rest of the trajectory. This is the value function
+[01:00:34.900 --> 01:00:36.900]   Let me show you some examples
+[01:00:36.900 --> 01:00:38.900]   So
+[01:00:38.900 --> 01:00:41.140]   The value function of this particular cell
+[01:00:41.140 --> 01:00:45.860]   Of this cell here. We expect it to be high why because
+[01:00:45.860 --> 01:00:49.780]   It's very probable that the cat will take the action move down
+[01:00:49.780 --> 01:00:53.780]   And go directly to the meat in the case of language model
+[01:00:53.780 --> 01:01:00.260]   this is a prompt because it's a series of tokens that we will feed to the language model to generate the
+[01:01:01.040 --> 01:01:05.360]   Probabilities of the next token and it's very good to be in this state
+[01:01:05.360 --> 01:01:12.000]   Why because it's very probable that the next token will be generated in such a way that it will actually answer the question
+[01:01:12.000 --> 01:01:14.400]   Of where is shanghai?
+[01:01:14.400 --> 01:01:17.360]   So if the model has already generated these two tokens, for example
+[01:01:17.360 --> 01:01:23.840]   Shanghai is it's very probable that the next token will be the word in and the next next token will be the word china
+[01:01:23.840 --> 01:01:29.520]   Which answers our question which will result in a good response by the language model
+[01:01:29.680 --> 01:01:35.600]   Which in turn will give us a good reward according to our reward model on the other hand
+[01:01:35.600 --> 01:01:38.080]   If we are here, for example with the cat
+[01:01:38.080 --> 01:01:42.580]   This is a state that can lead us to move to the bathtub
+[01:01:42.580 --> 01:01:49.680]   So we expect the value of this state to be lower than that of this state because it's less probable that from here
+[01:01:49.680 --> 01:01:55.040]   We end up on the bathtub. Maybe we get closer to the bathtub, but we do not end up directly on the bathtub
+[01:01:55.040 --> 01:01:59.040]   But from here we can end up there so it will reduce the value of this state
+[01:01:59.520 --> 01:02:05.520]   So what is a bad value for a language model? For example in the case for this prompt here
+[01:02:05.520 --> 01:02:11.600]   So we started with a prompt and the language model somehow generated these two words chocolate muffins for the question
+[01:02:11.600 --> 01:02:13.040]   Where is shanghai?
+[01:02:13.040 --> 01:02:17.280]   Now if we ask the language model to generate the next tokens for given this prompt
+[01:02:17.280 --> 01:02:22.240]   It will probably move far from the actual response of where is shanghai
+[01:02:22.240 --> 01:02:24.480]   It will not tell us that shanghai is in china
+[01:02:24.880 --> 01:02:31.680]   So the value that we can get starting from this state is not so high because we will probably end up generating a
+[01:02:31.680 --> 01:02:38.080]   Bad response which will give us a low reward according to our reward model
+[01:02:38.080 --> 01:02:40.880]   So this is the meaning of a value function
+[01:02:40.880 --> 01:02:46.160]   The value function tells us if I start from this state and then act according to the policy
+[01:02:46.160 --> 01:02:48.960]   What is the expected return I can get?
+[01:02:48.960 --> 01:02:53.600]   Now, how do we estimate this value function?
+[01:02:54.240 --> 01:03:00.480]   Well, just like we did for the reward model we can generate a neural network
+[01:03:00.480 --> 01:03:09.280]   To which we add a linear layer on top that can estimate this value function and usually what is done in
+[01:03:09.280 --> 01:03:15.440]   Practically is we use the same language model that we are trying to optimize we add another linear layer on top
+[01:03:15.440 --> 01:03:18.480]   So apart from the one that projects into the vocabulary
+[01:03:18.480 --> 01:03:25.700]   We add another one that can also estimate the value so that the parameters of the transformer layer are shared
+[01:03:25.700 --> 01:03:31.200]   For the language modeling and the estimation of the value. The only two differences are the linear layers
+[01:03:31.200 --> 01:03:37.600]   One is used for projecting the tokens into the vocabulary and one is used to estimate the value of the state
+[01:03:37.600 --> 01:03:39.760]   Which is the prompt basically
+[01:03:39.760 --> 01:03:44.400]   So suppose our language model has generated this response for our
+[01:03:45.200 --> 01:03:49.120]   Prompt, so where is Shanghai and the language model has said Shanghai is in China
+[01:03:49.120 --> 01:03:57.460]   We send it to the policy model. So the language model that we're trying to optimize this is called the policy
+[01:03:57.460 --> 01:04:02.800]   It will generate some hidden states one corresponding to each token
+[01:04:02.800 --> 01:04:06.400]   and then instead of using the linear layer of the
+[01:04:06.400 --> 01:04:10.640]   Vocabulary, so that will project each hidden state into the vocabulary
+[01:04:10.640 --> 01:04:17.280]   We use another linear layer that with only one output feature that will be used to estimate the value of each state
+[01:04:17.280 --> 01:04:24.640]   So we can estimate the value of this state of this state of this state and also of the entire sequence
+[01:04:24.640 --> 01:04:29.680]   By using the values generated by this linear layer for each hidden state that we want
+[01:04:29.680 --> 01:04:37.840]   Okay, now we have seen that before to reduce the variance first of all, we transformed the
+[01:04:38.560 --> 01:04:42.240]   The reward of the entire trajectory in rewards to go
+[01:04:42.240 --> 01:04:49.040]   So something that starts not from t zero, but t equal to the action state that we are considering here
+[01:04:49.040 --> 01:04:54.240]   And we also saw that we can introduce a baseline that depends on the state
+[01:04:54.240 --> 01:05:00.980]   And this will not change the approximation. So this approximator is still unbiased
+[01:05:00.980 --> 01:05:06.960]   Which means that it will on average converge to the true gradient, but will have lower variance
+[01:05:07.360 --> 01:05:12.100]   Which means that in the case of for example, we are calculating the average age of the american population
+[01:05:12.100 --> 01:05:16.000]   which means that we are reducing the chance of
+[01:05:16.000 --> 01:05:21.360]   Getting very low very low values for the age or very high values for the age
+[01:05:21.360 --> 01:05:25.780]   But we will get something that is more closer to the true average age of the american population
+[01:05:25.780 --> 01:05:32.560]   Now this function here this rewards to go is in reinforcement literature. It's also called the Q function
+[01:05:32.880 --> 01:05:38.240]   So the Q function tells us if I start from this state and take this action. What is the future?
+[01:05:38.240 --> 01:05:43.060]   Expected reward if I act according to the policy for the rest of the trajectory
+[01:05:43.060 --> 01:05:50.560]   So the Q function tells us the expected reward if I start from this state and take this action
+[01:05:50.560 --> 01:05:56.020]   So we get some immediate reward and then act according to the policy for the rest of the trajectory
+[01:05:56.020 --> 01:05:58.560]   and
+[01:05:58.560 --> 01:06:03.600]   So we can simplify the expression that we have seen before as Q of state
+[01:06:03.600 --> 01:06:10.160]   And action at time step t here. I forgot the t minus the value of the state at time step t
+[01:06:10.160 --> 01:06:14.320]   The difference between the two is known as advantage function
+[01:06:14.320 --> 01:06:20.960]   Now, I know that I am introducing a lot of terms and terminology bear with me because it will make sense
+[01:06:20.960 --> 01:06:23.680]   later now just
+[01:06:23.680 --> 01:06:27.860]   Don't you don't have to remember all the terms. I will repeat multiple times these concepts
+[01:06:28.580 --> 01:06:32.680]   So what we were trying to do we are trying to reduce the variance of this estimator
+[01:06:32.680 --> 01:06:39.300]   and we saw that we can instead of calculating the reward for all the trajectories only for the rewards for the
+[01:06:39.300 --> 01:06:43.940]   Starting from the time step in which we are considering the action values
+[01:06:43.940 --> 01:06:50.180]   Then we saw that we can introduce this baseline called the value function that will reduce further the
+[01:06:50.180 --> 01:06:54.020]   variance of this estimator
+[01:06:54.100 --> 01:06:59.620]   The difference between these two is called advantage function in the literature of reinforcement learning
+[01:06:59.620 --> 01:07:07.060]   And the advantage function if you look at the expression here tells us. Okay. First of all, let's analyze these two terms
+[01:07:07.060 --> 01:07:09.140]   pen
+[01:07:09.140 --> 01:07:15.940]   Now the Q function tells us what is the expected return if I start from state s at time step t
+[01:07:15.940 --> 01:07:19.300]   Take action a so here. I forgot the t's
+[01:07:19.300 --> 01:07:21.060]   t
+[01:07:21.060 --> 01:07:26.340]   Action t and t and also here t and t. Okay
+[01:07:26.340 --> 01:07:28.500]   so the
+[01:07:28.500 --> 01:07:32.740]   Q function tells us if I start from state t take action a
+[01:07:32.740 --> 01:07:35.620]   And then act according to the policy
+[01:07:35.620 --> 01:07:41.700]   What is the expected return the value function on the other hand tells us if I start from state s
+[01:07:41.700 --> 01:07:46.180]   And I act according to the policy. What is the expected return?
+[01:07:46.180 --> 01:07:48.260]   now
+[01:07:48.260 --> 01:07:49.620]   in this case
+[01:07:49.620 --> 01:07:53.540]   For example, let's use the pen in this case here in this state
+[01:07:53.540 --> 01:07:56.660]   If I choose the action go down
+[01:07:56.660 --> 01:08:02.660]   It is better than going left because by going down I will move towards the mid
+[01:08:02.660 --> 01:08:05.140]   So it is better to use the action go down
+[01:08:05.140 --> 01:08:10.100]   The advantage term that is the difference between these two terms tells us
+[01:08:10.100 --> 01:08:17.540]   How better is this particular action compared to the average action that we can take in the state s
+[01:08:18.260 --> 01:08:24.180]   Which means that the advantage function for the state for the action go down in this state here
+[01:08:24.180 --> 01:08:29.940]   So in this state here will be higher than the advantage function of another action
+[01:08:29.940 --> 01:08:32.820]   so the advantage function tells us how
+[01:08:32.820 --> 01:08:39.300]   Better than the average is this action that we are considering compared to the other actions that we have in this state
+[01:08:39.300 --> 01:08:44.020]   And if we want to give an interpretation to this whole expression
+[01:08:44.180 --> 01:08:50.340]   It tells our model that for each log probability. So for each action in a particular state
+[01:08:50.340 --> 01:08:52.420]   We want to multiply it by its
+[01:08:52.420 --> 01:08:55.040]   advantage
+[01:08:55.040 --> 01:09:01.320]   Because this is the gradient it will indicate a direction in which we need to optimize our parameters
+[01:09:01.320 --> 01:09:09.060]   By using gradient ascent basically what we are doing is we are forcing our policy to push up
+[01:09:09.300 --> 01:09:12.840]   So to increase the likelihood or the log probabilities
+[01:09:12.840 --> 01:09:19.880]   Of the actions that have high advantage, which means that they result in a better than average
+[01:09:19.880 --> 01:09:26.260]   Returns and push down the log probabilities of those actions in each state
+[01:09:26.260 --> 01:09:30.100]   That result in lower than average returns
+[01:09:30.100 --> 01:09:35.220]   Which means that for example, let's talk about language modeling if someone asks
+[01:09:35.220 --> 01:09:38.020]   Where is Shanghai? So where
+[01:09:38.660 --> 01:09:39.680]   is
+[01:09:39.680 --> 01:09:41.680]   Shanghai
+[01:09:41.680 --> 01:09:44.260]   What is better
+[01:09:44.260 --> 01:09:51.460]   And the question mark what's a good action to take? What's the good next token to select?
+[01:09:51.460 --> 01:09:56.260]   Well, we know that the starting with the chocolate is going to be
+[01:09:56.260 --> 01:09:57.940]   less
+[01:09:57.940 --> 01:10:04.580]   Going to produce a reward that is worse than average because very probably it will lead to a bad answer
+[01:10:04.900 --> 01:10:06.900]   however starting the
+[01:10:06.900 --> 01:10:11.460]   the answer with the word Shanghai will probably result in a
+[01:10:11.460 --> 01:10:16.660]   In the correct answer because the next token will be in Shanghai is in China
+[01:10:16.660 --> 01:10:22.420]   So it will actually result in a good answer which will be rewarded well by our reward model
+[01:10:22.420 --> 01:10:28.740]   So our model will be more likely to select the word Shanghai when it will see this prompt
+[01:10:28.740 --> 01:10:31.700]   So this is how to interpret this advantage term
+[01:10:32.400 --> 01:10:38.640]   Basically, what we are trying to do is we are trying to push up the log probabilities of those actions for a given state
+[01:10:38.640 --> 01:10:46.160]   That result in better than average reward according to our reward model and push down the probabilities of those actions
+[01:10:46.160 --> 01:10:53.280]   Given the state that result in low than average reward for according to our reward model
+[01:10:53.280 --> 01:10:56.720]   Let's see how to estimate this advantage term now
+[01:10:56.720 --> 01:11:00.960]   So first of all, let me write again the expression of the advantage term
+[01:11:01.040 --> 01:11:04.560]   So let's use the pen. So as we saw before the advantage term
+[01:11:04.560 --> 01:11:07.600]   at time step t so the
+[01:11:07.600 --> 01:11:14.080]   Starting from state s and taking action t is equal to the Q function
+[01:11:14.080 --> 01:11:17.440]   at time step t
+[01:11:17.440 --> 01:11:20.480]   Action a at time step t minus
+[01:11:20.480 --> 01:11:26.000]   Minus the value at time step t
+[01:11:28.240 --> 01:11:30.720]   What is the Q function the Q function tells us
+[01:11:30.720 --> 01:11:37.920]   If we start from state s and take action a and then act according to the policy
+[01:11:37.920 --> 01:11:44.640]   What is the expected return if we start from state a state s and take action a and then we act according to the policy?
+[01:11:44.640 --> 01:11:49.840]   For the rest of the trajectory while the value function tells us what is the expected return?
+[01:11:49.840 --> 01:11:54.320]   If we start from state s and then act according to the policy
+[01:11:54.880 --> 01:12:02.000]   Which means that imagine we have a trajectory a trajectory is what it's a list of state ended actions. So we have a state 0
+[01:12:02.000 --> 01:12:04.800]   action 0
+[01:12:04.800 --> 01:12:06.160]   And this will
+[01:12:06.160 --> 01:12:10.000]   Have some reward associated maybe reward 0 this will lead us to
+[01:12:10.000 --> 01:12:17.120]   State 1 in which we will take maybe action 1 this will have some reward associated with it, which is reward 1
+[01:12:17.120 --> 01:12:20.800]   This will take us to another state for example state 2
+[01:12:21.360 --> 01:12:27.040]   Action in which we will take action 2 and this will have some reward associated with it, which is reward 2
+[01:12:27.040 --> 01:12:29.760]   and then state 3
+[01:12:29.760 --> 01:12:35.440]   In which we will take action 3 it will have some reward associated which is reward 3 etc
+[01:12:35.440 --> 01:12:37.700]   Etc, etc, etc for the rest of the trajectory
+[01:12:37.700 --> 01:12:41.920]   Let's try to understand how can we estimate this advantage term?
+[01:12:41.920 --> 01:12:45.600]   We saw also before that for the estimating the value function
+[01:12:45.680 --> 01:12:50.640]   We can build a neural network, which is a linear head on top of our policy network
+[01:12:50.640 --> 01:12:52.980]   Which is the language model that we are trying to optimize
+[01:12:52.980 --> 01:12:57.700]   So instead of using the linear network that linear layer that projects
+[01:12:57.700 --> 01:13:00.080]   the hidden state into the vocabulary
+[01:13:00.080 --> 01:13:06.320]   We can use another special linear layer with only one output feature that can estimate the value function of that particular state
+[01:13:06.320 --> 01:13:08.880]   later, we will see also how to
+[01:13:08.880 --> 01:13:13.680]   Which loss function we need to use to train this value head
+[01:13:14.400 --> 01:13:17.200]   So now let's concentrate on estimating this advantage term
+[01:13:17.200 --> 01:13:24.560]   Now imagine we have a trajectory this advantage term can be estimated like follows. So as we know the advantage term tells us
+[01:13:24.560 --> 01:13:28.720]   The Q function, so this is the Q function
+[01:13:28.720 --> 01:13:32.400]   at given state S and
+[01:13:32.400 --> 01:13:35.440]   action A at time step T
+[01:13:35.440 --> 01:13:41.440]   Can be calculated as follows. So if we start from state S, we will receive some reward
+[01:13:42.560 --> 01:13:46.560]   and then we can calculate because for each trajectory we can
+[01:13:46.560 --> 01:13:49.440]   for each trajectory we can calculate the
+[01:13:49.440 --> 01:13:57.440]   The Q function so if we start from state S at time step T and take action T in this state
+[01:13:57.440 --> 01:14:00.160]   And then act according to the policy
+[01:14:00.160 --> 01:14:05.600]   We can either sum all of these terms that we have for the trajectory or we can just say okay
+[01:14:05.600 --> 01:14:11.040]   If I start from state 0 and take action 0 I will have some immediate reward, which is this one
+[01:14:11.600 --> 01:14:17.200]   Plus I approximate the rest of the rewards with the value function because I will end up in some state S1
+[01:14:17.200 --> 01:14:21.840]   And I just approximate all this rest of the summation as the V of S1
+[01:14:21.840 --> 01:14:24.320]   or
+[01:14:24.320 --> 01:14:27.040]   We can let me delete some stuff now because
+[01:14:27.040 --> 01:14:31.120]   Okay
+[01:14:31.120 --> 01:14:34.640]   Now or we can say okay the advantage term
+[01:14:34.640 --> 01:14:41.200]   Which means that if I start from state S at time step T and take action T can also be approximated as follows
+[01:14:41.200 --> 01:14:43.200]   So I have some immediate reward
+[01:14:43.200 --> 01:14:48.880]   Plus the reward that I get in the next state plus the rest of the trajectory
+[01:14:48.880 --> 01:14:52.160]   I approximate it with the value function at time step T
+[01:14:52.160 --> 01:14:54.720]   plus 2 so S2
+[01:14:54.720 --> 01:14:57.360]   And this is exactly what we are doing here
+[01:14:57.360 --> 01:15:01.680]   And we are also discounting it with the gamma parameter that we saw here
+[01:15:01.680 --> 01:15:04.180]   So we want to discount future rewards
+[01:15:04.180 --> 01:15:09.360]   And this minus V is just because of the formula of the advantage term has this minus
+[01:15:10.480 --> 01:15:12.080]   value function
+[01:15:12.080 --> 01:15:17.040]   We can also do it with three terms or four terms or five terms or whatever we want
+[01:15:17.040 --> 01:15:19.840]   And then we can cut the rest just with the value function
+[01:15:19.840 --> 01:15:23.680]   Now, why do we want to do this? Let me delete some stuff
+[01:15:23.680 --> 01:15:27.040]   Okay, if we stop too early
+[01:15:27.040 --> 01:15:28.960]   So we calculate or for example
+[01:15:28.960 --> 01:15:34.560]   Just the first approximation because we are approximating most of the trajectory with the value function
+[01:15:34.640 --> 01:15:40.180]   It will exhibit high bias, which means that the value of the estimation of this advantage
+[01:15:40.180 --> 01:15:48.260]   Will not be very correct because we are approximating most of the trajectory with the value function, which is itself an approximation
+[01:15:48.260 --> 01:15:55.520]   Or to improve this approximation we can introduce more rewards from the actual trajectory that we got
+[01:15:55.520 --> 01:15:58.480]   And only approximate a little bit
+[01:15:59.040 --> 01:16:05.760]   Of the trajectory with the value function or we can approximate all of the trajectory with the rewards that we get and
+[01:16:05.760 --> 01:16:10.400]   Use no approximation with the value head
+[01:16:10.400 --> 01:16:15.780]   But if we use more terms, it will result in a higher variance
+[01:16:15.780 --> 01:16:22.080]   If we use less terms, it will result in a high bias because we are approximating more
+[01:16:22.480 --> 01:16:29.920]   So in order to solve this bias variance problem, we can use a generalized advantage estimation, which basically takes the
+[01:16:29.920 --> 01:16:37.280]   Weighted sum of all these terms. So of this one, this one, this one each multiplied by a decay parameter
+[01:16:37.280 --> 01:16:39.680]   lambda
+[01:16:39.680 --> 01:16:41.200]   We can see here
+[01:16:41.200 --> 01:16:45.860]   So basically this results in a recursive formula in which we can calculate the advantage
+[01:16:45.860 --> 01:16:51.360]   At each time step t given the future advantage at time step t plus one
+[01:16:52.240 --> 01:16:57.360]   Let's try to use this formula. For example, imagine we have a trajectory which is a series of states and actions
+[01:16:57.360 --> 01:17:02.560]   So we have a state zero with action zero which will result in a reward zero
+[01:17:02.560 --> 01:17:09.680]   Then we have this will result in another state s1 in which we take action one and it will have some reward one
+[01:17:09.680 --> 01:17:13.360]   This will result in a new state s2 in which we take action two
+[01:17:13.360 --> 01:17:17.200]   Which will lead us to state three in which we take action three, etc, etc
+[01:17:17.600 --> 01:17:23.600]   This one will have reward three and this one reward two and this one will have reward three
+[01:17:23.600 --> 01:17:31.780]   Let's try to calculate the advantage. For example, the advantage at time step three because it's the last term in our trajectory
+[01:17:31.780 --> 01:17:35.600]   Is equal to delta at time step t
+[01:17:35.600 --> 01:17:37.840]   plus
+[01:17:37.840 --> 01:17:42.400]   Gamma multiplied by lambda at time step four, but we do not have any time step four
+[01:17:42.400 --> 01:17:45.520]   So we this term does not exist. So delta three
+[01:17:46.400 --> 01:17:50.640]   Is equal to the return that we have at time step t plus
+[01:17:50.640 --> 01:17:55.600]   Gamma multiplied by the value function at time step four
+[01:17:55.600 --> 01:17:59.120]   But we do not have this term because there is no state four
+[01:17:59.120 --> 01:18:02.240]   Minus the value of the state
+[01:18:02.240 --> 01:18:05.200]   S3
+[01:18:05.200 --> 01:18:07.200]   this tells us
+[01:18:07.200 --> 01:18:16.000]   The advantage estimation at time step three then we can use it to calculate the advantage estimation at time step two
+[01:18:16.480 --> 01:18:17.760]   which is
+[01:18:17.760 --> 01:18:23.200]   A2 is equal to delta two plus lambda
+[01:18:23.200 --> 01:18:26.800]   Gamma lambda
+[01:18:26.800 --> 01:18:28.560]   Oops
+[01:18:28.560 --> 01:18:30.320]   A3
+[01:18:30.320 --> 01:18:36.800]   But what is delta two? Delta two is equal to the reward that we have at time step two plus
+[01:18:36.800 --> 01:18:39.120]   Gamma
+[01:18:39.120 --> 01:18:42.080]   multiplied by the value of the state three
+[01:18:43.360 --> 01:18:46.400]   Minus the value of the state two, etc, etc
+[01:18:46.400 --> 01:18:50.320]   So we can recursively calculate the advantage estimation of each term
+[01:18:50.320 --> 01:18:54.960]   Why do we need to calculate the advantage estimation because the advantage is in the formula of our
+[01:18:54.960 --> 01:18:58.400]   gradient that we need to calculate the
+[01:18:58.400 --> 01:19:01.360]   That we need to run a gradient ascent
+[01:19:01.360 --> 01:19:06.320]   I know that I have introduced a lot of concepts. I have introduced the value function
+[01:19:06.320 --> 01:19:08.800]   I have introduced the Q function and the advantage function
+[01:19:09.600 --> 01:19:12.560]   I also know that it may not be very clear to you
+[01:19:12.560 --> 01:19:17.600]   Why we are calculating all this stuff because we have not seen the code and how it will be used
+[01:19:17.600 --> 01:19:21.760]   So please bear with me now. I know that there is a lot of stuff that you need to remember
+[01:19:21.760 --> 01:19:27.600]   But when we will see the code, I will go back to all these slides for now. I just made this
+[01:19:27.600 --> 01:19:33.680]   I just made all these formulas because later when we go back it they will make more sense to you
+[01:19:34.320 --> 01:19:40.000]   And also if you want to in the future review this video, you don't have to kind of watch the code to understand
+[01:19:40.000 --> 01:19:43.040]   the formulas because once you understand the
+[01:19:43.040 --> 01:19:49.440]   This video once you can just review the parts that you're interested and they will be more clarified to you
+[01:19:49.440 --> 01:19:57.840]   Okay, now let's see what is the advantage term for language model so just like the example I made before I said, okay we have this
+[01:19:57.840 --> 01:20:00.540]   expression for our gradient
+[01:20:00.960 --> 01:20:06.880]   In which we are multiplying each log probability by the advantage function also here. I forgot the t
+[01:20:06.880 --> 01:20:10.560]   And here I forgot the t later. I will fix the slides
+[01:20:10.560 --> 01:20:18.720]   Now as I saw before as we saw before if we have our question is where is shanghai and our language model selects the
+[01:20:18.720 --> 01:20:20.080]   the
+[01:20:20.080 --> 01:20:21.600]   word shanghai
+[01:20:21.600 --> 01:20:28.880]   Very probably this will be a new state that will be fed to the language model for generating the next next next next tokens
+[01:20:29.920 --> 01:20:37.120]   This the first choice of shanghai will lead to a good answer because very probably the next tokens will be selected in such a way
+[01:20:37.120 --> 01:20:39.200]   that it will result in the for example, the
+[01:20:39.200 --> 01:20:44.800]   Phrase shanghai is in china, which is a good response because it matches
+[01:20:44.800 --> 01:20:52.560]   What is what are the chosen answer in our data set of the reward model. So our reward model will give a good
+[01:20:52.560 --> 01:20:55.200]   reward to this kind of
+[01:20:56.000 --> 01:21:02.640]   Answer so we can say that this is a good state to be in because it will lead to future states that will be rewarded
+[01:21:02.640 --> 01:21:04.240]   Well by the reward model
+[01:21:04.240 --> 01:21:10.720]   However, if our language model happens to choose the word chocolate as the next token after this question
+[01:21:10.720 --> 01:21:19.360]   This new state will lead to new tokens being selected that are not very close to the answer that we are trying to find
+[01:21:20.000 --> 01:21:26.240]   This will result in a bad response. So it will result in a low reward from our reward model
+[01:21:26.240 --> 01:21:29.920]   So in the case of language models, we are trying to push up
+[01:21:29.920 --> 01:21:35.840]   The log probabilities of the word shanghai when it sees the state
+[01:21:35.840 --> 01:21:41.620]   Where is shanghai and push down the log probability of the word chocolate
+[01:21:42.560 --> 01:21:47.540]   When the state is where is shanghai because the advantage for choosing shanghai
+[01:21:47.540 --> 01:21:54.240]   Is higher than the advantage for choosing the word chocolate given this prompt. This is the how do we
+[01:21:54.240 --> 01:21:59.040]   Interpret the advantage estimation for language models
+[01:21:59.040 --> 01:22:05.120]   Another problem that we have a policy gradient optimization is because of the sampling that we are doing
+[01:22:05.120 --> 01:22:09.200]   So as you know in the policy gradient optimization, the algorithm is like this
+[01:22:09.280 --> 01:22:14.560]   So we have a language model. We sample some trajectories from this language model. We calculate the
+[01:22:14.560 --> 01:22:21.220]   Rewards associated with these trajectories. We calculate the advantages associated with these trajectories
+[01:22:21.220 --> 01:22:25.140]   We calculate the log probabilities associated with these trajectories
+[01:22:25.140 --> 01:22:31.840]   Then we can use all this information to calculate this big expression here, which is the direction of the gradient
+[01:22:31.840 --> 01:22:34.160]   so which is the gradient of the
+[01:22:35.820 --> 01:22:43.820]   Expected reward with respect to the parameters of the model and then we can run gradient ascent to optimize the parameters of the model
+[01:22:43.820 --> 01:22:45.900]   according to the direction of the gradient
+[01:22:45.900 --> 01:22:47.820]   and
+[01:22:47.820 --> 01:22:51.020]   This is a process that is also used in gradient descent
+[01:22:51.020 --> 01:22:53.500]   So using gradient descent we have a loss function
+[01:22:53.500 --> 01:22:57.420]   We calculate the gradient of the loss function with respect to the parameter of the model
+[01:22:57.420 --> 01:23:01.820]   And then we optimize the parameters of the model according to the direction of the gradient
+[01:23:02.300 --> 01:23:06.460]   We do this process many many many times. Why? Because we do little steps
+[01:23:06.460 --> 01:23:12.620]   With respect to the direction of the gradient according to a learning rate alpha
+[01:23:12.620 --> 01:23:19.100]   Now the problem is that we are sampling trajectories from the language model
+[01:23:19.100 --> 01:23:22.700]   For each step that you are making in this gradient ascent
+[01:23:22.700 --> 01:23:29.500]   So for each step of this optimization process, we need to sample many trajectories. We need to calculate many advantages
+[01:23:29.500 --> 01:23:33.040]   We need to calculate many rewards. We need to calculate many log probabilities
+[01:23:33.040 --> 01:23:40.380]   So this can be very very inefficient because we will when doing gradient ascent, we are taking only small steps
+[01:23:40.380 --> 01:23:44.460]   so for each of those small steps, we need to do a lot of calculation which makes the
+[01:23:44.460 --> 01:23:51.020]   Which is makes the computation nearly impossible because we cannot run all these forward steps
+[01:23:51.020 --> 01:23:53.020]   on many different
+[01:23:53.020 --> 01:23:58.300]   Models to calculate the values the advantages and the rewards etc. We need to find a better way
+[01:23:58.780 --> 01:24:00.780]   so as you remember this
+[01:24:00.780 --> 01:24:06.240]   This formula for the gradient that we have found is an approximation of an expectation
+[01:24:06.240 --> 01:24:11.580]   And in probability we have this thing called important sampling
+[01:24:11.580 --> 01:24:16.160]   So when evaluating the expectation with respect to one distribution
+[01:24:16.160 --> 01:24:21.820]   we can calculate the expectation with respect to another distribution different from the
+[01:24:22.940 --> 01:24:27.760]   The previous one as long as we modify the we multiply the function
+[01:24:27.760 --> 01:24:33.980]   Inside the expectation by an additional term here. So let's try to understand. What does it mean?
+[01:24:33.980 --> 01:24:40.400]   Imagine we are trying to calculate this expectation and I want to remind you that in the case of the language model optimization
+[01:24:40.400 --> 01:24:44.480]   Or the gradient policy optimization. We are calculating the gradient
+[01:24:44.480 --> 01:24:49.340]   of e over all the possible trajectory according to
+[01:24:49.340 --> 01:24:51.960]   policy
+[01:24:51.960 --> 01:24:56.380]   Parameterized by theta of what of the reward
+[01:24:56.380 --> 01:24:59.100]   of each trajectory
+[01:24:59.100 --> 01:25:06.780]   Here so in this case the x is we can consider x to be the trajectory sampled from the
+[01:25:06.780 --> 01:25:09.500]   policy theta
+[01:25:09.500 --> 01:25:16.780]   Pi theta and this could be the reward of each theta. Now, as you know, the expectation can be written as a
+[01:25:17.560 --> 01:25:25.160]   integral of the probability of each item in the expectation multiplied by the function f of x which is the inside here in the
+[01:25:25.160 --> 01:25:27.240]   parentheses of the expectation
+[01:25:27.240 --> 01:25:29.480]   We can multiply
+[01:25:29.480 --> 01:25:30.680]   by
+[01:25:30.680 --> 01:25:33.800]   By the this constant here, which is basically the number one
+[01:25:33.800 --> 01:25:39.020]   So we can always multiply by the number one in a multiplication without changing the result of this multiplication
+[01:25:39.020 --> 01:25:44.840]   So we are multiplying up and down in this fraction by the same quantity, which is the number one so we can do it
+[01:25:46.200 --> 01:25:48.760]   then we can rearrange the terms such that the
+[01:25:48.760 --> 01:25:51.800]   We divide the p
+[01:25:51.800 --> 01:25:56.680]   Basically the p of x by this q of x where q of x this term here
+[01:25:56.680 --> 01:26:01.820]   Is the distribution it's another distribution is the probability density function of another distribution
+[01:26:01.820 --> 01:26:03.960]   and
+[01:26:03.960 --> 01:26:08.360]   Then we can return back this integral to the expectation form
+[01:26:08.360 --> 01:26:13.880]   So now we we can write the expectation as a sample from the distribution q
+[01:26:14.520 --> 01:26:21.640]   And calculate the the with respect to a function that is the f of x multiplied by this additional term
+[01:26:21.640 --> 01:26:28.460]   So this means that in order to calculate the initial expectation here instead of sampling from the distribution
+[01:26:28.460 --> 01:26:30.680]   For which we want to calculate the expectation
+[01:26:30.680 --> 01:26:38.200]   We can sample from another distribution as long as each item is multiplied by this additional factor here
+[01:26:38.760 --> 01:26:45.480]   And we can do the same for our expression of the gradient policy optimization in which we were sampling from some policy
+[01:26:45.480 --> 01:26:49.420]   Here, which is the policy that we are trying to optimize
+[01:26:49.420 --> 01:26:57.000]   But we can modify it by using important sampling to sample from another policy, which could be a different
+[01:26:57.000 --> 01:27:00.680]   Neural network, but we will see that actually it's the same
+[01:27:00.680 --> 01:27:03.720]   But okay, suppose that it's a different neural network
+[01:27:04.920 --> 01:27:12.200]   Because sampling trajectory means that we generate some text given some questions. So it's actually we are sampling from our neural network
+[01:27:12.200 --> 01:27:19.800]   And each of the items so each of this advantage term instead of being multiplied only by the probability according to the
+[01:27:19.800 --> 01:27:27.800]   To the network that we're trying to optimize. We also divide it by this q of x. So this the log probabilities of the
+[01:27:27.800 --> 01:27:31.960]   Distribution from which we are sampling
+[01:27:32.200 --> 01:27:39.660]   We will call the distribution from which we are sampling pi offline and the distribution that we are trying to optimize
+[01:27:39.660 --> 01:27:41.720]   pi online
+[01:27:41.720 --> 01:27:45.480]   Let me give you an example a graphical example on how it works
+[01:27:45.480 --> 01:27:51.500]   So for now, just remember that with important sampling we can calculate this expectation
+[01:27:51.500 --> 01:27:56.280]   By sampling from another network while optimizing another one a different one
+[01:27:57.240 --> 01:28:04.760]   It works like this. This is called off policy learning in reinforcement learning literature. So imagine we have a language model and we will call it
+[01:28:04.760 --> 01:28:11.880]   Parameterized by some parameters called theta offline and we will call it the offline policy
+[01:28:11.880 --> 01:28:18.520]   We will sample some trajectories. What does it mean? We give some questions according to our reward model data set, for example
+[01:28:18.520 --> 01:28:25.480]   So we ask it where is shanghai and we ask the language model to generate many answers giving using a high temperature
+[01:28:25.560 --> 01:28:30.440]   For example, then we calculate the rewards for these trajectories that are generated
+[01:28:30.440 --> 01:28:37.000]   We calculate the advantages for all the state action pairs. We calculate the log probabilities for this state action pairs
+[01:28:37.000 --> 01:28:39.240]   and then
+[01:28:39.240 --> 01:28:42.520]   We optimize another another model called
+[01:28:42.520 --> 01:28:44.600]   online policy
+[01:28:44.600 --> 01:28:51.960]   So we take all these trajectories that we have sampled from the offline policy and we save it in some database or in some memory
+[01:28:52.360 --> 01:28:59.000]   And we keep it there. Then we take some mini batch of trajectories from this database or from this memory
+[01:28:59.000 --> 01:29:04.440]   And then we run we calculate this expression here because we can calculate it
+[01:29:04.440 --> 01:29:09.000]   So we can calculate the log probabilities according to the online model
+[01:29:09.000 --> 01:29:13.320]   So for this the trajectories that we have sampled from this memory
+[01:29:13.320 --> 01:29:19.880]   We can also calculate again the advantage term according to the online policy, which is another neural network
+[01:29:20.360 --> 01:29:23.400]   We can also calculate and later i will show in the code how it's done
+[01:29:23.400 --> 01:29:30.440]   We can also calculate the advantage term according to the online policy. We can also calculate the rewards according to the online policy, etc
+[01:29:30.440 --> 01:29:33.960]   And then we run gradient ascent
+[01:29:33.960 --> 01:29:39.240]   Based on this expression only optimizing this online policy here
+[01:29:39.240 --> 01:29:47.180]   And we do it for a few epochs, which means for a few mini batches that we sample from this big memory of trajectories
+[01:29:47.800 --> 01:29:51.400]   And after a while, we just set the online policy
+[01:29:51.400 --> 01:29:56.760]   The parameters of the offline policy equal to the parameters of the online policy and restart the loop
+[01:29:56.760 --> 01:30:01.240]   So we start again by sampling some trajectories, which we keep them in the memory
+[01:30:01.240 --> 01:30:02.760]   then
+[01:30:02.760 --> 01:30:09.260]   For a few epochs, we sample some trajectories from here. We calculate the log probabilities with respect to the online policy
+[01:30:09.260 --> 01:30:13.660]   We calculate this expression here, which is needed to optimize
+[01:30:14.600 --> 01:30:19.960]   With the gradient ascent and then after a while we set the offline policy equal to the online policy
+[01:30:19.960 --> 01:30:21.880]   now
+[01:30:21.880 --> 01:30:24.520]   They look like two different network neural network
+[01:30:24.520 --> 01:30:29.160]   But actually it's the same neural network in which we first sample from the neural network
+[01:30:29.160 --> 01:30:36.620]   We keep the memory of the trajectories that we sample and then we optimize this neural network by taking these trajectories
+[01:30:36.620 --> 01:30:43.260]   After a while, we do this process again. I know that this is not easy to visualize
+[01:30:43.400 --> 01:30:48.920]   So later we will see this in the code, but the important thing is that now we have found a way to
+[01:30:48.920 --> 01:30:57.480]   Run gradient ascent multiple times without having to sample each time from the policy that we are optimizing from the network that we are trying
+[01:30:57.480 --> 01:31:02.040]   To optimize. We can sample once, keep these trajectories in memory
+[01:31:02.040 --> 01:31:09.100]   Optimize the network for some steps and then after we have optimized for some steps, we can sample new trajectories
+[01:31:09.100 --> 01:31:12.600]   We do not have to do it for every step of gradient ascent
+[01:31:12.840 --> 01:31:21.080]   So this makes the computation of this policy gradient algorithm tractable because otherwise it was too slow to run it
+[01:31:21.080 --> 01:31:25.720]   And this is how we do it in the code, so
+[01:31:25.720 --> 01:31:33.800]   I also created some pseudocode in how to do this offline policy. So imagine we have a model that we want to train
+[01:31:33.800 --> 01:31:37.960]   Okay, let's use
+[01:31:39.000 --> 01:31:41.000]   This one here, okay
+[01:31:41.000 --> 01:31:43.720]   For now, just ignore the frozen model. We're not using it
+[01:31:43.720 --> 01:31:48.200]   So we have a neural network that we want to train with gradient ascent
+[01:31:48.200 --> 01:31:51.580]   So we have a policy that we want to optimize with gradient ascent
+[01:31:51.580 --> 01:31:57.560]   We sample some trajectories from this policy and we keep them in memory. For each trajectory
+[01:31:57.560 --> 01:32:04.760]   We calculate the log probabilities, the rewards, the advantages, the KL divergence, etc, etc
+[01:32:04.760 --> 01:32:08.680]   Later, we will see why we need the KL divergence for now. Just ignore it
+[01:32:09.640 --> 01:32:11.320]   This part
+[01:32:11.320 --> 01:32:17.800]   Then we sample some mini-batch from these trajectories that we have seen. We run the PPO algorithm that we
+[01:32:17.800 --> 01:32:21.720]   calculated the loss, basically the expression that we saw before
+[01:32:21.720 --> 01:32:28.840]   We calculate the gradient using loss.backward and we run optimizer step, but we do not need to sample again
+[01:32:28.840 --> 01:32:32.360]   We just take another sample from the trajectories that we have already saved
+[01:32:32.840 --> 01:32:39.240]   We do again another step of gradient ascent and then etc, etc until we reach a specified number of steps
+[01:32:39.240 --> 01:32:43.240]   And then after we have optimized the model for some number of steps
+[01:32:43.240 --> 01:32:48.760]   We can sample new trajectories and then run again this loop of optimization for many steps
+[01:32:48.760 --> 01:32:53.100]   So not for every step of gradient ascent, we have to sample new trajectories
+[01:32:53.100 --> 01:32:57.320]   We sample once, we do many steps of gradient ascent and then we sample again
+[01:32:57.320 --> 01:33:01.720]   We do many steps of gradient ascent and then we sample again. This makes the training much faster
+[01:33:02.520 --> 01:33:07.800]   Okay, I promise this is the last group of formulas that we are going to see. So this is finally the PPO loss
+[01:33:07.800 --> 01:33:11.400]   Let's try to understand it
+[01:33:11.400 --> 01:33:15.480]   So based on what we have seen before, the first thing that we should see is that
+[01:33:15.480 --> 01:33:18.920]   This term here is exactly the one that we saw before
+[01:33:18.920 --> 01:33:23.420]   So we have the log probabilities according to the policy that we are trying to optimize
+[01:33:23.420 --> 01:33:31.560]   Divided by the log probability of the policy that we sample from, so the offline policy. Yeah, I don't know why it's so ugly
+[01:33:32.280 --> 01:33:35.480]   So we have the log probability of the, this is called the
+[01:33:35.480 --> 01:33:40.600]   Online policy, so the policy that we are trying to optimize. So let's call it online
+[01:33:40.600 --> 01:33:48.360]   This is the log probabilities according to the policy that we sample from, so we sample some trajectories from this policy
+[01:33:48.360 --> 01:33:50.680]   This is the offline policy
+[01:33:50.680 --> 01:33:57.400]   And then we have this advantage term which is multiplied by each of the action state pairs
+[01:33:58.440 --> 01:34:04.520]   We are calculating the minimum value of this expression and this other expression here. So this clipped
+[01:34:04.520 --> 01:34:07.400]   log probabilities
+[01:34:07.400 --> 01:34:12.200]   Why? Well, first of all, what is the clip function? The clip function says that if this
+[01:34:12.200 --> 01:34:20.680]   expression we can see here is bigger than 1 plus epsilon, then it will be clipped to 1 plus epsilon
+[01:34:20.680 --> 01:34:27.100]   If this expression is smaller than 1 minus epsilon, then it will be clipped to 1 minus epsilon
+[01:34:27.900 --> 01:34:30.700]   Why do we want this? Well, it means that
+[01:34:30.700 --> 01:34:33.740]   First of all, let's try to interpret this
+[01:34:33.740 --> 01:34:37.660]   This term here
+[01:34:37.660 --> 01:34:41.360]   The difference, the ratio of the two log probabilities
+[01:34:41.360 --> 01:34:46.860]   so we have some log, we have some policy that we sample from and then we have a
+[01:34:46.860 --> 01:34:49.740]   policy that we are optimizing
+[01:34:49.740 --> 01:34:54.080]   This means that if the log probability in the policy that we are optimizing
+[01:34:55.020 --> 01:35:00.300]   Is much higher for a specific action compared to the one that we sampled from
+[01:35:00.300 --> 01:35:05.580]   Which means that we are trying to increase the likelihood of selecting that action in the future
+[01:35:05.580 --> 01:35:08.700]   We don't want this
+[01:35:08.700 --> 01:35:15.340]   This increase to be too far. So we want to clip it to maximum at this value
+[01:35:15.340 --> 01:35:23.420]   On the other hand, if we are trying to decrease the likelihood of an action compared to what it was before
+[01:35:23.740 --> 01:35:28.780]   We don't want it to decrease by too much, but at most by this quantity here
+[01:35:28.780 --> 01:35:31.580]   This means that in our optimization step
+[01:35:31.580 --> 01:35:34.700]   We are moving the action probabilities
+[01:35:34.700 --> 01:35:41.040]   So the probabilities of selecting a particular token given a particular prompt we are changing them continuously
+[01:35:41.040 --> 01:35:46.220]   But we don't want them to change too much. We want to make little steps
+[01:35:46.220 --> 01:35:48.860]   Why? Because we are
+[01:35:48.860 --> 01:35:52.620]   If we move them too much, maybe the model will
+[01:35:52.940 --> 01:35:57.100]   Run into maybe the model will kind of
+[01:35:57.100 --> 01:36:00.220]   Not explore enough
+[01:36:00.220 --> 01:36:05.900]   Of the other options so the model may actually optimize for that particular action too much
+[01:36:05.900 --> 01:36:11.020]   So it may always avoid that action or it will always use that action in this case
+[01:36:11.020 --> 01:36:13.100]   We want to do it little by little
+[01:36:13.100 --> 01:36:16.060]   So we want to the model to make little steps
+[01:36:16.060 --> 01:36:22.140]   In increasing a particular action or a little step in decreasing the log probability of that particular action
+[01:36:22.620 --> 01:36:26.620]   Why are we talking about actions? Because we are talking about language models and so we want to
+[01:36:26.620 --> 01:36:32.380]   Increase or decrease the probability of selecting a particular token given a prompt
+[01:36:32.380 --> 01:36:40.380]   But we don't want this probability to change too much. This is why we have the minimum here. So we want to make the most
+[01:36:40.380 --> 01:36:47.900]   Pessimistic update we can we don't want to be too optimistic. We don't want the model to make the most optimistic steps
+[01:36:47.900 --> 01:36:53.340]   So if the model is very sure that it can always select this token, we don't want the model to be sure
+[01:36:53.340 --> 01:36:57.820]   We want the model to make a little step towards what the model thinks is better choice
+[01:36:57.820 --> 01:37:04.940]   The other head that we introduced before was the head for calculating the value function
+[01:37:04.940 --> 01:37:07.020]   So as you remember, we also
+[01:37:07.020 --> 01:37:12.380]   Introduced this value function and we say that this value function which is a function of the state
+[01:37:12.380 --> 01:37:15.020]   indicates what is the
+[01:37:15.160 --> 01:37:20.120]   Expected reward that we can receive from start by starting from that particular state
+[01:37:20.120 --> 01:37:26.520]   And the example that I gave you was for example, imagine we are our question is where is Shanghai?
+[01:37:26.520 --> 01:37:29.080]   So where is Shanghai?
+[01:37:29.080 --> 01:37:36.600]   If the model has selected for example the word Shanghai as the next token
+[01:37:36.600 --> 01:37:40.200]   We expect the value of this state
+[01:37:40.360 --> 01:37:43.720]   So because this will become a new input for the language model to be high
+[01:37:43.720 --> 01:37:49.720]   Why? because it will probably result in a good answer that will be rewarded well by our model
+[01:37:49.720 --> 01:37:55.240]   But of course, we also need to train our neural network to approximate this value function
+[01:37:55.240 --> 01:38:02.940]   Well, so what we do is we use this other term for the PPO loss is for training the value function estimator
+[01:38:02.940 --> 01:38:05.720]   and basically it means the
+[01:38:06.040 --> 01:38:10.280]   The value function estimator based on a particular state
+[01:38:10.280 --> 01:38:16.760]   So this is the output of the model and we compare it with what is the value actual value of this state based on the
+[01:38:16.760 --> 01:38:20.220]   trajectories that we have sampled because we have trajectories
+[01:38:20.220 --> 01:38:25.320]   Each trajectory is made up of state actions. Each state action has some reward
+[01:38:25.320 --> 01:38:29.480]   So we actually can calculate the value of this state
+[01:38:30.200 --> 01:38:35.580]   According to the trajectory that we have sampled. So we want to optimize the value function estimator
+[01:38:35.580 --> 01:38:39.160]   According to the trajectories that we have actually sampled from our policy
+[01:38:39.160 --> 01:38:45.880]   The last term in the policy the PPO loss. So we have first of all the policy optimization term, which is this
+[01:38:45.880 --> 01:38:48.200]   This is the one I described here
+[01:38:48.200 --> 01:38:55.320]   Then we have the the loss because for the value function estimator and then we have another term here the entropy loss
+[01:38:56.360 --> 01:39:02.360]   This is to introduce some kind of this is to force our model to explore more options
+[01:39:02.360 --> 01:39:07.000]   so imagine our model if we don't have this term here the model may just
+[01:39:07.000 --> 01:39:10.260]   optimize the actions
+[01:39:10.260 --> 01:39:12.760]   in such a way
+[01:39:12.760 --> 01:39:16.780]   In such a way to select the actions that resulted in a very good advantage
+[01:39:16.780 --> 01:39:25.080]   To select them more often and the actions that resulted in lower than average advantage to select them less often
+[01:39:25.480 --> 01:39:30.200]   So this will kind of make the model very rigid in selecting tokens
+[01:39:30.200 --> 01:39:37.660]   The model will always choose the tokens that resulted in good advantage and never select the tokens that resulted in bad advantage
+[01:39:37.660 --> 01:39:42.200]   But this will make also the model not explore other options
+[01:39:42.200 --> 01:39:45.180]   Which means that for example, imagine we sample some trajectories
+[01:39:45.180 --> 01:39:51.160]   And for the question, where is shanghai the model always selects the word shanghai because it results in a good answer
+[01:39:51.480 --> 01:39:56.440]   But we want the model to be also kind of explore other options. Maybe there is another word
+[01:39:56.440 --> 01:39:59.000]   For example, where is shanghai?
+[01:39:59.000 --> 01:40:04.520]   Maybe the next word is can be the word it because it will result in it is in china
+[01:40:04.520 --> 01:40:12.760]   So we also want the model to give the model the possibility to explore or more of these options
+[01:40:12.760 --> 01:40:19.640]   And this is why we introduce this entropy term because we want the model for each state actions to also explore other options
+[01:40:19.640 --> 01:40:25.480]   So we want to force the model to explore other options. So because we are maximizing this
+[01:40:25.480 --> 01:40:31.640]   This objective here. So we are maximizing the this objective function here. We also want to
+[01:40:31.640 --> 01:40:37.260]   Minimize this loss here. We will see later how to do it and we want to maximize the entropy
+[01:40:37.260 --> 01:40:44.840]   So that the model can also explore more options why we use the entropy because the entropy tells us
+[01:40:45.320 --> 01:40:50.280]   How much kind of disorder there is uncertainty there is in the prediction
+[01:40:50.280 --> 01:40:57.640]   So we want the model to be more uncertain why because it will help the model to explore more next tokens for a given prompt
+[01:40:57.640 --> 01:41:04.040]   The last thing that we need to consider is that if we kind of optimize the policy
+[01:41:04.040 --> 01:41:06.760]   Using the ppo loss that we have described before
+[01:41:06.760 --> 01:41:09.480]   the model may learn
+[01:41:09.480 --> 01:41:13.880]   Some tokens or some sequence of tokens that always result in a good reward
+[01:41:14.360 --> 01:41:19.080]   And the model may always choose these tokens to always get good rewards
+[01:41:19.080 --> 01:41:24.840]   But these tokens may not make sense for us humans. So for example, imagine our model
+[01:41:24.840 --> 01:41:27.480]   our data set
+[01:41:27.480 --> 01:41:31.640]   Forces our data set for the reward model forces the model to be polite
+[01:41:31.640 --> 01:41:34.520]   The model may just use the word
+[01:41:34.520 --> 01:41:39.960]   Thank you. Thank you. Thank you continuously because we know that it is very polite and it results in a good reward
+[01:41:40.360 --> 01:41:43.320]   but this is not a good answer for a
+[01:41:43.320 --> 01:41:48.600]   Question because if I ask you where is shanghai and you are just keep if the model just keeps telling me
+[01:41:48.600 --> 01:41:49.400]   Thank you. Thank you. Thank you
+[01:41:49.400 --> 01:41:54.040]   Then for sure the reward model will give a good reward to this answer because it's a polite answer
+[01:41:54.040 --> 01:41:56.200]   But it does not make sense to humans
+[01:41:56.200 --> 01:42:01.640]   So we want the model to actually generate output that makes sense that are very similar to the data
+[01:42:01.640 --> 01:42:05.880]   It has seen during the training. That's why we want to constrain the model
+[01:42:06.360 --> 01:42:12.760]   Not only to get good rewards, but at the same time to generate answers that are very similar to the one
+[01:42:12.760 --> 01:42:19.400]   It would generate by just looking at the untrained model. So at the unaligned model
+[01:42:19.400 --> 01:42:25.080]   This is why we make another copy of the model that we want to optimize and we freeze its weights
+[01:42:25.080 --> 01:42:31.580]   So this is the frozen model. We generate the rewards for each step in the trajectory
+[01:42:31.960 --> 01:42:38.360]   But we penalize by how much the log probabilities at each step change from the frozen model
+[01:42:38.360 --> 01:42:45.240]   So for each hidden state we can generate the reward by using the linear layer that we saw before with only one output feature
+[01:42:45.240 --> 01:42:52.440]   But at the same time for each hidden state, we will also calculate the log probabilities using the other linear layer for generating the logits
+[01:42:52.440 --> 01:42:56.520]   So we'll send it also this one to the linear layer to generate the logits
+[01:42:56.520 --> 01:42:59.160]   This will calculate the logits
+[01:43:01.160 --> 01:43:03.160]   And then the log probabilities
+[01:43:03.160 --> 01:43:06.040]   So the prob
+[01:43:06.040 --> 01:43:11.560]   We do the same for the frozen model and then we penalize the reward
+[01:43:11.560 --> 01:43:18.120]   So this reward here for this time step, we say the reward is equal to the reward at the time step zero
+[01:43:18.120 --> 01:43:23.960]   minus the KL divergence between the log probabilities of the frozen model
+[01:43:23.960 --> 01:43:27.560]   so the log probabilities of the frozen model and
+[01:43:28.760 --> 01:43:32.300]   The log probabilities of the policy that we are optimizing
+[01:43:32.300 --> 01:43:39.720]   We want to penalize the model for generating answers that are too different from the frozen model. So we want the
+[01:43:39.720 --> 01:43:44.120]   Reward to be maximized but at the same time we don't want the model to cheat
+[01:43:44.120 --> 01:43:48.040]   In just getting reward by generating any kind of output
+[01:43:48.040 --> 01:43:53.640]   But we want the model to actually get rewards for good answer that are very similar to the one that it would generate
+[01:43:53.640 --> 01:43:55.720]   If it was not optimized
+[01:43:56.440 --> 01:44:02.360]   Okay, I know that you are tired of looking at all this explanation and all this theory. So let's jump into the code now
+[01:44:02.360 --> 01:44:10.040]   Okay. So the the goal that we are the code that we are going to see is a code that I took from the HuggingFace
+[01:44:10.040 --> 01:44:14.680]   Website which basically allow us to train a reinforcement learning
+[01:44:14.680 --> 01:44:19.480]   Setup in which we want to train a language model to generate positive reviews
+[01:44:19.480 --> 01:44:22.200]   So if we have a language model that is generating text
+[01:44:22.520 --> 01:44:27.320]   But we want to force the language model to generate positive reviews of a particular
+[01:44:27.320 --> 01:44:31.640]   For example a restaurant or a movie or something like this
+[01:44:31.640 --> 01:44:33.800]   so
+[01:44:33.800 --> 01:44:38.440]   We want the language model to be still similar to to generate something that is
+[01:44:38.440 --> 01:44:44.840]   Comprehensible to humans, but at the same time we want to like we force the language model to be positive to generate positive stuff
+[01:44:44.840 --> 01:44:49.320]   So say stuff like for example, I really like this movie or I really like this restaurant
+[01:44:50.200 --> 01:44:56.120]   We will be using the imdb data set. So as you can see from the website of HuggingFace the imdb data set
+[01:44:56.120 --> 01:45:00.120]   It's a data set made up of text of reviews and for each review
+[01:45:00.120 --> 01:45:04.140]   It indicates what is if the review is positive or negative
+[01:45:04.140 --> 01:45:08.440]   And we will use this imdb data set
+[01:45:08.440 --> 01:45:13.160]   To understand what is the score that we want to give to a review
+[01:45:13.160 --> 01:45:17.000]   So if the review will be positive according to this data set
+[01:45:17.080 --> 01:45:22.360]   It will be given a high reward and if the text generated will be similar to a negative review
+[01:45:22.360 --> 01:45:24.440]   Then it will be given a low reward
+[01:45:24.440 --> 01:45:29.400]   so the first thing that we do is we create the model that we want to optimize which is a
+[01:45:29.400 --> 01:45:32.520]   which is this
+[01:45:32.520 --> 01:45:34.520]   language model here, so it's
+[01:45:34.520 --> 01:45:38.840]   I think it's gpt2 already fine-tuned on the imdb data set
+[01:45:38.840 --> 01:45:45.160]   And then we create a reference model why because we need a frozen model of with frozen weights
+[01:45:45.640 --> 01:45:47.400]   that we need to
+[01:45:47.400 --> 01:45:49.720]   keep the weights frozen to compare how
+[01:45:49.720 --> 01:45:55.640]   different is the response of the model that we are trying to optimize from the frozen model because we don't want the
+[01:45:55.640 --> 01:46:01.240]   Output to be much different. We just want it to be a little positive, but we don't want the model to just
+[01:46:01.240 --> 01:46:04.840]   Output garbage just to get high reward. We want to actually
+[01:46:04.840 --> 01:46:10.920]   Get actual text that makes sense. This is why we keep also a frozen model
+[01:46:12.520 --> 01:46:19.560]   And then we load this PPO trainer. The PPO trainer in HuggingFace is the class that is used to train
+[01:46:19.560 --> 01:46:24.860]   To run reinforcement learning from human feedback using the PPO algorithm
+[01:46:24.860 --> 01:46:28.200]   So, let's see. First of all, what is the reward model?
+[01:46:28.200 --> 01:46:32.920]   The reward model is basically just a sentiment analysis or using this model here
+[01:46:32.920 --> 01:46:37.720]   It will give us for each text that we feed to this reward model
+[01:46:38.840 --> 01:46:44.280]   A number that indicates how positive it is according to this imdb data set you can see here
+[01:46:44.280 --> 01:46:46.760]   so it will tell us if the
+[01:46:46.760 --> 01:46:50.600]   The text that we are receiving is a positive review or a negative review
+[01:46:50.600 --> 01:46:55.000]   For example, if we give this text here, it will probably tell us that it's a bad review
+[01:46:55.000 --> 01:47:03.320]   So low reward and if this we give it give this text here for this movie was really good. It will give us a positive
+[01:47:04.200 --> 01:47:10.120]   Reward and we will use this number here as the reward. So the score corresponding to the positive class
+[01:47:10.120 --> 01:47:14.520]   Okay, the first step in PPO is to
+[01:47:14.520 --> 01:47:19.480]   Is to generate the trajectories. So we have some model
+[01:47:19.480 --> 01:47:21.400]   the
+[01:47:21.400 --> 01:47:28.120]   Policy that is the offline policy and we need to sample some trajectories from it. What do I mean by
+[01:47:28.680 --> 01:47:35.800]   Sampling some trajectories means that we give it some text and it will generate some responses some output text
+[01:47:35.800 --> 01:47:42.680]   And what we will be using as a kind of questions or prompt for generating the text we will be using
+[01:47:42.680 --> 01:47:45.240]   Just some initial sampled
+[01:47:45.240 --> 01:47:52.600]   Text from this imdb data set you can see here. So for example, uh, this data set is composed of many
+[01:47:52.600 --> 01:47:57.720]   Reviews some are positive. Some are negative. We just randomly take the initial part of a
+[01:47:58.600 --> 01:48:02.760]   Review and we use it as a prompt to generate the rest of the review
+[01:48:02.760 --> 01:48:07.800]   And then we ask the reward model to judge this review that was generated if it's positive or negative
+[01:48:07.800 --> 01:48:12.920]   It's positive then it will achieve a high reward if it's negative, it will achieve low reward
+[01:48:12.920 --> 01:48:16.680]   So we take some
+[01:48:16.680 --> 01:48:19.080]   Okay, we generate some
+[01:48:19.080 --> 01:48:24.760]   Lengths, so random select how many tokens we need to take from each review. We select it randomly
+[01:48:25.480 --> 01:48:31.560]   We get these prompts from our data set and we ask the ppo model to generate some
+[01:48:31.560 --> 01:48:39.080]   Answers for these questions for these prompts. So generate the rest of the text up to a maximum length
+[01:48:39.080 --> 01:48:42.440]   That is also sampled randomly
+[01:48:42.440 --> 01:48:45.720]   These are our trajectories for now
+[01:48:45.720 --> 01:48:52.600]   These are just the combination of prompt and the generated text. We did not calculate the log probabilities
+[01:48:52.680 --> 01:48:57.320]   We did not calculate the advantages. We did not calculate the rewards etc
+[01:48:57.320 --> 01:49:02.920]   Okay. So now for now, we only have the query and the response generated by our
+[01:49:02.920 --> 01:49:05.560]   offline policy
+[01:49:05.560 --> 01:49:10.360]   What is the offline policy is the model that we are trying to train. So this variable here model
+[01:49:10.360 --> 01:49:12.440]   and
+[01:49:12.440 --> 01:49:13.960]   Now that we have some responses
+[01:49:13.960 --> 01:49:20.700]   We can ask our reward model to judge these responses and we use basically just do a sentiment classification
+[01:49:21.160 --> 01:49:24.520]   in which we give the response that was given by the
+[01:49:24.520 --> 01:49:28.440]   Policy and we ask the sentiment pipe
+[01:49:28.440 --> 01:49:33.640]   So the sentiment analysis pipes which will act as our reward model to judge this text
+[01:49:33.640 --> 01:49:38.600]   So how positive is this review that was generated and we will take the
+[01:49:38.600 --> 01:49:44.840]   Score associated with the positive class that will be generated as you can see here. So as a reward we take the
+[01:49:44.840 --> 01:49:50.520]   We assign the reward to the full response. So for each response, we will get one number
+[01:49:51.480 --> 01:49:53.480]   And this number is actually the
+[01:49:53.480 --> 01:50:00.540]   Logits, so the score corresponding to the positive class according to this sentiment analysis pipeline
+[01:50:00.540 --> 01:50:04.360]   Now that we have some trajectories, which are some questions
+[01:50:04.360 --> 01:50:11.900]   So some prompts along with the text that was generated along with the reward for each of this text that was generated
+[01:50:11.900 --> 01:50:17.720]   We can run the PPO training setup. So let's now go inside the code of the library
+[01:50:18.600 --> 01:50:24.600]   So the first thing we do is we call this function here step in which we give out the prompt that we gave to the language
+[01:50:24.600 --> 01:50:28.520]   Model the responses that were generated and the rewards associated with each
+[01:50:28.520 --> 01:50:30.360]   response
+[01:50:30.360 --> 01:50:33.000]   And then we run this step function here
+[01:50:33.000 --> 01:50:40.040]   Now the step function here. Okay. First it checks if the tensors that you pass it are correct
+[01:50:40.040 --> 01:50:43.640]   So the data types and the shapes of the tensors, etc, etc
+[01:50:44.360 --> 01:50:50.360]   Then it converts the scores into a tensor because the scores are at least one score for each response
+[01:50:50.360 --> 01:50:54.920]   So it converts it into a tensor. I commented the code that I don't find
+[01:50:54.920 --> 01:51:00.920]   Useful for my explanation. So there are many functions in a hugging phase, but we will not be using all of them
+[01:51:00.920 --> 01:51:05.800]   I will just concentrate on explaining the vanilla PPO like it was described in my slides
+[01:51:05.800 --> 01:51:08.200]   Okay
+[01:51:08.200 --> 01:51:13.560]   The first thing that we need to do is to calculate all the log probabilities of the actions that we
+[01:51:13.560 --> 01:51:15.960]   that we need to calculate the gradient
+[01:51:15.960 --> 01:51:17.560]   so
+[01:51:17.560 --> 01:51:20.280]   we do it here in this function here, so given the
+[01:51:20.280 --> 01:51:24.040]   answers the text generated by our
+[01:51:24.040 --> 01:51:25.720]   model
+[01:51:25.720 --> 01:51:29.480]   And the queries that were used so here they are called queries and responses
+[01:51:29.480 --> 01:51:32.520]   But they are actually the prompts and they generated the text
+[01:51:32.520 --> 01:51:37.720]   The hugging phase they calculate the log probabilities for each step. How do they calculate it?
+[01:51:37.720 --> 01:51:41.080]   Well, they calculate the call this function batched forward pass
+[01:51:41.080 --> 01:51:44.200]   in which they pass the model from which the
+[01:51:44.200 --> 01:51:51.080]   Answers were generated. So the text was generated the prompt that were used to generate this text
+[01:51:51.080 --> 01:51:54.680]   And they divide each of these
+[01:51:54.680 --> 01:52:02.440]   Questions and responses into mini batches and then they run it through the model the model as we saw in the slides
+[01:52:02.440 --> 01:52:04.680]   So let's go back here, I think
+[01:52:05.480 --> 01:52:07.480]   So
+[01:52:07.480 --> 01:52:13.320]   Here we know that we can calculate the log probabilities corresponding to each position
+[01:52:13.320 --> 01:52:15.720]   based on the
+[01:52:15.720 --> 01:52:19.820]   Text and the question that was asked so we can create a concatenation
+[01:52:19.820 --> 01:52:27.180]   Of the question and the text that was generated. We pass it to the model. The model will generate some logits one for each position
+[01:52:27.180 --> 01:52:33.980]   Of the token. We only take the log probability of the next token because we already know which next token was generated
+[01:52:34.200 --> 01:52:39.400]   So we know that for this particular prompt made up of these four tokens. The next token is shanghai
+[01:52:39.400 --> 01:52:45.240]   So we only take the log probability corresponding to the word shanghai and this is what is done in this line here
+[01:52:45.240 --> 01:52:49.400]   so we ask the language model to generate the logits corresponding to all the
+[01:52:49.400 --> 01:52:55.880]   Positions then we calculate the log probabilities from this logits. How?
+[01:52:55.880 --> 01:52:58.520]   Here
+[01:52:58.520 --> 01:53:01.960]   We calculated the log softmax so exactly like in my slides
+[01:53:01.960 --> 01:53:07.320]   So we calculate the log softmax here as you can see. So for each logits we calculate the log
+[01:53:07.320 --> 01:53:10.520]   log softmax which is the
+[01:53:10.520 --> 01:53:13.720]   Log probabilities for each position
+[01:53:13.720 --> 01:53:19.880]   But we are only interested in the position corresponding to the next token and this is done here with the gather function
+[01:53:19.880 --> 01:53:21.480]   You can see here. So
+[01:53:21.480 --> 01:53:22.920]   From all the log probabilities
+[01:53:22.920 --> 01:53:27.420]   It only selects the one corresponding to the next token because we already know which token was generated
+[01:53:28.120 --> 01:53:30.120]   So now we have the log probabilities
+[01:53:30.120 --> 01:53:32.680]   and we can
+[01:53:32.680 --> 01:53:38.280]   We can save them because we don't have the log we don't want the log probabilities for all the tokens
+[01:53:38.280 --> 01:53:41.960]   We also need to keep track of where the log probabilities start
+[01:53:41.960 --> 01:53:47.480]   So the one that we want to consider and where they end why because as you can see from my slide
+[01:53:47.480 --> 01:53:53.240]   Our trajectory here. The question was where is shanghai the model generated four tokens
+[01:53:53.320 --> 01:53:58.760]   Where is shanghai is in china? So we are all interested in this trajectory. We only have four steps
+[01:53:58.760 --> 01:54:02.520]   So we are all interested in the log probabilities of four tokens
+[01:54:02.520 --> 01:54:05.720]   And this is exactly what we do here. So we consider
+[01:54:05.720 --> 01:54:14.280]   which is the starting point from which we consider the log probabilities and which is the ending token for which we consider the log probabilities because
+[01:54:14.280 --> 01:54:16.600]   this
+[01:54:16.600 --> 01:54:19.560]   The model will generate the log probabilities for all the positions
+[01:54:19.560 --> 01:54:25.160]   But we only want some of them and here is what we do. So we create a mask in which we say that the model
+[01:54:25.160 --> 01:54:35.880]   Only consider we will be considering only these four probabilities or four five probabilities according to which token were actually generated by the model
+[01:54:35.880 --> 01:54:41.720]   So now we have the log probabilities of each action. So let's go back
+[01:54:41.720 --> 01:54:45.480]   To the step function
+[01:54:49.320 --> 01:54:51.420]   Okay, so we calculated the log probabilities
+[01:54:51.420 --> 01:54:54.180]   according to our
+[01:54:54.180 --> 01:54:55.880]   offline policy
+[01:54:55.880 --> 01:54:59.480]   Why do we do it here inside the step method and not outside?
+[01:54:59.480 --> 01:55:02.840]   Well, because the hugging face is a library that is user friendly
+[01:55:02.840 --> 01:55:09.240]   So they don't want to give to the user the burden of calculating the log probabilities of each action
+[01:55:09.240 --> 01:55:11.160]   They do it inside the library
+[01:55:11.160 --> 01:55:18.460]   So they only ask the user to generate the responses for each prompt and then they take care of calculating the rest of the information
+[01:55:19.420 --> 01:55:23.900]   Now we also need to calculate the log probability with respect to the reference model
+[01:55:23.900 --> 01:55:29.660]   So the frozen model why because we also need to calculate the KL divergence that will be used to
+[01:55:29.660 --> 01:55:35.680]   penalize the reward for each position because we want to penalize the model for generating
+[01:55:35.680 --> 01:55:40.540]   Log probabilities that are much different from the frozen model
+[01:55:40.540 --> 01:55:45.740]   Otherwise the model will just do what is known as a reward hacking which is just generate
+[01:55:46.220 --> 01:55:51.660]   Random tokens that actually give a good reward, but they do not make sense for the user
+[01:55:51.660 --> 01:55:54.700]   So we also need to generate using the same method
+[01:55:54.700 --> 01:56:00.160]   So this batched forward pass using the frozen model to generate the log probabilities
+[01:56:00.160 --> 01:56:04.300]   Which will be used to calculate the KL divergence to penalize the reward
+[01:56:04.300 --> 01:56:10.060]   The next step we do is we actually compute these rewards. So how do we compute the rewards?
+[01:56:10.140 --> 01:56:17.280]   Well using the log probabilities of the model that we are trying to optimize and the frozen model because we need to calculate the KL divergence
+[01:56:17.280 --> 01:56:25.100]   We have this mask which indicate which log probabilities we need to take into consideration because we have the log probabilities of all the response
+[01:56:25.100 --> 01:56:29.440]   But only some of them are interesting for us because they belong to the trajectory
+[01:56:29.440 --> 01:56:33.280]   And let's see how to compute the rewards
+[01:56:34.620 --> 01:56:39.980]   So the rewards are computed as follows. So we calculate the KL penalty, which is the difference in log probabilities
+[01:56:39.980 --> 01:56:46.940]   So if you go to here, you can see that the KL divergence is just a difference in log probabilities as you can see here
+[01:56:46.940 --> 01:56:49.400]   and we
+[01:56:49.400 --> 01:56:51.260]   penalize as you can see here
+[01:56:51.260 --> 01:56:57.820]   The reward is basically just the KL divergence penalization, which is the KL divergence multiplied by some factor
+[01:56:57.820 --> 01:56:59.900]   Which is the penalty factor
+[01:56:59.900 --> 01:57:03.500]   and then we sum the score so
+[01:57:04.380 --> 01:57:10.140]   We saw before that the score is what is just the score associated to each response
+[01:57:10.140 --> 01:57:17.980]   By our reward model. Our reward model is just a sentiment classification pipeline that will generate one reward one single number
+[01:57:17.980 --> 01:57:20.940]   for each response so indicating how
+[01:57:20.940 --> 01:57:25.420]   Positive is the response that was generated or how negative it is
+[01:57:25.420 --> 01:57:30.000]   Because we only have one generated response
+[01:57:30.620 --> 01:57:37.340]   We and this response this reward is associated with the last token. So let me show you in the slides
+[01:57:37.340 --> 01:57:41.660]   Here we were computing the reward for each step
+[01:57:41.660 --> 01:57:50.380]   But actually the sentiment classification model will compute the reward only for the last token for the full answer for the full generated text
+[01:57:50.380 --> 01:57:57.900]   So we basically we create but we need of course to calculate the reward of the trajectory. We need the reward for each
+[01:57:57.900 --> 01:58:00.140]   state actions
+[01:58:00.140 --> 01:58:07.660]   so we compute the KL penalty for each position because we know the log probabilities of the frozen model and of the
+[01:58:07.660 --> 01:58:13.660]   Model that we are trying to optimize. So we have the KL penalty for each position, but we have the reward only for the last one
+[01:58:13.660 --> 01:58:17.280]   So this is exactly what we are doing here. We calculate the log probabilities
+[01:58:17.280 --> 01:58:23.340]   For the KL penalty for each position, but the score is only added to the last
+[01:58:23.340 --> 01:58:26.700]   token, so here in this position here
+[01:58:27.580 --> 01:58:32.780]   And then when we compute the advantage because we compute the advantage starting from the last to the first
+[01:58:32.780 --> 01:58:35.340]   we will kind of
+[01:58:35.340 --> 01:58:39.180]   Take this reward and put it in the previous steps and we will see this later
+[01:58:39.180 --> 01:58:41.820]   so now we have found a way to calculate the
+[01:58:41.820 --> 01:58:48.720]   The rewards associated with each position in which each position is given some score by the sentiment classification
+[01:58:48.720 --> 01:58:54.960]   But this is only given to the last token while the KL penalty is given to each position
+[01:58:56.540 --> 01:58:58.540]   So, let's go back
+[01:58:58.540 --> 01:59:04.720]   Okay, so we have computed the rewards now we can compute the advantages
+[01:59:04.720 --> 01:59:08.860]   Let's see how we compute the advantages to compute the advantages. We need the values
+[01:59:08.860 --> 01:59:13.020]   What are the values? Well, the value is the estimation of the value
+[01:59:13.020 --> 01:59:15.740]   value function
+[01:59:15.740 --> 01:59:20.140]   As we saw before the value is computed by using the same model
+[01:59:20.140 --> 01:59:23.500]   So the policy network with an additional head
+[01:59:23.500 --> 01:59:28.160]   Which is a linear layer that gives us the value estimation for that particular
+[01:59:28.160 --> 01:59:31.260]   State so let me show you in the slides
+[01:59:31.260 --> 01:59:36.700]   Here we saw before that of the policy network
+[01:59:36.700 --> 01:59:41.900]   So the model that we are trying to optimize also has an additional linear layer that gives us a value
+[01:59:41.900 --> 01:59:44.220]   estimation for each
+[01:59:44.220 --> 01:59:46.220]   step of the trajectory
+[01:59:46.540 --> 01:59:53.340]   And this is actually already when we calculated the log probabilities the this function also returns the value head the value
+[01:59:53.340 --> 01:59:55.900]   estimation for each
+[01:59:55.900 --> 02:00:01.520]   Step of the trajectory then we can use the values estimated plus the rewards that we calculated
+[02:00:01.520 --> 02:00:06.220]   Plus the mask because we need to know which value we have and which value we don't have
+[02:00:06.220 --> 02:00:11.900]   to compute the advantage using the same formula that we saw before so we start from the
+[02:00:12.620 --> 02:00:17.360]   The formula of the which is a this one here. So let's go back to the formula
+[02:00:17.360 --> 02:00:23.660]   Okay
+[02:00:23.660 --> 02:00:24.700]   here
+[02:00:24.700 --> 02:00:26.700]   We calculate the delta t
+[02:00:26.700 --> 02:00:30.940]   to compute the advantage estimation at time step t so
+[02:00:30.940 --> 02:00:38.460]   Here we are computing the first delta t which is the reward at time step t plus gamma as you can see here
+[02:00:39.180 --> 02:00:45.420]   Multiplied by the value at time step t plus one and this is here. So it's zero if we do not have any future
+[02:00:45.420 --> 02:00:49.020]   Values, otherwise, it's the value at time step t plus one
+[02:00:49.020 --> 02:00:54.860]   Minus the value at time step t exactly according to this formula here. You can see here
+[02:00:54.860 --> 02:00:58.060]   and then we use this delta value to compute the
+[02:00:58.060 --> 02:01:04.220]   Ge estimation, which is the delta plus gamma multiplied by lambda multiplied by the
+[02:01:05.260 --> 02:01:13.420]   Ge at the next time step which is exactly what we do here. So delta at time step t plus gamma multiplied by lambda multiplied by the
+[02:01:13.420 --> 02:01:16.460]   Advantage estimation at time step t plus one
+[02:01:16.460 --> 02:01:19.340]   And we do it from the last
+[02:01:19.340 --> 02:01:24.240]   From the last item in the trajectory to the first item in the trajectory
+[02:01:24.240 --> 02:01:27.820]   That's why we do this for loop in reverse
+[02:01:27.820 --> 02:01:31.120]   And then we reverse it back because we computed the advantage
+[02:01:32.060 --> 02:01:38.460]   Reversed and then we reverse the computed advantages to have them from zero to time step t to
+[02:01:38.460 --> 02:01:40.940]   Capital t instead of capital t to zero
+[02:01:40.940 --> 02:01:45.900]   Then we compute the q values that will be used to
+[02:01:45.900 --> 02:01:49.740]   Optimize the value function. So as you can see here
+[02:01:49.740 --> 02:01:53.280]   To optimize the value head. So the value estimation
+[02:01:53.280 --> 02:01:56.060]   we need to have the
+[02:01:56.060 --> 02:01:58.460]   estimation of the value function
+[02:01:59.260 --> 02:02:05.840]   But according to the trajectory that we have sampled, but what is the estimation of the value function according to the trajectory?
+[02:02:05.840 --> 02:02:09.180]   It is actually the q function because
+[02:02:09.180 --> 02:02:15.580]   For the value function tells us. Okay. Let me use some kind of let me write here
+[02:02:15.580 --> 02:02:17.980]   Otherwise, it's not easy to understand. So
+[02:02:17.980 --> 02:02:23.260]   The value function here is tells us what is the value
+[02:02:23.260 --> 02:02:28.860]   Of a particular state. So what is the expected return that we can get?
+[02:02:29.500 --> 02:02:31.500]   By starting from a particular state
+[02:02:31.500 --> 02:02:34.300]   and we can
+[02:02:34.300 --> 02:02:40.060]   We can approximate it also actually with the q function from the sample trajectories. Why?
+[02:02:40.060 --> 02:02:44.140]   Because the value function is
+[02:02:44.140 --> 02:02:48.480]   At time step t is the expected return
+[02:02:48.480 --> 02:02:54.860]   Over all possible actions that we can take starting from the
+[02:02:56.540 --> 02:02:57.980]   State s
+[02:02:57.980 --> 02:03:03.900]   And taking action a so the value function here can be actually calculated from the q function
+[02:03:03.900 --> 02:03:06.540]   But it's an estimated
+[02:03:06.540 --> 02:03:09.500]   An expectation over all the possible actions that we can take
+[02:03:09.500 --> 02:03:11.900]   which means that
+[02:03:11.900 --> 02:03:18.460]   The q function tells us what is the expected return if we start from state s and take action a the value function tells us
+[02:03:18.460 --> 02:03:21.260]   What is the expected return that we can get if we only start from?
+[02:03:21.260 --> 02:03:25.180]   State s and react according to the policy
+[02:03:25.980 --> 02:03:28.380]   Which is also the which basically can also be
+[02:03:28.380 --> 02:03:31.400]   Calculated as the expected
+[02:03:31.400 --> 02:03:34.860]   return over the q function, but
+[02:03:34.860 --> 02:03:42.140]   Expected expectation over all the possible actions that we can take which kind of can be thought of as what is the
+[02:03:42.140 --> 02:03:46.220]   average return that we can get by starting from the
+[02:03:46.220 --> 02:03:51.580]   State s and taking some actions over all the possible actions that we can take
+[02:03:51.580 --> 02:03:54.540]   But we do not have all the possible actions
+[02:03:55.260 --> 02:04:02.000]   So we can approximate this expectation with a sample mean according to the one that we have in our trajectory
+[02:04:02.000 --> 02:04:05.280]   So we have some actions state actions in our trajectory
+[02:04:05.280 --> 02:04:09.180]   So we can actually approximate it this using the q
+[02:04:09.180 --> 02:04:11.920]   S a that we have in our trajectory
+[02:04:11.920 --> 02:04:14.780]   And how do we compute this q?
+[02:04:14.780 --> 02:04:16.940]   S a
+[02:04:16.940 --> 02:04:23.900]   As you remember the formula for the advantage is advantage of s a at particular time step is equal to the q
+[02:04:24.700 --> 02:04:29.740]   Of s a minus v of s so we can get q
+[02:04:29.740 --> 02:04:33.520]   S a is equal to advantage
+[02:04:33.520 --> 02:04:36.700]   S a plus the value s
+[02:04:36.700 --> 02:04:39.660]   And this is exactly what we are doing
+[02:04:39.660 --> 02:04:43.420]   Here, so we are saying to get the q function
+[02:04:43.420 --> 02:04:47.660]   We are calculating the advantages plus values and this term here will be used to
+[02:04:47.660 --> 02:04:53.500]   Calculate the loss for the value head. We will see later. So remember these returns we are doing here
+[02:04:54.460 --> 02:04:59.100]   Okay. So now we have computed the advantages and the values
+[02:04:59.100 --> 02:05:07.200]   Now we still are in the first phase. So we have sampled some trajectories from our model that we're trying to optimize
+[02:05:07.200 --> 02:05:11.100]   We computed the rewards using the rewards. We
+[02:05:11.100 --> 02:05:14.620]   We also computed the log probabilities for each time step
+[02:05:14.620 --> 02:05:20.380]   We also computed the advantages for each time step and we also computed the q values for each time step
+[02:05:20.380 --> 02:05:22.380]   Which are used for the value head
+[02:05:23.260 --> 02:05:27.340]   Now let's go to the second phase of the ppo algorithm, which is the phase two
+[02:05:27.340 --> 02:05:31.040]   Which means that we take some mini-batch from these trajectories
+[02:05:31.040 --> 02:05:35.680]   We optimize the model based on the estimated gradient
+[02:05:35.680 --> 02:05:39.440]   We do it with many steps and then again, we sample new trajectories
+[02:05:39.440 --> 02:05:45.100]   We sample some mini-batches. We optimize the model according to the loss
+[02:05:45.100 --> 02:05:48.000]   We do it many times and then again, we sample new trajectories
+[02:05:48.000 --> 02:05:51.100]   So let's go back to our step function
+[02:05:51.340 --> 02:05:53.340]   So
+[02:05:53.340 --> 02:05:56.860]   We are here
+[02:05:56.860 --> 02:05:59.020]   Okay, so we computed the
+[02:05:59.020 --> 02:06:01.420]   the advantages
+[02:06:01.420 --> 02:06:07.020]   Now we can use the sampled trajectories to optimize the model. So what do we do?
+[02:06:07.020 --> 02:06:10.540]   We sample some mini-batches. This is the mini-batch that we are sampling
+[02:06:10.540 --> 02:06:14.060]   So we sample a mini-batch as you can see here
+[02:06:14.060 --> 02:06:16.700]   And then what we need to do
+[02:06:16.700 --> 02:06:22.460]   First of all, we go as we saw in the formula of the ppl also we need to have the log probabilities according to the model
+[02:06:22.460 --> 02:06:23.900]   that
+[02:06:23.900 --> 02:06:30.540]   We sampled from which is this pi old and also according to the model that we are trying to optimize using this
+[02:06:30.540 --> 02:06:34.380]   Sampled mini-batches, which is exactly what we did here with offline policy
+[02:06:34.380 --> 02:06:41.420]   So we sample from some policy and we need to have the trajectories from this policy and also the log probabilities from this policy
+[02:06:41.420 --> 02:06:44.780]   Which is the offline policy and then we use this sample trajectory
+[02:06:44.780 --> 02:06:49.740]   So we take a mini-batch and then we run a gradient ascent on an online policy
+[02:06:49.740 --> 02:06:53.260]   But we also need to have the log probabilities according to this online policy
+[02:06:53.260 --> 02:06:57.580]   The one we are that we are trying to optimize and this is exactly what we do here
+[02:06:57.580 --> 02:07:04.460]   So we run again this method that we ran before so the batch the forward pass to calculate the log probabilities the logits and the value
+[02:07:05.420 --> 02:07:12.780]   Head prediction according to the mini-batch that you are considering and then we train the model according to this mini-batch
+[02:07:12.780 --> 02:07:14.860]   Let's see how it's done
+[02:07:14.860 --> 02:07:21.900]   The first thing that we need to do is to calculate the loss of ppu according to the formula that we saw on the slides
+[02:07:21.900 --> 02:07:23.900]   So let's go in the loss
+[02:07:23.900 --> 02:07:30.620]   In the loss we have to calculate three losses. The first is the loss for the value head, which is this loss here
+[02:07:30.700 --> 02:07:36.060]   So they are actually doing it the hugging face is actually calculating also the clipped loss
+[02:07:36.060 --> 02:07:39.660]   But let's not consider the clipped loss for now. It's just some new
+[02:07:39.660 --> 02:07:46.300]   It's just an optimization, but it doesn't have to be in the vanilla ppu. We don't have to do it
+[02:07:46.300 --> 02:07:48.700]   so we are taking the
+[02:07:48.700 --> 02:07:55.660]   Values that were predicted by the model and the returns that we calculated as the sum of the advantages plus the values that we saw before
+[02:07:55.660 --> 02:07:59.660]   So this is how we this is the loss for the value head
+[02:08:00.620 --> 02:08:05.660]   According to this formula here. So as you can see, so this is basically the
+[02:08:05.660 --> 02:08:10.880]   Estimated q functions according to our trajectories
+[02:08:10.880 --> 02:08:16.720]   And this is the loss of the value head then we have the loss of the ppu
+[02:08:16.720 --> 02:08:24.380]   Which is just the advantage term multiplied by the ratio of the log probabilities. What is the ratio of the probabilities? It's the
+[02:08:24.380 --> 02:08:27.180]   here
+[02:08:27.260 --> 02:08:34.080]   The log probabilities, okay, let's go to the formula first. Okay, as you can see here we have the ratio of the two probabilities
+[02:08:34.080 --> 02:08:38.880]   But we have the log probabilities. So what we can do is we can calculate
+[02:08:38.880 --> 02:08:42.620]   Let's use the here
+[02:08:42.620 --> 02:08:46.220]   Okay, we have the log probabilities so
+[02:08:46.220 --> 02:08:54.220]   The log of a minus the log of b
+[02:08:55.740 --> 02:08:57.740]   And then we are doing the exponential of this
+[02:08:57.740 --> 02:09:07.660]   This is equivalent to doing the exponential of the log of a divided by b
+[02:09:07.660 --> 02:09:11.340]   Which is equal to doing a divided by b
+[02:09:11.340 --> 02:09:16.880]   Of the two probabilities. So because we do not have the log with the probabilities, but we have the log probabilities
+[02:09:16.880 --> 02:09:20.620]   We are calculating like this. So we first do the log probabilities of the
+[02:09:21.180 --> 02:09:28.540]   Online model minus the log probabilities of the offline model and then we apply the exponential which will result in a divided by b
+[02:09:28.540 --> 02:09:31.260]   Which is exactly what we want here. So let's check
+[02:09:31.260 --> 02:09:35.180]   In the code
+[02:09:35.180 --> 02:09:42.320]   We are calculating the difference in the log probabilities and applying the exponential which will result in this ratio here being calculated
+[02:09:42.320 --> 02:09:45.020]   Then we need to
+[02:09:45.020 --> 02:09:50.960]   This ratio is multiplied by the advantage term as you can see here. So we need to multiply it by this term advantage
+[02:09:51.680 --> 02:09:55.360]   And then we need to also calculate the other part of this
+[02:09:55.360 --> 02:09:59.600]   Expression, which is this clipped advantage as you can see here
+[02:09:59.600 --> 02:10:05.920]   So again the ratio but clipped between the value one minus epsilon and one plus epsilon
+[02:10:05.920 --> 02:10:08.000]   so
+[02:10:08.000 --> 02:10:11.840]   We are doing it here. So the advantage multiplied by the ratio clipped between
+[02:10:11.840 --> 02:10:15.220]   One minus epsilon and one plus epsilon
+[02:10:15.220 --> 02:10:19.920]   Why do we have this minus sign here because
+[02:10:20.720 --> 02:10:23.780]   The goal in ppo is we want to maximize
+[02:10:23.780 --> 02:10:33.140]   This term here, but we are doing you is using pytorch and the optimizer of pytorch, pytorch always run gradient descent
+[02:10:33.140 --> 02:10:38.800]   Which means that it's the opposite of gradient ascent. So if we want to um
+[02:10:38.800 --> 02:10:44.500]   So it's basically we are instead of maximizing this we can minimize the negative
+[02:10:44.500 --> 02:10:50.080]   Loss that we can see here and this is exactly why we have this minus sign
+[02:10:50.160 --> 02:10:57.280]   So because pytorch always minimizes we can multiply this by minus so it's like we are maximizing this term
+[02:10:57.280 --> 02:10:59.520]   and
+[02:10:59.520 --> 02:11:02.240]   The entropy is calculated here as you can see
+[02:11:02.240 --> 02:11:05.360]   Then they have also others
+[02:11:05.360 --> 02:11:12.160]   Other terms that we do not use because they they do some optimizations, but they are not present in the vanilla loss of the ppo
+[02:11:12.880 --> 02:11:16.960]   So the loss of the ppo is calculated as the the loss of the policy
+[02:11:16.960 --> 02:11:22.240]   Plus the value head multiplied by its coefficient that you can see here. So loss policy
+[02:11:22.240 --> 02:11:26.880]   They calculate also the entropy, but they do not use it. I don't know why to be honest
+[02:11:26.880 --> 02:11:31.840]   So they calculated the entropy here. So they calculated the entropy using the logits as you can see
+[02:11:31.840 --> 02:11:37.600]   And they do it not using the formula that I show in the slides, which is the actual formula of the entropy
+[02:11:37.600 --> 02:11:45.840]   But they're using an optimized version called the log sum exp and I am putting here some information for those who want to have
+[02:11:45.840 --> 02:11:52.500]   The derivation of how it's done. But basically wikipedia says that the convex conjugate of the log sum eps is the negative entropy
+[02:11:52.500 --> 02:11:56.000]   and
+[02:11:56.000 --> 02:12:01.600]   Yeah, so we have also this entropy term here and we return our loss
+[02:12:01.600 --> 02:12:04.400]   So let's go back to the optimization step
+[02:12:04.400 --> 02:12:06.960]   So we go here
+[02:12:07.520 --> 02:12:10.960]   So now we are optimizing over a mini batch
+[02:12:10.960 --> 02:12:16.640]   Which means that the first thing that we do is we calculate the loss and then we run a back propagation on this loss
+[02:12:16.640 --> 02:12:18.720]   and then we optimize
+[02:12:18.720 --> 02:12:20.560]   and we do it for
+[02:12:20.560 --> 02:12:22.560]   Oops, we do it for
+[02:12:22.560 --> 02:12:26.720]   Many mini batches, so let me go back again
+[02:12:26.720 --> 02:12:34.880]   So we train on a one mini batch then we do it again for many mini batches you can see here
+[02:12:35.360 --> 02:12:37.600]   And after a while we return
+[02:12:37.600 --> 02:12:44.100]   We return here and we do again the procedure again. So we again generate the new trajectories
+[02:12:44.100 --> 02:12:53.460]   Then the hugging face library will calculate and we calculate of course also the rewards the hugging face library will calculate the log probabilities
+[02:12:53.460 --> 02:13:01.140]   According to these trajectories the advantage estimation according to these trajectories the value estimation according to the trajectories
+[02:13:01.140 --> 02:13:03.680]   Then we'll iteratively
+[02:13:04.080 --> 02:13:09.600]   Sample from these trajectories some mini batches and then we run a gradient ascent
+[02:13:09.600 --> 02:13:16.560]   According to the ppo loss on these mini batches many times and then again, we restart the loop and this is how we
+[02:13:16.560 --> 02:13:22.180]   Run the ppo algorithm for reinforcement learning from human feedback
+[02:13:22.180 --> 02:13:30.420]   Let's go back to the slides and thank you guys for watching this video, I know it has been very very demanding
+[02:13:31.760 --> 02:13:37.360]   It has been one of my most difficult video also for me to describe all these parts without
+[02:13:37.360 --> 02:13:40.240]   Getting lost myself
+[02:13:40.240 --> 02:13:42.560]   I know that I gave a lot of knowledge because
+[02:13:42.560 --> 02:13:50.160]   Actually ppo and the reinforcement learning are quite big topic. So there are entire university courses on this stuff. So it's not easy to give
+[02:13:50.160 --> 02:13:59.200]   A complete understanding in just a few hours. This is also one of the reason I decided not to code it from scratch because
+[02:14:00.000 --> 02:14:02.160]   It would make the video like 10 hours of video
+[02:14:02.160 --> 02:14:08.320]   but at least I hope that now you have a deep understanding into how each step of the
+[02:14:08.320 --> 02:14:15.540]   Reinforcement learning from human feedback is done. I will share with you the code commented by me with all the parts that are unnecessary
+[02:14:15.540 --> 02:14:22.160]   Removed or anyway, I will comment telling explicitly which parts are not necessary for the ppo algorithm
+[02:14:22.160 --> 02:14:28.080]   It took me more than one month of research to prepare this video and I had to record it
+[02:14:28.560 --> 02:14:30.560]   multiple times because
+[02:14:30.560 --> 02:14:34.880]   I made some some mistakes and then I realized that I forgot something in the slides
+[02:14:34.880 --> 02:14:37.520]   Then I had to fix them etc, etc
+[02:14:37.520 --> 02:14:42.320]   So the best way to help me guys is to share this video with others if you found it useful
+[02:14:42.320 --> 02:14:43.600]   I know that it's very difficult
+[02:14:43.600 --> 02:14:51.360]   So I suggest watching it multiple times because the first time you watch this video you will have some understanding but not very deep
+[02:14:51.360 --> 02:14:55.440]   The second time you will realize that you will have a better understanding
+[02:14:55.520 --> 02:15:02.000]   And maybe you will need to review some concepts from reinforcement learning or from the transformer to better understand it fully
+[02:15:02.000 --> 02:15:08.240]   So I recommend watching it multiple times and please leave in the comments if some part was not clear
+[02:15:08.240 --> 02:15:12.500]   I will always try to help you and yeah, have a nice day
+

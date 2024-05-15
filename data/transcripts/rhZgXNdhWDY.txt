@@ -1,0 +1,582 @@
+
+[00:00:00.000 --> 00:00:05.100]   Hello guys, welcome back to my channel. Today we are going to talk about retrieval augmented generation
+[00:00:05.100 --> 00:00:11.400]   So as you know large language models can only answer questions or generate text based on their training data
+[00:00:11.400 --> 00:00:17.400]   So for example, if we have a language model that was trained in 2018 and we ask it about the COVID
+[00:00:17.400 --> 00:00:21.040]   probably the language model will know not know anything about the COVID and
+[00:00:21.040 --> 00:00:26.360]   One of the way to augment the knowledge of language model is to fine-tune the model on the latest data
+[00:00:26.480 --> 00:00:31.040]   But there is another technique called retrieval augmented generation, which is very useful
+[00:00:31.040 --> 00:00:38.560]   Especially for question answering and it has been also being used recently by Twitter to create their new language model called Grok
+[00:00:38.560 --> 00:00:45.340]   So Grok can access in real time all the data from the tweets and answer questions on the latest trends
+[00:00:45.340 --> 00:00:46.320]   So in this video
+[00:00:46.320 --> 00:00:52.060]   we will explore what is a retrieval augmented generation, all the pipeline, all the pieces of the pipeline and the
+[00:00:52.060 --> 00:00:54.640]   architecture behind each of these building blocks
+[00:00:55.200 --> 00:01:01.000]   So let's review the topics of today. I will give a brief introduction to language models
+[00:01:01.000 --> 00:01:04.220]   So what they are, how they work, how we inference them
+[00:01:04.220 --> 00:01:11.400]   we will then move on to the pipeline that makes up the retrieval augmented generation with particular reference to the embedding vectors and
+[00:01:11.400 --> 00:01:14.340]   how they are built, what they are and then
+[00:01:14.340 --> 00:01:18.200]   We will also explore the architecture behind sentence birth
+[00:01:18.200 --> 00:01:24.640]   Which is one of the ways to generate embeddings of sentences and then we will move on to vector databases
+[00:01:24.640 --> 00:01:31.760]   What they are, how we use them and how the algorithm of a vector database works in finding a particular vector
+[00:01:31.760 --> 00:01:34.180]   That we are looking similar to a query
+[00:01:34.180 --> 00:01:41.280]   What I expect you guys to already know before watching this video is for sure you are a little too familiar with the transformer
+[00:01:41.280 --> 00:01:44.400]   We will not be going so much in detail
+[00:01:44.400 --> 00:01:50.680]   But at least you're familiar with the basic building blocks of a transformer and that you have watched my previous video about birth
+[00:01:50.680 --> 00:01:57.000]   So if you're not familiar with these topics, please I recommend you watch my previous video on the transformer and my previous video on birth
+[00:01:57.000 --> 00:02:03.080]   They will give you all the necessary background to fully understand the current video. Now, let's start our journey
+[00:02:03.080 --> 00:02:07.580]   We will start by introducing first of all my cat Oleo
+[00:02:07.580 --> 00:02:12.480]   Because I will be using him for a lot of the examples in my video
+[00:02:12.480 --> 00:02:15.640]   So if you are not Chinese, you don't know how to read his name
+[00:02:15.640 --> 00:02:20.400]   Which is Oleo which stands for the biscuits Oreo because he's black and white
+[00:02:20.400 --> 00:02:27.740]   So let's get started. The first thing we will be talking about is language models. Now, what is a language model?
+[00:02:27.740 --> 00:02:35.440]   Well, a language model is a probabilistic model that assigns probabilities to sequence of words. In practice a language model
+[00:02:35.440 --> 00:02:43.040]   Allows us to compute the following. What is the probability that the word China comes after in the sentence?
+[00:02:43.480 --> 00:02:48.000]   Shanghai is a city in. So the language model allow us to
+[00:02:48.000 --> 00:02:52.800]   model the probability of the next token given the prompt and
+[00:02:52.800 --> 00:02:57.420]   We usually train a neural network to predict these probabilities
+[00:02:57.420 --> 00:03:03.800]   A neural network that has been trained on a very large corpora of text is known as a large language model
+[00:03:03.800 --> 00:03:06.800]   When we train large language models
+[00:03:06.800 --> 00:03:12.920]   We usually have a very big corpora of text that is made of, which is a kind of a collection of documents
+[00:03:12.920 --> 00:03:13.920]   now
+[00:03:13.920 --> 00:03:21.740]   Often language models are trained on the entire Wikipedia or millions of web pages or even thousands of books because we wanted the language
+[00:03:21.740 --> 00:03:28.180]   Model to acquire as much knowledge as possible and we usually use a transformer based
+[00:03:28.180 --> 00:03:31.400]   Architecture to create a language model
+[00:03:31.400 --> 00:03:39.680]   For example llama is usually known as a decoder only network and bird is usually known as an encoder only network
+[00:03:41.440 --> 00:03:46.960]   Because llama has the last part of llama is the basically the decoder of the
+[00:03:46.960 --> 00:03:54.160]   Transformer without the cross attention plus a linear layer plus a softmax while bird using only the encoder side
+[00:03:54.160 --> 00:03:57.160]   And then it has some heads that can be a linear layer
+[00:03:57.160 --> 00:04:00.280]   Depending on the task it is we are using it for
+[00:04:00.280 --> 00:04:02.840]   to inference a language model
+[00:04:02.840 --> 00:04:08.160]   we usually build a prompt and then we ask the language model to continue this prompt with by
+[00:04:08.440 --> 00:04:14.640]   Iteratively adding tokens such that the tokens that the language model adds make sense in
+[00:04:14.640 --> 00:04:18.840]   Continuity with the prompt. So for example here
+[00:04:18.840 --> 00:04:26.280]   I'm asking chatgpd to come to continue a joke and chatgpd continues the joke by adding a few more tokens that when read
+[00:04:26.280 --> 00:04:31.640]   In their entirety they make sense. They are coherent with what I actually wrote
+[00:04:33.440 --> 00:04:39.280]   You are what you eat, so a language model can only output text and information
+[00:04:39.280 --> 00:04:44.480]   It was trained upon this means that if we train a language model only on English content
+[00:04:44.480 --> 00:04:48.480]   Very probably it will not be able to output Japanese or French
+[00:04:48.480 --> 00:04:50.600]   to teach new
+[00:04:50.600 --> 00:04:55.440]   Concepts to new content new information to a language model. We need to fine-tune the model
+[00:04:56.040 --> 00:05:01.160]   However fine-tune fine-tuning is has some cons for example
+[00:05:01.160 --> 00:05:05.280]   It can be expensive in term of computation power necessary to fine-tune
+[00:05:05.280 --> 00:05:12.920]   The number of parameters of the model may not be sufficient to capture all the knowledge that we want to teach the the model itself
+[00:05:12.920 --> 00:05:19.040]   So for example llama was introduced with the 7 billion 13 billion and the 70 billion parameters
+[00:05:19.040 --> 00:05:23.240]   Why because with 7 billion parameters you it can capture
+[00:05:24.200 --> 00:05:29.320]   Some some knowledge, but not as much as the 70 billion parameters model
+[00:05:29.320 --> 00:05:35.200]   So the number of parameters is a limitation on the amount of knowledge the language model can acquire
+[00:05:35.200 --> 00:05:38.560]   Also fine-tuning is not additive
+[00:05:38.560 --> 00:05:43.440]   For example if you have a model that has trained on English content
+[00:05:43.440 --> 00:05:46.660]   And then you heavily fine-tune it on Japanese content
+[00:05:46.660 --> 00:05:53.520]   The model will not be at the end of the fine-tuning will not be as proficient in English and as in Japanese
+[00:05:53.520 --> 00:05:57.040]   But it may forget some of the English content
+[00:05:57.040 --> 00:06:03.920]   It was initially trained upon so is that we say that the fine-tuning is not additive to the knowledge of the language model
+[00:06:03.920 --> 00:06:08.680]   Of course we can compensate for the
+[00:06:08.680 --> 00:06:12.760]   for the fine-tuning with the prompt engineering for example
+[00:06:12.760 --> 00:06:16.360]   It is possible to ask the language model to perform a new task
+[00:06:16.360 --> 00:06:22.360]   Task that it was not specifically trained upon by working with the prompt for example
+[00:06:22.400 --> 00:06:27.080]   This is a few short prompting technique and the following is an example so
+[00:06:27.080 --> 00:06:32.840]   We first give an instruction to the language model here is the instruction on
+[00:06:32.840 --> 00:06:36.160]   What is the task the language model is going to perform?
+[00:06:36.160 --> 00:06:40.560]   Then we give the language model some example to how to perform this task
+[00:06:40.560 --> 00:06:43.680]   And then we ask the language model to perform it
+[00:06:43.680 --> 00:06:49.360]   For example the task here is Oleo is a cat that likes to play tricks on his friend Umar
+[00:06:49.400 --> 00:06:52.720]   By replacing all the names in everything he writes with meow
+[00:06:52.720 --> 00:06:59.880]   For example Umar writes Bob runs a YouTube channel and Oleo will modify it to meow runs a YouTube channel
+[00:06:59.880 --> 00:07:04.720]   So what happens if Umar writes Alice likes to play with his friend Bob
+[00:07:04.720 --> 00:07:06.720]   How would Oleo modify it?
+[00:07:06.720 --> 00:07:12.560]   The language model comes up with the right answer, which is meow likes to play with his friend meow so
+[00:07:13.200 --> 00:07:16.960]   JGPT in this case was not trained on performing this task
+[00:07:16.960 --> 00:07:23.800]   But by looking at the prompt and the example that we provided it it was able to come up with the right solution
+[00:07:23.800 --> 00:07:30.160]   And we can use prompt engineering also for question answering with the same kind of reasoning
+[00:07:30.160 --> 00:07:34.400]   So we build a very big prompt that includes an instruction part
+[00:07:34.400 --> 00:07:39.680]   So you are an assistant trained to answer questions using the given context
+[00:07:39.680 --> 00:07:45.160]   In which we provide some context which is a piece of text in which to retrieve the answer
+[00:07:45.160 --> 00:07:47.880]   And then we ask the question to the language model
+[00:07:47.880 --> 00:07:53.960]   How many parameters are there in grok zero so grok is the language model that is introduced by Twitter
+[00:07:53.960 --> 00:08:00.560]   And it's a language model that can also access the latest tweets, and we will see later how
+[00:08:00.560 --> 00:08:07.120]   But the point is I am asking the language model so JGPT to tell me about grok zero
+[00:08:07.120 --> 00:08:10.160]   so very probably JGPT was not trained on the
+[00:08:10.160 --> 00:08:15.000]   It doesn't know about the existence of this grok zero because it came out very recently
+[00:08:15.000 --> 00:08:21.240]   So the model JGPT was able to retrieve the answer by looking at the context
+[00:08:21.240 --> 00:08:23.440]   So in this case, for example
+[00:08:23.440 --> 00:08:31.040]   It says grok zero the prototype LLM mentioned in the provided context is stated to have been trained with 33 billion parameters
+[00:08:31.440 --> 00:08:39.720]   Because the JGPT was able to access the context in which we talk about the how many parameters there are in grok zero
+[00:08:39.720 --> 00:08:45.720]   Which is this line after announcing XAIV prototype we train the prototype LLM with 33 billion parameters
+[00:08:45.720 --> 00:08:48.040]   so the answer is correct and
+[00:08:48.040 --> 00:08:51.160]   This
+[00:08:51.160 --> 00:08:56.720]   this kind of way of working with the prompt is actually very powerful, but also
+[00:08:57.520 --> 00:09:01.800]   Fine-tuning is not necessarily wrong or the wrong way to deal with this
+[00:09:01.800 --> 00:09:09.560]   Lack of knowledge problem in the language models because it usually when we fine-tune a model on a specific
+[00:09:09.560 --> 00:09:15.800]   Particular content it results in a higher quality results compared to just prompt engineering
+[00:09:15.800 --> 00:09:21.480]   And also as you saw before to ask a question to JGPT
+[00:09:21.480 --> 00:09:23.680]   We had to build a very big prompt
+[00:09:23.840 --> 00:09:29.560]   So it means that the number of tokens that we are giving to the model is quite big the more we have
+[00:09:29.560 --> 00:09:34.300]   the bigger the context that we need to provide to answer a particular question and
+[00:09:34.300 --> 00:09:41.360]   We know that the more context we give the more information the language model will have to come up with the right answer
+[00:09:41.360 --> 00:09:43.760]   So usually we need a bigger context
+[00:09:43.760 --> 00:09:49.360]   But the problem is bigger context is also computationally expensive
+[00:09:49.360 --> 00:09:54.840]   So by fine-tuning actually we can reduce this content size because we don't need to provide the context
+[00:09:54.840 --> 00:10:02.400]   Anymore because we are fine-tuning the language model on the specific data on which we will ask questions for so to a language model that
+[00:10:02.400 --> 00:10:05.200]   Has been fine-tuned. We just need to ask the question
+[00:10:05.200 --> 00:10:11.440]   So how many parameters are there in grok0 without providing all the context and if the language model has been fine-tuned correctly
+[00:10:11.440 --> 00:10:13.440]   It will be able to come up with the right answer
+[00:10:15.040 --> 00:10:20.080]   Now we need to introduce the retrieval augmented generation pipeline
+[00:10:20.080 --> 00:10:25.440]   Because that's our next step and we will explore each building block that makes up the pipeline
+[00:10:25.440 --> 00:10:30.200]   So imagine that we want to do question answering with the retrieval augmented generation
+[00:10:30.200 --> 00:10:33.840]   Compared to what we did before before we did it with the prompt engineering
+[00:10:33.840 --> 00:10:36.320]   so
+[00:10:36.320 --> 00:10:40.520]   how many parameters are there in grok0 this is our query and
+[00:10:42.000 --> 00:10:48.160]   Imagine we also have some documents in which we can find this answer these documents may be some pdf documents
+[00:10:48.160 --> 00:10:51.920]   But they may also be web pages from which we can retrieve this answer
+[00:10:51.920 --> 00:10:58.880]   What we do is we split all these documents or pieces of text into chunks of text
+[00:10:58.880 --> 00:11:04.600]   so small pieces of text for example a document may be made up of many pages and each page may be made up of
+[00:11:04.600 --> 00:11:07.180]   Paragraphs and each paragraph is made up of sentences
+[00:11:08.000 --> 00:11:12.980]   In the usually we split each of these documents into small sentences
+[00:11:12.980 --> 00:11:17.120]   And also the web pages are split in the same way
+[00:11:17.120 --> 00:11:21.220]   We create embeddings of these sentences
+[00:11:21.220 --> 00:11:28.720]   Such that each embedding is a vector of a fixed size that captures the meaning of each sentence
+[00:11:28.720 --> 00:11:34.160]   Then we store all of these embeddings into a vector database and later
+[00:11:34.160 --> 00:11:37.520]   We will see all these embeddings and vector database how they work
+[00:11:37.520 --> 00:11:41.120]   Then we take also the query which is a sentence
+[00:11:41.120 --> 00:11:48.340]   We convert it into an embedding using the same model that we have used to convert the documents into embeddings
+[00:11:48.340 --> 00:11:51.360]   We search this embedding
+[00:11:51.360 --> 00:11:56.160]   So this query embedding into our database which already have many embeddings each
+[00:11:56.380 --> 00:12:02.220]   Representing a sentence from our document and it will come up with some results with the best matching
+[00:12:02.220 --> 00:12:06.380]   Embeddings for our particular query and each embedding is also
+[00:12:06.380 --> 00:12:09.240]   associated with the piece of text
+[00:12:09.240 --> 00:12:16.540]   It comes from so the vector database is also able to retrieve the original text from which that embedding was created
+[00:12:16.540 --> 00:12:20.780]   So if we are for example, how many parameters are there in grok zero?
+[00:12:21.100 --> 00:12:27.420]   The vector database will search all of its embedding and will give us the embeddings that best match our query
+[00:12:27.420 --> 00:12:34.460]   So probably it will look for all the piece of text that talk about grok zero and the parameters it contains
+[00:12:34.460 --> 00:12:41.340]   Now that we have the context and the query we create a template for a prompt
+[00:12:41.340 --> 00:12:48.220]   So just like the the prompt we have used before so you are an assistant trained to answer questions using the given context
+[00:12:48.940 --> 00:12:54.000]   We paste the context and the query inside of the prompt template
+[00:12:54.000 --> 00:12:57.820]   And just like before we feed it to the language model
+[00:12:57.820 --> 00:13:03.520]   And then the language model will be able to answer our question by using the context provided
+[00:13:03.520 --> 00:13:09.980]   So we are with the retrieval augmented generation. We are not fine-tuning a model to answer the questions
+[00:13:09.980 --> 00:13:13.200]   We are actually using a prompt engineering
+[00:13:13.980 --> 00:13:19.420]   But we are introducing a database here called the vector database that can access the
+[00:13:19.420 --> 00:13:26.620]   Context given our query so it can retrieve the context necessary to answer our particular question
+[00:13:26.620 --> 00:13:29.980]   Feed it to the language model and then the language model
+[00:13:29.980 --> 00:13:35.900]   Using the context and our question will be able to come up with the right answer very probably
+[00:13:35.900 --> 00:13:43.100]   Now let's talk about embedding vectors so what they are and how we work
+[00:13:43.660 --> 00:13:52.140]   Okay, first of all, why do we use vectors to represent words for example given the words cherry digital and information
+[00:13:52.140 --> 00:13:55.900]   If we represent embedding vectors using only two dimensions
+[00:13:55.900 --> 00:14:01.100]   So as you remember in the vanilla transformer each embedding vector is 512 dimensions
+[00:14:01.100 --> 00:14:04.540]   But imagine we are in a simpler world. We only have two dimensions
+[00:14:04.540 --> 00:14:08.940]   So we can plot these embedding vectors on a xy plane
+[00:14:09.580 --> 00:14:13.420]   And what we do is we hope to see something like this
+[00:14:13.420 --> 00:14:19.100]   So that words with similar meaning or words that represent the same concept
+[00:14:19.100 --> 00:14:21.980]   Point in the same direction in space
+[00:14:21.980 --> 00:14:27.820]   So for example the word digital and the word information are pointing to the same direction in space
+[00:14:27.820 --> 00:14:33.500]   Such that the angle between words that have a similar meaning is small
+[00:14:33.500 --> 00:14:38.380]   So the angle between digital and information is small and the angle between
+[00:14:39.020 --> 00:14:41.660]   Words that have a different meaning is bigger
+[00:14:41.660 --> 00:14:47.760]   So for example the word cherry and digital have an angle that is bigger compared to digital and information
+[00:14:47.760 --> 00:14:50.400]   Indicating that they represent different concepts
+[00:14:50.400 --> 00:14:53.420]   Imagine we have another word called tomato
+[00:14:53.420 --> 00:14:59.820]   We expect it to point to this vertical direction here such that the angle between cherry and tomato should be small
+[00:14:59.820 --> 00:15:02.860]   How do we measure this angle?
+[00:15:02.860 --> 00:15:10.480]   We usually use the cosine similarity to measure the angle between vectors and later we will see the formula of the cosine similarity
+[00:15:10.480 --> 00:15:17.280]   Now, how did we come up with the idea of representing words as embeddings?
+[00:15:17.280 --> 00:15:23.820]   The first idea is that words that are synonyms tend to occur in the same context
+[00:15:23.820 --> 00:15:28.960]   So surrounded by the same words, for example, the word teacher and the professor
+[00:15:29.500 --> 00:15:37.100]   Usually occur by the word school, university, exam, lecture, course, etc and vice versa
+[00:15:37.100 --> 00:15:43.900]   We can also say that words that occur in the same context tend to have similar meaning
+[00:15:43.900 --> 00:15:46.720]   This is known as the distributional hypothesis
+[00:15:46.720 --> 00:15:51.260]   This means that to capture the meaning of a word
+[00:15:51.260 --> 00:15:56.620]   We also need to have access to its context so to the words surrounding it
+[00:15:57.660 --> 00:16:02.160]   But this also means that this is also the reason why we employ self-attention
+[00:16:02.160 --> 00:16:07.260]   In the transformer model to capture the conceptual information of each token
+[00:16:07.260 --> 00:16:11.260]   So as you remember the transformer model we have this self-attention
+[00:16:11.260 --> 00:16:16.060]   The self-attention is a way to relate each token with all the other token in the same sentence
+[00:16:16.060 --> 00:16:23.180]   Based also on the position each token occupies in the sentence because we have the concept of positional encoding
+[00:16:23.180 --> 00:16:28.540]   So the self-attention access two things to calculate its score of attention
+[00:16:28.540 --> 00:16:32.620]   The first is the embedding of the word which captures its meaning
+[00:16:32.620 --> 00:16:38.940]   The second information it accesses is the positional encoding so that words that are closer to each other are related
+[00:16:38.940 --> 00:16:42.140]   Differently to words that are far from each other
+[00:16:42.140 --> 00:16:50.220]   And this self-attention mechanism modifies the embedding of each word in such a way that it also captures the
+[00:16:50.680 --> 00:16:54.360]   Contextual information of that word and the words that surround it
+[00:16:54.360 --> 00:17:00.200]   We trained BERT on a very particular
+[00:17:00.200 --> 00:17:04.940]   Task which is called the musket language model task to capture information
+[00:17:04.940 --> 00:17:08.040]   To create the embeddings of BERT
+[00:17:08.040 --> 00:17:15.480]   This musket language model task is based on the clothes task and we humans do it very often. Let me give you an example
+[00:17:16.200 --> 00:17:21.160]   Imagine I give you the following sentence rome is the something something of italy
+[00:17:21.160 --> 00:17:27.320]   This is why which is why it hosts many government buildings. Can you tell me what is the missing word?
+[00:17:27.320 --> 00:17:35.800]   Well, of course the missing word is capital because by looking at the rest of the sentence is the one that makes the most sense
+[00:17:35.800 --> 00:17:44.120]   How did we come up with the word capital for the missing word? Well, we look at the words that were surrounding the blank space
+[00:17:44.840 --> 00:17:48.840]   so it means that to the the word capital depends on the
+[00:17:48.840 --> 00:17:52.920]   Context in which it appears on the words that surround it
+[00:17:52.920 --> 00:17:55.960]   And this is how we train BERT
+[00:17:55.960 --> 00:18:00.760]   We want the self-attention mechanism to relate all the input tokens with each other
+[00:18:00.760 --> 00:18:07.480]   So that BERT has enough information about the context of the missing word to predict it
+[00:18:08.280 --> 00:18:12.600]   For example, imagine we want to train BERT on the musket language model task
+[00:18:12.600 --> 00:18:16.280]   And we create an input with the musket word just like before
+[00:18:16.280 --> 00:18:21.560]   So rome is the something something of italy, which is why it hosts many government buildings
+[00:18:21.560 --> 00:18:24.920]   We replace the blank space with a special token called musk
+[00:18:24.920 --> 00:18:29.000]   This becomes the input of BERT which is made of 14 tokens
+[00:18:29.000 --> 00:18:31.880]   We feed it to BERT
+[00:18:31.880 --> 00:18:36.360]   BERT is a transformer model. So it will output it's a sequence to sequence model
+[00:18:36.360 --> 00:18:40.440]   So if the input is 14 tokens, the output will also be 14 tokens
+[00:18:40.440 --> 00:18:46.280]   We ask BERT to predict the fourth token because it's the one that has been musket out
+[00:18:46.280 --> 00:18:49.560]   We know what is the word, which the word is capital
+[00:18:49.560 --> 00:18:57.080]   So we ask we calculate the loss based on what is the predicted fourth token and what it should be the actual fourth token
+[00:18:57.080 --> 00:19:04.140]   And then we back propagate the the loss to update all the weights of the model when we run back propagation
+[00:19:05.080 --> 00:19:06.520]   BERT
+[00:19:06.520 --> 00:19:10.360]   The model will also update the input embeddings here
+[00:19:10.360 --> 00:19:17.800]   So the input embeddings by the back propagation mechanism will be modified in such a way that this word
+[00:19:17.800 --> 00:19:25.100]   So the word capital so the embedding associated with the word capital will be modified in such a way that it captures all the information
+[00:19:25.100 --> 00:19:27.080]   About its context
+[00:19:27.080 --> 00:19:32.120]   So the next time BERT will have less troubles predicting it given its context
+[00:19:32.920 --> 00:19:39.480]   And this is uh, actually the one of the reason why we run back propagation because we want the model to get better and better
+[00:19:39.480 --> 00:19:41.560]   By reducing the loss
+[00:19:41.560 --> 00:19:47.400]   What if I told you that actually we can also create embeddings not of single tokens
+[00:19:47.400 --> 00:19:54.920]   But also of entire sentences so we can use the self-attention mechanism to capture also the meaning of an entire sentence
+[00:19:54.920 --> 00:20:01.880]   What we can do is we can use a pre-trained BERT model to produce embeddings of entire sentences. Let's see how
+[00:20:02.760 --> 00:20:05.960]   Well, suppose we have a simple input sentence
+[00:20:05.960 --> 00:20:13.400]   For example, this one made of 13 tokens called our professor always gives us lots of assignments to do in the weekend
+[00:20:13.400 --> 00:20:18.600]   We feed it to BERT, but notice that I removed the linear layer from BERT
+[00:20:18.600 --> 00:20:21.080]   And I will show you why
+[00:20:21.080 --> 00:20:26.840]   so the first thing we do is we notice is that the input of the self-attention is a matrix of shape 13 by
+[00:20:27.860 --> 00:20:34.100]   768. Why? Because we have 13 tokens and each token is represented by an embedding with
+[00:20:34.100 --> 00:20:41.060]   768 dimensions which is the dimension which is the size of the embedding vector in BERT base
+[00:20:41.060 --> 00:20:43.220]   So the smaller BERT pre-trained model
+[00:20:43.220 --> 00:20:49.780]   The self-attention mechanism will output another matrix with the shape 13 by
+[00:20:49.780 --> 00:20:56.520]   768 so 13 tokens each one with its own embedding of 768 dimensions
+[00:20:57.300 --> 00:21:04.740]   And the output of the self-attention is an embedding that captures not only the meaning of the word or its position in the sentence
+[00:21:04.740 --> 00:21:09.860]   But also all the contextual information all the relationship between other words and the current word
+[00:21:09.860 --> 00:21:17.320]   So the output will be 13 tokens each one represented by an embedding of size 768
+[00:21:17.320 --> 00:21:24.500]   What we do now each of them is representing kind of the meaning of a single word, right?
+[00:21:24.820 --> 00:21:29.780]   So what we do we can average all of them to create the embedding of the sentence
+[00:21:29.780 --> 00:21:32.840]   So we take all these vectors of size 768
+[00:21:32.840 --> 00:21:38.100]   We calculate the average of them which will result in a single vector with
+[00:21:38.100 --> 00:21:45.700]   768 dimensions and this single vector will represent the sentence embedding which captures the meaning of the entire sentence
+[00:21:45.700 --> 00:21:49.320]   And this is how we create the embedding of a sentence
+[00:21:51.140 --> 00:21:53.140]   Now, how can we compare
+[00:21:53.140 --> 00:21:59.780]   Sentence embeddings in to see if two sentences have similar meaning so for example, imagine
+[00:21:59.780 --> 00:22:02.500]   one sentence is talking about the
+[00:22:02.500 --> 00:22:07.140]   The query for example before was talking about how many parameters are there in grok zero
+[00:22:07.140 --> 00:22:11.460]   And then we have another sentence that talks about how many parameters there are in grok zero
+[00:22:11.460 --> 00:22:15.400]   So, how can we relate these two sentences? We need to find a similarity
+[00:22:16.320 --> 00:22:21.620]   Function and what we do is we usually use a cosine similarity because they are both vectors
+[00:22:21.620 --> 00:22:29.300]   And the cosine similarity can be calculated as between vectors and it measures the cosine of the angle between the two vectors
+[00:22:29.300 --> 00:22:36.480]   A smaller angle results in a high cosine singular similarity score while a bigger angle results in a smaller
+[00:22:36.480 --> 00:22:40.560]   Cosine similarity score and this is the formula of the cosine similarity score
+[00:22:40.560 --> 00:22:43.520]   But there is a problem
+[00:22:43.520 --> 00:22:50.000]   So nobody told BERT that the embedding it produces should be comparable with the cosine similarity
+[00:22:50.000 --> 00:22:52.500]   So BERT is outputting some embeddings
+[00:22:52.500 --> 00:22:55.440]   And then we take the average of these embeddings
+[00:22:55.440 --> 00:23:03.460]   But nobody told BERT that these embeddings should be in such a way that two similar sentences should produce similar embeddings
+[00:23:03.460 --> 00:23:12.800]   How can we teach BERT to produce embeddings that can be compared with a similarity function of our choice
+[00:23:13.040 --> 00:23:16.420]   Which could be a cosine similarity or the euclidean distance
+[00:23:16.420 --> 00:23:21.760]   Well, we introduce sentence BERT. Sentence BERT is one of the most popular
+[00:23:21.760 --> 00:23:24.560]   models to
+[00:23:24.560 --> 00:23:31.600]   To produce embeddings for entire sentences that can be compared using a similarity function of our choice in this case
+[00:23:31.600 --> 00:23:33.840]   It's the cosine similarity score
+[00:23:33.840 --> 00:23:40.160]   So sentence BERT was introduced in a paper called sentence BERT sentence embeddings using Siamese BERT
+[00:23:40.380 --> 00:23:44.780]   Networks and we will see all of this. What does it mean? What is a Siamese network?
+[00:23:44.780 --> 00:23:47.340]   Now imagine we have
+[00:23:47.340 --> 00:23:50.300]   Two sentences that are similar in meaning for example
+[00:23:50.300 --> 00:23:55.820]   My my father plays with me at the park and I play with my dad at the park
+[00:23:55.820 --> 00:24:02.940]   The first one we will call it sentence A and the second one we will call it sentence B
+[00:24:02.940 --> 00:24:07.740]   We feed them to BERT. So each of them will be a
+[00:24:08.700 --> 00:24:12.940]   Sequence of tokens. For example, this one may be 10 tokens and this one may be 8 tokens
+[00:24:12.940 --> 00:24:18.300]   We feed it to BERT which will produce output of 10 tokens and 8 tokens
+[00:24:18.300 --> 00:24:21.900]   Then we do the pooling the mean pooling that we did before
+[00:24:21.900 --> 00:24:27.020]   So we take all these output tokens and we calculate the average of them to produce one only
+[00:24:27.020 --> 00:24:34.060]   vector of dimension 760 as in case we are using BERT base or bigger in case we are using a bigger BERT
+[00:24:35.660 --> 00:24:38.300]   The first one we will call it sentence embedding A
+[00:24:38.300 --> 00:24:44.140]   So the first vector is the embedding of the sentence A and the second one is the embedding of the sentence B
+[00:24:44.140 --> 00:24:48.640]   We then measure the cosine similarity between these two vectors
+[00:24:48.640 --> 00:24:52.700]   We have our target cosine similarity because we are training this
+[00:24:52.700 --> 00:24:59.500]   BERT this model. So we for example given these two sentences, which are quite similar in meaning
+[00:24:59.980 --> 00:25:05.500]   We may have a target that is very close to one because the angle between them will be small
+[00:25:05.500 --> 00:25:08.620]   we hope that the angle between them should be small so
+[00:25:08.620 --> 00:25:14.460]   We calculate the loss because we have a target and the output of the model and then we run back
+[00:25:14.460 --> 00:25:17.660]   propagation on to update all the weights of this model
+[00:25:17.660 --> 00:25:24.700]   Now as you can see this model is made up of two branches that are same. So in structure
+[00:25:25.340 --> 00:25:27.340]   But this is called the siamese network
+[00:25:27.340 --> 00:25:34.960]   Which is a network that is made of two branches or more branches that are same with each other with respect to the architecture
+[00:25:34.960 --> 00:25:39.100]   But also with respect to the weights of the model
+[00:25:39.100 --> 00:25:46.300]   So what we do actually when we represent these siamese networks, we represent it at two branches, but when we code this model actually
+[00:25:46.300 --> 00:25:49.900]   We will actually only have one model
+[00:25:49.980 --> 00:25:54.780]   So only one branch here that will reproduce cosine similarities and what we do
+[00:25:54.780 --> 00:25:57.500]   at operating level is that
+[00:25:57.500 --> 00:26:01.340]   First we run the sentence A through this model
+[00:26:01.340 --> 00:26:04.700]   Then we run the sentence B also through this model
+[00:26:04.700 --> 00:26:09.980]   We calculate the cosine similarity between these two output and then we run back propagation such that
+[00:26:09.980 --> 00:26:17.020]   The back propagation will only modify the parameters of this model here, but when we represent it
+[00:26:17.740 --> 00:26:25.340]   For showing we actually we represent it as two branches, but remember that they are not actually two branches. It's only one branch
+[00:26:25.340 --> 00:26:29.200]   It's only one weights only one architecture and the same number of parameters
+[00:26:29.200 --> 00:26:32.940]   This way the birth
+[00:26:32.940 --> 00:26:38.080]   Will if we train birth the sentence birth like this it will produce embeddings
+[00:26:38.080 --> 00:26:40.940]   But in such a way that the similar
+[00:26:40.940 --> 00:26:46.640]   Sentences have a similar cosine similarity. So I have high cosine similarity
+[00:26:47.440 --> 00:26:51.600]   And so we can compare them using the cosine similarity measure
+[00:26:51.600 --> 00:26:58.320]   Also, if if you remember birth produces at least birth base produces embeddings of size
+[00:26:58.320 --> 00:27:05.220]   768 if we want to produce sentence embeddings that are smaller than 760 dimensions
+[00:27:05.220 --> 00:27:12.340]   We can include a linear layer here to reduce the dimensions. For example, we want to go from 768 to 512
+[00:27:13.760 --> 00:27:17.440]   In the paper of sentence birth actually they not only
+[00:27:17.440 --> 00:27:24.320]   Use the mean pooling that we use the so to calculate the average of all the tokens output by birth to produce one
+[00:27:24.320 --> 00:27:29.360]   Vector that represents the meaning of the entire sentence, but they also use max pooling
+[00:27:29.360 --> 00:27:32.720]   And another technique that they use is the CLS token
+[00:27:32.720 --> 00:27:37.040]   So if you remember the CLS token is the first token that we give as input to birth
+[00:27:37.040 --> 00:27:40.240]   And it's also the first token that is output by birth
+[00:27:40.880 --> 00:27:46.320]   And usually this because of the self-attention mechanism. This CLS token captures the
+[00:27:46.320 --> 00:27:48.960]   information from all the other tokens because
+[00:27:48.960 --> 00:27:52.480]   Of how the self-attention mechanism works
+[00:27:52.480 --> 00:27:54.240]   and
+[00:27:54.240 --> 00:27:57.200]   However, the sentence birth paper they have shown that
+[00:27:57.200 --> 00:28:03.440]   Both methods so the max pooling and the CLS token don't perform better than mean pooling
+[00:28:03.440 --> 00:28:09.460]   So they they recommend using mean pooling which is also one of actually what is used in production nowadays
+[00:28:10.020 --> 00:28:12.180]   Okay
+[00:28:12.180 --> 00:28:14.180]   Now let's review again
+[00:28:14.180 --> 00:28:19.780]   What is the pipeline of retrieval augmented generation now that we know how embeddings works?
+[00:28:19.780 --> 00:28:24.900]   So we have our query which is how many parameters are there in grok zero?
+[00:28:24.900 --> 00:28:31.780]   Then we have some documents in which we can find this answer. So the documents may be pdf documents or web pages
+[00:28:31.780 --> 00:28:39.220]   We split them into single sentences and we embed these sentences using our sentence birth
+[00:28:40.180 --> 00:28:44.680]   Our sentence birth will produce vectors of a fixed size. Suppose 768
+[00:28:44.680 --> 00:28:51.460]   And we store them all these vectors in a vector db. We will see later how it works
+[00:28:51.460 --> 00:28:56.580]   The query is also converted into a vector of size
+[00:28:56.580 --> 00:29:02.340]   768 dimensions and we search this
+[00:29:02.340 --> 00:29:06.420]   Query in the vector dbs. How do we search?
+[00:29:06.900 --> 00:29:09.160]   We want to find all the embeddings
+[00:29:09.160 --> 00:29:12.740]   That best match our query. What do we mean by this?
+[00:29:12.740 --> 00:29:19.060]   We mean all the embeddings that have that when we calculate the cosine similarity score with our query
+[00:29:19.060 --> 00:29:22.420]   It results in a high value or if you are using another
+[00:29:22.420 --> 00:29:28.180]   Similarity score for example euclidean distance the distance is small depending on what?
+[00:29:28.180 --> 00:29:32.020]   Distance we are using the cosine similarity or the euclidean distance
+[00:29:33.060 --> 00:29:41.140]   This will produce the top embeddings that best match our query and we map them back into the text from which they originated from
+[00:29:41.140 --> 00:29:46.360]   This will produce the context that we feed into our prompt template
+[00:29:46.360 --> 00:29:51.540]   Along with the query we give it to the large language model, which will produce the answer
+[00:29:51.540 --> 00:29:55.060]   As we saw previously augment the knowledge of a language model
+[00:29:55.060 --> 00:30:01.460]   We have two strategies fine tuning on a custom data set or using a vector database made up of embeddings
+[00:30:01.700 --> 00:30:06.260]   We can also use a combination of both for example by fine tuning for a few epochs
+[00:30:06.260 --> 00:30:10.260]   And then using a vector database to complement with knowledge retrieved from the web
+[00:30:10.260 --> 00:30:19.240]   Whatever strategy we decide to proceed with we need a reliable scalable and easy to use service for building our retrieval augmented generation pipelines
+[00:30:19.240 --> 00:30:21.620]   That's why I recommend gradient
+[00:30:21.620 --> 00:30:29.780]   Gradient is a scalable ai cloud platform that provides simple apis for fine-tuning models generating embeddings and running inference
+[00:30:30.020 --> 00:30:33.140]   Thanks to its integration with popular library lama index
+[00:30:33.140 --> 00:30:37.140]   We can build retrieval augmented generation pipelines with few lines of code
+[00:30:37.140 --> 00:30:41.380]   For example, we select the model we want to use in our case
+[00:30:41.380 --> 00:30:46.980]   It's lama2. We define the set of custom documents that the model can use to retrieve answers
+[00:30:46.980 --> 00:30:50.200]   We define the model that we want to use to generate embeddings
+[00:30:50.200 --> 00:30:55.140]   Ask a question for example, do you know anyone named oleo it voila
+[00:30:55.380 --> 00:31:01.620]   Thanks to the power of retrieval augmented generation. The model can now retrieve information about our channel's mascot oleo
+[00:31:01.620 --> 00:31:06.820]   Gradient helps us build all aspects of a retrieval augmented generation pipeline
+[00:31:06.820 --> 00:31:11.720]   For example, we can also fine-tune models on custom data as well as generate embeddings
+[00:31:11.720 --> 00:31:18.500]   With gradient you have total ownership of your data as well as the weights of fine-tuned models open source models are great
+[00:31:18.820 --> 00:31:25.640]   Because they save time on development and debugging as we have access to the architecture and the support of a vast community of developers
+[00:31:25.640 --> 00:31:30.100]   Gradient also integrates with popular libraries lama index and lang chain
+[00:31:30.100 --> 00:31:35.460]   Check the link in the description to redeem your five dollar coupon to get started today with gradient
+[00:31:35.460 --> 00:31:38.420]   Let's talk about
+[00:31:38.420 --> 00:31:43.940]   Let's talk about vector databases what they are and how their matching algorithm works
+[00:31:44.100 --> 00:31:49.220]   So, how can the vector database search our query in all the vectors that it has stored?
+[00:31:49.220 --> 00:31:51.620]   Okay
+[00:31:51.620 --> 00:31:57.540]   A vector database stores vectors of fixed dimensions called embeddings such that
+[00:31:57.540 --> 00:32:05.540]   We can then query the database to find all the embeddings that are closest or more similar to our query using a distance metric
+[00:32:05.540 --> 00:32:08.440]   The cosine similarity or the euclidean distance
+[00:32:09.140 --> 00:32:16.580]   The vector database uses a variant of the knn algorithm which stands for the k nearest neighbor algorithm or another
+[00:32:16.580 --> 00:32:21.160]   Similarity search algorithm, but usually it's usually a variant of the knn algorithm
+[00:32:21.160 --> 00:32:25.940]   And the vector databases are not only used in retrieval augmented generation pipeline
+[00:32:25.940 --> 00:32:28.820]   They are also used for finding for example similar songs
+[00:32:28.820 --> 00:32:32.100]   So if we have songs we can create embeddings of them
+[00:32:32.100 --> 00:32:36.420]   So some embedding some vector that captures all the information about that song
+[00:32:37.060 --> 00:32:39.780]   And then we can find similar songs a given
+[00:32:39.780 --> 00:32:44.740]   One for example, we have a user who want to find all the similar songs to a given one
+[00:32:44.740 --> 00:32:52.260]   We will create the embedding of that song and all the others. We compare them using some similarity score. For example, the cosine similarity score
+[00:32:52.260 --> 00:32:58.740]   For example, also google images they search similar images using a similar technique. So using an embedding
+[00:32:58.740 --> 00:33:06.900]   Space in which they produce the embedding of a particular image and all the other and then they check the one that match best
+[00:33:07.700 --> 00:33:10.120]   We can also do the same with products, etc
+[00:33:10.120 --> 00:33:18.980]   Now knn is an algorithm that allow us to compare a particular query with all the vectors that we have
+[00:33:18.980 --> 00:33:21.140]   stored in our database
+[00:33:21.140 --> 00:33:27.860]   Sort them by distance or by similarity depending on which one we use and then we keep the top best matching
+[00:33:27.860 --> 00:33:30.420]   For example, imagine we have a query
+[00:33:30.420 --> 00:33:36.100]   So how many parameters are there in grok and imagine we have a database vector a vector database
+[00:33:36.100 --> 00:33:42.980]   Made up of 1 million embeddings because actually 1 million is not even a big number because if you consider that
+[00:33:42.980 --> 00:33:48.580]   Suppose grok, for example that is accessing the tweets in real time every day
+[00:33:48.580 --> 00:33:52.820]   I think we have thousands hundreds of thousands of tweets if not millions of tweets
+[00:33:53.700 --> 00:34:00.420]   So actually the amount of vectors it has it's actually in the order of billions. I think not even millions
+[00:34:00.420 --> 00:34:03.460]   So actually millions looks like a big number, but it's not
+[00:34:03.460 --> 00:34:10.100]   Especially when we deal with the textual data also from the web we have billions of web pages that we may need to index
+[00:34:10.100 --> 00:34:14.660]   So what we do for example in this knn with the naive approach
+[00:34:14.660 --> 00:34:19.940]   Which is the most simple way of matching a query to all the other vectors is to compare
+[00:34:20.260 --> 00:34:26.500]   This query with all the other vectors given our cosine similarity function. For example, we may we may have this
+[00:34:26.500 --> 00:34:31.780]   The with the first vector it may be 0.3. The second 0.1 0.2, etc, etc
+[00:34:31.780 --> 00:34:34.900]   then we sort
+[00:34:34.900 --> 00:34:39.060]   The we sort them by cosine similarity score
+[00:34:39.060 --> 00:34:42.980]   So with for example the highest one, for example, this one should be the first one
+[00:34:43.380 --> 00:34:47.140]   Then the this one should be the second one etc, etc, and we keep the top k
+[00:34:47.140 --> 00:34:50.580]   So the top three or the top two depending on how we chose k
+[00:34:50.580 --> 00:34:56.980]   Now this is actually a very simple approach, but it's also very slow because if there are n
+[00:34:56.980 --> 00:35:01.780]   Embedding vectors. So in this case 1 million and each one has d dimensions
+[00:35:01.780 --> 00:35:05.480]   So in this case, for example in the case of birth base, it's 768
+[00:35:05.480 --> 00:35:13.140]   The computational complexity is in the order of n multiplied by d which is very very very slow
+[00:35:13.860 --> 00:35:15.940]   Let's see if there are better approaches
+[00:35:15.940 --> 00:35:20.900]   And we will be exploring one algorithm in particular that is also used
+[00:35:20.900 --> 00:35:26.740]   Right now in the most popular vector db's which is called the hierarchical navigable small words
+[00:35:26.740 --> 00:35:29.620]   Now
+[00:35:29.620 --> 00:35:36.980]   What we the idea is that we will trade precision for speed. So before what the algorithm we saw before so the naive
+[00:35:36.980 --> 00:35:39.600]   knn
+[00:35:39.860 --> 00:35:46.600]   Which performs very slowly, but it's actually precise because each query the query is compared with each of the vectors
+[00:35:46.600 --> 00:35:52.180]   So it will always produce accurate results because we have all the possible comparison done
+[00:35:52.180 --> 00:35:56.100]   but do so to reduce the number of to
+[00:35:56.100 --> 00:36:03.540]   Increase the speed we need to reduce the number of comparisons that we do and the metric that we usually care in similarity search
+[00:36:03.540 --> 00:36:09.220]   Is recall. So the recall basically indicates that if our suppose that
+[00:36:10.020 --> 00:36:11.620]   in before
+[00:36:11.620 --> 00:36:16.900]   The best matching vector is for example, this one and this one and this one
+[00:36:16.900 --> 00:36:19.620]   uh, we want our
+[00:36:19.620 --> 00:36:25.700]   Top three query so knn to retrieve them all three of them
+[00:36:25.700 --> 00:36:30.900]   But imagine it only returns two in this case. We we have that the the query
+[00:36:30.900 --> 00:36:38.340]   Returned only two of the best matching vectors. So we will say that the recall is 66 percent or two thirds
+[00:36:39.300 --> 00:36:41.060]   So basically the recall measures
+[00:36:41.060 --> 00:36:48.180]   How many relevant items are retrieved among all the relevant items that it should have retrieved from our search?
+[00:36:48.180 --> 00:36:57.060]   And we will see one one algorithm in particular for approximate nearest neighbors, which is called hierarchical navigable small words
+[00:36:57.060 --> 00:37:01.060]   Now hierarchical navigable small words is actually used
+[00:37:01.540 --> 00:37:09.000]   Is actually very popular nowadays in vector databases and in particular. It's also the same algorithm that powers the database quadrant
+[00:37:09.000 --> 00:37:13.940]   Which is also the open source vector database used by twitter's grok llm
+[00:37:13.940 --> 00:37:21.380]   For example, this is the exchange of tweets that I saw the other day between elon musk and the team of quadrant in which they
+[00:37:21.380 --> 00:37:27.540]   Quadrant says that actually the grok is accessing all the tweets in real time
+[00:37:28.900 --> 00:37:33.700]   using the vector database, which is quadrant and if we check the
+[00:37:33.700 --> 00:37:41.860]   Documentation of this vector database, we will see that the quadrant currently only uses the hierarchical navigable small words as the vector index
+[00:37:41.860 --> 00:37:47.060]   So this is the algorithm that powers the database that is currently used by twitter to
+[00:37:47.060 --> 00:37:52.740]   introduce retrieval augmented generation in its large language model grok
+[00:37:54.580 --> 00:37:59.380]   The first idea behind this hierarchical navigable small words is the
+[00:37:59.380 --> 00:38:02.900]   Is the idea of the six degrees of evolution
+[00:38:02.900 --> 00:38:09.380]   So actually the hierarchical navigable small words is an evolution of an earlier algorithm called navigable small words
+[00:38:09.380 --> 00:38:13.700]   Which is an algorithm for approximate nearest neighbors that we will see later
+[00:38:13.700 --> 00:38:17.080]   Which is based on the idea of six degrees of separation
+[00:38:17.080 --> 00:38:23.000]   So in the 1960s, there was an experiment which is called the milgram experiment
+[00:38:23.540 --> 00:38:27.380]   Which wanted to test the social connections among people in the usa
+[00:38:27.380 --> 00:38:35.220]   The participants who were initially located in nebraska and constance were given a letter to deliver to a person that they didn't know
+[00:38:35.220 --> 00:38:36.980]   They did not know
+[00:38:36.980 --> 00:38:38.980]   And this person was in boston
+[00:38:38.980 --> 00:38:46.980]   However, they were not allowed to send the letter directly to the recipient instead. They were instructed to send it to someone who
+[00:38:46.980 --> 00:38:50.660]   Who could best know this target person?
+[00:38:51.860 --> 00:38:54.200]   At the end of the milgram word experiment
+[00:38:54.200 --> 00:39:00.180]   They found that the letter reached the final recipient in five or six steps
+[00:39:00.180 --> 00:39:05.880]   Creating the concept that people all over the world are connected by six degrees of separation
+[00:39:05.880 --> 00:39:12.040]   And actually in 2016 facebook published a blog post in which they claimed that the 1.59
+[00:39:12.040 --> 00:39:19.060]   Billion active users on facebook were connected by an average of 3.5 degrees of separation
+[00:39:19.300 --> 00:39:25.220]   This means that between me and mark zuckerberg. There are 3.5 connections, which means that on average, of course
+[00:39:25.220 --> 00:39:30.840]   Which means that I have a friend who has a friend who has a friend who knows mark zuckerberg
+[00:39:30.840 --> 00:39:34.840]   And this is the idea of the degrees of separation
+[00:39:34.840 --> 00:39:38.260]   So, let's see. What is this navigable small words?
+[00:39:38.260 --> 00:39:46.820]   Now the navigable small words algorithm builds a graph that just like facebook friends connects close vectors with each other
+[00:39:47.300 --> 00:39:50.020]   But keeping the total number of connections small
+[00:39:50.020 --> 00:39:56.340]   For example, every vector may be connected with up to other six vectors like to mimic the sixth degree of
+[00:39:56.340 --> 00:40:02.340]   Separation for example, imagine we have a very small database with only 15 vectors
+[00:40:02.340 --> 00:40:06.660]   Each one representing a particular sentence that we retrieved from
+[00:40:06.660 --> 00:40:10.420]   Our knowledge source which could be documents or web pages
+[00:40:10.420 --> 00:40:13.620]   And we have a graph like this in which for example
+[00:40:13.700 --> 00:40:20.580]   The first text is about the transformer which is connected to another piece of text that talks about the transformer model
+[00:40:20.580 --> 00:40:27.140]   Then we have another text that connects the tree with the two which is now talking about the cancer with ai
+[00:40:27.140 --> 00:40:29.140]   So diagnosing cancer with ai
+[00:40:29.140 --> 00:40:32.580]   And etc etc now
+[00:40:32.580 --> 00:40:36.900]   How do we find a given query in this particular graph?
+[00:40:36.900 --> 00:40:43.620]   So imagine we have our query which is how many encoder layers are there in the transformer model?
+[00:40:43.940 --> 00:40:50.660]   How does the algorithm find the k nearest neighbors? So the best matching k vectors for our query?
+[00:40:50.660 --> 00:40:57.460]   The algorithm will proceed like this. It will find first of all an entry point in this graph, which is randomly chosen
+[00:40:57.460 --> 00:41:02.660]   So we randomly choose among all these vectors one node as a random as an entry point
+[00:41:02.660 --> 00:41:05.460]   We visit it
+[00:41:05.460 --> 00:41:10.340]   And then we compare the similarity score of this query and this node
+[00:41:10.740 --> 00:41:15.140]   And compare it with the similarity score of the query with the friends of this node
+[00:41:15.140 --> 00:41:18.900]   So with the number with the node number seven and the node number two
+[00:41:18.900 --> 00:41:25.060]   If one of the friends has a better similarity score, then we move it to move it there
+[00:41:25.060 --> 00:41:32.100]   So the number two for example may have a better similarity score with the q compared to the number five
+[00:41:32.100 --> 00:41:35.620]   So we move to the number two and then we do again this process
+[00:41:35.780 --> 00:41:43.860]   so we check what is the cosine similarity score between the node number three and the query and we compare it with the cosine similarity of
+[00:41:43.860 --> 00:41:44.740]   the
+[00:41:44.740 --> 00:41:50.020]   Vector number two with the query if the number three has a better cosine similarity score
+[00:41:50.020 --> 00:41:55.700]   We move there and we keep doing like this until we reach a node in which his
+[00:41:55.700 --> 00:41:59.460]   The friends of this node so the number eight and the number six
+[00:41:59.460 --> 00:42:02.660]   Don't have a better cosine similarity score
+[00:42:03.460 --> 00:42:06.260]   With respect to the query compared to the current one
+[00:42:06.260 --> 00:42:12.580]   So this number four has the best cosine similarity score among all of his connections among the
+[00:42:12.580 --> 00:42:15.940]   0.1, 0.8 and the 0.6. So we stop there
+[00:42:15.940 --> 00:42:19.220]   And we have visited many nodes
+[00:42:19.220 --> 00:42:25.300]   Basically, we ordered them from the best matching to the lowest matching and we keep the top k
+[00:42:25.300 --> 00:42:32.740]   Also, we repeat this search many times by choosing different random entry points and
+[00:42:33.300 --> 00:42:39.140]   Every time we choose we sort all of the results by similarity score and then we keep the top k
+[00:42:39.140 --> 00:42:45.720]   And these are the best matching k nearest neighbor. So using the navigable small words algorithm
+[00:42:45.720 --> 00:42:52.900]   If we want to insert a vector in this graph, we just do what we did before. So we actually search
+[00:42:52.900 --> 00:42:56.100]   Given for example, we want to insert this query
+[00:42:56.100 --> 00:43:01.380]   For example, we will just do it like a search and then when we have found the top k
+[00:43:01.780 --> 00:43:07.540]   We just connect the query with the top k and that's how we insert a new item into this graph
+[00:43:07.540 --> 00:43:11.140]   The second idea of the
+[00:43:11.140 --> 00:43:16.980]   Hierarchical navigable small words is based on another data structure that is called the skip list
+[00:43:16.980 --> 00:43:20.180]   So to go from navigable small words to
+[00:43:20.180 --> 00:43:24.100]   Hierarchical navigable small words. We need to introduce this new
+[00:43:24.100 --> 00:43:29.780]   Data structure. So the skip list is a data structure that maintains a sorted list
+[00:43:30.980 --> 00:43:37.160]   And allows to search and insertions with an average of logarithmic time complexity
+[00:43:37.160 --> 00:43:39.380]   for example
+[00:43:39.380 --> 00:43:41.380]   If we want to search the number nine
+[00:43:41.380 --> 00:43:47.460]   What we can do in this first of all as you can see this, this is not only one linked list
+[00:43:47.460 --> 00:43:53.700]   We have many linked list levels of linked list. We have the level 0, the level 1, the level 2, the level 3
+[00:43:54.500 --> 00:44:00.740]   The bottom level has the most number of items. The more we go up the less is the number of items
+[00:44:00.740 --> 00:44:06.100]   So if we want to search the number line in this linked list in this skip list
+[00:44:06.100 --> 00:44:10.340]   We start from the top level. So we start from the head number three
+[00:44:10.340 --> 00:44:15.060]   We check what is the next item and we compare it with the
+[00:44:15.060 --> 00:44:20.260]   So the first item is number five. We compare it with what is the next item in this case
+[00:44:20.260 --> 00:44:23.540]   It's the end which means that the number nine must be down
+[00:44:24.100 --> 00:44:28.500]   So we go down we then compare it with the next item, which is number 17
+[00:44:28.500 --> 00:44:34.340]   Which means that it cannot be after this node because it's 17. So it must be down
+[00:44:34.340 --> 00:44:39.540]   We go down and then we compare it with the next node, which is the number nine and we see
+[00:44:39.540 --> 00:44:44.980]   Okay, we reached the number nine. Now imagine we want to find another number. Let's say the number 12
+[00:44:44.980 --> 00:44:52.100]   We start again from the h3. We go to the first item and compare to the next. Okay, it's the end
+[00:44:52.100 --> 00:44:58.820]   So we go down then we arrive here. We compare it with the next we see it's 17. So it's bigger than 12
+[00:44:58.820 --> 00:45:00.580]   So we go down
+[00:45:00.580 --> 00:45:05.860]   Then we see it's nine. So the next item is number nine. So we visit nine
+[00:45:05.860 --> 00:45:11.620]   And then we compare it with the next item which is 17, so it's bigger than 12
+[00:45:11.620 --> 00:45:17.140]   So we go down we go here and then we compare it with what is the next item
+[00:45:17.140 --> 00:45:20.740]   Which is number 12 and it's the number that we are looking for and we stop there
+[00:45:20.980 --> 00:45:26.660]   So this is how the skip list works. Now to create the hierarchical navigable small worlds
+[00:45:26.660 --> 00:45:32.820]   we combine the concept of navigable small worlds with the idea of the skip list in producing a
+[00:45:32.820 --> 00:45:36.600]   hierarchical navigable small worlds algorithm
+[00:45:36.600 --> 00:45:45.140]   So we start with we have a lower level which has more nodes and more connections and the upper level which has less nodes and less
+[00:45:45.140 --> 00:45:49.240]   Connections. So we say that this one is more dense and this one is more sparse
+[00:45:50.660 --> 00:45:53.700]   How does the search work in this graph?
+[00:45:53.700 --> 00:45:58.500]   Suppose we have a query just like before and we want to search in this graph
+[00:45:58.500 --> 00:46:02.820]   We find a random entry point in the top level of this graph
+[00:46:02.820 --> 00:46:06.420]   And then we visit it and then we compare
+[00:46:06.420 --> 00:46:13.620]   The cosine similarity of this node with the query and all of his friends with the query and we see that this one is the best
+[00:46:13.620 --> 00:46:15.460]   One so we go down
+[00:46:15.460 --> 00:46:17.460]   We go down and we do again the same
+[00:46:18.980 --> 00:46:20.180]   We do again the same test
+[00:46:20.180 --> 00:46:25.780]   So we check the cosine similarity of this node with the query and all of his friends with the query
+[00:46:25.780 --> 00:46:30.260]   And we see that this friend here has a better cosine similarity score. So we move here
+[00:46:30.260 --> 00:46:36.580]   Then we check this node here with all of his friends and we see that this one is the best one. So we go down
+[00:46:36.580 --> 00:46:43.540]   Also this one we see that it's the best one among all of his friends for the cosine similarity score
+[00:46:43.540 --> 00:46:50.180]   So we go down and then we do again this test and we say what is the cosine similarity score of this
+[00:46:50.180 --> 00:46:55.220]   Node and the query and also all of his friends with the query
+[00:46:55.220 --> 00:46:57.220]   So this node this node and this node
+[00:46:57.220 --> 00:47:03.540]   And we move to the one that is best in case there is one and then we stop as soon as we find a local best
+[00:47:03.540 --> 00:47:05.860]   So the one node that is not
+[00:47:05.860 --> 00:47:08.500]   worse than all of his friends
+[00:47:09.460 --> 00:47:14.580]   We repeat this search just like before by using randomly selected entry points
+[00:47:14.580 --> 00:47:19.620]   We take all these vectors that we have visited we sort we keep the top
+[00:47:19.620 --> 00:47:25.780]   K best matching based on the similarity score that we are using or the distance function that we are using
+[00:47:25.780 --> 00:47:36.340]   Okay, now that we have seen also how the vector database works let's review again the pipeline of retrieval augmented generation by
+[00:47:37.700 --> 00:47:41.220]   Summing up what we have seen. So again, we have our query
+[00:47:41.220 --> 00:47:44.740]   We have some documents from which we want to retrieve the knowledge
+[00:47:44.740 --> 00:47:49.060]   We split them into pieces of text we create embeddings using sentence bird
+[00:47:49.060 --> 00:47:52.840]   For example, we store all these vectors in a vector database
+[00:47:52.840 --> 00:47:59.780]   We convert our query in an embedding and we search in a vector database using the algorithm that we have seen before
+[00:47:59.780 --> 00:48:02.100]   So the hierarchical navigable small words
+[00:48:02.660 --> 00:48:10.260]   This will produce the top k embeddings best matching with our query from which we associate go back to the text that they were taken from
+[00:48:10.260 --> 00:48:15.780]   We combine the query and the context retrieved in a template
+[00:48:15.780 --> 00:48:20.820]   We feed it to the large language model and finally the large language model will produce the answer
+[00:48:20.820 --> 00:48:24.260]   Thank you guys for watching my video
+[00:48:24.260 --> 00:48:29.380]   I hope you learned a lot today because I wanted to create this video for a long time actually
+[00:48:29.460 --> 00:48:34.340]   But I wanted also to understand myself all the algorithms that were behind this pipeline
+[00:48:34.340 --> 00:48:37.960]   And I hope that you are also now familiar with all these concepts
+[00:48:37.960 --> 00:48:43.220]   I know that actually implementing the rug pipeline is very easy. There are many
+[00:48:43.220 --> 00:48:50.660]   Popular libraries like llama index and long chain, but I wanted to actually go deep inside of how it works and each
+[00:48:50.660 --> 00:48:53.620]   Building block how they actually work together
+[00:48:53.620 --> 00:48:57.540]   Please let let me know if there is something that you don't understand
+[00:48:57.620 --> 00:49:02.980]   I will try to answer all the questions in the comment section. Also, let me know if you want to
+[00:49:02.980 --> 00:49:10.360]   Something that you want better clarified in my future videos or how can I improve my future videos for better clarity?
+[00:49:10.360 --> 00:49:12.260]   Please subscribe to my channel
+[00:49:12.260 --> 00:49:17.060]   This is the best motivation for me to continue making high quality content and like the video if you like it
+[00:49:17.060 --> 00:49:21.060]   Share the video with your friends with your professors with your students, etc
+[00:49:21.060 --> 00:49:23.940]   And have a nice day guys
+
