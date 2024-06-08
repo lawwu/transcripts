@@ -1,0 +1,1279 @@
+
+[00:00:00.000 --> 00:00:05.320]   [VIDEO PLAYBACK]
+[00:00:05.320 --> 00:00:05.820]   - Hello.
+[00:00:05.820 --> 00:00:10.680]   Thank you for joining CS25 Transformers Day's last class.
+[00:00:10.680 --> 00:00:13.880]   Today, we have Lubna, who is a machine learning
+[00:00:13.880 --> 00:00:16.360]   engineer in the science team at Hugging Face,
+[00:00:16.360 --> 00:00:20.440]   working on large language models for code and synthetic data
+[00:00:20.440 --> 00:00:21.800]   generation.
+[00:00:21.800 --> 00:00:25.440]   She's part of the core team at the Big Code Project
+[00:00:25.440 --> 00:00:29.760]   and has co-authored the Stack Dataset and the Starcoder
+[00:00:29.760 --> 00:00:31.320]   models for code generation.
+[00:00:31.320 --> 00:00:34.600]   Thank you so much for coming to our talk today.
+[00:00:34.600 --> 00:00:39.320]   And as always, attendance link and the Slido questions
+[00:00:39.320 --> 00:00:41.640]   are on our website, and we'll be taking questions
+[00:00:41.640 --> 00:00:42.480]   after the talk.
+[00:00:42.480 --> 00:00:47.080]   Thank you, and you can take it off now.
+[00:00:47.080 --> 00:00:47.640]   - Hi.
+[00:00:47.640 --> 00:00:50.200]   Thank you for the introduction.
+[00:00:50.200 --> 00:00:51.200]   So I'm Lubna.
+[00:00:51.200 --> 00:00:53.840]   I'm a machine learning engineer at Hugging Face in the science
+[00:00:53.840 --> 00:00:54.400]   team.
+[00:00:54.400 --> 00:00:57.600]   And today, I'll tell you about the behind the scenes
+[00:00:57.600 --> 00:00:59.760]   for training large language models.
+[00:00:59.760 --> 00:01:02.400]   And I will use the Starcoder model
+[00:01:02.400 --> 00:01:04.960]   that our team has trained as a use case.
+[00:01:04.960 --> 00:01:09.920]   So today's plan is very simple.
+[00:01:09.920 --> 00:01:12.120]   We're going to try to answer this question.
+[00:01:12.120 --> 00:01:14.600]   What does it take to train a good LLM?
+[00:01:14.600 --> 00:01:16.680]   So it's one question, but it's very loaded,
+[00:01:16.680 --> 00:01:18.120]   and it has a lot of follow-ups.
+[00:01:18.120 --> 00:01:20.560]   And as you will see, my slides will be a series
+[00:01:20.560 --> 00:01:21.880]   of questions and answers.
+[00:01:24.920 --> 00:01:27.080]   So a few years ago, a lot of people
+[00:01:27.080 --> 00:01:30.200]   thought that there was some molten secret source
+[00:01:30.200 --> 00:01:33.160]   to the strong closed models like GPT-4,
+[00:01:33.160 --> 00:01:36.320]   and that it will take the open source community a lot of time
+[00:01:36.320 --> 00:01:38.920]   to catch up because the open source models that we had back
+[00:01:38.920 --> 00:01:42.160]   then were much smaller and less performance.
+[00:01:42.160 --> 00:01:45.080]   But now it seems that the community kind of figured out
+[00:01:45.080 --> 00:01:47.920]   most of the pieces for getting strong LLMs,
+[00:01:47.920 --> 00:01:50.680]   as it was predicted in this Google memo that
+[00:01:50.680 --> 00:01:54.600]   was leaked and released on semi-analysis.
+[00:01:54.600 --> 00:01:58.680]   For example, today we have LLAMA370BD Instruct,
+[00:01:58.680 --> 00:02:01.920]   which has almost the same performance as GPT-4,
+[00:02:01.920 --> 00:02:04.160]   but it's unlocked so many use cases
+[00:02:04.160 --> 00:02:05.720]   because the model weights are open.
+[00:02:05.720 --> 00:02:07.720]   The model can be quantized and can even
+[00:02:07.720 --> 00:02:09.720]   run on a consumer desktop.
+[00:02:09.720 --> 00:02:13.280]   It also allows the community to build very cool use cases
+[00:02:13.280 --> 00:02:15.320]   on top through fine tuning.
+[00:02:15.320 --> 00:02:18.440]   So we've made a lot of progress in the open field,
+[00:02:18.440 --> 00:02:22.160]   and this is not the only model that's out there.
+[00:02:22.160 --> 00:02:25.880]   We're now observing kind of a rise of open LLMs.
+[00:02:25.880 --> 00:02:27.840]   And the company-- more and more companies
+[00:02:27.840 --> 00:02:29.920]   are embracing releasing models.
+[00:02:29.920 --> 00:02:33.280]   That was the case, for example, with DeepMind's GEMMA models
+[00:02:33.280 --> 00:02:36.640]   and with Mistral's models and also
+[00:02:36.640 --> 00:02:39.800]   other models from GPT-4E.
+[00:02:39.800 --> 00:02:43.840]   Here I put a plot from the LLMSES arena,
+[00:02:43.840 --> 00:02:47.720]   which is kind of the go-to leaderboard for comparing
+[00:02:47.720 --> 00:02:50.200]   Instruct models nowadays.
+[00:02:50.200 --> 00:02:52.360]   It uses human evaluation.
+[00:02:52.360 --> 00:02:57.520]   And you can see in this plot that as we went from 2023
+[00:02:57.520 --> 00:03:00.960]   to May '24, the gap in performance
+[00:03:00.960 --> 00:03:03.760]   between the closed models and the open models
+[00:03:03.760 --> 00:03:06.120]   is shrunking and becoming smaller,
+[00:03:06.120 --> 00:03:10.200]   which is very promising.
+[00:03:10.200 --> 00:03:13.480]   So we're on a very great path, but there are still
+[00:03:13.480 --> 00:03:16.760]   a lot of limitations for this.
+[00:03:16.760 --> 00:03:20.840]   And this is mainly due to releases missing out
+[00:03:20.840 --> 00:03:24.440]   important details about how the data was processed
+[00:03:24.440 --> 00:03:26.440]   and how the models were trained.
+[00:03:26.440 --> 00:03:30.120]   And this is usually the case for two main reasons.
+[00:03:30.120 --> 00:03:33.120]   The first one is to avoid legal scrutiny,
+[00:03:33.120 --> 00:03:37.080]   because when companies publicly disclose the training data,
+[00:03:37.080 --> 00:03:39.240]   if the training was not done properly
+[00:03:39.240 --> 00:03:41.440]   and the copyrighted were not respected,
+[00:03:41.440 --> 00:03:45.280]   they risk facing a legal investigation.
+[00:03:45.280 --> 00:03:49.240]   The other reason for not disclosing the details
+[00:03:49.240 --> 00:03:51.920]   can be to maintain a competitive edge.
+[00:03:51.920 --> 00:03:54.960]   So some companies want to be the best at training LLMs,
+[00:03:54.960 --> 00:03:59.120]   so they don't want to give all the details for their training.
+[00:03:59.120 --> 00:04:01.640]   Nevertheless, because we have a lot of releases,
+[00:04:01.640 --> 00:04:03.600]   I think we can still answer this question
+[00:04:03.600 --> 00:04:07.400]   and put a lot of pieces together.
+[00:04:07.400 --> 00:04:10.040]   So what do we need to train a good LLM?
+[00:04:10.040 --> 00:04:12.760]   The first thing is probably the model.
+[00:04:12.760 --> 00:04:15.040]   You need to have a good architecture.
+[00:04:15.040 --> 00:04:18.480]   And I think now transformers are kind of the default,
+[00:04:18.480 --> 00:04:21.240]   but there are also other interesting architectures
+[00:04:21.240 --> 00:04:23.920]   like Mamba, which is a state-based model,
+[00:04:23.920 --> 00:04:26.280]   or you can use a mixture of experts, which can
+[00:04:26.280 --> 00:04:29.040]   be multiple transformer models.
+[00:04:29.040 --> 00:04:31.240]   But I'm not going to spend a lot of time
+[00:04:31.240 --> 00:04:33.720]   in this lecture on models, because I
+[00:04:33.720 --> 00:04:37.400]   think it's a topic that's already thoroughly explored,
+[00:04:37.400 --> 00:04:40.360]   and there are other aspects that maybe deserve
+[00:04:40.360 --> 00:04:43.000]   a little bit more attention.
+[00:04:43.000 --> 00:04:44.440]   So that was it for models.
+[00:04:44.440 --> 00:04:46.520]   Then for GPUs, I don't think there's
+[00:04:46.520 --> 00:04:50.800]   much I can tell you about that, except maybe I ask Jensen.
+[00:04:50.800 --> 00:04:54.640]   But the part that they were the most interested of
+[00:04:54.640 --> 00:04:59.640]   is data, which I think is the backbone of LLMs.
+[00:04:59.640 --> 00:05:02.960]   Because now almost everyone is using the same architecture
+[00:05:02.960 --> 00:05:04.840]   and the same training techniques.
+[00:05:04.840 --> 00:05:09.080]   And for a given budget, data is what makes some models better
+[00:05:09.080 --> 00:05:10.240]   than the others.
+[00:05:10.240 --> 00:05:13.440]   So it's really worth spending time exploring this data
+[00:05:13.440 --> 00:05:17.440]   and understanding how to get the higher quality samples.
+[00:05:17.440 --> 00:05:20.320]   So now we're going to try to answer our previous question
+[00:05:20.320 --> 00:05:23.880]   of how to train a good LLM by how do we get good training
+[00:05:23.880 --> 00:05:24.360]   data.
+[00:05:24.360 --> 00:05:30.640]   And I think the answer to this is threefold.
+[00:05:30.640 --> 00:05:33.920]   First, we need to understand how much data do we need.
+[00:05:33.920 --> 00:05:36.720]   And then once we've figured out the size of the data
+[00:05:36.720 --> 00:05:39.280]   that we need, where can we get this data?
+[00:05:39.280 --> 00:05:42.920]   And to clean it, which filtering techniques make more sense
+[00:05:42.920 --> 00:05:46.120]   and will give us the best performance?
+[00:05:46.120 --> 00:05:50.160]   So to answer the first one, the answer to that
+[00:05:50.160 --> 00:05:51.920]   is the scaling laws.
+[00:05:51.920 --> 00:05:55.680]   You want to know how much data you want to train a model on,
+[00:05:55.680 --> 00:05:58.560]   but also what is the optimal size of the model.
+[00:05:58.560 --> 00:06:01.840]   And the scaling laws try to study
+[00:06:01.840 --> 00:06:04.920]   the allocation of a computer budget between data size
+[00:06:04.920 --> 00:06:06.200]   and model size.
+[00:06:06.200 --> 00:06:08.400]   This means, should you take a smaller model
+[00:06:08.400 --> 00:06:10.800]   and train it longer or take a larger model
+[00:06:10.800 --> 00:06:13.360]   and train it on this data?
+[00:06:13.360 --> 00:06:19.280]   And I'm going to present a brief history of the scaling laws
+[00:06:19.280 --> 00:06:21.320]   because I think it's really interesting to see
+[00:06:21.320 --> 00:06:24.680]   how the sizes of the models progress through time
+[00:06:24.680 --> 00:06:26.800]   and also how the size of the data
+[00:06:26.800 --> 00:06:29.000]   sets and the number of tokens we train on them
+[00:06:29.000 --> 00:06:30.880]   have changed because there were really
+[00:06:30.880 --> 00:06:33.720]   some drastic changes in that.
+[00:06:33.720 --> 00:06:38.000]   I think the first to establish the scaling laws
+[00:06:38.000 --> 00:06:40.760]   were Kaplan from OpenAI.
+[00:06:40.760 --> 00:06:48.440]   And they tried to fit the laws as a function of the data size
+[00:06:48.440 --> 00:06:49.480]   and model size.
+[00:06:49.480 --> 00:06:52.280]   And they found that if you have a 10 times
+[00:06:52.280 --> 00:06:56.040]   increase in your compute, you should increase your parameter
+[00:06:56.040 --> 00:06:57.760]   count by 5.5.
+[00:06:57.760 --> 00:07:00.120]   But your training tokens, you should only increase them
+[00:07:00.120 --> 00:07:01.840]   by 1.8.
+[00:07:01.840 --> 00:07:05.280]   This means that if you have more resources to train your models,
+[00:07:05.280 --> 00:07:06.920]   you should make the model much larger.
+[00:07:06.920 --> 00:07:08.160]   But the data, it's fine.
+[00:07:08.160 --> 00:07:11.000]   You shouldn't increase it that much.
+[00:07:11.000 --> 00:07:14.240]   And this is what led to models like GPT-3, which
+[00:07:14.240 --> 00:07:18.160]   is 175 billion parameters, which was only
+[00:07:18.160 --> 00:07:21.880]   trained on 300 billion tokens, which if we think about it now,
+[00:07:21.880 --> 00:07:24.320]   is really small.
+[00:07:24.320 --> 00:07:26.720]   Other models also follow this, for example,
+[00:07:26.720 --> 00:07:29.520]   like OPBT, which was the same size as GPT-3
+[00:07:29.520 --> 00:07:31.800]   and trained on a similar amount of data.
+[00:07:31.800 --> 00:07:34.080]   There was also Bloom.
+[00:07:34.080 --> 00:07:37.960]   So all these models are actually very under-trained.
+[00:07:37.960 --> 00:07:41.080]   Then the Chinchilla scaling laws came after.
+[00:07:41.080 --> 00:07:44.480]   And they kind of revisited the scaling laws.
+[00:07:44.480 --> 00:07:49.520]   And they found that the reason Kaplan thought that data should
+[00:07:49.520 --> 00:07:52.040]   not be as scaled as model size is
+[00:07:52.040 --> 00:07:54.600]   because they used a fixed cosine scheduler
+[00:07:54.600 --> 00:07:56.200]   for all their experiments.
+[00:07:56.200 --> 00:07:58.400]   So although they were changing the data size,
+[00:07:58.400 --> 00:08:00.680]   the cosine scheduler was fixed.
+[00:08:00.720 --> 00:08:02.760]   This meant that for some models, they
+[00:08:02.760 --> 00:08:05.560]   were underestimated because they were not
+[00:08:05.560 --> 00:08:09.960]   using the correct cosine that corresponded to the data size.
+[00:08:09.960 --> 00:08:12.520]   This led to kind of false conclusions.
+[00:08:12.520 --> 00:08:15.080]   And the Chinchilla can now give us
+[00:08:15.080 --> 00:08:17.320]   new scaling laws that say that you
+[00:08:17.320 --> 00:08:21.480]   should scale your data and your model size equally.
+[00:08:21.480 --> 00:08:26.440]   And in their paper, they train a 65 billion model
+[00:08:26.440 --> 00:08:30.480]   on 1.6 trillion tokens, which is the Chinchilla optimal point.
+[00:08:30.480 --> 00:08:32.760]   And they also perform much larger models
+[00:08:32.760 --> 00:08:37.240]   like GPT-3 and Gopher, which was over 200 billion parameters.
+[00:08:37.240 --> 00:08:42.200]   So here, for example, I have a plot
+[00:08:42.200 --> 00:08:44.240]   which shows what the scaling laws try to do.
+[00:08:44.240 --> 00:08:46.840]   For example, here you have isoflop curves,
+[00:08:46.840 --> 00:08:49.400]   which each curve uses a fixed budget.
+[00:08:49.400 --> 00:08:51.840]   And then you try to find the sweet spot, which
+[00:08:51.840 --> 00:08:54.640]   is the optimal for your budget allocation.
+[00:08:54.640 --> 00:08:56.760]   And it tells you what your model size should be
+[00:08:56.760 --> 00:08:58.280]   and what your data size should be.
+[00:08:58.720 --> 00:09:01.880]   And as you can see here, if we try to fit the laws,
+[00:09:01.880 --> 00:09:05.560]   we can see that there's a linear increase for data and also
+[00:09:05.560 --> 00:09:06.120]   model size.
+[00:09:06.120 --> 00:09:13.240]   In this scheme, I tried to show how
+[00:09:13.240 --> 00:09:15.200]   we've moved from the Chinchilla scaling
+[00:09:15.200 --> 00:09:18.120]   laws to today's models.
+[00:09:18.120 --> 00:09:20.960]   And you can see that, for example, the Chinchilla model,
+[00:09:20.960 --> 00:09:23.760]   which is 60 billion parameters, was trained on less than 2
+[00:09:23.760 --> 00:09:25.280]   trillion tokens.
+[00:09:25.280 --> 00:09:27.320]   But then after that, we have LAMA,
+[00:09:27.320 --> 00:09:28.920]   which was released last year.
+[00:09:28.920 --> 00:09:30.360]   And it was just a 7BB model.
+[00:09:30.360 --> 00:09:34.600]   And it was trained on as much data as the Chinchilla model.
+[00:09:34.600 --> 00:09:38.840]   So it was trained way past the Chinchilla optimal point.
+[00:09:38.840 --> 00:09:43.000]   And we might be wondering, why is that the case?
+[00:09:43.000 --> 00:09:47.840]   Did Meta not use their compute budgets in an optimal way?
+[00:09:47.840 --> 00:09:50.600]   And the answer to that is that compute optimal
+[00:09:50.600 --> 00:09:53.280]   is not always optimal.
+[00:09:53.280 --> 00:09:55.680]   Because when you train a model, you don't only
+[00:09:55.680 --> 00:09:58.040]   care about what you're going to spend in training,
+[00:09:58.040 --> 00:10:00.800]   but you also care about the inference.
+[00:10:00.800 --> 00:10:02.400]   And the model is trained one time,
+[00:10:02.400 --> 00:10:03.960]   but the inference is for more.
+[00:10:03.960 --> 00:10:05.320]   The model is going to be served.
+[00:10:05.320 --> 00:10:07.600]   So you want to save some cost in that.
+[00:10:07.600 --> 00:10:11.240]   This makes it that people prefer training smaller models longer
+[00:10:11.240 --> 00:10:13.240]   than actually using much larger models that
+[00:10:13.240 --> 00:10:14.840]   are trained on less data.
+[00:10:14.840 --> 00:10:18.360]   So this was the case for LAMA1, for other models like Mistral,
+[00:10:18.360 --> 00:10:20.720]   but also for LAMA3, which went even further
+[00:10:20.720 --> 00:10:23.000]   and trained not on 1 trillion tokens,
+[00:10:23.000 --> 00:10:25.240]   but on 15 trillion tokens.
+[00:10:25.240 --> 00:10:27.440]   And if you check the archive paper,
+[00:10:27.440 --> 00:10:29.080]   the loss kept going down.
+[00:10:29.080 --> 00:10:32.160]   And also, the downstream evaluations
+[00:10:32.160 --> 00:10:35.720]   as the model kept training, it kept improving.
+[00:10:35.720 --> 00:10:37.320]   And I think this is really interesting.
+[00:10:37.320 --> 00:10:39.120]   Because some people misunderstood
+[00:10:39.120 --> 00:10:42.160]   the Chinchilla scaling laws as like compute optimal is optimal.
+[00:10:42.160 --> 00:10:44.040]   But that's not the case.
+[00:10:44.040 --> 00:10:46.800]   Because inference cost is not considered.
+[00:10:46.800 --> 00:10:51.200]   So for example, this is the cost for training in GPT-4.
+[00:10:51.200 --> 00:10:54.920]   It is said that it's estimated that's $100 million.
+[00:10:54.920 --> 00:10:57.480]   But also, the inference is very expensive.
+[00:10:57.480 --> 00:10:59.440]   And the larger the model becomes,
+[00:10:59.440 --> 00:11:03.120]   the more time it takes to process the tokens.
+[00:11:03.120 --> 00:11:06.200]   So the scaling laws don't take the inference cost
+[00:11:06.200 --> 00:11:07.760]   in consideration.
+[00:11:07.760 --> 00:11:09.840]   And if we do take the inference cost, which
+[00:11:09.840 --> 00:11:13.320]   is the case for most people, because they
+[00:11:13.320 --> 00:11:15.200]   want to use these models in inference,
+[00:11:15.200 --> 00:11:17.400]   you might prefer using the smaller models
+[00:11:17.400 --> 00:11:19.520]   and training them longer.
+[00:11:19.520 --> 00:11:20.360]   And we do that.
+[00:11:20.360 --> 00:11:22.760]   We're not respecting the Chinchilla scaling laws.
+[00:11:22.760 --> 00:11:26.840]   So we're choosing to pay what we call a compute overhead.
+[00:11:26.840 --> 00:11:29.720]   It's kind of a sacrifice that you do during the training.
+[00:11:29.720 --> 00:11:31.160]   You choose to pay more.
+[00:11:31.160 --> 00:11:33.440]   But this will have a benefit during inference,
+[00:11:33.440 --> 00:11:38.040]   because you will save a lot of cost and money.
+[00:11:38.040 --> 00:11:42.000]   And there's this very interesting blog post
+[00:11:42.000 --> 00:11:47.360]   about Harden's law, which tries to measure the compute overhead
+[00:11:47.360 --> 00:11:51.040]   that you will be paying when you choose to train a small model.
+[00:11:51.040 --> 00:11:53.720]   For example, here, there's the space on Hugging Face,
+[00:11:53.720 --> 00:11:56.080]   where you can input the model size and what
+[00:11:56.080 --> 00:11:57.560]   data sets you want to train on.
+[00:11:57.560 --> 00:12:00.760]   And it will show you where you are regarding
+[00:12:00.760 --> 00:12:02.520]   the Chinchilla optimal point.
+[00:12:02.520 --> 00:12:04.880]   So for example, if we take a 7B model and we train it
+[00:12:04.880 --> 00:12:08.080]   on 1 billion tokens, you can see that we are here.
+[00:12:08.080 --> 00:12:09.200]   It's the red dots.
+[00:12:09.200 --> 00:12:12.320]   And it's before the Chinchilla optimal model.
+[00:12:12.320 --> 00:12:17.760]   And this gives approximately, I think, 40% overhead.
+[00:12:17.760 --> 00:12:21.000]   But then during inference, as it shows here in the table--
+[00:12:21.000 --> 00:12:22.640]   sorry, it was 13% overhead.
+[00:12:22.640 --> 00:12:26.160]   But there's almost 50% saving costs.
+[00:12:26.160 --> 00:12:28.640]   So that's something that almost everyone is doing now,
+[00:12:28.640 --> 00:12:32.280]   which is why we see models that are much, much smaller than one
+[00:12:32.280 --> 00:12:33.160]   or two years ago.
+[00:12:37.440 --> 00:12:40.600]   For further reading, there are some very interesting papers
+[00:12:40.600 --> 00:12:42.000]   about scaling laws.
+[00:12:42.000 --> 00:12:45.400]   For example, there's this paper called Scaling Data Constraint
+[00:12:45.400 --> 00:12:49.680]   Language Models, which shows that if you are limited
+[00:12:49.680 --> 00:12:51.240]   in your data size--
+[00:12:51.240 --> 00:12:54.800]   let's say, for example, you want to train a 7B on 10 trillion
+[00:12:54.800 --> 00:12:57.680]   tokens, but you don't have these 10 trillion tokens.
+[00:12:57.680 --> 00:13:00.800]   This paper says that you can basically repeat your data
+[00:13:00.800 --> 00:13:03.040]   up to four times, so four epochs.
+[00:13:03.040 --> 00:13:04.640]   And you will get similar performance
+[00:13:04.640 --> 00:13:06.800]   as if you used unique tokens.
+[00:13:06.800 --> 00:13:10.480]   So for example, instead of using 8 trillion tokens unique,
+[00:13:10.480 --> 00:13:12.800]   you could use just two and repeat them four times.
+[00:13:12.800 --> 00:13:14.640]   And you get almost the same performance
+[00:13:14.640 --> 00:13:17.680]   as if these tokens were unique.
+[00:13:17.680 --> 00:13:20.640]   And this is especially useful for some domains
+[00:13:20.640 --> 00:13:25.560]   where we almost exhaust all the data that's publicly available.
+[00:13:25.560 --> 00:13:27.600]   As I will show you later, the Stack V2,
+[00:13:27.600 --> 00:13:30.320]   which is a code data set that we released,
+[00:13:30.320 --> 00:13:33.280]   I think it has almost all the code available.
+[00:13:33.280 --> 00:13:37.600]   So it's going to be very hard to scrape and get more code.
+[00:13:37.600 --> 00:13:39.480]   And if you want to train models longer,
+[00:13:39.480 --> 00:13:43.080]   the only option is to actually repeat the data during training.
+[00:13:43.080 --> 00:13:46.200]   And this is good news, because repeating the data up
+[00:13:46.200 --> 00:13:50.320]   to four times is actually significant.
+[00:13:50.320 --> 00:13:52.600]   Another paper that I think is interesting
+[00:13:52.600 --> 00:13:58.080]   when it comes to scaling laws is the DeepSeq LLM.
+[00:13:58.080 --> 00:14:01.440]   They try to establish new scaling laws that
+[00:14:01.440 --> 00:14:03.880]   are suited for the data, because they
+[00:14:03.880 --> 00:14:07.400]   find that the scaling behavior is highly
+[00:14:07.400 --> 00:14:09.760]   dependent on the data quality.
+[00:14:09.760 --> 00:14:12.840]   So they tried different data subsets, different filtering,
+[00:14:12.840 --> 00:14:15.600]   and they found that the scaling laws were changing.
+[00:14:15.600 --> 00:14:18.080]   So this is very important, because up until now,
+[00:14:18.080 --> 00:14:20.280]   we were using the Chinchilla, but the Chinchilla
+[00:14:20.280 --> 00:14:21.840]   was using fixed data sets.
+[00:14:21.840 --> 00:14:24.920]   They are not necessarily the ones that we are using now.
+[00:14:24.920 --> 00:14:27.440]   So it's really important to be aware of that.
+[00:14:27.440 --> 00:14:29.560]   And this is why DeepSeq tried to come up
+[00:14:29.560 --> 00:14:32.840]   with their own scaling laws that work for their data sets.
+[00:14:32.840 --> 00:14:36.400]   And they also conclude that when you have higher quality
+[00:14:36.400 --> 00:14:39.040]   data sets, maybe more compute should
+[00:14:39.040 --> 00:14:43.240]   be allocated to the model size and not to the data size.
+[00:14:43.240 --> 00:14:46.280]   So these are interesting things to keep in mind when
+[00:14:46.280 --> 00:14:47.880]   it comes to scaling LLMs.
+[00:14:51.480 --> 00:14:54.600]   So we have answered the first question, I hope.
+[00:14:54.600 --> 00:14:57.920]   How much data to train LLMs?
+[00:14:57.920 --> 00:15:01.200]   So let's say now you have your compute budget,
+[00:15:01.200 --> 00:15:04.600]   a fixed number of GPUs for a certain amount of days,
+[00:15:04.600 --> 00:15:09.360]   and you also know approximately how much data you want to use.
+[00:15:09.360 --> 00:15:13.640]   The question is that, where do you find this type of data?
+[00:15:13.640 --> 00:15:16.680]   For example, Llama3 was trained on 15 trillion tokens,
+[00:15:16.680 --> 00:15:19.320]   but where do you get 15 trillion tokens?
+[00:15:19.320 --> 00:15:23.320]   That's a huge number.
+[00:15:23.320 --> 00:15:26.600]   To get this data, the two main sources
+[00:15:26.600 --> 00:15:30.000]   where you can actually get a very large volume of data
+[00:15:30.000 --> 00:15:33.600]   are the web and then GitHub code.
+[00:15:33.600 --> 00:15:35.520]   There are some other curated sources.
+[00:15:35.520 --> 00:15:38.200]   Those are of high quality but are much smaller,
+[00:15:38.200 --> 00:15:42.080]   like Wikipedia, Books, Archive, or Stack Exchange.
+[00:15:42.080 --> 00:15:45.080]   You can also get data and new type
+[00:15:45.120 --> 00:15:48.560]   You can also get data and new type
+[00:15:48.560 --> 00:15:51.200]   that's been very trendy recently,
+[00:15:51.200 --> 00:15:53.560]   which is synthetic data.
+[00:15:53.560 --> 00:15:56.360]   But let's first start with the sources
+[00:15:56.360 --> 00:16:00.000]   where you can get very large volumes.
+[00:16:00.000 --> 00:16:02.240]   The first one is web data.
+[00:16:02.240 --> 00:16:05.720]   So that's basically web pages.
+[00:16:05.720 --> 00:16:08.720]   And usually people to create these data sets,
+[00:16:08.720 --> 00:16:10.840]   they start from Common Crawl, which
+[00:16:10.840 --> 00:16:15.000]   is a public repository of crawled web pages
+[00:16:15.000 --> 00:16:17.360]   and Common Crawl crawls pages regularly,
+[00:16:17.360 --> 00:16:21.040]   and they publish dumps every few months.
+[00:16:21.040 --> 00:16:22.520]   But if you start from there, you will
+[00:16:22.520 --> 00:16:26.160]   need to do some heavy filtering at a very large scale.
+[00:16:26.160 --> 00:16:29.840]   For example, just the latest dump has over 400 terabytes,
+[00:16:29.840 --> 00:16:33.040]   and they have almost 95 dumps.
+[00:16:33.040 --> 00:16:37.200]   So that's not a very easy task, and you
+[00:16:37.200 --> 00:16:40.400]   will need to have a lot of resources and a team
+[00:16:40.400 --> 00:16:43.200]   to be able to do that crawling.
+[00:16:43.200 --> 00:16:48.480]   The other option is to use an existing filtered web data set.
+[00:16:48.480 --> 00:16:52.600]   Our researchers already filtered Common Crawl and released them.
+[00:16:52.600 --> 00:16:54.480]   And luckily, we do have data sets that
+[00:16:54.480 --> 00:16:57.120]   are very large and well-filtered.
+[00:16:57.120 --> 00:17:00.640]   One of them is the web data, FineWeb,
+[00:17:00.640 --> 00:17:03.000]   that was recently released by Hugging Face,
+[00:17:03.000 --> 00:17:09.440]   and it has 15 trillion tokens of web data.
+[00:17:09.440 --> 00:17:12.120]   It's also-- it's not just a large data set,
+[00:17:12.120 --> 00:17:14.600]   but it also has the best performance
+[00:17:14.600 --> 00:17:17.240]   among the publicly available data sets.
+[00:17:17.240 --> 00:17:20.480]   And here, for example, it shows the performance,
+[00:17:20.480 --> 00:17:24.520]   which is an aggregation over multiple popular benchmarks
+[00:17:24.520 --> 00:17:29.160]   for NLP, like Hellaswag, MMLU, PICA, and others.
+[00:17:29.160 --> 00:17:32.120]   And it averages them and compares to other data sets
+[00:17:32.120 --> 00:17:35.360]   like C4, RefinedWeb, ThinPyjama, and the pile.
+[00:17:38.280 --> 00:17:42.480]   So that was for web, so you can get 15 trillion tokens easily.
+[00:17:42.480 --> 00:17:46.960]   And then for code data, we have released the stack data
+[00:17:46.960 --> 00:17:52.440]   set, which is the largest data set of open source code.
+[00:17:52.440 --> 00:17:54.600]   This data set comes in two versions.
+[00:17:54.600 --> 00:17:58.800]   Version 1 consisted of 6 terabytes of permissive code.
+[00:17:58.800 --> 00:18:01.360]   And how we built this data set is
+[00:18:01.360 --> 00:18:05.640]   that we first cloned all the public repositories on GitHub.
+[00:18:05.640 --> 00:18:09.280]   So this gave us over 130 repositories
+[00:18:09.280 --> 00:18:11.680]   and 100 terabytes of data.
+[00:18:11.680 --> 00:18:14.320]   But we don't want all of that data, because a lot of it
+[00:18:14.320 --> 00:18:17.600]   can be configs or extensions that we don't need
+[00:18:17.600 --> 00:18:19.880]   or languages that are no longer maintained.
+[00:18:19.880 --> 00:18:23.360]   So we did some file extension filtering,
+[00:18:23.360 --> 00:18:27.240]   and we ended up with almost 90 terabytes of data.
+[00:18:27.240 --> 00:18:29.440]   After that, we filtered repositories
+[00:18:29.440 --> 00:18:31.520]   based on their licenses.
+[00:18:31.520 --> 00:18:35.680]   So we can have permissive licenses like Apache 2 or MIT.
+[00:18:35.680 --> 00:18:38.720]   We can have more restrictive licenses like GPL.
+[00:18:38.720 --> 00:18:41.040]   So we filtered all the repositories
+[00:18:41.040 --> 00:18:43.800]   that did not have a permissive license.
+[00:18:43.800 --> 00:18:46.200]   And after that, we did the deduplication
+[00:18:46.200 --> 00:18:48.160]   to remove files that are similar.
+[00:18:48.160 --> 00:18:51.720]   So we ended up with almost 3 terabytes of deduplicated data.
+[00:18:51.720 --> 00:18:59.440]   The stack comes also with a very cool tool for opt-out.
+[00:18:59.440 --> 00:19:02.440]   This tool is basically a space where you can go.
+[00:19:02.440 --> 00:19:04.400]   You can type your GitHub username,
+[00:19:04.400 --> 00:19:07.320]   and it tells you if you have any of your GitHub repositories
+[00:19:07.320 --> 00:19:09.160]   in the data set.
+[00:19:09.160 --> 00:19:11.160]   And if that's the case, there's also
+[00:19:11.160 --> 00:19:13.360]   an option to fill a form and request
+[00:19:13.360 --> 00:19:17.400]   to be removed from all the future trainings of BigCode.
+[00:19:17.400 --> 00:19:21.720]   So we did that for the stack v1, but also for the stack v2.
+[00:19:21.720 --> 00:19:25.360]   And the v2 is a much larger and enhanced data set
+[00:19:25.360 --> 00:19:27.720]   compared to the v1.
+[00:19:27.720 --> 00:19:31.360]   This time, instead of cloning GitHub repositories,
+[00:19:31.360 --> 00:19:33.040]   we went through Software Heritage,
+[00:19:33.040 --> 00:19:34.680]   which is an archive of code.
+[00:19:34.680 --> 00:19:37.680]   They already did the scraping, and we just
+[00:19:37.680 --> 00:19:40.120]   extracted the data from their archive.
+[00:19:40.120 --> 00:19:43.840]   And we ended up, after all the filtering,
+[00:19:43.840 --> 00:19:47.000]   with almost 1 trillion tokens, which
+[00:19:47.000 --> 00:19:48.960]   is a lot compared to the v1, where
+[00:19:48.960 --> 00:19:52.880]   we got around 200 billion tokens at the end.
+[00:19:52.880 --> 00:19:55.120]   We also added some high-quality resources
+[00:19:55.120 --> 00:19:58.640]   like GitHub issues, math and code data sets,
+[00:19:58.640 --> 00:20:00.400]   and pull requests.
+[00:20:00.400 --> 00:20:03.120]   So these data sets, the stack v1, the stack v2,
+[00:20:03.120 --> 00:20:05.760]   can be used to train LLMs on code,
+[00:20:05.760 --> 00:20:08.080]   or to train general LLMs and include code
+[00:20:08.080 --> 00:20:12.800]   as a subset of the general web data.
+[00:20:12.800 --> 00:20:15.880]   This shows how the stack v2 compares to the v1.
+[00:20:15.880 --> 00:20:17.480]   And you can see that before filtering,
+[00:20:17.480 --> 00:20:19.120]   it's almost 10 times larger.
+[00:20:19.120 --> 00:20:24.480]   And after filtering, it's four or five times larger.
+[00:20:24.480 --> 00:20:28.040]   So I talk about how to get web data, how to get code data.
+[00:20:28.040 --> 00:20:30.840]   And then I also mentioned synthetic data.
+[00:20:30.840 --> 00:20:34.200]   And it's this year and last year that synthetic data
+[00:20:34.200 --> 00:20:37.040]   became very important for LLM training.
+[00:20:37.040 --> 00:20:39.200]   And I think that in the next few years,
+[00:20:39.200 --> 00:20:41.320]   it will become even more important.
+[00:20:41.320 --> 00:20:44.840]   And I think this was mainly sparked by the PHY series
+[00:20:44.840 --> 00:20:47.240]   of models by Microsoft.
+[00:20:47.240 --> 00:20:50.440]   Their first paper was called Textbooks Are All You Need.
+[00:20:50.440 --> 00:20:54.040]   And they basically generated synthetic textbooks
+[00:20:54.040 --> 00:20:58.040]   using GPT-3.5 and GPT-3.4.
+[00:20:58.040 --> 00:21:01.160]   And they tried to build a new pre-training corpus
+[00:21:01.160 --> 00:21:02.280]   that is synthetic.
+[00:21:02.280 --> 00:21:05.440]   And they were able to match and outperform models
+[00:21:05.440 --> 00:21:08.840]   that are trained on web data sets.
+[00:21:08.840 --> 00:21:12.400]   So this model was trained on almost entirely synthetic data.
+[00:21:12.400 --> 00:21:15.000]   But now some of the very popular LLMs
+[00:21:15.000 --> 00:21:19.120]   are using synthetic data as part of their pre-training mix.
+[00:21:19.120 --> 00:21:22.080]   For example, Cloud3, in the model card,
+[00:21:22.080 --> 00:21:24.720]   they say that they generate data internally
+[00:21:24.720 --> 00:21:27.240]   and they include it in the pre-training.
+[00:21:27.240 --> 00:21:29.640]   This is also the case for LLMA3, where
+[00:21:29.640 --> 00:21:32.800]   they used LLMs to build classifiers that
+[00:21:32.800 --> 00:21:36.520]   would annotate samples and only keep the high-quality ones.
+[00:21:36.520 --> 00:21:39.280]   But they also generated synthetic content
+[00:21:39.280 --> 00:21:45.480]   to improve performance on coding and reasoning along contexts.
+[00:21:45.480 --> 00:21:47.680]   So synthetic data is a very new topic,
+[00:21:47.680 --> 00:21:51.200]   but it seems really interesting.
+[00:21:51.200 --> 00:21:54.000]   I'm personally working also on that as a hugging phase.
+[00:21:54.000 --> 00:21:57.400]   We recently released a data set called Cosmopedia,
+[00:21:57.400 --> 00:22:02.120]   which was the largest data set of synthetic texts.
+[00:22:02.120 --> 00:22:05.120]   And it had almost 25 billion tokens.
+[00:22:05.120 --> 00:22:07.840]   And instead of using closed models like GPT-4,
+[00:22:07.840 --> 00:22:13.040]   it used an open-source model, which is Mixed Trial 887B.
+[00:22:13.040 --> 00:22:16.640]   And we also released a blog post that explains
+[00:22:16.640 --> 00:22:18.920]   how we created this data set.
+[00:22:18.920 --> 00:22:23.800]   Because it can be very tricky to get very diverse samples.
+[00:22:23.800 --> 00:22:28.440]   So we used an approach where we had 80% of the data that
+[00:22:28.440 --> 00:22:29.640]   comes from the web.
+[00:22:29.640 --> 00:22:31.760]   And then we tried to use these web samples
+[00:22:31.760 --> 00:22:33.920]   to build new prompts that ask models
+[00:22:33.920 --> 00:22:37.480]   to generate textbooks that are related to these web samples.
+[00:22:37.480 --> 00:22:39.760]   But while giving them more context,
+[00:22:39.760 --> 00:22:43.080]   so we can limit the generations.
+[00:22:43.080 --> 00:22:47.560]   For example, we can have a topic that is mathematics.
+[00:22:47.560 --> 00:22:49.040]   And then we have web samples that
+[00:22:49.040 --> 00:22:50.560]   are related to mathematics.
+[00:22:50.560 --> 00:22:52.600]   And each time we give the model a prompt,
+[00:22:52.600 --> 00:22:55.560]   generate a textbook in the field of mathematics
+[00:22:55.560 --> 00:22:57.760]   that is related to this web sample.
+[00:22:57.760 --> 00:23:01.800]   And the more web samples we add, the more diversity we add.
+[00:23:01.800 --> 00:23:05.200]   We also used some curated sources like Stanford courses
+[00:23:05.200 --> 00:23:08.600]   and WikiHow, where we use extracts from these pages
+[00:23:08.600 --> 00:23:10.560]   to ask the models to generate content
+[00:23:10.560 --> 00:23:12.880]   that is related to them.
+[00:23:12.880 --> 00:23:18.400]   You can find more details in the Cosmopedia blog post.
+[00:23:18.400 --> 00:23:20.400]   So I guess now we also have the answer
+[00:23:20.400 --> 00:23:24.480]   for our second question, which was where to find the data.
+[00:23:24.480 --> 00:23:27.680]   And if you're following, we have one question left,
+[00:23:27.680 --> 00:23:30.520]   which is how can we filter this data?
+[00:23:30.520 --> 00:23:33.200]   Because for example, if you use common crawl,
+[00:23:33.200 --> 00:23:34.360]   you need to filter it.
+[00:23:34.360 --> 00:23:37.760]   And even if you use the stack, we did not train our models
+[00:23:37.760 --> 00:23:38.960]   on the stack directly.
+[00:23:38.960 --> 00:23:42.360]   We did a lot of filtering to get a data set that is smaller,
+[00:23:42.360 --> 00:23:46.120]   but has a higher quality.
+[00:23:46.120 --> 00:23:49.480]   And for this data set, I will cite this slide
+[00:23:49.480 --> 00:23:52.440]   from Thomas Wolfe's presentation.
+[00:23:52.440 --> 00:23:54.320]   This lecture is very interesting, by the way.
+[00:23:54.320 --> 00:23:56.440]   You can find it here.
+[00:23:56.440 --> 00:23:58.960]   And this is from the Yi paper, where
+[00:23:58.960 --> 00:24:03.240]   they state that a high-quality data set might
+[00:24:03.240 --> 00:24:05.600]   exhibit very advanced capabilities
+[00:24:05.600 --> 00:24:07.760]   for a standard architecture.
+[00:24:07.760 --> 00:24:13.160]   And this is actually the focus of many recent papers.
+[00:24:13.160 --> 00:24:15.720]   And we can see that in model releases,
+[00:24:15.720 --> 00:24:18.480]   the sections about data sets are becoming smaller and smaller
+[00:24:18.480 --> 00:24:21.640]   because people are realizing that the data set is actually
+[00:24:21.640 --> 00:24:25.480]   the backbone, and it is the one that is making some models much
+[00:24:25.480 --> 00:24:26.960]   better than others.
+[00:24:26.960 --> 00:24:31.280]   So it's really important to spend a lot of time creating
+[00:24:31.280 --> 00:24:35.160]   these data sets and trying to remove all the outliers
+[00:24:35.160 --> 00:24:37.880]   and data sets that can hurt the model during the training.
+[00:24:37.880 --> 00:24:43.760]   This is the pipeline from the Yi paper
+[00:24:43.760 --> 00:24:47.960]   for filtering their old web data sets.
+[00:24:47.960 --> 00:24:50.640]   So first, they do language filtering.
+[00:24:50.640 --> 00:24:53.920]   So I guess in Yi's case, they get English and some Asian
+[00:24:53.920 --> 00:24:54.960]   languages.
+[00:24:54.960 --> 00:24:57.440]   Then they apply some filtering techniques
+[00:24:57.440 --> 00:25:00.040]   to remove low-quality samples.
+[00:25:00.040 --> 00:25:01.520]   For example, there are some metrics,
+[00:25:01.520 --> 00:25:05.360]   like you look for files that have a lot of lines repeated
+[00:25:05.360 --> 00:25:06.600]   and then remove them.
+[00:25:06.600 --> 00:25:08.480]   There's also rule-based correction.
+[00:25:08.480 --> 00:25:10.640]   You also can use perplexity filtering,
+[00:25:10.640 --> 00:25:13.080]   where you compute something like a loss
+[00:25:13.080 --> 00:25:15.840]   and remove samples that have a very high one.
+[00:25:15.840 --> 00:25:18.800]   Then after that, they also did a step
+[00:25:18.800 --> 00:25:22.280]   which is very important, deduplication.
+[00:25:22.280 --> 00:25:23.720]   Because there are a lot of papers
+[00:25:23.720 --> 00:25:26.640]   that study the effect of duplicates on training,
+[00:25:26.640 --> 00:25:29.280]   and they find that keeping duplicates in the training
+[00:25:29.280 --> 00:25:32.600]   data can cause models to memorize
+[00:25:32.600 --> 00:25:36.040]   and they have less space to be creative.
+[00:25:36.040 --> 00:25:38.480]   So this hurts the performance of models,
+[00:25:38.480 --> 00:25:42.080]   and it's always advised to remove duplicates
+[00:25:42.080 --> 00:25:45.280]   using exact deduplication to remove files
+[00:25:45.280 --> 00:25:49.200]   that are exactly identical, but also near deduplication
+[00:25:49.200 --> 00:25:51.320]   to remove files that are similar.
+[00:25:51.320 --> 00:25:55.680]   And this uses techniques like min-hash deduplication.
+[00:25:55.680 --> 00:25:58.680]   For Yi, after that, they also did more filtering on top,
+[00:25:58.680 --> 00:26:01.280]   like semantic and topic filtering.
+[00:26:01.280 --> 00:26:04.120]   But usually, you can do the classic filtering
+[00:26:04.120 --> 00:26:06.240]   and deduplication and then be more creative
+[00:26:06.240 --> 00:26:09.600]   for the other filters.
+[00:26:09.600 --> 00:26:11.840]   This was also the case for FineWeb.
+[00:26:11.840 --> 00:26:14.680]   The reason it is better than other data sets
+[00:26:14.680 --> 00:26:17.120]   is that because they spent a lot of time
+[00:26:17.120 --> 00:26:19.560]   trying to come up with better filters
+[00:26:19.560 --> 00:26:22.240]   and also deduplicate the data sets well.
+[00:26:25.320 --> 00:26:28.760]   Now the question is, OK, we can do deduplication.
+[00:26:28.760 --> 00:26:32.360]   I think we have methods that are established to do that.
+[00:26:32.360 --> 00:26:35.200]   We can also do language filtering.
+[00:26:35.200 --> 00:26:37.400]   But then if you want to filter the data
+[00:26:37.400 --> 00:26:40.680]   to remove garbage and lower quality files,
+[00:26:40.680 --> 00:26:43.200]   how do you come up with good filters?
+[00:26:43.200 --> 00:26:47.040]   You can, for sure, find some filters in the literature.
+[00:26:47.040 --> 00:26:49.320]   But if you want to really build a data set that
+[00:26:49.320 --> 00:26:51.400]   is better than what exists, you need
+[00:26:51.400 --> 00:26:54.120]   to invest some time trying to find more techniques that
+[00:26:54.120 --> 00:26:56.080]   work better for your case.
+[00:26:56.080 --> 00:27:00.480]   This can be done with manual inspection, which
+[00:27:00.480 --> 00:27:02.840]   is always a good idea to look at the data
+[00:27:02.840 --> 00:27:04.680]   and see what it actually looks like.
+[00:27:04.680 --> 00:27:08.640]   And you can come up with filters to help you during the training.
+[00:27:08.640 --> 00:27:11.200]   But that is usually not enough because you
+[00:27:11.200 --> 00:27:14.040]   might have an intuition for filtering that
+[00:27:14.040 --> 00:27:15.840]   works better for your model.
+[00:27:15.840 --> 00:27:17.440]   But then when you train, actually,
+[00:27:17.440 --> 00:27:18.920]   this filtering doesn't help.
+[00:27:18.920 --> 00:27:23.040]   And for example, for us, when we were developing the StarCoder
+[00:27:23.040 --> 00:27:26.240]   series of models, we were thinking, OK,
+[00:27:26.240 --> 00:27:28.800]   what are the best ways for us to filter code?
+[00:27:28.800 --> 00:27:31.200]   So we use some standard filters, for example,
+[00:27:31.200 --> 00:27:33.280]   to remove auto-generated content.
+[00:27:33.280 --> 00:27:36.440]   But we try to come up with a little bit more complex
+[00:27:36.440 --> 00:27:39.600]   filterings that could help us, like looking for files that
+[00:27:39.600 --> 00:27:42.680]   have a lot of comments because code that is usually
+[00:27:42.680 --> 00:27:45.840]   well-documented is probably of a higher quality
+[00:27:45.840 --> 00:27:49.080]   than another code file that doesn't have any comments.
+[00:27:49.080 --> 00:27:51.080]   So we implemented this filter that
+[00:27:51.080 --> 00:27:53.920]   looks for files that have almost no comments
+[00:27:53.920 --> 00:27:55.240]   and then removes them.
+[00:27:55.240 --> 00:27:57.800]   And we trained a model on that.
+[00:27:57.800 --> 00:27:59.800]   It turned out the performance improvement
+[00:27:59.800 --> 00:28:01.080]   was really negligible.
+[00:28:01.080 --> 00:28:03.400]   It was not as much as we thought.
+[00:28:03.400 --> 00:28:06.000]   We also tried to use another filter, which
+[00:28:06.000 --> 00:28:08.480]   is using the stars of a repository
+[00:28:08.480 --> 00:28:10.320]   as an indicator of quality.
+[00:28:10.320 --> 00:28:13.720]   So we've tried removing all the files from repository
+[00:28:13.720 --> 00:28:15.640]   that have less than five stars.
+[00:28:15.640 --> 00:28:19.360]   And this ended up removing over 70% of the data sets.
+[00:28:19.360 --> 00:28:21.240]   And then when we trained on it, the model
+[00:28:21.240 --> 00:28:24.520]   was the worst model that we trained in all our ablation
+[00:28:24.520 --> 00:28:27.760]   experiments, simply because it removed too much data.
+[00:28:27.760 --> 00:28:31.760]   It was not worth using this filtering technique.
+[00:28:31.760 --> 00:28:34.680]   This is why it's very important that when you have a filter,
+[00:28:34.680 --> 00:28:37.800]   you should run what we call an ablation model.
+[00:28:37.800 --> 00:28:41.000]   The ablation is basically you take a subset of your data set
+[00:28:41.000 --> 00:28:43.040]   after you applied the filtering.
+[00:28:43.040 --> 00:28:44.720]   And you train a small model on it
+[00:28:44.720 --> 00:28:48.560]   and see how it behaves with and without the filtering.
+[00:28:48.560 --> 00:28:52.240]   And you might be wondering, OK, if I use a small model,
+[00:28:52.240 --> 00:28:55.080]   but does it really extrapolate to larger models?
+[00:28:55.080 --> 00:28:56.520]   I think that's a good question.
+[00:28:56.520 --> 00:28:58.800]   But generally, from our experience,
+[00:28:58.800 --> 00:29:00.880]   we found that this does extrapolate
+[00:29:00.880 --> 00:29:04.280]   for most of the ablations.
+[00:29:04.280 --> 00:29:06.160]   When you're doing these ablations,
+[00:29:06.160 --> 00:29:10.480]   you should select a set of high signal benchmarks
+[00:29:10.480 --> 00:29:13.480]   that could show you some--
+[00:29:13.480 --> 00:29:16.320]   give you some conclusions about the effect of your filtering
+[00:29:16.320 --> 00:29:18.200]   early in the training.
+[00:29:18.200 --> 00:29:21.880]   This can be some of the popular NLP benchmarks for LLMs,
+[00:29:21.880 --> 00:29:25.280]   for example, HeLaSwag or MMLU.
+[00:29:25.280 --> 00:29:27.200]   You should also-- sorry, here, it's
+[00:29:27.200 --> 00:29:29.760]   not training, it's training-- with different seeds
+[00:29:29.760 --> 00:29:31.000]   to reduce the noise.
+[00:29:31.000 --> 00:29:33.160]   Because sometimes you can have filtering techniques
+[00:29:33.160 --> 00:29:35.480]   that don't give you a very big difference.
+[00:29:35.480 --> 00:29:38.160]   But if you train with just one seed,
+[00:29:38.160 --> 00:29:39.440]   you must draw conclusions.
+[00:29:39.440 --> 00:29:41.040]   But they're actually just noise.
+[00:29:41.040 --> 00:29:43.560]   So if you can and you have the compute,
+[00:29:43.560 --> 00:29:46.600]   it's always better to run the same experiment with two
+[00:29:46.600 --> 00:29:48.040]   or three different seeds.
+[00:29:48.040 --> 00:29:50.480]   And then maybe do something like the averaging
+[00:29:50.480 --> 00:29:52.160]   so that you reduce the noise and you
+[00:29:52.160 --> 00:29:54.520]   have more robust conclusions about the effect
+[00:29:54.520 --> 00:29:57.880]   of your filtering.
+[00:29:57.880 --> 00:30:01.080]   For example, for the fine web data set,
+[00:30:01.080 --> 00:30:05.080]   the authors run over 200 plus ablations.
+[00:30:05.080 --> 00:30:08.200]   These were like 1 billion models trained on, I think,
+[00:30:08.200 --> 00:30:09.800]   30 billion tokens.
+[00:30:09.800 --> 00:30:12.280]   And this is how they were able to find
+[00:30:12.280 --> 00:30:15.600]   filterings that worked better for their data sets.
+[00:30:16.160 --> 00:30:19.920]   Now let's go back to our Starcoder use case.
+[00:30:19.920 --> 00:30:23.600]   And I will tell you about how we filtered the stack data sets.
+[00:30:23.600 --> 00:30:27.160]   So for the version 1, if you remember,
+[00:30:27.160 --> 00:30:30.000]   we had 6 terabytes of source code.
+[00:30:30.000 --> 00:30:32.520]   And then, but when we trained Starcoder,
+[00:30:32.520 --> 00:30:36.480]   we only used 800 gigabytes of these 6 terabytes.
+[00:30:36.480 --> 00:30:39.800]   So a lot of this data was filtered out
+[00:30:39.800 --> 00:30:44.000]   after our filtering, our curation.
+[00:30:44.000 --> 00:30:46.200]   The same happened for the Stack V2,
+[00:30:46.200 --> 00:30:49.320]   where this time we started from 32 terabytes and 600
+[00:30:49.320 --> 00:30:50.520]   programming languages.
+[00:30:50.520 --> 00:30:52.640]   And after the filtering, we ended up
+[00:30:52.640 --> 00:30:56.680]   with only 6.3 terabytes of code.
+[00:30:56.680 --> 00:30:59.960]   And for filtering code, the approach
+[00:30:59.960 --> 00:31:03.520]   is a bit similar to just filtering web data,
+[00:31:03.520 --> 00:31:06.880]   but the filtering techniques are a bit different.
+[00:31:06.880 --> 00:31:11.200]   So first, we wanted to include a lot of programming languages.
+[00:31:11.200 --> 00:31:14.480]   And we looked at them, and we didn't keep all of them.
+[00:31:14.480 --> 00:31:18.200]   We only kept the popular ones and excluded, for example,
+[00:31:18.200 --> 00:31:21.160]   configs and languages that are no longer maintained.
+[00:31:21.160 --> 00:31:22.640]   So this was for V1.
+[00:31:22.640 --> 00:31:27.360]   For Starcoder 2, we included more languages, over 600.
+[00:31:27.360 --> 00:31:29.200]   And then we added some other sources
+[00:31:29.200 --> 00:31:31.600]   that could be interesting for a code model
+[00:31:31.600 --> 00:31:35.600]   to learn from, which are GitHub issues, Git commits,
+[00:31:35.600 --> 00:31:37.520]   and Jupyter notebooks.
+[00:31:37.520 --> 00:31:40.080]   We also added for the V2, we added
+[00:31:40.080 --> 00:31:46.280]   also added for the V2, Kaggle, notebooks, and pull requests.
+[00:31:46.280 --> 00:31:48.480]   The second step, after we selected
+[00:31:48.480 --> 00:31:50.680]   the languages we wanted to train on,
+[00:31:50.680 --> 00:31:53.360]   was data quality inspection.
+[00:31:53.360 --> 00:31:55.760]   So basically, as I told you, we had some filters
+[00:31:55.760 --> 00:32:00.600]   to remove low-quality files and auto-generated content.
+[00:32:00.600 --> 00:32:03.480]   An example is the average line length.
+[00:32:03.480 --> 00:32:06.520]   So if you have an average line length that is too high,
+[00:32:06.520 --> 00:32:08.480]   there's probably something wrong with this file
+[00:32:08.480 --> 00:32:10.440]   where it's probably auto-generated.
+[00:32:10.440 --> 00:32:14.880]   But since we had almost 100 programming languages,
+[00:32:14.880 --> 00:32:17.920]   we should not use the same threshold for all the languages
+[00:32:17.920 --> 00:32:20.600]   for this filter, because some programming languages just
+[00:32:20.600 --> 00:32:21.960]   have longer lines.
+[00:32:21.960 --> 00:32:24.240]   So it's important to do some inspection
+[00:32:24.240 --> 00:32:26.680]   and look at some samples from these languages.
+[00:32:26.680 --> 00:32:29.320]   In our case, we had the BigCode community,
+[00:32:29.320 --> 00:32:33.400]   which helps us look at 100 samples per extension
+[00:32:33.400 --> 00:32:35.720]   and derive the appropriate thresholds
+[00:32:35.720 --> 00:32:37.080]   in filtering heuristics.
+[00:32:37.080 --> 00:32:46.920]   The third filtering step was near deduplication.
+[00:32:46.920 --> 00:32:50.240]   We found that near deduplication was the filtering that gave us
+[00:32:50.240 --> 00:32:52.120]   the most performance boost.
+[00:32:52.120 --> 00:32:54.440]   It's also very easy to apply, because it's
+[00:32:54.440 --> 00:32:55.920]   language agnostic.
+[00:32:55.920 --> 00:32:58.520]   Even though we have 86 programming languages,
+[00:32:58.520 --> 00:33:01.280]   we don't need to change the duplication for each language.
+[00:33:01.280 --> 00:33:05.360]   We can just apply it to the whole data set.
+[00:33:05.360 --> 00:33:08.920]   And here I show you some results of the effects
+[00:33:08.920 --> 00:33:10.400]   of deduplication.
+[00:33:10.400 --> 00:33:13.840]   For example, here you can see this model, Python all license.
+[00:33:13.840 --> 00:33:16.520]   If the filtering is none, you get a pass at 1,
+[00:33:16.520 --> 00:33:18.960]   which is our code metric, of 13.
+[00:33:18.960 --> 00:33:20.840]   But if you apply near deduplication,
+[00:33:20.840 --> 00:33:22.920]   you go from 13 to 17.
+[00:33:22.920 --> 00:33:25.600]   That's a very big performance bump.
+[00:33:25.600 --> 00:33:28.880]   The same goes for other subsets, like permissive license.
+[00:33:28.880 --> 00:33:33.440]   So we decided to use deduplication for our data set
+[00:33:33.440 --> 00:33:36.280]   and to use strong deduplication to really remove
+[00:33:36.280 --> 00:33:40.160]   all the files that could be similar.
+[00:33:40.160 --> 00:33:43.240]   Another step in our pipeline is to remove
+[00:33:43.240 --> 00:33:45.840]   personal identifiable information.
+[00:33:45.840 --> 00:33:50.080]   So this could be names, emails, or keys, or passwords,
+[00:33:50.080 --> 00:33:52.440]   because we scraped code from GitHub.
+[00:33:52.440 --> 00:33:55.120]   And although GitHub has some tools
+[00:33:55.120 --> 00:33:58.160]   to detect secrets and prompt users to remove them,
+[00:33:58.160 --> 00:33:59.920]   that's not always the case.
+[00:33:59.920 --> 00:34:01.320]   And we found that there were still
+[00:34:01.320 --> 00:34:03.480]   a lot of secrets in the data sets.
+[00:34:03.480 --> 00:34:04.640]   And we trained our model.
+[00:34:04.640 --> 00:34:06.800]   You don't want it to be trained on that,
+[00:34:06.800 --> 00:34:08.960]   because in inference, it might generate
+[00:34:08.960 --> 00:34:11.800]   sensitive or personal data.
+[00:34:11.800 --> 00:34:15.040]   So our approach to removing it was to first annotate
+[00:34:15.040 --> 00:34:18.000]   a data set for PII.
+[00:34:18.000 --> 00:34:21.560]   We collaborated with an annotation company
+[00:34:21.560 --> 00:34:23.720]   to annotate some samples.
+[00:34:23.720 --> 00:34:27.920]   So the annotators were tasked with labeling the PII
+[00:34:27.920 --> 00:34:28.840]   when they found it.
+[00:34:28.840 --> 00:34:30.200]   For example, if they find a name,
+[00:34:30.200 --> 00:34:31.520]   they give it a class name.
+[00:34:31.520 --> 00:34:34.160]   If you find an email, they also label it as an email.
+[00:34:34.160 --> 00:34:37.120]   So it was a named entity recognition task.
+[00:34:37.120 --> 00:34:41.080]   And then we trained a star PII, which is our NER model,
+[00:34:41.080 --> 00:34:43.080]   to detect this PII.
+[00:34:43.080 --> 00:34:48.760]   And then we run it on the whole star coder training data.
+[00:34:48.760 --> 00:34:52.720]   This took almost 800, 100 GPU hours,
+[00:34:52.720 --> 00:34:57.840]   because it's a neural network, and it needs to run on GPUs.
+[00:34:57.840 --> 00:35:02.800]   The last step in our filtering was data decontamination,
+[00:35:02.800 --> 00:35:06.320]   because you should make sure to remove the benchmarks and test
+[00:35:06.320 --> 00:35:08.040]   sets from your training data.
+[00:35:08.040 --> 00:35:12.000]   Otherwise, your evaluation numbers will just be inflated.
+[00:35:12.000 --> 00:35:14.240]   So we made sure to remove the benchmarks
+[00:35:14.240 --> 00:35:16.920]   that we used for evaluation from our training sets.
+[00:35:16.920 --> 00:35:23.440]   The last step in the data curation of the stack
+[00:35:23.440 --> 00:35:25.680]   was to format the data.
+[00:35:25.680 --> 00:35:27.680]   So now that the data is filtered,
+[00:35:27.680 --> 00:35:30.960]   and because code is different from text,
+[00:35:30.960 --> 00:35:35.600]   we can allow ourselves to apply some nice formatting that
+[00:35:35.600 --> 00:35:37.440]   could help us do an inference.
+[00:35:37.440 --> 00:35:40.800]   For example, for a star coder, we had the code file.
+[00:35:40.800 --> 00:35:43.920]   But before the code, we added some tokens
+[00:35:43.920 --> 00:35:46.160]   that indicate that this is the repository name,
+[00:35:46.160 --> 00:35:49.440]   and another token file name that indicates the file name,
+[00:35:49.440 --> 00:35:51.280]   and another one for stars.
+[00:35:51.280 --> 00:35:55.080]   And this is interesting, because this model, for example,
+[00:35:55.080 --> 00:35:57.120]   star coder and other code models,
+[00:35:57.120 --> 00:36:00.640]   I guess their main use case is to be plugged in an IDE,
+[00:36:00.640 --> 00:36:02.240]   for example, VS Code.
+[00:36:02.240 --> 00:36:05.120]   And when you're using them, it could
+[00:36:05.120 --> 00:36:08.560]   be interesting to append the code file with the name
+[00:36:08.560 --> 00:36:12.000]   of the file, for example, or file those bytes,
+[00:36:12.000 --> 00:36:14.400]   so that the model would know this is a Python file.
+[00:36:14.400 --> 00:36:16.920]   If it's in another language, when you add the file name
+[00:36:16.920 --> 00:36:18.440]   and you have the extension, it could
+[00:36:18.440 --> 00:36:23.120]   know that this is the language that it should generate code in.
+[00:36:23.120 --> 00:36:25.160]   We also added GitHub stars token,
+[00:36:25.160 --> 00:36:27.960]   and we tried to play with it, like to say
+[00:36:27.960 --> 00:36:31.520]   this file has 100 stars, and see if the model would generate
+[00:36:31.520 --> 00:36:36.480]   higher quality code than if it were to generate for zero stars.
+[00:36:36.480 --> 00:36:38.920]   We didn't find any differences really during inference,
+[00:36:38.920 --> 00:36:42.840]   but it was fun to add all this formatting.
+[00:36:42.840 --> 00:36:46.160]   For star coder 2, one of the improvements
+[00:36:46.160 --> 00:36:50.280]   was that star coder 2 was repository aware.
+[00:36:50.280 --> 00:36:52.880]   Because when we have GitHub repositories,
+[00:36:52.880 --> 00:36:53.800]   it's a repository.
+[00:36:53.800 --> 00:36:56.760]   So we have some files that are in the same repository that
+[00:36:56.760 --> 00:36:58.480]   are related to each other.
+[00:36:58.480 --> 00:37:02.200]   But when we built the stack V1, we just shuffled files,
+[00:37:02.200 --> 00:37:05.440]   so we didn't keep this repository structure.
+[00:37:05.440 --> 00:37:07.760]   And when we trained the model, we just shuffled them,
+[00:37:07.760 --> 00:37:10.920]   and the model did not know if two files belong
+[00:37:10.920 --> 00:37:12.520]   to the same repository.
+[00:37:12.520 --> 00:37:14.560]   But when we did star coder 2, we tried
+[00:37:14.560 --> 00:37:17.320]   to keep files that are in the same repository next
+[00:37:17.320 --> 00:37:18.240]   to each other.
+[00:37:18.240 --> 00:37:20.800]   And how we did that is by concatenating them
+[00:37:20.800 --> 00:37:23.720]   with some special tokens like file set, which basically
+[00:37:23.720 --> 00:37:24.880]   separates files.
+[00:37:24.880 --> 00:37:28.440]   And this way, the model can kind of
+[00:37:28.440 --> 00:37:30.800]   know which files are in the same repository
+[00:37:30.800 --> 00:37:34.160]   and try to find links between them, 3D parallelism.
+[00:37:34.160 --> 00:37:37.760]   And then you have also light eval for doing the evaluation.
+[00:37:37.760 --> 00:37:39.640]   So this is kind of a good stack to be
+[00:37:39.640 --> 00:37:43.440]   able to run your full trainings, but also your ablation models.
+[00:37:43.440 --> 00:37:45.480]   You can apply a filter from data to strobe
+[00:37:45.480 --> 00:37:48.520]   and then train with nanotron and evaluate with light eval.
+[00:37:48.520 --> 00:37:50.240]   And they're well-integrated together
+[00:37:50.240 --> 00:37:52.720]   and they make one ecosystem.
+[00:37:52.720 --> 00:37:54.840]   So that's for general LLMs.
+[00:37:54.840 --> 00:37:58.240]   For code LLMs, we also released the code
+[00:37:58.240 --> 00:38:01.560]   we used for both the stack and star coder models
+[00:38:01.560 --> 00:38:04.120]   under our big code repository on GitHub.
+[00:38:04.120 --> 00:38:10.920]   And I think we just answered our third question, which
+[00:38:10.920 --> 00:38:12.800]   was how to filter the data.
+[00:38:12.800 --> 00:38:14.720]   So now you know how to--
+[00:38:14.720 --> 00:38:17.320]   first, how much data you need, and then
+[00:38:17.320 --> 00:38:20.320]   where you can get this data, both web, and code,
+[00:38:20.320 --> 00:38:22.120]   and synthetic, and curated.
+[00:38:22.120 --> 00:38:25.480]   And you also know how you can properly filter the data
+[00:38:25.480 --> 00:38:28.000]   and you can test the filtering techniques
+[00:38:28.000 --> 00:38:30.920]   that you have in mind.
+[00:38:30.920 --> 00:38:35.080]   So now, let me tell you a little bit more about code LLMs,
+[00:38:35.080 --> 00:38:38.680]   because that's kind of what I'm working on.
+[00:38:38.680 --> 00:38:41.320]   And I'm trying to give you a little bit of an overview
+[00:38:41.320 --> 00:38:44.480]   about these models so that you know how to train good LLMs,
+[00:38:44.520 --> 00:38:48.160]   but you also know how to build very cool code assistants
+[00:38:48.160 --> 00:38:51.600]   and completion models.
+[00:38:51.600 --> 00:38:55.560]   So how all of this started was when GitHub Copilot
+[00:38:55.560 --> 00:38:57.040]   was released.
+[00:38:57.040 --> 00:38:58.840]   And it was very interesting, because it
+[00:38:58.840 --> 00:39:01.920]   was so much better than all the other code completion
+[00:39:01.920 --> 00:39:05.480]   models that were before it, which were very small and much
+[00:39:05.480 --> 00:39:06.720]   less performant.
+[00:39:06.720 --> 00:39:11.960]   And GitHub Copilot was using the Codex model by OpenAI.
+[00:39:11.960 --> 00:39:14.960]   And they just showed that you can train a code LLM
+[00:39:14.960 --> 00:39:17.800]   in the same way that you train an LLM for English,
+[00:39:17.800 --> 00:39:18.760]   for example.
+[00:39:18.760 --> 00:39:21.640]   You can just take a large transformer model
+[00:39:21.640 --> 00:39:25.640]   and give it a lot of code data, and it will learn this code.
+[00:39:25.640 --> 00:39:27.160]   Because before, a lot of people were
+[00:39:27.160 --> 00:39:29.440]   trying to treat code very differently,
+[00:39:29.440 --> 00:39:32.960]   for example, by using abstract syntax trees.
+[00:39:32.960 --> 00:39:34.960]   But what Codex model showed is that you
+[00:39:34.960 --> 00:39:36.520]   can treat code like text.
+[00:39:36.520 --> 00:39:38.640]   And if you want to predict the next line,
+[00:39:38.640 --> 00:39:40.360]   you can predict the next text.
+[00:39:40.360 --> 00:39:42.520]   You just do next token prediction,
+[00:39:42.520 --> 00:39:44.520]   and you get your code.
+[00:39:44.520 --> 00:39:48.120]   It works very well, much better compared to the more
+[00:39:48.120 --> 00:39:50.880]   feature-engineered techniques.
+[00:39:50.880 --> 00:39:54.560]   And that was over two years ago, and we didn't
+[00:39:54.560 --> 00:39:57.600]   have any good open-code models.
+[00:39:57.600 --> 00:39:59.640]   But today, if you go to the hub, you
+[00:39:59.640 --> 00:40:03.080]   can find that we have over 1,700 models that
+[00:40:03.080 --> 00:40:04.560]   are trained on code.
+[00:40:04.560 --> 00:40:07.640]   So these are models that are either trained only
+[00:40:07.640 --> 00:40:10.640]   on code or LLMs that included code
+[00:40:10.640 --> 00:40:12.960]   as part of their training.
+[00:40:12.960 --> 00:40:15.800]   So you can see that we've made a lot of progress
+[00:40:15.800 --> 00:40:21.080]   in this code generation field, which is amazing.
+[00:40:21.080 --> 00:40:26.480]   And this is the result of the community's work
+[00:40:26.480 --> 00:40:29.640]   to build very good instruction-tuned models
+[00:40:29.640 --> 00:40:31.160]   and base models.
+[00:40:31.160 --> 00:40:33.560]   For example, here, as you can see in the leaderboard,
+[00:40:33.560 --> 00:40:35.760]   we have some very strong models that
+[00:40:35.760 --> 00:40:39.720]   score almost 80% on the code evaluation benchmark, which
+[00:40:39.720 --> 00:40:42.680]   is human eval, which means they get almost 80%
+[00:40:42.680 --> 00:40:47.240]   of the problems right, which is a very large number.
+[00:40:47.240 --> 00:40:51.360]   And when talking about the landscape of open-code LLMs
+[00:40:51.360 --> 00:40:54.440]   in BigCode, we have released the stack data set, which
+[00:40:54.440 --> 00:40:57.200]   is now the default data set for training on code,
+[00:40:57.200 --> 00:40:59.960]   and also StarCoder1 and StarCoder2 family
+[00:40:59.960 --> 00:41:02.560]   of models and other instruction-tuned models
+[00:41:02.560 --> 00:41:05.800]   with the H4 team, like StarChat2.
+[00:41:05.800 --> 00:41:08.840]   Meta also released some very good code models,
+[00:41:08.840 --> 00:41:10.840]   which are the Code Llama series of models
+[00:41:10.840 --> 00:41:13.680]   that go from 7b to 7tb.
+[00:41:13.680 --> 00:41:15.680]   There are also the DeepSeq models,
+[00:41:15.680 --> 00:41:17.800]   which are also very strong.
+[00:41:17.800 --> 00:41:21.000]   And we have also other models, like the recent Granite models
+[00:41:21.000 --> 00:41:25.280]   from IBM, CodeQuen, CodeGen, and StableCode.
+[00:41:25.280 --> 00:41:29.160]   So there are different providers for code LLMs
+[00:41:29.160 --> 00:41:32.880]   and also for data sets for code.
+[00:41:32.880 --> 00:41:36.400]   And the main reason we started the BigCode collaboration
+[00:41:36.400 --> 00:41:38.800]   and to train StarCoder models was
+[00:41:38.800 --> 00:41:40.760]   to kind of have a collaboration where we
+[00:41:40.760 --> 00:41:43.680]   have full data transparency.
+[00:41:43.680 --> 00:41:45.960]   We released all the details about the training,
+[00:41:45.960 --> 00:41:48.360]   but also the data is public so that people
+[00:41:48.360 --> 00:41:50.440]   can inspect it and use it.
+[00:41:50.440 --> 00:41:53.560]   And we also have the code for the processing and the model
+[00:41:53.560 --> 00:41:54.240]   weights.
+[00:41:54.240 --> 00:41:55.880]   And the collaboration was open.
+[00:41:55.880 --> 00:41:58.840]   We had over 1,000 researchers joining our Slack
+[00:41:58.840 --> 00:42:02.520]   and following the journey with us.
+[00:42:02.520 --> 00:42:05.520]   And this kind of created a BigCode ecosystem
+[00:42:05.520 --> 00:42:08.480]   where the stack was used in the pre-training of a lot
+[00:42:08.480 --> 00:42:13.120]   of prominent code models, like CodeGen and StableCode.
+[00:42:13.120 --> 00:42:16.240]   And the StarCoder models were used as basis
+[00:42:16.240 --> 00:42:18.280]   for a lot of community fine tunings.
+[00:42:18.280 --> 00:42:23.880]   And I think it's very important to be
+[00:42:23.880 --> 00:42:28.320]   aware of what makes a release of an LLM,
+[00:42:28.320 --> 00:42:30.680]   whether it be a code LLM or a general LLM,
+[00:42:30.680 --> 00:42:33.000]   open and responsible.
+[00:42:33.000 --> 00:42:35.240]   And I think this is fourfold.
+[00:42:35.240 --> 00:42:38.440]   First, it's really good for the community
+[00:42:38.440 --> 00:42:41.240]   and for research in AI in general.
+[00:42:41.240 --> 00:42:46.120]   If you can make open access data sets,
+[00:42:46.120 --> 00:42:48.920]   this will mean having data inspection tools,
+[00:42:48.920 --> 00:42:53.160]   but also opt-out tools to respect people's wishes
+[00:42:53.160 --> 00:42:55.000]   regarding their data sets.
+[00:42:55.000 --> 00:42:57.880]   For example, if they don't want to be included in the trainings,
+[00:42:57.880 --> 00:43:00.120]   they should be able to opt-out.
+[00:43:00.120 --> 00:43:02.800]   It's also important to remove personal identifiable
+[00:43:02.800 --> 00:43:04.560]   information.
+[00:43:04.560 --> 00:43:07.920]   So an open release does not mean just releasing model weights
+[00:43:07.920 --> 00:43:11.560]   and stopping there, but also making your work reproducible
+[00:43:11.560 --> 00:43:15.320]   by fully documenting the pipeline for using these models
+[00:43:15.320 --> 00:43:19.320]   and also releasing tools for evaluation
+[00:43:19.320 --> 00:43:24.160]   and technical reports that documents the whole pipeline.
+[00:43:24.160 --> 00:43:26.520]   And for us in BigCode, we kind of
+[00:43:26.520 --> 00:43:30.400]   went from StataCoder, which was part of our obligations
+[00:43:30.400 --> 00:43:33.920]   to understand how to filter the static data sets.
+[00:43:33.920 --> 00:43:35.640]   And then we went to StarCoder, which
+[00:43:35.640 --> 00:43:39.320]   was released last year, a $15 billion code generation model.
+[00:43:39.320 --> 00:43:42.720]   And then this year, we released StarCoder2,
+[00:43:42.720 --> 00:43:45.360]   which was trained on much more programming languages
+[00:43:45.360 --> 00:43:51.160]   and had a much higher evaluation score.
+[00:43:51.160 --> 00:43:55.880]   And StarCoder was also rated as the most transparent model
+[00:43:55.880 --> 00:44:00.440]   by the Stanford Foundation Model Transparency Index, which
+[00:44:00.440 --> 00:44:02.840]   is really hard to remember, given the efforts that we put
+[00:44:02.840 --> 00:44:06.360]   into data governance and into making the model release
+[00:44:06.360 --> 00:44:07.840]   as transparent as possible.
+[00:44:07.840 --> 00:44:14.560]   Regarding evaluation, so for example, StarCoder15b,
+[00:44:14.560 --> 00:44:19.040]   when it was released, it was the state-of-the-art code model.
+[00:44:19.040 --> 00:44:22.120]   And this was also the case for StarCoder215b,
+[00:44:22.120 --> 00:44:24.360]   among other 15b models.
+[00:44:24.360 --> 00:44:28.760]   And it was even close or better than larger models.
+[00:44:28.760 --> 00:44:30.280]   I think I don't have the plot here,
+[00:44:30.280 --> 00:44:34.680]   but it was better than-- it was matching CodeLlama34b.
+[00:44:34.680 --> 00:44:38.640]   And it was close to DeepSeq33b on some benchmarks.
+[00:44:38.640 --> 00:44:41.200]   And here, for example, you can see the results
+[00:44:41.200 --> 00:44:43.640]   on different benchmarks.
+[00:44:43.640 --> 00:44:45.240]   Because when releasing a model, it's
+[00:44:45.240 --> 00:44:47.360]   really important that you don't just
+[00:44:47.360 --> 00:44:49.760]   give a weight on one benchmark, but you
+[00:44:49.760 --> 00:44:52.160]   should add as many benchmarks as you want.
+[00:44:52.160 --> 00:44:54.680]   In case you had contamination, although we
+[00:44:54.680 --> 00:44:56.360]   tried to avoid this one benchmark,
+[00:44:56.360 --> 00:44:58.840]   there's a very low chance that you also had contamination
+[00:44:58.840 --> 00:45:00.360]   on other benchmarks.
+[00:45:00.360 --> 00:45:03.120]   And it also allows you to fully understand
+[00:45:03.120 --> 00:45:08.680]   how your model behaves if you add more evaluation benchmarks.
+[00:45:08.680 --> 00:45:11.280]   And I think that's just a good practice that everyone should
+[00:45:11.280 --> 00:45:12.520]   be doing with their releases.
+[00:45:12.520 --> 00:45:18.000]   So with the StarCoder models, we also
+[00:45:18.000 --> 00:45:22.920]   released some tooling, like VS Code implementation,
+[00:45:22.920 --> 00:45:25.760]   which also has a membership test that
+[00:45:25.760 --> 00:45:30.120]   tries to see if the generated code was in the training data
+[00:45:30.120 --> 00:45:32.200]   and highlight that to the author.
+[00:45:32.200 --> 00:45:37.040]   So that's part of our code attribution efforts
+[00:45:37.040 --> 00:45:38.240]   for these code models.
+[00:45:38.240 --> 00:45:43.200]   Maybe you're interested in using these models
+[00:45:43.200 --> 00:45:46.000]   to build your own personal copilot
+[00:45:46.000 --> 00:45:49.200]   and fine-tune in StarCoder or CodeLAM or other models
+[00:45:49.200 --> 00:45:51.440]   on your personal code bases.
+[00:45:51.440 --> 00:45:54.480]   To do that, there's a very nice blog post
+[00:45:54.480 --> 00:45:58.440]   by Surab and Sayag, where they try to take a code model
+[00:45:58.440 --> 00:46:02.720]   and train it on the Hugging Face internal libraries
+[00:46:02.720 --> 00:46:07.200]   and then deploy it in Olama and have a local code assistant.
+[00:46:07.200 --> 00:46:10.440]   And the pipeline is very similar to what we did in pre-training.
+[00:46:10.440 --> 00:46:12.360]   First, you take your data set, you
+[00:46:12.360 --> 00:46:15.080]   try to filter out the things you don't want to keep,
+[00:46:15.080 --> 00:46:18.160]   and then you do the duplication and you train your model.
+[00:46:18.160 --> 00:46:20.280]   So in this case, it will be just a fine-tuning,
+[00:46:20.280 --> 00:46:21.720]   so it will be much quicker.
+[00:46:21.720 --> 00:46:24.440]   You can use libraries like PEFT, which
+[00:46:24.440 --> 00:46:26.600]   do parameter-efficient fine-tuning,
+[00:46:26.600 --> 00:46:28.040]   where you don't need to train all
+[00:46:28.040 --> 00:46:30.000]   the parameters of your models, but you only
+[00:46:30.000 --> 00:46:32.880]   inject a few trainable parameters.
+[00:46:32.880 --> 00:46:35.600]   This makes the training much faster.
+[00:46:35.600 --> 00:46:41.720]   For example, 7b model can be trained in a Google Colab.
+[00:46:41.720 --> 00:46:44.120]   Now let's go back to evaluation.
+[00:46:44.120 --> 00:46:46.280]   So for example, for LLMs, there's
+[00:46:46.280 --> 00:46:50.120]   the OpenLLM leaderboard that evaluates models.
+[00:46:50.120 --> 00:46:53.600]   There's also the LLMs' arena, which compares, instructs
+[00:46:53.600 --> 00:46:56.560]   models, and uses human evaluation.
+[00:46:56.560 --> 00:46:59.640]   For code models, one of the most popular benchmarks
+[00:46:59.640 --> 00:47:01.120]   is human eval.
+[00:47:01.120 --> 00:47:03.120]   And it's basically a benchmark where
+[00:47:03.120 --> 00:47:08.800]   you have a function that the model has to autocomplete.
+[00:47:08.800 --> 00:47:11.200]   And then when the function is completed,
+[00:47:11.200 --> 00:47:13.440]   you take this solution, and then you
+[00:47:13.440 --> 00:47:16.240]   run it against multiple unit tests,
+[00:47:16.240 --> 00:47:18.600]   and you count how many solutions pass
+[00:47:18.600 --> 00:47:20.160]   and how many solutions fail.
+[00:47:20.160 --> 00:47:23.680]   And then you count a metric that we call pass at one,
+[00:47:23.680 --> 00:47:24.640]   for example.
+[00:47:24.640 --> 00:47:27.680]   This is the one that's been reported in this leaderboard.
+[00:47:27.680 --> 00:47:30.480]   And this gives you the human eval score.
+[00:47:30.480 --> 00:47:32.640]   There's also a translation of this benchmark
+[00:47:32.640 --> 00:47:34.720]   to 18 other languages.
+[00:47:34.720 --> 00:47:38.240]   Here I show Java and JavaScript in C++.
+[00:47:38.240 --> 00:47:40.760]   And this benchmark is called MultiPLE.
+[00:47:40.760 --> 00:47:44.840]   So it allows you to see how well each model does
+[00:47:44.840 --> 00:47:47.320]   on which programming language, and choose
+[00:47:47.320 --> 00:47:51.720]   the one that's the most interesting for you.
+[00:47:51.720 --> 00:47:57.640]   But these benchmarks usually have an issue of contamination
+[00:47:57.640 --> 00:48:01.720]   and overfitting, especially instruction-tuned models.
+[00:48:01.720 --> 00:48:04.680]   I don't know if you've already checked what these data sets
+[00:48:04.680 --> 00:48:05.600]   look like.
+[00:48:05.600 --> 00:48:09.160]   But usually for code, there are an instruction
+[00:48:09.160 --> 00:48:11.840]   that asks the model to generate an exercise.
+[00:48:11.840 --> 00:48:13.640]   And often, if you look at them, they
+[00:48:13.640 --> 00:48:15.720]   look really similar to human eval, which
+[00:48:15.720 --> 00:48:18.240]   is function implementations.
+[00:48:18.240 --> 00:48:22.560]   So there's a very high chance of having contamination, which
+[00:48:22.560 --> 00:48:28.040]   means having some files that look like human eval
+[00:48:28.040 --> 00:48:32.120]   exercises in your instruction tuning data set.
+[00:48:32.120 --> 00:48:35.720]   So here, for example, this plot is from the LifeCodeBench
+[00:48:35.720 --> 00:48:36.640]   leaderboard.
+[00:48:36.640 --> 00:48:40.240]   And they find that some benchmarks may
+[00:48:40.240 --> 00:48:43.080]   be overfitting on human eval.
+[00:48:43.080 --> 00:48:46.320]   And so their solution was to have a leaderboard
+[00:48:46.320 --> 00:48:50.480]   called LifeCodeBench, where they regularly
+[00:48:50.480 --> 00:48:55.640]   scrape new problems from platforms like code contests
+[00:48:55.640 --> 00:48:56.680]   and least code.
+[00:48:56.680 --> 00:48:58.680]   And they evaluate the models only
+[00:48:58.680 --> 00:49:01.840]   on the problems that were released after the model
+[00:49:01.840 --> 00:49:02.760]   release date.
+[00:49:02.840 --> 00:49:07.040]   This way, they are sure that there is no contamination.
+[00:49:07.040 --> 00:49:09.080]   And for example, that was the case here.
+[00:49:09.080 --> 00:49:12.640]   They tried to evaluate these models on all the data
+[00:49:12.640 --> 00:49:13.320]   they have.
+[00:49:13.320 --> 00:49:15.240]   And then they compared the performance
+[00:49:15.240 --> 00:49:17.720]   to the data that was only released
+[00:49:17.720 --> 00:49:18.960]   after the model release.
+[00:49:18.960 --> 00:49:21.000]   And they found that some models were not
+[00:49:21.000 --> 00:49:24.240]   consistent in their results.
+[00:49:24.240 --> 00:49:27.120]   So that's one interesting thing to keep in mind.
+[00:49:27.120 --> 00:49:31.000]   And this is also another leaderboard
+[00:49:31.000 --> 00:49:33.320]   that's going to be interesting to compare, not just
+[00:49:33.320 --> 00:49:36.640]   open models, but also closed models like GPT-4
+[00:49:36.640 --> 00:49:39.320]   and see where the open source community is standing
+[00:49:39.320 --> 00:49:43.040]   and compare to these code models.
+[00:49:43.040 --> 00:49:44.640]   So that was my presentation.
+[00:49:44.640 --> 00:49:47.320]   Thank you very much for your attention.
+[00:49:47.320 --> 00:49:52.080]   And if you have any questions, I can answer them.
+[00:49:52.080 --> 00:49:56.080]   Yes, thank you very much for the great insightful talk.
+[00:49:56.080 --> 00:49:58.840]   So we have some questions here on Slido.
+[00:49:58.840 --> 00:50:01.880]   I'm not sure if there are any in-person questions,
+[00:50:01.880 --> 00:50:05.600]   or else I will get started with the Slido question.
+[00:50:05.600 --> 00:50:11.880]   Sure.
+[00:50:11.880 --> 00:50:12.720]   OK, I guess not.
+[00:50:12.720 --> 00:50:16.640]   So I'll ask some of the questions online.
+[00:50:16.640 --> 00:50:20.200]   I think I had submitted some of these as well.
+[00:50:20.200 --> 00:50:22.160]   It seems like there's some questions
+[00:50:22.160 --> 00:50:23.240]   about synthetic data.
+[00:50:23.240 --> 00:50:25.600]   Let me see.
+[00:50:25.600 --> 00:50:28.000]   I was also wondering about this.
+[00:50:28.000 --> 00:50:30.200]   So someone's asking, what are the consequences
+[00:50:30.200 --> 00:50:35.280]   of training AI models on AI-generated synthetic data?
+[00:50:35.280 --> 00:50:37.920]   Do you foresee any problems with this?
+[00:50:37.920 --> 00:50:40.200]   And there's a related question.
+[00:50:40.200 --> 00:50:42.760]   Does synthetic data closely represent
+[00:50:42.760 --> 00:50:44.440]   the natural distribution of language?
+[00:50:44.440 --> 00:50:47.320]   I assume some low-quality data from humans
+[00:50:47.320 --> 00:50:50.440]   is necessary for things like learning robustness
+[00:50:50.440 --> 00:50:52.320]   and so forth.
+[00:50:52.320 --> 00:50:53.080]   Yeah, sure.
+[00:50:53.080 --> 00:50:55.360]   These are very great questions.
+[00:50:55.360 --> 00:50:58.720]   So about the consequences of training models
+[00:50:58.720 --> 00:51:02.040]   on AI-generated data, I can think of two main ones.
+[00:51:02.040 --> 00:51:06.360]   First is enforcing some biases, because models already
+[00:51:06.360 --> 00:51:07.400]   have some biases.
+[00:51:07.400 --> 00:51:09.920]   And if we train on data that is generated by them,
+[00:51:09.920 --> 00:51:12.560]   we might be enforcing it even more.
+[00:51:12.560 --> 00:51:15.680]   The other thing is, for example, contamination.
+[00:51:15.680 --> 00:51:18.880]   These models might generate content
+[00:51:18.880 --> 00:51:20.840]   that looks like the evaluation benchmarks.
+[00:51:20.840 --> 00:51:23.320]   And when you train on that, you will have contamination
+[00:51:23.320 --> 00:51:24.560]   in your data.
+[00:51:24.560 --> 00:51:27.160]   So for example, one of the critiques of the file model
+[00:51:27.160 --> 00:51:30.040]   is that people, because they did not see the synthetic data
+[00:51:30.040 --> 00:51:32.200]   and the models were very good on the benchmarks,
+[00:51:32.200 --> 00:51:33.400]   they were very skeptical.
+[00:51:33.400 --> 00:51:35.440]   Are these models really good, or are they just
+[00:51:35.440 --> 00:51:37.640]   overfitting on the benchmarks?
+[00:51:37.640 --> 00:51:40.120]   So I think contamination and enforcing biases
+[00:51:40.120 --> 00:51:43.800]   are one of the main things to keep in mind.
+[00:51:43.800 --> 00:51:48.000]   And regarding synthetic data not being the same
+[00:51:48.000 --> 00:51:52.400]   as web distribution, I think that's a very good point.
+[00:51:52.400 --> 00:51:54.480]   And for example, when we were developing
+[00:51:54.480 --> 00:51:59.760]   Cosmopedia, first we found that it was worse than the web.
+[00:51:59.760 --> 00:52:03.040]   And it was surprising, because we spent a lot of time
+[00:52:03.040 --> 00:52:06.120]   trying to curate this data set, which looks so much cleaner
+[00:52:06.120 --> 00:52:07.000]   than the web.
+[00:52:07.000 --> 00:52:09.120]   And then adding some web data and trying
+[00:52:09.120 --> 00:52:13.400]   to add more topics was able to help us compensate
+[00:52:13.400 --> 00:52:14.400]   some of the gaps.
+[00:52:14.400 --> 00:52:17.880]   But adding some web always gives you a performance boost.
+[00:52:17.880 --> 00:52:21.520]   So yes, there is some noise and some specific patterns
+[00:52:21.520 --> 00:52:23.800]   in web data that will probably need
+[00:52:23.800 --> 00:52:25.480]   to be included in the training mix
+[00:52:25.480 --> 00:52:31.680]   to keep a whole coverage of what natural distributions look
+[00:52:31.680 --> 00:52:32.680]   like.
+[00:52:32.680 --> 00:52:36.280]   So it sounds like you're saying a good training
+[00:52:36.280 --> 00:52:38.320]   set would have a mix, potentially,
+[00:52:38.320 --> 00:52:40.400]   of synthetic and natural data.
+[00:52:40.400 --> 00:52:41.800]   Is that correct?
+[00:52:41.800 --> 00:52:43.200]   Yeah, I think so.
+[00:52:43.200 --> 00:52:46.800]   Some experiments we're on show that that's the case.
+[00:52:46.800 --> 00:52:49.280]   Because you can try to spend some time to carefully curate
+[00:52:49.280 --> 00:52:53.200]   the topics, but we'll probably be missing out on some things.
+[00:52:53.200 --> 00:52:54.720]   And the human intuition that we have
+[00:52:54.720 --> 00:52:57.440]   is not always what works for training models.
+[00:52:57.440 --> 00:53:00.080]   It seems that keeping some filtered web helps.
+[00:53:00.080 --> 00:53:02.520]   And also, if you see the Phi technical reports,
+[00:53:02.520 --> 00:53:04.840]   for example, in Phi 3, they insist a lot
+[00:53:04.840 --> 00:53:06.480]   on filtering the web and including it
+[00:53:06.480 --> 00:53:07.680]   in the pre-training.
+[00:53:07.680 --> 00:53:13.640]   And I think that now seems like maybe the best way to go.
+[00:53:13.640 --> 00:53:14.320]   That makes sense.
+[00:53:14.320 --> 00:53:15.640]   Great.
+[00:53:15.640 --> 00:53:19.480]   Another question is, is RLHF-type preference data
+[00:53:19.480 --> 00:53:22.200]   more important than unsupervised pre-training data?
+[00:53:22.200 --> 00:53:27.520]   Should we spend more resources on RLHF data?
+[00:53:27.520 --> 00:53:28.960]   Yeah, that's a good question.
+[00:53:28.960 --> 00:53:31.880]   So for example, the unsupervised pre-training
+[00:53:31.880 --> 00:53:33.760]   is mainly to get base models.
+[00:53:33.760 --> 00:53:35.800]   But then you can't use these base models
+[00:53:35.800 --> 00:53:36.960]   as chart assistance.
+[00:53:36.960 --> 00:53:38.720]   You need to do another step.
+[00:53:38.720 --> 00:53:40.800]   So you can either do RLHF.
+[00:53:40.800 --> 00:53:44.080]   But nowadays, people are just doing instruction tuning
+[00:53:44.080 --> 00:53:47.120]   without needing to go through RL, where you just
+[00:53:47.120 --> 00:53:49.880]   train the model on pairs of instructions and solutions.
+[00:53:49.880 --> 00:53:51.400]   And that seems to work very well.
+[00:53:51.400 --> 00:53:53.080]   And there are now some methods that
+[00:53:53.080 --> 00:53:56.200]   don't use reinforcement learning but work as well,
+[00:53:56.200 --> 00:53:58.440]   for example, DPO or ORPO.
+[00:53:58.440 --> 00:54:00.560]   So I think if you want to chart assistance,
+[00:54:00.560 --> 00:54:04.240]   you definitely need to run a supervised training on top
+[00:54:04.240 --> 00:54:05.960]   of the unsupervised one.
+[00:54:05.960 --> 00:54:08.480]   But it doesn't necessarily have to be RLHF.
+[00:54:08.480 --> 00:54:11.520]   There are some other algorithms now.
+[00:54:11.520 --> 00:54:12.240]   Great, great.
+[00:54:12.240 --> 00:54:15.200]   And here's a multimodal question.
+[00:54:15.200 --> 00:54:18.400]   Does multimodal grounding, for example, including images
+[00:54:18.400 --> 00:54:21.360]   and videos along with the text, reduce the need
+[00:54:21.360 --> 00:54:23.080]   for so much text-only data?
+[00:54:23.080 --> 00:54:27.680]   Yeah, what do you mean?
+[00:54:27.680 --> 00:54:29.120]   I'm sorry.
+[00:54:29.120 --> 00:54:33.240]   Oh, the question is asking, does multimodal grounding help?
+[00:54:33.240 --> 00:54:36.360]   If you have images and videos along with the text,
+[00:54:36.360 --> 00:54:39.240]   does this reduce the amount of text-only data
+[00:54:39.240 --> 00:54:42.640]   required to train models?
+[00:54:42.640 --> 00:54:45.400]   So I can't probably answer that because I haven't tried.
+[00:54:45.400 --> 00:54:48.600]   But I guess all, for example, the multimodal models,
+[00:54:48.600 --> 00:54:51.280]   for example, edifix that were recently released,
+[00:54:51.280 --> 00:54:54.400]   there's always a significant text portion.
+[00:54:54.400 --> 00:54:58.720]   That seems the case for most vision and language models.
+[00:54:58.720 --> 00:55:02.760]   But yeah, I don't know really about the percentages for each.
+[00:55:02.760 --> 00:55:03.560]   Right, OK.
+[00:55:03.560 --> 00:55:07.600]   A more general question-- you probably
+[00:55:07.600 --> 00:55:09.440]   touched upon some of this-- but are there
+[00:55:09.440 --> 00:55:13.360]   any major differences between training text versus code
+[00:55:13.360 --> 00:55:17.960]   models, other than the training data being different?
+[00:55:17.960 --> 00:55:19.280]   Yes, that's a good question.
+[00:55:19.280 --> 00:55:21.080]   So the training data is different.
+[00:55:21.080 --> 00:55:24.080]   Regarding the training itself, we
+[00:55:24.080 --> 00:55:25.520]   use a similar architecture.
+[00:55:25.520 --> 00:55:28.880]   For example, Starcoder, it was like a LAMA or a MISRA
+[00:55:28.880 --> 00:55:29.920]   architecture.
+[00:55:29.920 --> 00:55:33.720]   I think one thing that you probably want is long context.
+[00:55:33.720 --> 00:55:36.280]   Because if you want to use these models, for example,
+[00:55:36.280 --> 00:55:38.600]   in VS Code and you want to add all the neighboring
+[00:55:38.600 --> 00:55:40.360]   files in the context, you should be
+[00:55:40.360 --> 00:55:42.720]   able to fit a very large context.
+[00:55:42.720 --> 00:55:45.960]   So we try to do some long context extension.
+[00:55:45.960 --> 00:55:49.440]   But again, people also do this for LLMs.
+[00:55:49.440 --> 00:55:51.280]   We also care a lot about inference.
+[00:55:51.280 --> 00:55:56.360]   So we use the first MQA and then GQA to have faster inference.
+[00:55:56.360 --> 00:55:59.880]   But these are also techniques that are implemented for LLMs.
+[00:55:59.880 --> 00:56:02.280]   So I'd say overall, it's very similar.
+[00:56:02.280 --> 00:56:04.840]   But yeah, maybe you should prioritize some things
+[00:56:04.840 --> 00:56:10.120]   like having a smaller model that can be used for, for example,
+[00:56:10.120 --> 00:56:13.000]   IDEs faster than actually a much larger model that
+[00:56:13.000 --> 00:56:15.400]   would need more deployment.
+[00:56:15.400 --> 00:56:16.480]   Yeah.
+[00:56:16.480 --> 00:56:17.200]   All right, great.
+[00:56:17.200 --> 00:56:19.280]   And here's also a general question.
+[00:56:19.280 --> 00:56:21.760]   I guess they're asking for advice.
+[00:56:21.760 --> 00:56:24.640]   So if you have a very tiny compute budget, for example,
+[00:56:24.640 --> 00:56:29.200]   a single GPU, what would you recommend prioritizing?
+[00:56:29.200 --> 00:56:32.880]   Let's assume you're fine tuning a model.
+[00:56:32.880 --> 00:56:35.480]   Yeah, so I think, for example, now there
+[00:56:35.480 --> 00:56:39.680]   are some great solutions for on-device deployment
+[00:56:39.680 --> 00:56:42.000]   and fine tunings.
+[00:56:42.000 --> 00:56:44.440]   For example, you can run quantized models
+[00:56:44.440 --> 00:56:47.000]   with LLAMA, CPP, or other frameworks.
+[00:56:47.000 --> 00:56:49.960]   And with techniques like PEFT, you
+[00:56:49.960 --> 00:56:52.040]   don't need to do full model fine tuning.
+[00:56:52.040 --> 00:56:54.480]   And you should be able to run this on one GPU,
+[00:56:54.480 --> 00:56:56.480]   even in a 7B model.
+[00:56:56.480 --> 00:56:59.360]   So I think you should just find a very well-curated data
+[00:56:59.360 --> 00:57:02.600]   set because quality is more important than quantity.
+[00:57:02.600 --> 00:57:05.280]   And then use one of these techniques for easy fine
+[00:57:05.280 --> 00:57:09.560]   tuning, and that should work.
+[00:57:09.560 --> 00:57:10.320]   All right, great.
+[00:57:10.320 --> 00:57:14.400]   Here's a question asking--
+[00:57:14.400 --> 00:57:16.600]   I guess, different from pre-training,
+[00:57:16.600 --> 00:57:21.120]   but they're saying, I'm guessing the optimal amount of training
+[00:57:21.120 --> 00:57:23.080]   data depends heavily on the domain
+[00:57:23.080 --> 00:57:27.320]   as well as the task at hand, right?
+[00:57:27.320 --> 00:57:29.000]   Yes, probably.
+[00:57:29.000 --> 00:57:31.880]   Now, we're following the exchange scaling laws.
+[00:57:31.880 --> 00:57:35.200]   I think they tried to compare English to code,
+[00:57:35.200 --> 00:57:38.240]   and they found that the findings still hold.
+[00:57:38.240 --> 00:57:39.920]   But maybe if you go to another domain,
+[00:57:39.920 --> 00:57:42.160]   I don't know, like medical, things could change.
+[00:57:42.160 --> 00:57:44.240]   And that's why I mentioned the DeepSeq paper, where
+[00:57:44.240 --> 00:57:47.280]   they mentioned that it's really heavily dependent on data.
+[00:57:47.280 --> 00:57:48.880]   And for them, it was the same domain.
+[00:57:48.880 --> 00:57:51.040]   They just changed data sets, like going
+[00:57:51.040 --> 00:57:54.200]   from one generic data set to another well-curated one.
+[00:57:54.200 --> 00:57:56.040]   And things started changing.
+[00:57:56.040 --> 00:57:58.440]   So I think that's probably the case,
+[00:57:58.440 --> 00:58:01.920]   but it's underexplored how these scaling laws change
+[00:58:01.920 --> 00:58:03.400]   depending on domains.
+[00:58:03.400 --> 00:58:05.080]   So it's good to be aware of that when
+[00:58:05.080 --> 00:58:07.640]   developing models for domains that are not
+[00:58:07.640 --> 00:58:08.800]   explored by these--
+[00:58:08.800 --> 00:58:11.080]   Speaking of different domains, code versus text,
+[00:58:11.080 --> 00:58:14.240]   someone's asking, what are some of the interesting differences
+[00:58:14.240 --> 00:58:18.920]   between tokenizing for general purpose,
+[00:58:18.920 --> 00:58:23.200]   like text, versus for code generation?
+[00:58:23.200 --> 00:58:27.240]   Yeah, so when we were training the tokenizer,
+[00:58:27.240 --> 00:58:29.040]   I think one thing that was important to keep
+[00:58:29.040 --> 00:58:31.520]   was number splitting.
+[00:58:31.520 --> 00:58:33.880]   And we used the standard BPE.
+[00:58:33.880 --> 00:58:35.080]   And we were training it.
+[00:58:35.080 --> 00:58:37.720]   We trained on our data set that we were
+[00:58:37.720 --> 00:58:41.480]   using for the training data, so our code mixture.
+[00:58:41.480 --> 00:58:44.640]   And we did some analysis to see if there are any outliers,
+[00:58:44.640 --> 00:58:48.480]   any tokens that were underrepresented or
+[00:58:48.480 --> 00:58:50.920]   overrepresented as sanity checks.
+[00:58:50.920 --> 00:58:57.120]   But overall, it's very close to the text training.
+[00:58:57.120 --> 00:59:00.920]   And now most LLMs have a significant code portion
+[00:59:00.920 --> 00:59:02.440]   in their tokenizers.
+[00:59:02.440 --> 00:59:04.520]   So they're also trained on a lot of code.
+[00:59:04.520 --> 00:59:08.640]   And at the end, you can use either one tokenizer for LLMs
+[00:59:08.640 --> 00:59:11.080]   or code, or the other way.
+[00:59:11.080 --> 00:59:13.240]   Because even on code, you have a lot of markdowns.
+[00:59:13.240 --> 00:59:14.600]   So there's a lot of English.
+[00:59:14.600 --> 00:59:17.640]   So you end up representing all the English tokens, for example,
+[00:59:17.640 --> 00:59:20.760]   in your code tokenizer.
+[00:59:20.760 --> 00:59:21.280]   I agree.
+[00:59:21.280 --> 00:59:23.480]   And here's the question about fine tuning, I guess,
+[00:59:23.480 --> 00:59:24.520]   compared to pre-training.
+[00:59:24.520 --> 00:59:27.520]   So they're asking, do the same principles
+[00:59:27.520 --> 00:59:30.320]   apply for fine tuning?
+[00:59:30.320 --> 00:59:33.320]   Or do you make a different or additional recommendation?
+[00:59:33.320 --> 00:59:39.160]   So yeah, for fine tuning, I think
+[00:59:39.160 --> 00:59:41.880]   when you're preparing the data, it's probably a different
+[00:59:41.880 --> 00:59:42.400]   thing.
+[00:59:42.400 --> 00:59:44.960]   You're not going to train on all of the stack.
+[00:59:44.960 --> 00:59:48.360]   You probably want to continue training on specific language.
+[00:59:48.360 --> 00:59:51.360]   So maybe you could invest more time to even heavily filter.
+[00:59:51.360 --> 00:59:53.560]   Because for fine tuning, you don't need as much data
+[00:59:53.560 --> 00:59:55.040]   as for pre-training.
+[00:59:55.040 --> 00:59:57.080]   For example, for us, the filtering we tried,
+[00:59:57.080 --> 00:59:58.920]   for example, started to work because they
+[00:59:58.920 --> 00:59:59.880]   removed a lot of data.
+[00:59:59.880 --> 01:00:02.040]   And we did not have enough for our pre-training.
+[01:00:02.040 --> 01:00:04.280]   While for fine tuning, for example, for instruction
+[01:00:04.280 --> 01:00:06.400]   tuning, there was the Lima paper,
+[01:00:06.400 --> 01:00:08.920]   where the instruction tuned only on 1,000 instructions.
+[01:00:08.920 --> 01:00:11.200]   And they had a model that was much better than training
+[01:00:11.200 --> 01:00:12.760]   on millions of samples.
+[01:00:12.760 --> 01:00:15.680]   So I think data curation is even much more important when
+[01:00:15.680 --> 01:00:18.960]   it comes to fine tuning.
+[01:00:18.960 --> 01:00:19.600]   Great, great.
+[01:00:19.600 --> 01:00:22.560]   One last question, I guess.
+[01:00:22.560 --> 01:00:24.800]   So you might have also touched upon this briefly.
+[01:00:24.800 --> 01:00:27.040]   But what are some considerations to make
+[01:00:27.040 --> 01:00:31.360]   when publishing very large data sets and more nuanced or less
+[01:00:31.360 --> 01:00:35.200]   known things to be aware of?
+[01:00:35.200 --> 01:00:40.880]   Yeah, so maybe on the technical side,
+[01:00:40.880 --> 01:00:44.600]   really using tools also for filtering and documentation.
+[01:00:44.600 --> 01:00:46.680]   That is what we try to do with the stack.
+[01:00:46.680 --> 01:00:49.760]   And maybe more on the governance side,
+[01:00:49.760 --> 01:00:53.000]   be aware of where the licenses are respected,
+[01:00:53.000 --> 01:00:54.480]   where the copyrights are respected.
+[01:00:54.480 --> 01:00:56.840]   Do you have an opt-out tool for your data set?
+[01:00:56.840 --> 01:00:59.360]   And maybe try to release it on the hub
+[01:00:59.360 --> 01:01:01.680]   to make it easily accessible for people.
+[01:01:01.680 --> 01:01:04.200]   If there are some concerns, you could try to add a gate.
+[01:01:04.200 --> 01:01:06.200]   For example, for us, we released the data set
+[01:01:06.200 --> 01:01:08.240]   that we used for PII detection.
+[01:01:08.240 --> 01:01:10.280]   But we add some gating mechanism because it
+[01:01:10.280 --> 01:01:12.120]   was sensitive information.
+[01:01:12.120 --> 01:01:15.040]   So it's good to think of these kind of things in advance
+[01:01:15.040 --> 01:01:17.640]   before releasing a data set.
+[01:01:17.640 --> 01:01:19.480]   But yeah, in general, these are my advice.
+[01:01:19.480 --> 01:01:24.000]   All right, great.
+[01:01:24.000 --> 01:01:27.400]   Do we have any in-person questions?
+[01:01:27.400 --> 01:01:30.800]   If not, then we can probably conclude.
+[01:01:30.800 --> 01:01:32.360]   Thank you.
+[01:01:32.360 --> 01:01:42.360]   [BLANK_AUDIO]
+
