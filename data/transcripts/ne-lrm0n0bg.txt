@@ -1,0 +1,288 @@
+
+[00:00:00.000 --> 00:00:07.380]   Today, we are going to be taking a look at using the Grok API with LLAMA3 for Rack.
+[00:00:07.380 --> 00:00:11.040]   Now, the Grok API, for those of you that haven't heard of it,
+[00:00:11.040 --> 00:00:16.100]   is an API that gives us access to what Grok, the company,
+[00:00:16.100 --> 00:00:19.340]   call a LPU or language processing unit.
+[00:00:19.340 --> 00:00:27.540]   A LPU is essentially some hardware that allows us to run LLMs very, very quickly.
+[00:00:27.560 --> 00:00:32.700]   So you'll see that the token throughput, when you're calling even big LLMs,
+[00:00:32.700 --> 00:00:37.920]   like we will today, through this API is insanely fast.
+[00:00:37.920 --> 00:00:42.020]   So to find the code, we're going to go to the PyCon examples repo,
+[00:00:42.020 --> 00:00:44.880]   and we're going to go examples, integrations, Grok,
+[00:00:44.880 --> 00:00:49.200]   and then to this Grok LLAMA3 reg notebook.
+[00:00:49.200 --> 00:00:52.320]   I'm going to go ahead and just open this directly in Colab.
+[00:00:52.320 --> 00:00:56.400]   Okay, and here we are. I'm going to go ahead and connect.
+[00:00:56.420 --> 00:00:58.420]   I'm going to make sure I'm connected to a GPU
+[00:00:58.420 --> 00:01:05.460]   because we're actually going to be using for our embeddings a local embedding model.
+[00:01:05.460 --> 00:01:11.100]   So it's just quicker. It's not necessary, but it is quicker if we use GPU there.
+[00:01:11.100 --> 00:01:17.000]   Then, what I'm going to do is go ahead and install the prerequisite libraries.
+[00:01:17.000 --> 00:01:19.320]   So what are we using here?
+[00:01:19.320 --> 00:01:24.020]   We have HuniFace datasets, which is where we're going to be getting our data from.
+[00:01:24.040 --> 00:01:29.060]   We have Grok, which is the Grok API for the LPU that I mentioned.
+[00:01:29.060 --> 00:01:31.280]   We have Semantic Router,
+[00:01:31.280 --> 00:01:36.180]   which is where we're going to be pulling in our encoder or our embedding model from.
+[00:01:36.180 --> 00:01:37.720]   And we also have PyCon,
+[00:01:37.720 --> 00:01:41.020]   which is, of course, where we're going to be storing our embeddings.
+[00:01:41.020 --> 00:01:45.580]   So installing these, that might take a moment,
+[00:01:45.580 --> 00:01:48.860]   but once it's done, we're going to go ahead and download
+[00:01:48.860 --> 00:01:51.820]   just part of the dataset, not the full thing.
+[00:01:51.840 --> 00:01:57.220]   So 10,000 rows from this AI_ARCHIVE2_SEMANTIC_CHUNKS dataset
+[00:01:57.220 --> 00:01:58.860]   that I created in the past.
+[00:01:58.860 --> 00:02:03.380]   Essentially, it is a set of AI_ARCHIVE papers,
+[00:02:03.380 --> 00:02:07.740]   and they have been semantically chunked.
+[00:02:07.740 --> 00:02:11.020]   So roughly paragraph-sized chunks,
+[00:02:11.020 --> 00:02:14.100]   but it varies because we're chunking semantically here,
+[00:02:14.100 --> 00:02:21.100]   so it's essentially looking for where the topic within those papers changes.
+[00:02:21.120 --> 00:02:24.140]   So I'm going to run that, we'll download those,
+[00:02:24.140 --> 00:02:27.820]   and we'll just have a quick look at what that looks like.
+[00:02:27.820 --> 00:02:34.540]   So one of the papers we have in there is the Mixture of Experts paper,
+[00:02:34.540 --> 00:02:36.500]   which introduced Mixture.
+[00:02:36.500 --> 00:02:39.780]   And you can see that this first chunk is basically,
+[00:02:39.780 --> 00:02:42.220]   well, it's like the introduction to the paper.
+[00:02:42.220 --> 00:02:46.940]   So you can see the title of the paper, you can see the authors,
+[00:02:46.960 --> 00:02:52.220]   and then I believe it also includes the abstract here.
+[00:02:52.220 --> 00:02:56.220]   And then once it gets past the abstract, it cuts, right?
+[00:02:56.220 --> 00:03:02.340]   It senses that there is a change in topic and moves on to the next chunk.
+[00:03:02.340 --> 00:03:08.100]   So yes, that is our dataset.
+[00:03:08.100 --> 00:03:09.540]   And we'll come down to here,
+[00:03:09.540 --> 00:03:15.420]   and I'll just wait a moment for this to actually finish installing everything.
+[00:03:15.440 --> 00:03:17.700]   Okay, so that is complete.
+[00:03:17.700 --> 00:03:22.300]   We can also see how much the structure of that dataset there.
+[00:03:22.300 --> 00:03:25.780]   So you have these and number of rows.
+[00:03:25.780 --> 00:03:27.300]   Then I'm going to come down to here,
+[00:03:27.300 --> 00:03:30.900]   and we're going to just rearrange that structure
+[00:03:30.900 --> 00:03:34.260]   so that essentially we're rebuilding it
+[00:03:34.260 --> 00:03:36.780]   so that it is a more friendly format
+[00:03:36.780 --> 00:03:40.140]   for when we're going to be placing everything or embedding everything
+[00:03:40.140 --> 00:03:42.060]   and then placing it in Pinecone.
+[00:03:42.080 --> 00:03:48.060]   So I want to keep the IDs for each of our chunks.
+[00:03:48.060 --> 00:03:49.460]   So I keep that.
+[00:03:49.460 --> 00:03:52.780]   And then for metadata, I want the chunk and the content.
+[00:03:52.780 --> 00:03:58.660]   And we're going to be using both of those later in our embeddings.
+[00:03:58.660 --> 00:04:00.860]   So we'll need to keep both of those.
+[00:04:00.860 --> 00:04:04.300]   And then I'm going to remove all the unneeded columns,
+[00:04:04.300 --> 00:04:06.180]   so everything else.
+[00:04:06.180 --> 00:04:09.240]   So let's remove those.
+[00:04:09.280 --> 00:04:12.700]   Just note, of course, title and content I'm removing here,
+[00:04:12.700 --> 00:04:16.940]   but we've moved it into the metadata column here.
+[00:04:16.940 --> 00:04:20.020]   So we've basically copied it into metadata,
+[00:04:20.020 --> 00:04:23.900]   and then we're removing the original versions of title and content.
+[00:04:23.900 --> 00:04:25.900]   So we're not actually removing those.
+[00:04:25.900 --> 00:04:32.180]   Cool, so I'm going to go ahead and just initialize a encoder model.
+[00:04:32.180 --> 00:04:34.180]   So we're going to be using this E5 model,
+[00:04:34.180 --> 00:04:37.700]   and this E5 model actually has a longer context length.
+[00:04:37.720 --> 00:04:42.380]   Typically, they're quite small, like around 512 tokens.
+[00:04:42.380 --> 00:04:49.380]   And most of our chunks are actually below 512 tokens.
+[00:04:49.380 --> 00:04:52.540]   But occasionally, you might find one which is a little bit higher.
+[00:04:52.540 --> 00:04:59.980]   So I do want to use this slightly larger context window version of E5.
+[00:04:59.980 --> 00:05:01.060]   So I'm going to run that.
+[00:05:01.080 --> 00:05:02.820]   E5, for those of you who don't know,
+[00:05:02.820 --> 00:05:08.100]   it's a very good open source embedding model.
+[00:05:08.100 --> 00:05:09.820]   It's pretty reliable.
+[00:05:09.820 --> 00:05:12.180]   It tends to perform well on benchmarks.
+[00:05:12.180 --> 00:05:17.260]   And when you test it, it actually tends to perform well on real data as well,
+[00:05:17.260 --> 00:05:19.460]   which is, to be honest, quite rare.
+[00:05:19.460 --> 00:05:21.580]   Usually, they perform well on benchmarks,
+[00:05:21.580 --> 00:05:26.060]   and then you try them on actual data, and they are not so good.
+[00:05:26.080 --> 00:05:31.780]   So the E5 models are usually a good bet when it comes to open source.
+[00:05:31.780 --> 00:05:35.340]   So I'm going to go ahead and I'm going to create our embeddings.
+[00:05:35.340 --> 00:05:37.100]   I'm going to create an embedding like this.
+[00:05:37.100 --> 00:05:43.180]   So I'll just pass in a list of what will soon be our title and content.
+[00:05:43.180 --> 00:05:46.540]   I'm just performing a quick test with it here.
+[00:05:46.540 --> 00:05:48.860]   And you can also see the dimensionality
+[00:05:48.860 --> 00:05:51.980]   by checking the length of what you just created here.
+[00:05:52.000 --> 00:05:56.700]   So 768 dimensions.
+[00:05:56.700 --> 00:05:58.540]   Cool. So we have that.
+[00:05:58.540 --> 00:06:03.980]   Now I'm going to want to jump ahead and set up my Pinecone API key.
+[00:06:03.980 --> 00:06:08.600]   So to do that, I'm going to head on over to app.pinecone.io.
+[00:06:08.600 --> 00:06:14.900]   I'm going to get API keys, and I'm just going to copy one here.
+[00:06:14.900 --> 00:06:19.100]   And I'm just going to enter my API key when that little box pops up.
+[00:06:19.120 --> 00:06:24.940]   Cool. And then I'm going to set up this to work with serverless.
+[00:06:24.940 --> 00:06:28.580]   Okay, so I have my serverless spec, initialize that.
+[00:06:28.580 --> 00:06:32.620]   Now I'm going to go ahead and just check, do I already have this index?
+[00:06:32.620 --> 00:06:38.540]   So I've called this index GrokLama3Reg, call it whatever you want.
+[00:06:38.540 --> 00:06:41.020]   But I'm going to check, does that already exist?
+[00:06:41.020 --> 00:06:45.940]   If it does already exist, then I'm going to skip ahead and just connect to it.
+[00:06:45.960 --> 00:06:49.820]   Otherwise, I'm going to create the index.
+[00:06:49.820 --> 00:06:51.540]   Now, when I am initializing that,
+[00:06:51.540 --> 00:06:55.700]   I need to make sure I'm using the metric that the E5 model is trained to use,
+[00:06:55.700 --> 00:06:57.180]   which is cosine.
+[00:06:57.180 --> 00:07:02.220]   I need to make sure dimensionality is the same, so this is 768.
+[00:07:02.220 --> 00:07:04.660]   And yes, I have my serverless spec.
+[00:07:04.660 --> 00:07:06.620]   So that will initialize everything for me.
+[00:07:06.620 --> 00:07:09.980]   You can see that my total vector count is zero,
+[00:07:09.980 --> 00:07:12.720]   which means I've just initialized it.
+[00:07:12.760 --> 00:07:14.860]   So, cool.
+[00:07:14.860 --> 00:07:20.620]   We can go ahead and actually add our vectors into PyCone.
+[00:07:20.620 --> 00:07:24.500]   So I'm going to do that in batches of 128.
+[00:07:24.500 --> 00:07:27.620]   And you can also see what I'm doing here.
+[00:07:27.620 --> 00:07:30.060]   This is kind of important.
+[00:07:30.060 --> 00:07:34.300]   So rather than just passing the content of those paragraphs to E5
+[00:07:34.300 --> 00:07:35.900]   and embedding those,
+[00:07:35.900 --> 00:07:39.140]   I'm actually passing the title and the content.
+[00:07:39.160 --> 00:07:43.220]   Now, the reason I'm doing that is that it essentially provides
+[00:07:43.220 --> 00:07:47.140]   more context to the paragraph, right?
+[00:07:47.140 --> 00:07:53.140]   So you could imagine, for example, with the LLAMA3 paper or LLAMA2 paper,
+[00:07:53.140 --> 00:07:56.020]   the title contains LLAMA2.
+[00:07:56.020 --> 00:07:58.620]   This is the paper about LLAMA2, right?
+[00:07:58.620 --> 00:08:00.660]   We have that information from the title.
+[00:08:00.660 --> 00:08:05.220]   But then in the middle of our paper,
+[00:08:05.220 --> 00:08:08.180]   there might be a paragraph where it's talking about the performance
+[00:08:08.200 --> 00:08:10.060]   of the model,
+[00:08:10.060 --> 00:08:14.500]   but it doesn't explicitly say LLAMA2 or LLAMA3.
+[00:08:14.500 --> 00:08:20.020]   So by concatenating both of those,
+[00:08:20.020 --> 00:08:21.340]   embedding both together,
+[00:08:21.340 --> 00:08:24.540]   we're providing more context to our embedding model,
+[00:08:24.540 --> 00:08:29.300]   which in theory means we should be able to get better results
+[00:08:29.300 --> 00:08:31.780]   from our search.
+[00:08:31.780 --> 00:08:33.540]   So that's why I'm doing that.
+[00:08:33.540 --> 00:08:35.380]   I'm going to go ahead and run that.
+[00:08:35.400 --> 00:08:37.980]   And yeah, that will take a moment to run.
+[00:08:37.980 --> 00:08:39.580]   It shouldn't be too long.
+[00:08:39.580 --> 00:08:42.380]   You can also check your disk usage here.
+[00:08:42.380 --> 00:08:45.020]   So especially the GPU RAM.
+[00:08:45.020 --> 00:08:47.740]   And if this is very low,
+[00:08:47.740 --> 00:08:53.860]   you can probably go ahead and actually just increase your batch size.
+[00:08:53.860 --> 00:08:55.820]   So I'm just going to check for a moment.
+[00:08:55.820 --> 00:08:57.980]   It doesn't seem to be increasing beyond 2.6.
+[00:08:57.980 --> 00:09:01.260]   So I'm going to go ahead and just increase this number,
+[00:09:01.260 --> 00:09:02.620]   probably increase it quite a bit.
+[00:09:02.620 --> 00:09:05.260]   Let's go to 384.
+[00:09:05.280 --> 00:09:10.540]   And essentially what we're going to do is embed more chunks in one go.
+[00:09:10.540 --> 00:09:14.140]   Because we're running all this locally on a GPU.
+[00:09:14.140 --> 00:09:16.260]   So yeah, we can increase that.
+[00:09:16.260 --> 00:09:21.620]   And that should, in theory, reduce our waiting time as well.
+[00:09:21.620 --> 00:09:25.660]   And you see the GPU RAM increasing after a moment.
+[00:09:25.660 --> 00:09:28.420]   So it didn't increase immediately.
+[00:09:28.420 --> 00:09:31.620]   I believe, although I'm not 100% sure,
+[00:09:31.640 --> 00:09:36.140]   but that is simply because it's caching the initial tensors that we created.
+[00:09:36.140 --> 00:09:39.100]   And yeah, you can see it jumping up a lot now.
+[00:09:39.100 --> 00:09:41.820]   So we'll need to keep an eye on that and make sure it doesn't go too high.
+[00:09:41.820 --> 00:09:46.360]   If it does go too high, we'll probably want to reduce
+[00:09:46.360 --> 00:09:48.620]   that batch size a little bit.
+[00:09:48.620 --> 00:09:50.660]   But I think we should be good.
+[00:09:50.660 --> 00:09:53.260]   Okay, so that is complete.
+[00:09:53.260 --> 00:09:55.900]   And let me close this.
+[00:09:55.900 --> 00:09:59.420]   Okay, we can jump on down to...
+[00:09:59.420 --> 00:10:00.820]   Do we need to look at this?
+[00:10:00.840 --> 00:10:03.860]   We can see this. So this is just the metadata.
+[00:10:03.860 --> 00:10:08.300]   So we have, for every single record, we have the content and the title.
+[00:10:08.300 --> 00:10:10.260]   And we were just merging those.
+[00:10:10.260 --> 00:10:14.100]   But yeah, I mean, not super important, to be honest.
+[00:10:14.100 --> 00:10:16.020]   So let me remove that.
+[00:10:16.020 --> 00:10:19.500]   And we can go on to testing our retrieval.
+[00:10:19.500 --> 00:10:23.540]   Okay, so I'm just going to wrap the retrieval component
+[00:10:23.540 --> 00:10:26.140]   in this function called getDocs.
+[00:10:26.140 --> 00:10:28.620]   And that will just take a query.
+[00:10:28.640 --> 00:10:33.540]   It's going to embed that using our encoder, the E5 model.
+[00:10:33.540 --> 00:10:37.900]   And it's going to also consume a topK parameter,
+[00:10:37.900 --> 00:10:42.220]   which just allows us to control how much information we're going to be returning.
+[00:10:42.220 --> 00:10:44.900]   Then I'm going to extract out the metadata,
+[00:10:44.900 --> 00:10:48.940]   or more specifically, the content from that metadata.
+[00:10:48.940 --> 00:10:53.340]   So yeah, let me return that.
+[00:10:53.340 --> 00:10:56.020]   And my first query is just going to be,
+[00:10:56.040 --> 00:10:59.380]   "Can you tell me about the Llama LLMs?"
+[00:10:59.380 --> 00:11:02.100]   Okay, so we run that, and we'll see.
+[00:11:02.100 --> 00:11:06.020]   So we get a variety of different papers here.
+[00:11:06.020 --> 00:11:11.140]   So we have Code Llama, Chinese Oriented Models.
+[00:11:11.140 --> 00:11:13.940]   And you can see there's some Llama stuff in there.
+[00:11:13.940 --> 00:11:19.140]   The MLLU Benchmark, which probably mentions something about Llama,
+[00:11:19.140 --> 00:11:23.700]   the original Llama model, and something else about Llama here.
+[00:11:23.720 --> 00:11:28.340]   So plenty of Llama results there, which is good.
+[00:11:28.340 --> 00:11:34.540]   Now, next thing we want to do is pair that with the Grok API,
+[00:11:34.540 --> 00:11:37.580]   and specifically Llama 3,
+[00:11:37.580 --> 00:11:41.220]   the 70 billion parameter version behind the Grok API.
+[00:11:41.220 --> 00:11:47.180]   So to use this, we need to go ahead and actually get access to the Grok API.
+[00:11:47.180 --> 00:11:49.620]   So let's see how we do that.
+[00:11:49.640 --> 00:11:53.860]   So I'll come to here, and let's go Grok API.
+[00:11:53.860 --> 00:11:56.900]   I'm just going to go to get started, console.grok.com.
+[00:11:56.900 --> 00:11:59.780]   I think that was correct. And then, yes, we have API keys here.
+[00:11:59.780 --> 00:12:03.460]   So I'm going to go get my API key to log in.
+[00:12:03.460 --> 00:12:05.540]   And I'll just go ahead and create an API key.
+[00:12:05.540 --> 00:12:09.940]   So I'm going to call grok-demo.
+[00:12:09.940 --> 00:12:12.100]   And once I have it, I'm going to come over to here,
+[00:12:12.100 --> 00:12:17.920]   and I'm just going to enter it when I get this little pop-up.
+[00:12:17.960 --> 00:12:19.700]   Okay. And that's it.
+[00:12:19.700 --> 00:12:22.540]   So I'm now authenticated with the Grok API.
+[00:12:22.540 --> 00:12:24.540]   It was pretty easy.
+[00:12:24.540 --> 00:12:28.220]   And now I'm going to create another function called generate.
+[00:12:28.220 --> 00:12:30.700]   And this is just going to take --
+[00:12:30.700 --> 00:12:33.020]   well, it's going to consume my original query,
+[00:12:33.020 --> 00:12:38.500]   plus all of the documents I retrieved with the retrieve function,
+[00:12:38.500 --> 00:12:43.380]   put them together, pass them to Llama 3 via Grok,
+[00:12:43.380 --> 00:12:45.660]   and generate a response.
+[00:12:45.680 --> 00:12:51.460]   So here, we're going to be using the Llama370b model,
+[00:12:51.460 --> 00:12:53.260]   70-billion parameter model,
+[00:12:53.260 --> 00:12:57.300]   with a -- I think it's context window of A192.
+[00:12:57.300 --> 00:13:01.380]   So run that, and then let's see what we get.
+[00:13:01.380 --> 00:13:04.500]   Okay. So, yeah, it looks kind of good.
+[00:13:04.500 --> 00:13:09.580]   We have, okay, the Llama LLMs refers to a series of large language models
+[00:13:09.580 --> 00:13:13.380]   developed by various researchers and teams, so on and so on.
+[00:13:13.400 --> 00:13:16.020]   Right? So pretty straightforward.
+[00:13:16.020 --> 00:13:18.540]   And if we want to ask more questions, we can.
+[00:13:18.540 --> 00:13:21.180]   Okay? So we would just add this.
+[00:13:21.180 --> 00:13:23.200]   We'll take this as well.
+[00:13:23.200 --> 00:13:27.040]   Bring it down here.
+[00:13:27.040 --> 00:13:29.380]   And we would just ask a question.
+[00:13:29.380 --> 00:13:31.140]   Right? So, I don't know.
+[00:13:31.140 --> 00:13:34.820]   Can you tell me about the mixture of experts paper?
+[00:13:34.820 --> 00:13:43.380]   Right? So tell me about the mixture of experts paper.
+[00:13:43.900 --> 00:13:45.960]   Okay? So I could ask about this.
+[00:13:45.960 --> 00:13:49.560]   And again, we'll get some output.
+[00:13:49.560 --> 00:13:53.920]   And just see how quick, like, that's so fast.
+[00:13:53.920 --> 00:13:55.440]   So that was retrieval,
+[00:13:55.440 --> 00:14:00.080]   and also the generate component as well,
+[00:14:00.080 --> 00:14:03.080]   which is just kind of insane, to be honest.
+[00:14:03.080 --> 00:14:04.400]   So, yeah, we get this.
+[00:14:04.400 --> 00:14:07.080]   The output is even nicely formatted.
+[00:14:07.080 --> 00:14:09.880]   We have a markdown here, which is cool.
+[00:14:09.900 --> 00:14:14.320]   And generally speaking, I think it looks pretty accurate.
+[00:14:14.320 --> 00:14:17.080]   Although I haven't been through it, but it looks reasonable.
+[00:14:17.080 --> 00:14:21.880]   So, yeah, that is the Croc API in LLAMA 3.
+[00:14:21.880 --> 00:14:25.640]   Once you are done, of course, you can go through, ask more questions.
+[00:14:25.640 --> 00:14:29.360]   Once you are done, you can delete your index from PyCon,
+[00:14:29.360 --> 00:14:30.880]   so that you save resources.
+[00:14:30.880 --> 00:14:33.480]   So I'm going to go ahead and do that.
+[00:14:33.480 --> 00:14:37.560]   And, yeah, that is it for this little walkthrough.
+[00:14:37.580 --> 00:14:43.920]   So, yeah, we've seen how we use the Croc API
+[00:14:43.920 --> 00:14:47.200]   for RAG with LLAMA 3.
+[00:14:47.200 --> 00:14:49.760]   And as you've seen, it's just insanely fast,
+[00:14:49.760 --> 00:14:52.280]   even with the 70 billion parameter model.
+[00:14:52.280 --> 00:14:55.400]   I want to really just point out
+[00:14:55.400 --> 00:14:59.480]   how insane that sort of response speed was.
+[00:14:59.480 --> 00:15:01.960]   That's the sort of response speed that you'd expect
+[00:15:01.960 --> 00:15:04.880]   from something like GPT 3.5.
+[00:15:04.880 --> 00:15:07.180]   It's just so quick.
+[00:15:07.220 --> 00:15:11.080]   But here we're using LLAMA 3.70b,
+[00:15:11.080 --> 00:15:13.280]   which, yeah, it's kind of nuts.
+[00:15:13.280 --> 00:15:15.440]   So, very interesting.
+[00:15:15.440 --> 00:15:20.960]   I think if you start pairing Croc with things like Agent Flows,
+[00:15:20.960 --> 00:15:23.520]   I mean, that's 100%.
+[00:15:23.520 --> 00:15:26.880]   Because Agents are really probably the hardest thing
+[00:15:26.880 --> 00:15:31.000]   to get working nicely and responding quickly
+[00:15:31.000 --> 00:15:34.440]   when you have users sort of talking with them
+[00:15:34.460 --> 00:15:39.200]   and the Agent is needing to create what decision,
+[00:15:39.200 --> 00:15:40.800]   what tool is it going to use,
+[00:15:40.800 --> 00:15:42.880]   retrieving that information, using another tool,
+[00:15:42.880 --> 00:15:44.520]   coming back and then answering.
+[00:15:44.520 --> 00:15:49.600]   That takes time, especially with larger LLMs,
+[00:15:49.600 --> 00:15:51.920]   especially with open source LLMs.
+[00:15:51.920 --> 00:15:59.640]   So Croc has kind of made that not so much of an issue.
+[00:15:59.640 --> 00:16:04.000]   Because you can, yeah, we just use LLAMA 3.70b, huge model,
+[00:16:04.020 --> 00:16:06.280]   and it's super fast.
+[00:16:06.280 --> 00:16:08.520]   And even as an Agent,
+[00:16:08.520 --> 00:16:11.520]   I think we're going to get pretty good response times.
+[00:16:11.520 --> 00:16:13.480]   So, it's very interesting.
+[00:16:13.480 --> 00:16:15.960]   I think it's a really cool service.
+[00:16:15.960 --> 00:16:19.920]   And, yeah, it makes using open source LLMs a lot easier as well,
+[00:16:19.920 --> 00:16:21.520]   which is nice.
+[00:16:21.520 --> 00:16:23.280]   So, that's it for this video.
+[00:16:23.280 --> 00:16:26.240]   I hope this is all being useful and interesting.
+[00:16:26.240 --> 00:16:27.960]   But for now, I'll leave it there.
+[00:16:27.960 --> 00:16:31.280]   Thank you very much for watching, and I will see you again in the next one.
+[00:16:31.280 --> 00:16:32.300]   Bye.
+[00:16:32.300 --> 00:16:35.300]   (Music)
+[00:16:35.300 --> 00:16:38.300]   (Music)
+[00:16:38.300 --> 00:16:41.300]   (Music)
+[00:16:41.300 --> 00:16:44.300]   (Music)
+[00:16:44.300 --> 00:16:54.300]   [BLANK_AUDIO]
+
