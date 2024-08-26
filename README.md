@@ -1,6 +1,12 @@
 # Transcripts
 
-Whisper transcripts for Youtube videos
+Whisper transcripts for Youtube videos.
+
+- Before 2/24/2024, used `large-v2` model for transcription.
+- Starting 2/24/2024, switched to `medium.en` model for faster transcription.
+
+Available models are [here](https://github.com/ggerganov/whisper.cpp/blob/master/models/README.md).
+
 
 # Setup
 
@@ -163,3 +169,14 @@ UnicodeDecodeError: 'utf-8' codec can't decode byte 0xeb in position 1264: inval
         "file": "ask_the_compound_ids_done.txt"
     },
 ```
+- [] add acquired podcast, 575 episodes and they are long
+```
+    {
+        "name": "acquired",
+        "url": "https://www.youtube.com/@AcquiredFM",
+        "in_file": "acquired_ids.txt",
+        "file": "acquired_ids_done.txt"
+    },
+```
+
+- [] add huberman full episodes
