@@ -4,12 +4,14 @@ from yt_dlp import YoutubeDL
 import re
 import ffmpeg
 import logging
+import sqlite3
 
 from transcripts.utils import (
     transcripts_dir,
     model_dir,
     whispercpp_dir,
     timeit,
+    data_dir,
 )
 
 log_fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -166,6 +168,33 @@ def clean_up_wav_files(base_filename):
         logging.error(f"Error during file cleanup: {e}")
 
 
+def connect_to_db():
+    try:
+        conn = sqlite3.connect(data_dir / "transcripts.db")
+        return conn
+    except sqlite3.Error as e:
+        logging.error(f"Error connecting to database: {e}")
+        return None
+
+
+def insert_transcript_to_db(video_id, transcript):
+    conn = connect_to_db()
+    if not conn:
+        return
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO transcripts (video_id, transcript) VALUES (?, ?)",
+            (video_id, transcript),
+        )
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.error(f"Error inserting transcript into database: {e}")
+    finally:
+        conn.close()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Automate downloading and processing audio from YouTube/Vimeo."
@@ -190,6 +219,15 @@ def main():
 
     logging.info("Run whisper.cpp using Metal")
     run_whisper(args.name, args.model_name)
+
+    # Read the generated transcript
+    transcript_path = transcripts_dir / f"{args.name}.txt"
+    try:
+        with open(transcript_path, "r", encoding="utf-8") as f:
+            transcript = f.read()
+        insert_transcript_to_db(args.name, transcript)
+    except Exception as e:
+        logging.error(f"Error reading transcript file: {e}")
 
     # Clean up WAV files after processing
     # clean_up_wav_files(wav_file_name)
