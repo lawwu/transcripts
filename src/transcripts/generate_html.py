@@ -661,6 +661,8 @@ if __name__ == "__main__":
                 "https://traffic.libsyn.com/secure/financialsamurai/FS_212_-_Kathy_Fang-2.mp3?dest-id=1377836",
                 "DnZPgopXQGM",
                 "RcJ1YXHLv5o",
+                "D4Xaqgd9-Ro", #all-in live in 2024-11-06
+                "ULcwHlxfSkQ", # latent space missing
             ]
             if id in private_videos:
                 continue
