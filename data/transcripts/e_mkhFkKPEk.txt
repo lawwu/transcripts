@@ -1,0 +1,542 @@
+
+[00:00:00.000 --> 00:00:04.440]   >> My inter works too.
+[00:00:04.440 --> 00:00:10.960]   >> Okay, cool. Today, I'm going to present a mixture of experts.
+[00:00:10.960 --> 00:00:13.160]   I'm Ethan from NVIDIA.
+[00:00:13.160 --> 00:00:18.340]   I work on scaling, LLMs, transformers.
+[00:00:18.340 --> 00:00:22.560]   I might sound a bit muffled because I'm having a cold.
+[00:00:22.560 --> 00:00:25.000]   Apologies for that.
+[00:00:25.000 --> 00:00:33.740]   To this topic, I'm going to give a brief introduction on mix of experts or MOE first.
+[00:00:33.740 --> 00:00:37.280]   I'm going to talk about Megatron Core MOE,
+[00:00:37.280 --> 00:00:44.400]   like how we accelerate these MOEs and train and do inference efficiently.
+[00:00:44.400 --> 00:00:49.640]   Finally, going to talk about the upcycling LLM into MOE,
+[00:00:49.640 --> 00:00:52.880]   which is our recent paper.
+[00:00:54.440 --> 00:00:59.600]   So the AI models are growing larger and larger.
+[00:00:59.600 --> 00:01:03.720]   This is a rather old picture from 2021.
+[00:01:03.720 --> 00:01:09.900]   Switch transformer is the first model that surpassed the one trillion model size.
+[00:01:09.900 --> 00:01:14.520]   Before that, it's only hundreds of billion parameters.
+[00:01:14.520 --> 00:01:16.840]   I think at that time,
+[00:01:16.840 --> 00:01:19.840]   it's growing 10 times each year.
+[00:01:19.840 --> 00:01:23.280]   It looks like it's slowing down recently.
+[00:01:23.760 --> 00:01:30.480]   The question is, we only have so much compute,
+[00:01:30.480 --> 00:01:35.380]   how can we make the model better without increasing the compute?
+[00:01:35.380 --> 00:01:38.400]   From Noam, he said,
+[00:01:38.400 --> 00:01:44.640]   "My unsubstantiated theory is that parameters are good for knowledge,
+[00:01:44.640 --> 00:01:49.440]   and compute or the flop is good for intelligence."
+[00:01:49.440 --> 00:01:51.960]   Whatever those term means.
+[00:01:51.960 --> 00:01:55.840]   So MOE is a good way of growing
+[00:01:55.840 --> 00:02:01.680]   the parameters or growing knowledge without increasing the compute.
+[00:02:01.680 --> 00:02:05.640]   So what is MOE?
+[00:02:05.640 --> 00:02:11.520]   Here is a very simple diagram from switch transformer.
+[00:02:11.520 --> 00:02:16.040]   For the traditional LLMs transformers,
+[00:02:16.040 --> 00:02:18.280]   you have the self-attention,
+[00:02:18.280 --> 00:02:21.800]   the residual layer norm,
+[00:02:21.800 --> 00:02:25.280]   and then you have a FFN layer,
+[00:02:25.280 --> 00:02:27.200]   which is just a two-layer layer,
+[00:02:27.200 --> 00:02:29.800]   and then the residual.
+[00:02:29.800 --> 00:02:36.680]   MOEs transform the FFN layer into multiple copy of them.
+[00:02:36.680 --> 00:02:41.400]   You see here, there are four FFN layers,
+[00:02:41.400 --> 00:02:46.040]   and then each token selectively activate a few experts,
+[00:02:46.040 --> 00:02:48.680]   which is selected by router.
+[00:02:48.680 --> 00:02:52.160]   The router is simply a matrix multiplication,
+[00:02:52.160 --> 00:02:59.360]   a learnable matrix to select one of the expert based on the input.
+[00:02:59.360 --> 00:03:03.400]   The model size increase enhancing its capability,
+[00:03:03.400 --> 00:03:08.880]   while the compute roughly remains the same as the original model.
+[00:03:08.880 --> 00:03:14.320]   If we look into the MOE layer,
+[00:03:14.320 --> 00:03:17.920]   it actually consists of several steps.
+[00:03:17.920 --> 00:03:23.560]   It's more complicated than the original FFN layer.
+[00:03:23.560 --> 00:03:30.080]   You can think of the original FFN layer as the third step computation,
+[00:03:30.080 --> 00:03:33.840]   whereas the expert layer,
+[00:03:33.840 --> 00:03:36.320]   which was the original FFN layer,
+[00:03:36.320 --> 00:03:40.320]   is applied to the input token.
+[00:03:40.320 --> 00:03:44.920]   The first step here is routing.
+[00:03:44.920 --> 00:03:47.680]   Given the input token, for example,
+[00:03:47.680 --> 00:03:50.840]   here you have like six tokens,
+[00:03:50.840 --> 00:03:55.240]   the quick brown fox jumped over.
+[00:03:55.240 --> 00:03:58.120]   It went over the router.
+[00:03:58.120 --> 00:04:02.720]   Router is simply a matrix that is applied on these tokens.
+[00:04:02.720 --> 00:04:05.280]   It generates the probabilities,
+[00:04:05.280 --> 00:04:13.680]   and we will take the highest probability as the router selected.
+[00:04:13.680 --> 00:04:16.400]   Here is the expert indices,
+[00:04:16.400 --> 00:04:23.240]   are the experts which have the highest probability on these tokens.
+[00:04:23.240 --> 00:04:26.560]   The second step is permutation.
+[00:04:26.560 --> 00:04:31.560]   Given the token selected experts,
+[00:04:31.560 --> 00:04:37.200]   you need to align these input features with the experts.
+[00:04:37.200 --> 00:04:42.120]   All of the tokens that select expert zero,
+[00:04:42.120 --> 00:04:47.600]   you need to arrange them into a single matrix
+[00:04:47.600 --> 00:04:51.800]   that are only for experts zero,
+[00:04:51.800 --> 00:04:54.840]   expert one, expert two.
+[00:04:54.840 --> 00:04:57.760]   Depending on the capacity factor,
+[00:04:57.760 --> 00:05:01.000]   some of the token might be dropped.
+[00:05:01.000 --> 00:05:04.720]   The third step is the same as the original FFN layer,
+[00:05:04.720 --> 00:05:07.640]   where you do the computation.
+[00:05:07.640 --> 00:05:09.440]   After the computation,
+[00:05:09.440 --> 00:05:14.080]   there will be an on-premier step
+[00:05:14.080 --> 00:05:19.040]   where you need to arrange these tokens back to the original shape.
+[00:05:19.040 --> 00:05:25.000]   Then the router probability is applied as a scaling factor
+[00:05:25.000 --> 00:05:32.520]   on all of these expert features.
+[00:05:32.520 --> 00:05:42.000]   Scaling this MOE during training is very challenging.
+[00:05:42.000 --> 00:05:46.080]   First, the models are massive scales.
+[00:05:46.080 --> 00:05:49.400]   Usually, for example, mixed row 8x7b,
+[00:05:49.400 --> 00:05:55.880]   you increase the model parameters roughly by 6x or 7x.
+[00:05:55.880 --> 00:06:01.040]   This puts substantial pressure on the memory usage.
+[00:06:01.040 --> 00:06:04.920]   And the router dispatching also has overhead.
+[00:06:04.920 --> 00:06:07.560]   In the previous slide,
+[00:06:07.560 --> 00:06:11.680]   you will notice there's a permute on on-permute operator.
+[00:06:11.680 --> 00:06:18.800]   That essentially increases the activation memory by two times
+[00:06:18.800 --> 00:06:21.200]   because all of those need to be stored.
+[00:06:21.200 --> 00:06:23.840]   If you have top-k routing,
+[00:06:23.840 --> 00:06:28.200]   it would also increase the memory of the activation by k
+[00:06:28.200 --> 00:06:33.400]   because the hidden states need to go to each expert
+[00:06:33.400 --> 00:06:37.360]   and you need to duplicate it.
+[00:06:37.360 --> 00:06:39.800]   And also reduce the jam efficiency
+[00:06:39.800 --> 00:06:42.760]   because you need to do a loop over all the experts
+[00:06:42.760 --> 00:06:46.480]   to do the jam separately.
+[00:06:46.480 --> 00:06:50.440]   There's also an imbalance issue if all of the tokens
+[00:06:50.440 --> 00:06:51.840]   go to one expert,
+[00:06:51.840 --> 00:06:58.160]   other experts on other GPU would be idle.
+[00:06:58.160 --> 00:07:04.760]   Now, let me introduce the Megatron Core MOE,
+[00:07:04.760 --> 00:07:08.480]   which is how we accelerate these MOE models
+[00:07:08.480 --> 00:07:13.240]   given these challenges.
+[00:07:13.240 --> 00:07:16.520]   So Megatron LLAM and Megatron Core
+[00:07:16.520 --> 00:07:21.360]   is an open-source library on GitHub available.
+[00:07:21.360 --> 00:07:28.240]   We accelerate not only MOE and also all of the LLAMs,
+[00:07:28.240 --> 00:07:31.880]   including like GPT, BERT, T5.
+[00:07:31.880 --> 00:07:35.080]   I'm not sure if anyone is still using those now,
+[00:07:35.080 --> 00:07:37.360]   but primarily GPT models.
+[00:07:37.360 --> 00:07:41.440]   And inside the transformer layers,
+[00:07:41.440 --> 00:07:46.680]   the attention is accelerated with all kinds of parallelism,
+[00:07:46.680 --> 00:07:50.760]   including pipeline parallel, tensor parallel,
+[00:07:50.760 --> 00:07:55.920]   also the parallelism and the MOEs are also accelerated.
+[00:07:55.920 --> 00:07:58.560]   This is what we are primarily talking about today,
+[00:07:58.560 --> 00:08:01.800]   Megatron Core MOE.
+[00:08:01.800 --> 00:08:06.640]   On top, you have two customizable training loops.
+[00:08:06.640 --> 00:08:10.520]   Megatron LLAM provides simple bare-bone training loop.
+[00:08:10.520 --> 00:08:13.200]   And you can easily hack.
+[00:08:13.200 --> 00:08:17.080]   And NEMO provide a high-level interface
+[00:08:17.080 --> 00:08:20.520]   where you can just provide Pythonic configuration
+[00:08:20.520 --> 00:08:21.560]   to train these models.
+[00:08:21.560 --> 00:08:29.960]   In the Megatron Core MOE, we provide different approaches
+[00:08:29.960 --> 00:08:32.240]   to accelerate these models.
+[00:08:32.240 --> 00:08:36.760]   For the router, there are Oxloss and Sinkhorn.
+[00:08:36.760 --> 00:08:42.160]   Basically, Oxloss is a token trace MOE.
+[00:08:42.160 --> 00:08:45.600]   And Sinkhorn, without token dropping,
+[00:08:45.600 --> 00:08:50.120]   it can usually use in expert trace.
+[00:08:50.120 --> 00:08:53.760]   And the tokens dispatcher, they're
+[00:08:53.760 --> 00:08:57.760]   in permute, unpermute for efficient memory saving.
+[00:08:57.760 --> 00:09:05.720]   And for the expert, we have grouped MLP to accelerate this.
+[00:09:05.720 --> 00:09:10.360]   So first, it's expert model parallel.
+[00:09:10.360 --> 00:09:18.240]   This is available in Megatron Core MOE now.
+[00:09:18.240 --> 00:09:22.720]   You can-- usually, you would put all of the experts
+[00:09:22.720 --> 00:09:24.480]   on one single GPUs.
+[00:09:24.480 --> 00:09:27.840]   And then you do a for loop over all of the experts
+[00:09:27.840 --> 00:09:30.920]   to compute the result. But instead, we
+[00:09:30.920 --> 00:09:35.360]   can put one expert on each GPU.
+[00:09:35.360 --> 00:09:37.840]   This will release a lot of memory
+[00:09:37.840 --> 00:09:42.080]   and also accelerate the training on the inference.
+[00:09:42.080 --> 00:09:49.880]   So token dropping, the default we use
+[00:09:49.880 --> 00:09:54.160]   is dropless, meaning all of the tokens
+[00:09:54.160 --> 00:10:00.280]   can go to one expert and no tokens are dropped.
+[00:10:00.280 --> 00:10:05.960]   We also support token dropping with padding,
+[00:10:05.960 --> 00:10:11.560]   meaning give a set capacity factor, for example, four here.
+[00:10:11.560 --> 00:10:15.960]   Each expert can, at max, accept four tokens.
+[00:10:15.960 --> 00:10:20.040]   Tokens beyond that are going to be dropped.
+[00:10:20.040 --> 00:10:24.680]   So accuracy-wise and efficiency-wise,
+[00:10:24.680 --> 00:10:29.400]   there are a lot of discussion around here.
+[00:10:29.400 --> 00:10:32.880]   A lot of the pre-training experiments
+[00:10:32.880 --> 00:10:35.760]   shows that token dropping is very efficient
+[00:10:35.760 --> 00:10:38.480]   and it doesn't impact performance.
+[00:10:38.480 --> 00:10:42.000]   But in some of the downstream fine-tuning,
+[00:10:42.000 --> 00:10:44.000]   people realize dropless is better.
+[00:10:44.000 --> 00:10:48.920]   Maybe it's because of the domain shifts.
+[00:10:48.920 --> 00:10:51.520]   The tokens are no longer balanced.
+[00:10:51.520 --> 00:10:53.360]   So we provide both of the options.
+[00:10:57.160 --> 00:11:02.120]   So recently, there are a lot of new MOEs
+[00:11:02.120 --> 00:11:05.120]   that have increasing number of experts.
+[00:11:05.120 --> 00:11:09.280]   This will cause a very huge overhead.
+[00:11:09.280 --> 00:11:14.520]   For example, the DeepSeq v2 MOE, it has 160 experts
+[00:11:14.520 --> 00:11:17.720]   and eight of them are active.
+[00:11:17.720 --> 00:11:22.760]   If you think about the memory overhead,
+[00:11:22.760 --> 00:11:27.160]   let's say first you would have the tokens.
+[00:11:27.160 --> 00:11:30.560]   And these tokens need to go to different experts.
+[00:11:30.560 --> 00:11:35.520]   And at this step, you would have a scatter and a copy operator.
+[00:11:35.520 --> 00:11:38.200]   Depending on the number of the top k,
+[00:11:38.200 --> 00:11:42.800]   say the top k is eight here, each of the hidden states
+[00:11:42.800 --> 00:11:47.920]   would be copied eight times, which is a very huge overhead.
+[00:11:47.920 --> 00:11:53.400]   And after the expert operation is done,
+[00:11:53.400 --> 00:11:56.280]   there's another eight copy of it here.
+[00:11:56.280 --> 00:12:03.880]   So we have a fused permutation operation
+[00:12:03.880 --> 00:12:09.000]   available in Maxwell for MOE, where all of these operations
+[00:12:09.000 --> 00:12:10.320]   are fused.
+[00:12:10.320 --> 00:12:17.640]   Because the copy operation here, it has zero compute,
+[00:12:17.640 --> 00:12:21.240]   but it could cause duplicated memory.
+[00:12:21.240 --> 00:12:24.880]   If you have these fused operations,
+[00:12:24.880 --> 00:12:30.520]   you can easily compute these features during backward pass
+[00:12:30.520 --> 00:12:32.040]   while saving a lot of memory.
+[00:12:32.040 --> 00:12:42.600]   Let's also look at the implementation of Maxwell 8x7
+[00:12:42.600 --> 00:12:44.880]   on Hagen-Fitts transformer.
+[00:12:44.880 --> 00:12:50.560]   You also notice in the expert operation there,
+[00:12:50.560 --> 00:12:53.240]   you would iterate over all of the experts
+[00:12:53.240 --> 00:12:59.400]   and compute each of the gem operation one by one.
+[00:12:59.400 --> 00:13:03.240]   We found that this is very inefficient.
+[00:13:03.240 --> 00:13:10.880]   Instead, we provide an interface to Catalyst group gem,
+[00:13:10.880 --> 00:13:16.480]   where the Catalyst group gem groups all of the looping
+[00:13:16.480 --> 00:13:23.520]   over experts and calculate gem into a single operation.
+[00:13:23.520 --> 00:13:29.920]   Given any number of experts and any number of tokens,
+[00:13:29.920 --> 00:13:34.920]   you can efficiently compute the output in one operation.
+[00:13:34.920 --> 00:13:36.960]   And this is very efficient.
+[00:13:36.960 --> 00:13:51.000]   So that's pretty much all of the optimizations for MOE
+[00:13:51.000 --> 00:13:52.640]   in Matron-Core MOE.
+[00:13:52.640 --> 00:13:55.560]   If any one of you have questions,
+[00:13:55.560 --> 00:13:58.240]   I can first answer those questions
+[00:13:58.240 --> 00:14:00.680]   and then go to MOE upcycling.
+[00:14:00.680 --> 00:14:13.480]   I'm just curious, are these available for everyone
+[00:14:13.480 --> 00:14:16.640]   to use in a way that attracts your attention?
+[00:14:16.640 --> 00:14:22.880]   Or are these specific to the Megatron implementation?
+[00:14:22.880 --> 00:14:33.200]   So you can import them as a standalone module
+[00:14:33.200 --> 00:14:37.680]   and apply them to any of your--
+[00:14:37.680 --> 00:14:40.200]   Core library, right?
+[00:14:40.200 --> 00:14:44.040]   Yeah, you can import Megatron Core as a library
+[00:14:44.040 --> 00:14:46.160]   and just use it in your network.
+[00:14:46.160 --> 00:14:49.160]   But I think there are some caveats.
+[00:14:49.160 --> 00:14:53.720]   So for example, if you want to use expert parallelism,
+[00:14:53.720 --> 00:15:01.760]   you will need to also use Megatron's parallelism strategy
+[00:15:01.760 --> 00:15:04.800]   to initialize a strategy first.
+[00:15:04.800 --> 00:15:08.360]   But if you're using, for example, the group gem,
+[00:15:08.360 --> 00:15:12.720]   I think you can just get away with any kind of network.
+[00:15:12.720 --> 00:15:15.800]   You can combine it with Huggins phase transformer
+[00:15:15.800 --> 00:15:18.080]   with any problem.
+[00:15:18.080 --> 00:15:23.880]   This is just a PyTorch layer with a fused operator.
+[00:15:23.880 --> 00:15:26.320]   You can just import it as a library.
+[00:15:26.320 --> 00:15:27.720]   It's very standalone.
+[00:15:27.720 --> 00:15:31.720]   Cool.
+[00:15:31.720 --> 00:15:46.480]   Do you have any intuition as far as the knowledge
+[00:15:46.480 --> 00:15:49.720]   contained in each expert?
+[00:15:49.720 --> 00:15:52.000]   I guess previous to seeing this paper,
+[00:15:52.000 --> 00:15:56.680]   I had assumed that maybe one expert was good at economics,
+[00:15:56.680 --> 00:15:59.120]   another one was good at physics, and so forth.
+[00:15:59.120 --> 00:16:05.920]   But this makes it seem like it's more token by token.
+[00:16:05.920 --> 00:16:09.240]   So do you have any intuition around that?
+[00:16:09.240 --> 00:16:12.680]   Yeah, so we haven't started in our research,
+[00:16:12.680 --> 00:16:16.120]   but I saw a lot of research on interpretability
+[00:16:16.120 --> 00:16:19.280]   of the MOE models.
+[00:16:19.280 --> 00:16:24.320]   So unfortunately, people didn't find
+[00:16:24.320 --> 00:16:31.120]   a significant interpretability inside these experts.
+[00:16:31.120 --> 00:16:36.320]   One expert focused on math, the other focused on literature.
+[00:16:36.320 --> 00:16:41.560]   I think the problem is that neural network hidden states
+[00:16:41.560 --> 00:16:44.560]   are already very entangled.
+[00:16:44.560 --> 00:16:49.440]   So one hidden states are in this kind of superposition
+[00:16:49.440 --> 00:16:54.960]   where it can represent multiple different features.
+[00:16:54.960 --> 00:17:00.080]   So it's very hard to tell which expert focus on which area.
+[00:17:00.080 --> 00:17:04.720]   There are some evidence of specializations
+[00:17:04.720 --> 00:17:08.440]   on early layers of the experts, for example,
+[00:17:08.440 --> 00:17:10.160]   first and second layers.
+[00:17:10.160 --> 00:17:14.520]   You'll find some expert focus on multiple tokens,
+[00:17:14.520 --> 00:17:20.760]   some expert focus on single tokens, things like that.
+[00:17:20.760 --> 00:17:23.520]   And there's also one pretty interesting research
+[00:17:23.520 --> 00:17:26.440]   from Facebook.
+[00:17:26.440 --> 00:17:32.040]   They do a specialized training of dense model first,
+[00:17:32.040 --> 00:17:36.760]   then combine those dense experts specialized
+[00:17:36.760 --> 00:17:40.520]   into different domain into a MOE.
+[00:17:40.520 --> 00:17:46.600]   In that case, it still preserves some of the specializations.
+[00:17:46.600 --> 00:17:47.120]   Thank you.
+[00:17:47.120 --> 00:17:52.800]   Just a quick question.
+[00:17:52.800 --> 00:17:56.400]   We talked about top T sampling to select the expert
+[00:17:56.400 --> 00:17:57.400]   throughout.
+[00:17:57.400 --> 00:18:00.200]   Is there any benefit to using maybe a top T sampling
+[00:18:00.200 --> 00:18:03.960]   approach similar to how you would use top T sampling
+[00:18:03.960 --> 00:18:09.000]   for selecting an expert as compared to top K?
+[00:18:09.000 --> 00:18:10.360]   Top P?
+[00:18:10.360 --> 00:18:12.520]   What do you mean top P?
+[00:18:12.520 --> 00:18:16.080]   Considering a list of experts until they
+[00:18:16.080 --> 00:18:20.720]   exceed a given probability cumulatively?
+[00:18:20.720 --> 00:18:22.120]   Does that make sense?
+[00:18:22.120 --> 00:18:22.920]   I see, yeah.
+[00:18:22.920 --> 00:18:27.040]   So since the top--
+[00:18:27.040 --> 00:18:30.160]   it will be dynamic, let's say.
+[00:18:30.160 --> 00:18:33.360]   Sometimes it can select some more.
+[00:18:33.360 --> 00:18:35.400]   Sometimes it selects less.
+[00:18:35.400 --> 00:18:39.520]   I think that promotes a little more diversity, I've heard.
+[00:18:39.520 --> 00:18:41.400]   Yeah.
+[00:18:41.400 --> 00:18:44.080]   Yeah, I think that makes sense.
+[00:18:44.080 --> 00:18:49.320]   That will create some difficulty in optimization.
+[00:18:49.320 --> 00:18:54.520]   But I think another thing pretty exciting is the expert choice.
+[00:18:54.520 --> 00:19:00.480]   You see, in expert choice model, the selection is reversed.
+[00:19:00.480 --> 00:19:03.000]   So here, we talk about all of them.
+[00:19:03.000 --> 00:19:08.560]   Usually, this is token choice, which means
+[00:19:08.560 --> 00:19:11.680]   the token selects K experts.
+[00:19:11.680 --> 00:19:14.400]   So each token always have, for example,
+[00:19:14.400 --> 00:19:17.320]   two experts applied on it.
+[00:19:17.320 --> 00:19:23.800]   But expert choice is another way where the experts select tokens.
+[00:19:23.800 --> 00:19:28.720]   Each expert only selects K tokens constantly.
+[00:19:28.720 --> 00:19:32.960]   So even though this is fixed, but from the token
+[00:19:32.960 --> 00:19:39.000]   perspective, each token can have zero expert applied to it,
+[00:19:39.000 --> 00:19:42.720]   or more than zero, or all of the experts applied to it.
+[00:19:42.720 --> 00:19:43.440]   Yeah.
+[00:19:43.440 --> 00:19:45.520]   In that case, you're either overloading the expert
+[00:19:45.520 --> 00:19:47.280]   or not considering all the tokens.
+[00:19:47.280 --> 00:19:49.840]   It's like a trade-off.
+[00:19:49.840 --> 00:19:53.600]   Yeah, in fact, expert choice applies pretty well
+[00:19:53.600 --> 00:19:58.400]   to vision models, because vision models do not have causal mask.
+[00:19:58.400 --> 00:20:01.080]   OK.
+[00:20:01.080 --> 00:20:02.160]   Thank you so much.
+[00:20:02.160 --> 00:20:09.040]   OK.
+[00:20:09.040 --> 00:20:15.400]   I guess I can go to the next section, upcycling MOEs.
+[00:20:15.400 --> 00:20:26.240]   So if you are going to remember one thing, remember this.
+[00:20:26.240 --> 00:20:29.160]   So you can upcycle your dense models
+[00:20:29.160 --> 00:20:31.920]   into a mix of experts.
+[00:20:31.920 --> 00:20:34.200]   By training these upcycled models,
+[00:20:34.200 --> 00:20:37.560]   you can achieve better accuracy than simply training
+[00:20:37.560 --> 00:20:42.240]   the dense model further for the same number of flops.
+[00:20:42.240 --> 00:20:46.280]   The context is we have so many big dense models.
+[00:20:46.280 --> 00:20:49.840]   For example, there's a Lama 405B.
+[00:20:49.840 --> 00:20:53.680]   And from NVIDIA, we have Nemotron 340B.
+[00:20:53.680 --> 00:20:56.280]   These models are huge.
+[00:20:56.280 --> 00:21:00.840]   It's very expensive to retrain MOE variant of it.
+[00:21:00.840 --> 00:21:05.320]   If we want to further improve these models,
+[00:21:05.320 --> 00:21:09.680]   you can upcycle these models into MOE
+[00:21:09.680 --> 00:21:12.240]   to achieve better accuracy.
+[00:21:12.240 --> 00:21:20.040]   On other scaling experiments, we tried on 15B models upcycling
+[00:21:20.040 --> 00:21:25.800]   and applied on 1 trillion tokens and achieved roughly about 5%
+[00:21:25.800 --> 00:21:29.080]   improvement in terms of the validation loss
+[00:21:29.080 --> 00:21:33.320]   and 4% improvement on MMLU.
+[00:21:33.320 --> 00:21:38.280]   It's exciting because the original sparse upcycling
+[00:21:38.280 --> 00:21:42.000]   paper found it difficult to scale
+[00:21:42.000 --> 00:21:45.480]   beyond 1 billion parameters.
+[00:21:45.480 --> 00:21:49.480]   We found there are several key factors to go beyond 1 billion.
+[00:21:55.400 --> 00:21:59.840]   So this is a concept of MOE.
+[00:21:59.840 --> 00:22:05.320]   Let's say you have the MLP in the original plane boat
+[00:22:05.320 --> 00:22:07.040]   transformer.
+[00:22:07.040 --> 00:22:11.360]   And here, this is a mixture of two experts.
+[00:22:11.360 --> 00:22:15.160]   One of the experts is activated, so the flop
+[00:22:15.160 --> 00:22:17.400]   is the same as the original model.
+[00:22:17.400 --> 00:22:21.400]   Now the parameters is increased.
+[00:22:21.400 --> 00:22:26.640]   To upcycle such a model, you do two things.
+[00:22:26.640 --> 00:22:35.920]   First is to copy the MLP layer into a number of expert copies.
+[00:22:35.920 --> 00:22:38.200]   Here is just two copies.
+[00:22:38.200 --> 00:22:41.800]   And then you randomly initialize the router rates.
+[00:22:41.800 --> 00:22:43.640]   Then you just train this model.
+[00:22:43.640 --> 00:22:47.320]   Pretty straightforward, right?
+[00:22:47.320 --> 00:22:50.960]   There is one caveat here.
+[00:22:50.960 --> 00:22:56.000]   This model needs to perform the same as the original model
+[00:22:56.000 --> 00:22:58.440]   in the first forward pass.
+[00:22:58.440 --> 00:23:01.800]   Otherwise, it will lead to catastrophe forgetting.
+[00:23:01.800 --> 00:23:12.240]   So the trick to maintain this feature
+[00:23:12.240 --> 00:23:17.680]   is through the swapping of the top-k softmax operator.
+[00:23:17.680 --> 00:23:21.840]   This is introduced in Mixture 8x7b.
+[00:23:21.840 --> 00:23:24.960]   Let's say you have the MLP copied,
+[00:23:24.960 --> 00:23:35.000]   and then you do the top-k first to select two experts.
+[00:23:35.000 --> 00:23:38.200]   And then you do the softmax on top
+[00:23:38.200 --> 00:23:43.640]   of the logits from the top-k router.
+[00:23:43.640 --> 00:23:46.160]   In this way, because the softmax is
+[00:23:46.160 --> 00:23:51.960]   applied to the top-k output, it always sum up to 1.
+[00:23:51.960 --> 00:23:55.560]   Here I give example 0.7, 0.3.
+[00:23:55.560 --> 00:24:01.240]   And then you add these two outputs together.
+[00:24:01.240 --> 00:24:03.840]   In this way, because the MLP layer
+[00:24:03.840 --> 00:24:06.520]   is exactly the same as the dense model,
+[00:24:06.520 --> 00:24:09.160]   these two copies are just the same.
+[00:24:09.160 --> 00:24:13.800]   So the model output is the same as the original dense model.
+[00:24:13.800 --> 00:24:18.280]   This is a very important feature in upcycling,
+[00:24:18.280 --> 00:24:22.760]   because the upcycled MLE model actually
+[00:24:22.760 --> 00:24:27.400]   behaves exactly the same as dense without any training.
+[00:24:27.400 --> 00:24:30.160]   And this will help stabilize the model
+[00:24:30.160 --> 00:24:34.120]   and avoid catastrophe forgetting.
+[00:24:34.120 --> 00:24:38.120]   But the problem here is we actually
+[00:24:38.120 --> 00:24:41.120]   found the mixed-source approach didn't work as well as
+[00:24:41.120 --> 00:24:48.440]   expected, because the original switch transformer from Google
+[00:24:48.440 --> 00:24:52.040]   uses softmax and top-k for a reason.
+[00:24:52.040 --> 00:24:57.080]   And because of upcycling, if you switch to top-k, then softmax,
+[00:24:57.080 --> 00:25:01.480]   it actually hurts some performance.
+[00:25:01.480 --> 00:25:06.560]   The difference is simply the swap of top-k
+[00:25:06.560 --> 00:25:09.960]   and the softmax order.
+[00:25:09.960 --> 00:25:14.800]   I've already explained how mixed-source did top-k then
+[00:25:14.800 --> 00:25:16.160]   softmax.
+[00:25:16.160 --> 00:25:19.240]   So in the original switch transformer paper,
+[00:25:19.240 --> 00:25:21.680]   you apply softmax first.
+[00:25:21.680 --> 00:25:28.360]   So the probability of all of the experts would sum up to 1.
+[00:25:28.360 --> 00:25:34.120]   So if you apply top-k, the output no longer sum up to 1.
+[00:25:34.120 --> 00:25:38.080]   Here, it's the example 0.4, 0.2.
+[00:25:38.080 --> 00:25:40.920]   So this is smaller than the original output.
+[00:25:40.920 --> 00:25:46.720]   If you just train this model naively on a large scale,
+[00:25:46.720 --> 00:25:49.800]   the model would catastrophically forget.
+[00:25:49.800 --> 00:25:53.680]   But on a smaller scale model like 1B or under,
+[00:25:53.680 --> 00:25:56.040]   you can kind of get away with this problem,
+[00:25:56.040 --> 00:25:58.640]   because small model adapts very fast.
+[00:25:58.640 --> 00:26:00.560]   This is probably one of the reasons
+[00:26:00.560 --> 00:26:03.960]   the original sparse upcycling paper didn't go
+[00:26:03.960 --> 00:26:06.720]   beyond 1 billion parameters.
+[00:26:06.720 --> 00:26:16.360]   So we found a very simple approach to solve this problem.
+[00:26:16.360 --> 00:26:18.520]   Because the output scale is smaller
+[00:26:18.520 --> 00:26:22.640]   than the original model, we can simply
+[00:26:22.640 --> 00:26:28.880]   scale up the MLP output by the number of experts
+[00:26:28.880 --> 00:26:30.680]   divided by top-k.
+[00:26:30.680 --> 00:26:34.400]   For example, if it's mixed-row 8 by 7,
+[00:26:34.400 --> 00:26:39.360]   we simply scale the MLP layer output by 4x.
+[00:26:39.360 --> 00:26:42.480]   This will solve the problem of the scale.
+[00:26:42.480 --> 00:26:45.720]   And the model still behaves the same as the original model.
+[00:26:45.720 --> 00:26:51.120]   You can train the upcycle model normally.
+[00:26:51.120 --> 00:26:54.360]   And then we found with this approach,
+[00:26:54.360 --> 00:27:00.280]   it consistently outperforms the mixed-row approach.
+[00:27:00.280 --> 00:27:07.000]   So we can get the benefit of the original three-transformer.
+[00:27:07.000 --> 00:27:13.680]   A bit of intuition behind why softmax and top-k is better.
+[00:27:13.680 --> 00:27:19.200]   Because if you apply softmax to all of the experts,
+[00:27:19.200 --> 00:27:23.600]   the probability distribution is always
+[00:27:23.600 --> 00:27:26.080]   measured on all of the experts.
+[00:27:26.080 --> 00:27:31.880]   However, in the swap case, the probability distribution
+[00:27:31.880 --> 00:27:33.840]   is only on two experts.
+[00:27:33.840 --> 00:27:35.120]   And it's dynamic.
+[00:27:35.120 --> 00:27:37.880]   It's harder for the model to learn.
+[00:27:37.880 --> 00:27:41.800]   Additionally, if you only use top-1,
+[00:27:41.800 --> 00:27:43.640]   this method will not work.
+[00:27:43.640 --> 00:27:49.240]   Because if the softmax on one expert is always 1,
+[00:27:49.240 --> 00:27:52.520]   there wouldn't be any gradient to learn.
+[00:27:52.520 --> 00:28:05.720]   So next, let's go to fine-grained MLE.
+[00:28:05.720 --> 00:28:09.720]   This is very popular in the most recent MLEs.
+[00:28:09.720 --> 00:28:15.400]   For example, the Quain V2 uses 64 experts.
+[00:28:15.400 --> 00:28:23.360]   And DeepSeq V2 uses 120, 128, or 160-something experts.
+[00:28:23.360 --> 00:28:27.000]   Granularity uses more experts, but smaller ones.
+[00:28:27.000 --> 00:28:32.000]   So this gives the flexibility of more combinations
+[00:28:32.000 --> 00:28:37.640]   of different experts, so more representation power.
+[00:28:37.640 --> 00:28:40.840]   For example, here, originally you
+[00:28:40.840 --> 00:28:44.800]   have the BigSurf2 expert, and 1 is selected.
+[00:28:44.800 --> 00:28:52.120]   Instead, you can expand the number of experts into 4.
+[00:28:52.120 --> 00:28:56.200]   Each expert is smaller than before.
+[00:28:56.200 --> 00:28:58.880]   So the compute is the same.
+[00:28:58.880 --> 00:29:02.440]   And the parameters is also the same.
+[00:29:02.440 --> 00:29:05.480]   Here, some notation here.
+[00:29:05.480 --> 00:29:09.680]   E2 means expansion factor is 2.
+[00:29:09.680 --> 00:29:15.320]   This is how many times the expert is copied.
+[00:29:15.320 --> 00:29:21.840]   And G2 is granularity, or how many times
+[00:29:21.840 --> 00:29:24.720]   the expert is segmented.
+[00:29:24.720 --> 00:29:29.880]   So you can think of this like the expert is first
+[00:29:29.880 --> 00:29:32.720]   copied into two copies here.
+[00:29:32.720 --> 00:29:37.400]   And then each copy is segmented two times.
+[00:29:37.400 --> 00:29:45.320]   T2 means how many experts we route to.
+[00:29:45.320 --> 00:29:48.120]   Here, you route to two experts.
+[00:29:48.120 --> 00:29:51.120]   So the flop is the same as the original one.
+[00:29:55.680 --> 00:29:59.680]   So you would soon notice a problem
+[00:29:59.680 --> 00:30:02.600]   if you upcycle such model.
+[00:30:02.600 --> 00:30:10.000]   Let's say these two segments are not the same anymore,
+[00:30:10.000 --> 00:30:18.440]   because you segment one expert into two shards.
+[00:30:18.440 --> 00:30:22.960]   For the top two cases, if you select one shard two times
+[00:30:22.960 --> 00:30:26.160]   and the other shard zero time, the output
+[00:30:26.160 --> 00:30:30.000]   is no longer the same as the original MOE.
+[00:30:30.000 --> 00:30:34.800]   And we mentioned that it's very important for upcycling
+[00:30:34.800 --> 00:30:38.800]   to maintain the same forward pass
+[00:30:38.800 --> 00:30:42.280]   as the original dense model.
+[00:30:42.280 --> 00:30:46.760]   The solution here is also rather straightforward.
+[00:30:46.760 --> 00:30:50.520]   So instead of randomly initialize a router,
+[00:30:50.520 --> 00:30:56.200]   we would initialize half as a router, and then duplicate it.
+[00:30:56.200 --> 00:31:01.080]   So this would ensure that the probability distribution would
+[00:31:01.080 --> 00:31:07.760]   be the same in each virtual group, or in each shard group.
+[00:31:07.760 --> 00:31:11.040]   Because if these are the same, the top case selection
+[00:31:11.040 --> 00:31:17.240]   will be exactly the same, the highest score
+[00:31:17.240 --> 00:31:20.640]   would be the same for these two groups.
+[00:31:20.640 --> 00:31:29.280]   I say here the example is that I shard the MLP into two parts.
+[00:31:29.280 --> 00:31:34.040]   The first, I need to select the orange exacting ones
+[00:31:34.040 --> 00:31:36.800]   and the blue exacting ones.
+[00:31:36.800 --> 00:31:40.840]   By duplicating the router base, this achieves the purpose.
+[00:31:44.880 --> 00:31:51.480]   And the formula for scaling the weights are also the same,
+[00:31:51.480 --> 00:31:55.480]   except there's an additional granularity factor.
+[00:31:55.480 --> 00:32:00.480]   This is a bit complicated, so I'll skip this part.
+[00:32:00.480 --> 00:32:10.280]   So for our experiment, we do our experiment
+[00:32:10.280 --> 00:32:14.120]   on the 8 trillion tokens Nemotron trained on.
+[00:32:14.120 --> 00:32:18.840]   The ablation study is on a smaller model, Nemotron2B.
+[00:32:18.840 --> 00:32:23.360]   And the bigger model, we do it on 8 by 15B on 1 trillion
+[00:32:23.360 --> 00:32:23.860]   tokens.
+[00:32:23.860 --> 00:32:29.440]   And we found that the learning rate
+[00:32:29.440 --> 00:32:32.480]   is the most important hyperparameter, as always
+[00:32:32.480 --> 00:32:34.360]   in machine learning.
+[00:32:34.360 --> 00:32:37.120]   And this is true also for upcycling.
+[00:32:37.120 --> 00:32:41.560]   Learning rate is the most important parameter.
+[00:32:41.560 --> 00:32:46.440]   So in the original sparse upcycling paper,
+[00:32:46.440 --> 00:32:51.440]   the learning rate is taken from the minimum--
+[00:32:51.440 --> 00:32:54.080]   the ending learning rate from pre-training.
+[00:32:54.080 --> 00:32:57.760]   So sometimes it can be rather small.
+[00:32:57.760 --> 00:33:04.120]   So we found that if you have a high learning rate,
+[00:33:04.120 --> 00:33:07.720]   it could help the upcycling a lot.
+[00:33:07.720 --> 00:33:11.600]   Here is the orange line is the lowest learning rate.
+[00:33:11.600 --> 00:33:18.440]   Basically, you continue to fine-tune the model into MOE.
+[00:33:18.440 --> 00:33:21.520]   This learning rate is typical, for example,
+[00:33:21.520 --> 00:33:24.360]   for other tasks like alignment.
+[00:33:24.360 --> 00:33:28.240]   But for upcycling, the model needs
+[00:33:28.240 --> 00:33:31.520]   to adapt to a new local minima.
+[00:33:31.520 --> 00:33:34.400]   We need a larger learning rate for this.
+[00:33:34.400 --> 00:33:39.800]   We found that the best is to use the original highest peak
+[00:33:39.800 --> 00:33:43.120]   learning rate from pre-training, which works the best.
+[00:33:43.120 --> 00:33:53.600]   And if you dive into the base of this upcycled model,
+[00:33:53.600 --> 00:33:57.680]   you will find something really interesting.
+[00:33:57.680 --> 00:34:02.560]   So if you apply a constant small learning rate,
+[00:34:02.560 --> 00:34:08.640]   like a fine-tuning or alignment, the constant similarity
+[00:34:08.640 --> 00:34:12.440]   between the base model and the upcycled model
+[00:34:12.440 --> 00:34:14.600]   would be almost 1.
+[00:34:14.600 --> 00:34:18.160]   This is true for most of the aligned model,
+[00:34:18.160 --> 00:34:23.120]   for example, LamaChat versus LamaBase.
+[00:34:23.120 --> 00:34:27.520]   If you use a high peak learning rate for upcycling,
+[00:34:27.520 --> 00:34:34.560]   the constant similarity would be much lower, around 0.7.
+[00:34:34.560 --> 00:34:42.320]   Also, we also analyzed the mixed-row 8x7 base
+[00:34:42.320 --> 00:34:44.800]   versus mixed-row 7B.
+[00:34:44.800 --> 00:34:47.560]   We found that the similarity is also
+[00:34:47.560 --> 00:34:52.720]   around there, which means you need higher learning
+[00:34:52.720 --> 00:34:54.240]   rates for upcycling.
+[00:34:57.160 --> 00:35:02.760]   An additional experiment on number of experts,
+[00:35:02.760 --> 00:35:08.160]   we found 64 experts is kind of like the sweet spot.
+[00:35:08.160 --> 00:35:12.320]   If you increase the number of experts beyond 64,
+[00:35:12.320 --> 00:35:14.760]   it provides diminishing return.
+[00:35:14.760 --> 00:35:24.760]   Finally, this is the large-scale upcycling.
+[00:35:24.760 --> 00:35:30.000]   We upcycled the 8x15B model on 1 trillion tokens.
+[00:35:30.000 --> 00:35:38.520]   So there are three models here.
+[00:35:38.520 --> 00:35:39.480]   Let me explain.
+[00:35:39.480 --> 00:35:44.520]   The base model, 15B, is trained on 8 trillion tokens.
+[00:35:44.520 --> 00:35:46.160]   This is pre-training data.
+[00:35:46.160 --> 00:35:52.320]   So validation loss, 1.6, and the MMLU, 59.
+[00:35:52.320 --> 00:35:56.360]   So the continual training model, it
+[00:35:56.360 --> 00:36:01.960]   target more on the academic benchmarks
+[00:36:01.960 --> 00:36:07.320]   to obtain higher performance on the evaluations.
+[00:36:07.320 --> 00:36:09.680]   This is roughly 1 trillion tokens.
+[00:36:09.680 --> 00:36:14.480]   The upcycling is performed on the same data for comparison.
+[00:36:14.480 --> 00:36:17.480]   Continuous training is just a dense model of continuous
+[00:36:17.480 --> 00:36:18.720]   training.
+[00:36:18.720 --> 00:36:23.520]   You will notice that actually, the data plays the biggest
+[00:36:23.520 --> 00:36:25.200]   factor.
+[00:36:25.200 --> 00:36:30.600]   Even the base model continuous training,
+[00:36:30.600 --> 00:36:34.960]   it can have a huge boost on MMLU.
+[00:36:34.960 --> 00:36:40.160]   And the upcycled model is another 4% to 5% improvement
+[00:36:40.160 --> 00:36:41.760]   on top of that.
+[00:36:41.760 --> 00:36:47.200]   Continuous training is like 20% improvement because of data.
+[00:36:47.200 --> 00:36:51.880]   This reminds us, again, data is the most important in ML.
+[00:36:51.880 --> 00:37:03.080]   If you put the 5% improvement into the scaling law
+[00:37:03.080 --> 00:37:06.360]   perspective, we can roughly gauge
+[00:37:06.360 --> 00:37:10.920]   how much the 5% improvement means.
+[00:37:10.920 --> 00:37:16.280]   Actually, the fine-grained MOE, the upcycled,
+[00:37:16.280 --> 00:37:20.600]   this has the same plot as the dense model.
+[00:37:20.600 --> 00:37:24.200]   And this has about 4% improvement
+[00:37:24.200 --> 00:37:26.000]   in terms of the loss.
+[00:37:26.000 --> 00:37:30.600]   4% improvement if you plug in the scaling law from point AI,
+[00:37:30.600 --> 00:37:36.480]   it's roughly represent 1.7x bigger model.
+[00:37:36.480 --> 00:37:43.680]   And the non-fine-grained model, well, top two,
+[00:37:43.680 --> 00:37:48.800]   this is the same config as the 8x7 mixed row.
+[00:37:48.800 --> 00:37:53.200]   It has increased flops because of top two.
+[00:37:53.200 --> 00:37:56.560]   That's roughly 1.7x more flops.
+[00:37:56.560 --> 00:38:03.280]   And it's roughly two times as powerful as the original model.
+[00:38:03.280 --> 00:38:05.880]   Given that we only spent like 1/8
+[00:38:05.880 --> 00:38:10.080]   of the original pre-training compute,
+[00:38:10.080 --> 00:38:14.760]   this is indeed some saving compared to training
+[00:38:14.760 --> 00:38:16.280]   these MOEs from scratch.
+[00:38:16.280 --> 00:38:20.040]   OK.
+[00:38:20.040 --> 00:38:21.440]   Thank you for listening.
+[00:38:21.440 --> 00:38:26.920]   I put the paper links, Microsoft Core MOE GitHub there
+[00:38:26.920 --> 00:38:32.720]   and Nevo GitHub where we provide high-level training interface.
+[00:38:32.720 --> 00:38:37.560]   You can also follow me on LinkedIn and Twitter.
+[00:38:37.560 --> 00:38:39.720]   I can take questions now.
+[00:38:40.720 --> 00:38:43.720]   Hey, nice to see you again.
+[00:38:43.720 --> 00:38:45.200]   There are a whole bunch of questions.
+[00:38:45.200 --> 00:38:46.760]   I think we'll stop the recording so we
+[00:38:46.760 --> 00:38:48.280]   can open up for questions.
+[00:38:48.280 --> 00:38:52.280]   But I think everyone is very excited by the presentations.
+[00:38:52.280 --> 00:38:53.400]   There's a lot of questions.
+[00:38:53.400 --> 00:38:55.120]   And also people want your slides.
+[00:38:55.120 --> 00:38:57.840]   So let people know where to get their slides.
+[00:38:57.840 --> 00:38:58.440]   Yeah, sure.
+[00:38:58.440 --> 00:39:00.680]   I can share the slides.
+[00:39:00.680 --> 00:39:01.960]   I can share this slide.
+
