@@ -2,6 +2,7 @@ import subprocess
 import json
 import logging
 import os
+import sqlite3
 from transcripts.utils import data_dir, configs_dir
 from pathlib import Path
 
@@ -68,6 +69,33 @@ def update_video_files(new_ids, existing_ids, done_file_path, in_file_path):
         # Ensure the file for processing new videos is blank if no new videos are found
         with open(in_file_path, "w") as f:
             f.write("")
+
+
+def connect_to_db():
+    try:
+        conn = sqlite3.connect(data_dir / "transcripts.db")
+        return conn
+    except sqlite3.Error as e:
+        logging.error(f"Error connecting to database: {e}")
+        return None
+
+
+def insert_video_details_to_db(video_id, title, upload_date, duration, channel_name):
+    conn = connect_to_db()
+    if not conn:
+        return
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO video_details (video_id, title, upload_date, duration, channel_name) VALUES (?, ?, ?, ?, ?)",
+            (video_id, title, upload_date, duration, channel_name),
+        )
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.error(f"Error inserting video details into database: {e}")
+    finally:
+        conn.close()
 
 
 # Download other videos (manual list)
@@ -158,6 +186,22 @@ for channel in channels:
     if os.path.getsize(f"./data/{channel['in_file']}") > 0:
         # Transcribe new videos
         subprocess.run(["./bash_transcribe.sh", f"./data/{channel['in_file']}"])
+
+        # Insert new video details into the database
+        for vid in new_ids:
+            # Fetch video details using yt-dlp
+            cmd = f"yt-dlp -j -- {vid}"
+            result = subprocess.run(cmd, stdout=subprocess.PIPE, shell=True, text=True)
+            video_details = json.loads(result.stdout.strip())
+
+            # Extract relevant details
+            title = video_details.get("title", "")
+            upload_date = video_details.get("upload_date", "")
+            duration = video_details.get("duration", 0)
+            channel_name = channel["name"]
+
+            # Insert video details into the database
+            insert_video_details_to_db(vid, title, upload_date, duration, channel_name)
 
 # Generate html and output to docs/
 subprocess.run(["python", "src/transcripts/generate_html.py"])
