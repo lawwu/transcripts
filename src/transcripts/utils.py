@@ -5,6 +5,7 @@ from functools import wraps
 import json
 import pandas as pd
 from datetime import datetime
+import sqlite3
 
 project_dir = Path(__file__).resolve().parents[2]
 data_dir = project_dir / "data"
@@ -79,3 +80,65 @@ def extract_yt_id(url):
     else:
         # Return None or an appropriate message if no video ID is found
         return None
+
+
+def connect_to_db():
+    try:
+        conn = sqlite3.connect(data_dir / "transcripts.db")
+        return conn
+    except sqlite3.Error as e:
+        logging.error(f"Error connecting to database: {e}")
+        return None
+
+
+def fetch_transcript_from_db(video_id):
+    conn = connect_to_db()
+    if not conn:
+        return None
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT transcript FROM transcripts WHERE video_id=?", (video_id,))
+        result = cursor.fetchone()
+        return result[0] if result else None
+    except sqlite3.Error as e:
+        logging.error(f"Error fetching transcript from database: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+def insert_transcript_to_db(video_id, transcript):
+    conn = connect_to_db()
+    if not conn:
+        return
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO transcripts (video_id, transcript) VALUES (?, ?)",
+            (video_id, transcript),
+        )
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.error(f"Error inserting transcript into database: {e}")
+    finally:
+        conn.close()
+
+
+def insert_video_details_to_db(video_id, title, upload_date, duration, channel_name):
+    conn = connect_to_db()
+    if not conn:
+        return
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO video_details (video_id, title, upload_date, duration, channel_name) VALUES (?, ?, ?, ?, ?)",
+            (video_id, title, upload_date, duration, channel_name),
+        )
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.error(f"Error inserting video details into database: {e}")
+    finally:
+        conn.close()

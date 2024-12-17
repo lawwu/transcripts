@@ -4,6 +4,7 @@ import logging
 import re
 from yt_dlp import YoutubeDL
 from datetime import datetime
+import sqlite3
 
 from transcripts.utils import (
     transcripts_dir,
@@ -585,6 +586,32 @@ def generate_transcript_page(video_id):
         f.write("</body></html>")
 
     logging.info(f"Transcript page generated at {output_file}")
+
+
+def connect_to_db():
+    try:
+        conn = sqlite3.connect(data_dir / "transcripts.db")
+        return conn
+    except sqlite3.Error as e:
+        logging.error(f"Error connecting to database: {e}")
+        return None
+
+
+def fetch_transcript_from_db(video_id):
+    conn = connect_to_db()
+    if not conn:
+        return None
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT transcript FROM transcripts WHERE video_id=?", (video_id,))
+        result = cursor.fetchone()
+        return result[0] if result else None
+    except sqlite3.Error as e:
+        logging.error(f"Error fetching transcript from database: {e}")
+        return None
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
