@@ -229,7 +229,11 @@ def get_minimum_info_dict(info_dict):
 
 
 def fetch_video_details(
-    video_id, video_details_cache=video_details_cache, ydl_opts={"quiet": True}
+    video_id, video_details_cache=video_details_cache, 
+    ydl_opts={"quiet": True,
+                "cookiesfrombrowser": ("firefox",),  # Replace "chrome" with your browser name
+              # 'cookiefile': '/Users/lawrencewu/github/transcripts/src/transcripts/yt_cookie.txt',
+              }
 ):
     if video_id is None or video_id == "":
         logging.info("Video ID is empty")
@@ -662,7 +666,7 @@ if __name__ == "__main__":
                 "DnZPgopXQGM",
                 "RcJ1YXHLv5o",
                 "D4Xaqgd9-Ro", #all-in live in 2024-11-06
-                "ULcwHlxfSkQ", # latent space missing
+                "ULcwHlxfSkQ", # latent space missing, remove from data/latent_space_tv_ids_done.txt and retranscribe
             ]
             if id in private_videos:
                 continue

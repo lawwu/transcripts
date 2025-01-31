@@ -106,6 +106,7 @@ for channel in channels:
         "ask_pastor_john",
         "ask_the_compound",
         "all_the_hacks",
+        "all_in",
     ]
     if channel["name"] in channels_to_skip_download:
         continue
