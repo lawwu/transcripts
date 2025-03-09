@@ -107,6 +107,8 @@ for channel in channels:
         "ask_the_compound",
         "all_the_hacks",
         "all_in",
+        "shepherds_conference_2024",
+        "shepherds_conference_2025",
     ]
     if channel["name"] in channels_to_skip_download:
         continue

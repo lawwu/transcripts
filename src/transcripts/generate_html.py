@@ -2,8 +2,11 @@ import argparse
 import json
 import logging
 import re
+import os
+import concurrent.futures
 from yt_dlp import YoutubeDL
 from datetime import datetime
+from pathlib import Path
 
 from transcripts.utils import (
     transcripts_dir,
@@ -140,11 +143,27 @@ except FileNotFoundError:
     video_details_cache = {}
     logging.info("Cache not found, initializing empty cache")
 
+# Add a new cache file for tracking file modification times
+modification_cache_file = data_dir / "modification_cache.json"
+modification_times_cache = {}
+
+# Load modification times cache if it exists
+try:
+    with open(modification_cache_file, "r") as f:
+        modification_times_cache = json.load(f)
+    logging.info(f"Loaded modification times cache with {len(modification_times_cache)} entries")
+except FileNotFoundError:
+    modification_times_cache = {}
+    logging.info("Modification times cache not found, initializing empty cache")
 
 def save_cache():
     with open(cache_file, "w") as f:
         json.dump(video_details_cache, f)
 
+def save_modification_cache():
+    """Save the modification times cache to disk"""
+    with open(modification_cache_file, "w") as f:
+        json.dump(modification_times_cache, f)
 
 def read_ids_from_file(filename):
     logging.info(f"Reading video IDs from {filename}")
@@ -591,116 +610,460 @@ def generate_transcript_page(video_id):
     logging.info(f"Transcript page generated at {output_file}")
 
 
+def should_regenerate_html(video_id):
+    """
+    Determine if HTML files for a video should be regenerated based on:
+    1. If the transcript file has been modified since last HTML generation
+    2. If the HTML files don't exist
+    
+    Returns True if regeneration is needed, False otherwise
+    """
+    transcript_file = transcripts_dir / f"{video_id}.txt"
+    html_file = html_dir / f"{video_id}.html"
+    transcript_only_file = html_dir / f"transcript_{video_id}.html"
+    
+    # If transcript file doesn't exist, skip
+    if not transcript_file.exists():
+        logging.info(f"Transcript file for {video_id} doesn't exist, skipping")
+        return False
+    
+    # Get the modification time of the transcript file
+    mod_time = os.path.getmtime(transcript_file)
+    
+    # If HTML files don't exist, regenerate
+    if not html_file.exists() or not transcript_only_file.exists():
+        logging.info(f"HTML files for {video_id} don't exist, will generate")
+        modification_times_cache[video_id] = mod_time
+        return True
+    
+    # If transcript file has been modified since last generation, regenerate
+    if video_id not in modification_times_cache or mod_time > modification_times_cache[video_id]:
+        logging.info(f"Transcript file for {video_id} has been modified, will regenerate")
+        modification_times_cache[video_id] = mod_time
+        return True
+    
+    logging.info(f"HTML files for {video_id} are up to date, skipping")
+    return False
+
+
+def should_regenerate_index(channel_file, filtered_ids):
+    """
+    Determine if an index page should be regenerated based on:
+    1. If any of the transcript files have been modified
+    2. If the index file doesn't exist
+    
+    Returns True if regeneration is needed, False otherwise
+    """
+    channel_name = channel_file["name"]
+    index_file = html_dir / f"{channel_name.lower()}_index.html"
+    
+    # If index file doesn't exist, regenerate
+    if not index_file.exists():
+        logging.info(f"Index file for {channel_name} doesn't exist, will generate")
+        return True
+    
+    # Get the modification time of the index file
+    index_mod_time = os.path.getmtime(index_file)
+    
+    # Check if any transcript files have been modified since the index was last generated
+    for video_id in filtered_ids:
+        if video_id in modification_times_cache:
+            if modification_times_cache[video_id] > index_mod_time:
+                logging.info(f"Transcript for {video_id} has been modified, will regenerate index for {channel_name}")
+                return True
+    
+    logging.info(f"Index file for {channel_name} is up to date, skipping")
+    return False
+
+
+def should_regenerate_master_index(config_channels):
+    """
+    Determine if the master index page should be regenerated based on:
+    1. If any channel index has been modified
+    2. If the master index file doesn't exist
+    
+    Returns True if regeneration is needed, False otherwise
+    """
+    master_index_file = html_dir / "index.html"
+    
+    # If master index file doesn't exist, regenerate
+    if not master_index_file.exists():
+        logging.info("Master index file doesn't exist, will generate")
+        return True
+    
+    # Get the modification time of the master index file
+    master_mod_time = os.path.getmtime(master_index_file)
+    
+    # Check if any channel index files have been modified since the master index was last generated
+    for channel in config_channels:
+        channel_name = channel["name"]
+        channel_index_file = html_dir / f"{channel_name.lower()}_index.html"
+        
+        if channel_index_file.exists():
+            channel_mod_time = os.path.getmtime(channel_index_file)
+            if channel_mod_time > master_mod_time:
+                logging.info(f"Channel index for {channel_name} has been modified, will regenerate master index")
+                return True
+    
+    logging.info("Master index file is up to date, skipping")
+    return False
+
+
+def should_regenerate_all_videos_index(list_all_videos):
+    """
+    Determine if the all videos index page should be regenerated based on:
+    1. If any transcript has been modified
+    2. If the all videos index file doesn't exist
+    
+    Returns True if regeneration is needed, False otherwise
+    """
+    all_videos_index_file = html_dir / "all_videos.html"
+    
+    # If all videos index file doesn't exist, regenerate
+    if not all_videos_index_file.exists():
+        logging.info("All videos index file doesn't exist, will generate")
+        return True
+    
+    # Get the modification time of the all videos index file
+    all_videos_mod_time = os.path.getmtime(all_videos_index_file)
+    
+    # Check if any transcript files have been modified since the all videos index was last generated
+    for video_id in list_all_videos:
+        if video_id in modification_times_cache:
+            if modification_times_cache[video_id] > all_videos_mod_time:
+                logging.info(f"Transcript for {video_id} has been modified, will regenerate all videos index")
+                return True
+    
+    logging.info("All videos index file is up to date, skipping")
+    return False
+
+
+def force_rebuild_from_file(rebuild_file):
+    """
+    Force rebuild HTML files for video IDs listed in a file
+    
+    Args:
+        rebuild_file: Path to a file containing video IDs to rebuild
+    """
+    if not rebuild_file.exists():
+        logging.error(f"Rebuild file {rebuild_file} does not exist")
+        return
+        
+    video_ids = read_ids_from_file(rebuild_file)
+    logging.info(f"Found {len(video_ids)} video IDs to rebuild")
+    
+    for video_id in video_ids:
+        if video_id is None or video_id == "" or video_id[0] == "-":
+            continue
+            
+        logging.info(f"Force rebuilding HTML for video ID {video_id}")
+        generate_html(video_id)
+        generate_transcript_page(video_id)
+        
+        # Update the modification cache
+        transcript_file = transcripts_dir / f"{video_id}.txt"
+        if transcript_file.exists():
+            mod_time = os.path.getmtime(transcript_file)
+            modification_times_cache[video_id] = mod_time
+    
+    # Save the modification times cache
+    save_modification_cache()
+
+
+def process_video_id(id, force_all=False):
+    """Process a single video ID - for parallel processing"""
+    if id is None or id == "" or id[0] == "-":
+        return
+        
+    # these videos are private
+    private_videos = [
+        "LvGJeivoJ_U",
+        "_YgOjzrZook",
+        "4vI4iKLSP5c",
+        "9dz2t3CbkzI",
+        "hstHUxkkBSQ",
+        "BM33MCMfBd4",
+        "Qv0YGAAJkmI",
+        "LE10gdGnFS4",
+        "uWediDOjcSA",
+        "RSw12R-UARk",
+        "gSEJOE1pCEA",
+        "rViJJ_XQQlM",
+        "whcUYpv3cz0",
+        "Knk90Kw0Ypc",
+        "2NG8L57eTBg",
+        "CbugxdPscyg",
+        "-rBtM6F9Hgs",
+        "yeFc3wn5S3g",
+        "Hj8_6SRNd7M",
+        "I0rH86ForOc",
+        "3RQkbByS3VU",
+        "0vXdMhwAfTk",
+        "JaMVzW9yiBc",
+        "qZOF4TQK4Ug",
+        "cjla_Slid98",
+        "lC0gdGvu5ug",
+        "p_ZKCgJibro",
+        "2XgJ1MQpAHU",
+        "rosko1DktW0",
+        "HW554qecUU0",
+        "rVUFef-zaCE",
+        "B8h154w9qbo",  # atc
+        "alOI2zxIPgc",
+        "Zxahu5y79SA",
+        "GkTOSDLfCaI",
+        "MMBn3I-Rvi0",
+        "SouId59N9jE",
+        "VZUqWSzi2WA",
+        "CGC4wqLUEbQ",
+        "fJLCgEo27QM",
+        "BPF9_0LGBlM",
+        "FnZUdwYg8yY",
+        "K7mswfTwjfk",
+        "8aV44LTsw3k",
+        "Gfg3wVVecYI",
+        "https://traffic.libsyn.com/secure/financialsamurai/FS_212_-_Kathy_Fang-2.mp3?dest-id=1377836",
+        "DnZPgopXQGM",
+        "RcJ1YXHLv5o",
+        "D4Xaqgd9-Ro", #all-in live in 2024-11-06
+        "ULcwHlxfSkQ", # latent space missing, remove from data/latent_space_tv_ids_done.txt and retranscribe
+    ]
+    
+    if id in private_videos:
+        return
+        
+    # Generate individual transcript pages
+    if force_all or should_regenerate_html(id):
+        try:
+            generate_html(id)
+            # Generate individual transcript-only pages
+            generate_transcript_page(id)
+            
+            # Update the modification cache
+            transcript_file = transcripts_dir / f"{id}.txt"
+            if transcript_file.exists():
+                mod_time = os.path.getmtime(transcript_file)
+                # Use a lock to safely update the shared cache
+                modification_times_cache[id] = mod_time
+                
+            return id  # Return the ID to indicate it was processed
+        except Exception as e:
+            logging.error(f"Error processing video ID {id}: {e}")
+            return None
+    
+    return None
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Generate HTML from YouTube transcript"
     )
-
+    
+    # Add command line arguments
+    parser.add_argument(
+        "--force-all", 
+        action="store_true", 
+        help="Force regeneration of all HTML files regardless of modification times"
+    )
+    parser.add_argument(
+        "--force-indexes", 
+        action="store_true", 
+        help="Force regeneration of all index files regardless of modification times"
+    )
+    parser.add_argument(
+        "--video-id", 
+        type=str, 
+        help="Generate HTML only for the specified video ID"
+    )
+    parser.add_argument(
+        "--channel", 
+        type=str, 
+        help="Generate HTML only for the specified channel"
+    )
+    parser.add_argument(
+        "--rebuild-file", 
+        type=str, 
+        help="Path to a file containing video IDs to force rebuild"
+    )
+    parser.add_argument(
+        "--parallel", 
+        action="store_true", 
+        help="Use parallel processing to speed up HTML generation"
+    )
+    
+    parser.add_argument(
+        "--workers", 
+        type=int, 
+        default=4,
+        help="Number of worker processes for parallel processing (default: 4)"
+    )
+    
+    parser.add_argument(
+        "--dry-run", 
+        action="store_true", 
+        help="Preview what would be regenerated without actually doing it"
+    )
+    
+    args = parser.parse_args()
+    
     # open channels.json in configs_dir
     with open(configs_dir / "channels.json", "r") as f:
         config_channels = json.load(f)
 
-    list_all_videos = []
-    for channel in config_channels:
-        video_ids = read_ids_from_file(data_dir / channel["file"])
+    # If a specific video ID is provided, only generate HTML for that video
+    if args.video_id:
+        logging.info(f"Generating HTML for video ID {args.video_id}")
+        if args.dry_run:
+            logging.info(f"DRY RUN: Would generate HTML for video ID {args.video_id}")
+        else:
+            generate_html(args.video_id)
+            generate_transcript_page(args.video_id)
+            # Save the modification times cache
+            save_modification_cache()
+        logging.info("Task completed")
+        exit(0)
 
+    # If a rebuild file is provided, force rebuild those videos
+    if args.rebuild_file:
+        rebuild_file = Path(args.rebuild_file)
+        if args.dry_run:
+            video_ids = read_ids_from_file(rebuild_file)
+            logging.info(f"DRY RUN: Would rebuild {len(video_ids)} videos from {args.rebuild_file}")
+            for video_id in video_ids:
+                if video_id is None or video_id == "" or video_id[0] == "-":
+                    continue
+                logging.info(f"DRY RUN: Would rebuild HTML for video ID {video_id}")
+        else:
+            force_rebuild_from_file(rebuild_file)
+        logging.info("Rebuild completed")
+        exit(0)
+
+    list_all_videos = []
+    processed_ids = []
+    
+    for channel in config_channels:
+        # Skip channels that don't match the specified channel
+        if args.channel and channel["name"].lower() != args.channel.lower():
+            continue
+            
+        video_ids = read_ids_from_file(data_dir / channel["file"])
         logging.info(f"Found {len(video_ids)} video IDs")
 
-        # generate html for youtube videos
-        for id in video_ids:
-            # skip this id since these transcripts do not exist
-            # if id in ["-hxeDjAxvJ8", "-QbjYf-sWpI", "-pdmry5gU7g", "-2ZBCUVXciw", "-8huxdlxe0I"]:
-            if id is None or id == "":
-                continue
-            if id[0] == "-":
-                continue
+        # Filter out invalid IDs and private videos
+        valid_ids = [id for id in video_ids if id and id != "" and id[0] != "-"]
+        
+        # Process videos in parallel if requested
+        if args.parallel and not args.dry_run:
+            logging.info(f"Processing {len(valid_ids)} videos in parallel with {args.workers} workers")
+            with concurrent.futures.ProcessPoolExecutor(max_workers=args.workers) as executor:
+                # Submit all tasks
+                future_to_id = {executor.submit(process_video_id, id, args.force_all): id for id in valid_ids}
+                
+                # Process results as they complete
+                for future in concurrent.futures.as_completed(future_to_id):
+                    id = future_to_id[future]
+                    try:
+                        result = future.result()
+                        if result:
+                            processed_ids.append(result)
+                    except Exception as e:
+                        logging.error(f"Error processing video ID {id}: {e}")
+        else:
+            # Process videos sequentially
+            for id in valid_ids:
+                if args.dry_run:
+                    if should_regenerate_html(id):
+                        logging.info(f"DRY RUN: Would regenerate HTML for video ID {id}")
+                else:
+                    result = process_video_id(id, args.force_all)
+                    if result:
+                        processed_ids.append(result)
 
-            # these videos are private
-            private_videos = [
-                "LvGJeivoJ_U",
-                "_YgOjzrZook",
-                "4vI4iKLSP5c",
-                "9dz2t3CbkzI",
-                "hstHUxkkBSQ",
-                "BM33MCMfBd4",
-                "Qv0YGAAJkmI",
-                "LE10gdGnFS4",
-                "uWediDOjcSA",
-                "RSw12R-UARk",
-                "gSEJOE1pCEA",
-                "rViJJ_XQQlM",
-                "whcUYpv3cz0",
-                "Knk90Kw0Ypc",
-                "2NG8L57eTBg",
-                "CbugxdPscyg",
-                "-rBtM6F9Hgs",
-                "yeFc3wn5S3g",
-                "Hj8_6SRNd7M",
-                "I0rH86ForOc",
-                "3RQkbByS3VU",
-                "0vXdMhwAfTk",
-                "JaMVzW9yiBc",
-                "qZOF4TQK4Ug",
-                "cjla_Slid98",
-                "lC0gdGvu5ug",
-                "p_ZKCgJibro",
-                "2XgJ1MQpAHU",
-                "rosko1DktW0",
-                "HW554qecUU0",
-                "rVUFef-zaCE",
-                "B8h154w9qbo",  # atc
-                "alOI2zxIPgc",
-                "Zxahu5y79SA",
-                "GkTOSDLfCaI",
-                "MMBn3I-Rvi0",
-                "SouId59N9jE",
-                "VZUqWSzi2WA",
-                "CGC4wqLUEbQ",
-                "fJLCgEo27QM",
-                "BPF9_0LGBlM",
-                "FnZUdwYg8yY",
-                "K7mswfTwjfk",
-                "8aV44LTsw3k",
-                "Gfg3wVVecYI",
-                "https://traffic.libsyn.com/secure/financialsamurai/FS_212_-_Kathy_Fang-2.mp3?dest-id=1377836",
-                "DnZPgopXQGM",
-                "RcJ1YXHLv5o",
-                "D4Xaqgd9-Ro", #all-in live in 2024-11-06
-                "ULcwHlxfSkQ", # latent space missing, remove from data/latent_space_tv_ids_done.txt and retranscribe
-            ]
-            if id in private_videos:
-                continue
-            # Generate individual transcript pages
-            generate_html(id)
-            # Generate individual transcript-only pages
-            generate_transcript_page(id)
-
-        exclude_list = private_videos
-
+        # Filter out private videos for the index
         all_ids = video_ids
-        # exclude videos in exclude list
+        private_videos = [
+            "LvGJeivoJ_U",
+            "_YgOjzrZook",
+            "4vI4iKLSP5c",
+            "9dz2t3CbkzI",
+            "hstHUxkkBSQ",
+            "BM33MCMfBd4",
+            "Qv0YGAAJkmI",
+            "LE10gdGnFS4",
+            "uWediDOjcSA",
+            "RSw12R-UARk",
+            "gSEJOE1pCEA",
+            "rViJJ_XQQlM",
+            "whcUYpv3cz0",
+            "Knk90Kw0Ypc",
+            "2NG8L57eTBg",
+            "CbugxdPscyg",
+            "-rBtM6F9Hgs",
+            "yeFc3wn5S3g",
+            "Hj8_6SRNd7M",
+            "I0rH86ForOc",
+            "3RQkbByS3VU",
+            "0vXdMhwAfTk",
+            "JaMVzW9yiBc",
+            "qZOF4TQK4Ug",
+            "cjla_Slid98",
+            "lC0gdGvu5ug",
+            "p_ZKCgJibro",
+            "2XgJ1MQpAHU",
+            "rosko1DktW0",
+            "HW554qecUU0",
+            "rVUFef-zaCE",
+            "B8h154w9qbo",  # atc
+            "alOI2zxIPgc",
+            "Zxahu5y79SA",
+            "GkTOSDLfCaI",
+            "MMBn3I-Rvi0",
+            "SouId59N9jE",
+            "VZUqWSzi2WA",
+            "CGC4wqLUEbQ",
+            "fJLCgEo27QM",
+            "BPF9_0LGBlM",
+            "FnZUdwYg8yY",
+            "K7mswfTwjfk",
+            "8aV44LTsw3k",
+            "Gfg3wVVecYI",
+            "https://traffic.libsyn.com/secure/financialsamurai/FS_212_-_Kathy_Fang-2.mp3?dest-id=1377836",
+            "DnZPgopXQGM",
+            "RcJ1YXHLv5o",
+            "D4Xaqgd9-Ro", #all-in live in 2024-11-06
+            "ULcwHlxfSkQ", # latent space missing, remove from data/latent_space_tv_ids_done.txt and retranscribe
+        ]
+        exclude_list = private_videos
         filtered_ids = [id for id in all_ids if id not in exclude_list]
-
+        
         # append to list_all_videos
         list_all_videos += filtered_ids
 
         logging.info("Generate index page")
-        generate_index_page(filtered_ids, channel["name"])
+        if args.dry_run:
+            if args.force_all or args.force_indexes or should_regenerate_index(channel, filtered_ids):
+                logging.info(f"DRY RUN: Would regenerate index page for {channel['name']}")
+        elif args.force_all or args.force_indexes or should_regenerate_index(channel, filtered_ids):
+            generate_index_page(filtered_ids, channel["name"])
         logging.info(f"Total videos: {len(filtered_ids)}")
 
-    # Handle other_ids.txt
-    # other_ids = read_ids_from_file(data_dir / "other_ids.txt")
-    # logging.info(f"Found {len(other_ids)} other video IDs")
-
-    # for id in other_ids:
-    #     generate_html(id)
-    #     generate_transcript_page(id)
-
-    # generate_index_page(other_ids, "other")
-    # # add to filtered_ids
-    # list_all_videos += other_ids
-
-    generate_all_video_index(list_all_videos)
-    generate_master_index(config_channels)
+    # Skip generating all videos and master indexes if a specific channel is specified
+    if not args.channel:
+        if args.dry_run:
+            if args.force_all or args.force_indexes or should_regenerate_all_videos_index(list_all_videos):
+                logging.info("DRY RUN: Would regenerate all videos index")
+            
+            if args.force_all or args.force_indexes or should_regenerate_master_index(config_channels):
+                logging.info("DRY RUN: Would regenerate master index")
+        else:
+            if args.force_all or args.force_indexes or should_regenerate_all_videos_index(list_all_videos):
+                generate_all_video_index(list_all_videos)
+            
+            if args.force_all or args.force_indexes or should_regenerate_master_index(config_channels):
+                generate_master_index(config_channels)
 
     logging.info("All tasks completed")
+
+    # Save the modification times cache if not a dry run
+    if not args.dry_run:
+        save_modification_cache()
