@@ -2,8 +2,8 @@
 
 Whisper transcripts for Youtube videos.
 
-- Before 2/24/2024, used `large-v2` model for transcription.
-- Starting 2/24/2024, switched to `medium.en` model for faster transcription.
+- 2025-03-07 to present, switched to `ggml-large-v3-turbo`
+- Prior to 2025-03-07, used to `ggml-large-v2` model
 
 Available models are [here](https://github.com/ggerganov/whisper.cpp/blob/master/models/README.md).
 
