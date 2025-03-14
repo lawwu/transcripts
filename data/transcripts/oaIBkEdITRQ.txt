@@ -1,0 +1,484 @@
+
+[00:00:00.000 --> 00:00:06.200]   Today, we're going to be building an AI agent that allows us to chat with videos.
+[00:00:06.200 --> 00:00:08.960]   This AI agent will be fully conversational.
+[00:00:08.960 --> 00:00:14.500]   We'll be using Mistral's embed and LEM endpoints to build it.
+[00:00:14.500 --> 00:00:22.660]   We'll also be using the Aurelio platform's video processing and chunking endpoints to prepare our data.
+[00:00:22.660 --> 00:00:34.640]   Our agent will also use async and streaming so that we get a more scalable application that also has a nice user-friendly design of seeing streaming of tokens.
+[00:00:34.640 --> 00:00:47.400]   And towards the end of the video, we're going to be bringing all this together and seeing how we can build a significantly optimized agent that will allow us to reduce our costs pretty dramatically.
+[00:00:47.400 --> 00:00:49.920]   So let's jump straight into it.
+[00:00:49.920 --> 00:00:55.060]   When we're working through this example notebook, we first install our prerequisites.
+[00:00:55.060 --> 00:01:00.780]   We have the Aurelio SDK for the video transcriptions and chunking.
+[00:01:00.780 --> 00:01:05.420]   We have YouTube DLP here, which is going to download a YouTube video for us.
+[00:01:05.420 --> 00:01:10.100]   And Mr. AI, of course, for the LEM and embed endpoints.
+[00:01:10.100 --> 00:01:14.200]   So the first thing we're going to do is download a YouTube video here.
+[00:01:14.380 --> 00:01:25.260]   This YouTube video is one that I did before, and it's essentially a video version of this article here.
+[00:01:25.260 --> 00:01:36.680]   So going through this, we see that I'm talking about AI agents as neuro-symbolic systems and talking about the neuro side of AI versus the symbolic side of AI.
+[00:01:36.940 --> 00:01:40.780]   A little bit of history there, what they both mean, so on and so on.
+[00:01:40.780 --> 00:01:43.480]   So we'll be able to ask a few questions around all of that.
+[00:01:44.020 --> 00:01:49.240]   Now, we're going to go ahead, and first thing we need to do is actually get the Aurelio API key.
+[00:01:49.240 --> 00:01:54.540]   So for that, we need to go to platform.aurelio.ai.
+[00:01:54.540 --> 00:01:59.860]   We log in at the top here, and I'm going to use Google.
+[00:02:00.880 --> 00:02:07.100]   Okay, and because it's my first time logging with this account, it's going to take me through this little guide.
+[00:02:07.100 --> 00:02:11.800]   We can, you can go through it, or you can skip it by pressing the X here.
+[00:02:11.800 --> 00:02:22.320]   So I'm going to come over to here, and we do need to add credits before using the API, but you can also use coupon codes to get free credits, essentially.
+[00:02:22.720 --> 00:02:25.160]   So, I'm going to show you how to do that.
+[00:02:25.160 --> 00:02:39.000]   The coupon code is for $5, so you'd go to here, click purchase, and what you need to do is come over to here where it says add promotion code and type in JB video agent.
+[00:02:39.000 --> 00:02:44.040]   Okay, and you can apply that, and you'll get $5 in credits.
+[00:02:44.820 --> 00:02:50.680]   Okay, so now we can go over to API keys, we create a new API key, you can call it whatever you want.
+[00:02:50.680 --> 00:02:59.640]   I'm going to call it video agent, and I'm just going to copy that, bring it over into my notebook here, and there we go.
+[00:02:59.640 --> 00:03:09.600]   So I've now authenticated with the Aurelio client here, and then what I'm going to do is send the video to the platform for processing.
+[00:03:09.600 --> 00:03:13.300]   So I'm just going to process it as a single video right now.
+[00:03:13.360 --> 00:03:24.740]   I'm not going to chunk anything yet, we're going to do chunking a little bit later, because I want to show you how we use chunking to optimize our costs, which are, we'll see, it's very significant.
+[00:03:24.740 --> 00:03:28.760]   So, that will take a little while to process.
+[00:03:28.760 --> 00:03:35.940]   So while that's processing, let me talk you through what the first pipeline is that we're building.
+[00:03:35.940 --> 00:03:39.060]   Now, to begin with, our pipeline is going to be pretty simple.
+[00:03:39.540 --> 00:03:49.300]   So we're going to have our video coming in from YouTube, we're going to be passing that into the system prompt of the agent.
+[00:03:49.300 --> 00:03:53.440]   Now, the system prompt is going to include some additional context.
+[00:03:53.440 --> 00:04:07.800]   So it's going to include some instructions on how it should be used initially, but then we're going to insert the additional context, which is our transcribed video, into the system prompt here.
+[00:04:08.200 --> 00:04:19.220]   Then, this is going to come down here, and it's going to be fed into an LLM alongside a user query, which is going to bring that in from over here.
+[00:04:19.220 --> 00:04:20.000]   Okay.
+[00:04:20.000 --> 00:04:23.900]   So our user will probably ask the question, and that will feed in just here.
+[00:04:23.900 --> 00:04:33.860]   Now, our LLM will then produce an answer based on both the context that we provided up here, and our user query, and it will return it back to us.
+[00:04:34.040 --> 00:04:36.760]   So it's pretty straightforward.
+[00:04:36.760 --> 00:04:41.120]   This is the initial pipeline we're going to be building, but we are going to make this slightly more sophisticated.
+[00:04:41.120 --> 00:04:48.560]   So what we will be doing is removing this context from over here, and also this video component.
+[00:04:48.560 --> 00:04:54.680]   So those will now exist over here in a separate part, which is actually our tool.
+[00:04:54.680 --> 00:04:55.300]   Okay.
+[00:04:55.300 --> 00:04:56.460]   So this is our tool here.
+[00:04:56.460 --> 00:05:02.120]   Now, what that tool is going to do is given a LLM generated query.
+[00:05:02.340 --> 00:05:07.000]   So the LLM will generate a query, like, okay, I need to search based on the user's query.
+[00:05:07.000 --> 00:05:10.580]   I need to search for this, and it might even do this multiple times.
+[00:05:10.580 --> 00:05:12.280]   It might try and answer multiple questions.
+[00:05:12.280 --> 00:05:26.300]   So based on that, it's going to come over to here, and an embedding model, again, from Mistral, is going to convert that into what we'd call a query vector, which I would usually write as XQ.
+[00:05:26.460 --> 00:05:31.320]   All right, so that embed endpoint takes that query and turns it into XQ.
+[00:05:31.320 --> 00:05:42.360]   Now, what we've also done in the middle of all this is we've taken our article here, and we've actually chunked it into many smaller parts.
+[00:05:42.720 --> 00:05:51.420]   Now, by chunking these into many smaller parts, we allow ourselves to perform what is essentially RAG across them.
+[00:05:51.420 --> 00:05:53.280]   So retrieval augments generation.
+[00:05:53.280 --> 00:05:58.260]   And the way that we do that, again, this is before we come to the LLM inference time.
+[00:05:58.500 --> 00:06:11.860]   The way that we will have done that, or set that up, is that all of these chunks here will have actually been passed through our embed endpoint, and been used to generate a Numpy array.
+[00:06:11.860 --> 00:06:25.620]   Now, once we have that Numpy array over here, and then we have our query vector, all we need to do is perform a simple NP dot across both our query vector and that array.
+[00:06:26.260 --> 00:06:37.480]   And what we'll get from that is a similarity rate that tells us which of those values are the most relevant or the most similar to our query vector.
+[00:06:37.480 --> 00:06:44.140]   So we can essentially cancel out a few of those records and only return the ones that are the most relevant.
+[00:06:44.680 --> 00:06:57.060]   So in that whole process, although it seems like a more complicated system, and it is, to some degree, a more complicated system, we actually massively reduce the number of tokens that we're sending to our LLM.
+[00:06:57.060 --> 00:06:59.960]   And this is with just one transcribed video.
+[00:06:59.960 --> 00:07:03.120]   With more, that would be even greater.
+[00:07:03.680 --> 00:07:08.900]   Now, once that has finished processing, we can come down to here and check the content.
+[00:07:08.900 --> 00:07:13.100]   So you see there is essentially the full transcribed video in there.
+[00:07:13.100 --> 00:07:17.000]   We can also count the number of words from that transcribed video.
+[00:07:17.000 --> 00:07:19.360]   So it's just over 4,000 words.
+[00:07:19.360 --> 00:07:26.720]   Now we can move on to connecting that to our LLM for that first version of a simple video plus LLM pipeline.
+[00:07:27.120 --> 00:07:30.300]   To do that, we will need a Mistral API key.
+[00:07:30.300 --> 00:07:34.380]   We get those from console.mistral.ai API keys.
+[00:07:34.380 --> 00:07:39.560]   So you'd come over here, create new key, and I'm going to call this video agent.
+[00:07:39.560 --> 00:07:43.880]   You then just copy your key and throw it into your notebook here.
+[00:07:43.880 --> 00:07:49.500]   Now, if you run this straight away, occasionally, you might see this error, unauthorized.
+[00:07:49.500 --> 00:07:54.180]   Now, if we go back to the API key created box here.
+[00:07:55.140 --> 00:07:58.260]   It does note that sometimes it can take a few minutes to be usable.
+[00:07:58.260 --> 00:08:01.360]   So we can just try again.
+[00:08:01.360 --> 00:08:02.820]   Okay.
+[00:08:02.820 --> 00:08:04.600]   So it seems like we're good now.
+[00:08:04.600 --> 00:08:05.900]   And there we go.
+[00:08:05.900 --> 00:08:08.940]   So now we need to get our message content.
+[00:08:08.940 --> 00:08:14.640]   So this is what it was returned based on this chat complete from Mistral here.
+[00:08:14.640 --> 00:08:19.180]   So first things first, we are using the Mistral large latest model.
+[00:08:19.600 --> 00:08:26.160]   And I just want to point out for the system message here is a pretty generic system message.
+[00:08:26.160 --> 00:08:37.280]   But then we're adding in the transcription and the content of that transcription, which we got earlier on from the video file content there.
+[00:08:37.940 --> 00:08:42.300]   And then as a user message, I said, hi, can you summarize this for me?
+[00:08:42.300 --> 00:08:43.080]   Okay.
+[00:08:43.080 --> 00:08:44.580]   So pretty straightforward.
+[00:08:44.580 --> 00:08:48.400]   And you can see here that we have the assistant message with some content.
+[00:08:48.400 --> 00:08:48.940]   Okay.
+[00:08:48.940 --> 00:08:49.420]   So that's cool.
+[00:08:50.220 --> 00:08:53.520]   One thing that we can also see in here.
+[00:08:53.520 --> 00:09:00.860]   So if we go to response usage, we can see how many tokens we used, which would be pretty useful later on.
+[00:09:00.860 --> 00:09:05.440]   Now, already looking at this, see that we use a ton of prompt tokens.
+[00:09:05.440 --> 00:09:07.280]   So prompt tokens are the input tokens.
+[00:09:07.280 --> 00:09:10.500]   Completion tokens are what the LLM generates back to us.
+[00:09:11.940 --> 00:09:24.000]   So feeding the whole transcription in with every single query, that is just naturally going to lead to a lot of prompt tokens being used, which of course does add up to the cost.
+[00:09:24.000 --> 00:09:26.200]   And we'll see the cost for that relatively soon.
+[00:09:26.200 --> 00:09:34.240]   But for now, let's just work on making this pipeline that we have a little more conversational.
+[00:09:34.800 --> 00:09:38.840]   So to do that, we're going to define this agent class.
+[00:09:38.840 --> 00:09:45.940]   Now, I wouldn't necessarily define this as an agent just yet, but later this class will become our agent class.
+[00:09:45.940 --> 00:09:49.880]   So right now, I'm just wrapping what we did already.
+[00:09:49.880 --> 00:09:55.880]   So we have our prompt and then we'll be feeding in our user query when we hit the chat method.
+[00:09:55.880 --> 00:10:00.480]   Then we are hitting client chat complete with those messages.
+[00:10:01.220 --> 00:10:06.880]   And all I'm doing here is keeping these self.messages.
+[00:10:06.880 --> 00:10:15.180]   So self.messages is a simple list where we're storing the messages as we create more and more interactions.
+[00:10:15.180 --> 00:10:16.840]   So let's see how that works.
+[00:10:16.840 --> 00:10:19.580]   I'm going to display everything in Markdown, by the way.
+[00:10:19.580 --> 00:10:22.520]   As we saw just up here, the agent is using Markdown.
+[00:10:22.520 --> 00:10:26.580]   So it's always nicer to see the responses in Markdown.
+[00:10:26.580 --> 00:10:30.380]   So we have our response.
+[00:10:30.380 --> 00:10:35.040]   You can see that the query here is, can you summarize the meaning of symbolic in this article?
+[00:10:35.040 --> 00:10:47.740]   And in the context of this article, symbolic refers to the traditional approach to artificial intelligence that involves using handwritten rules, anthologies, and logical functions, so on and so on.
+[00:10:47.740 --> 00:10:48.920]   Okay, cool.
+[00:10:49.820 --> 00:11:00.040]   Now let's check that our conversational features, i.e. the self.messages attribute is working by asking a follow-up question.
+[00:11:00.040 --> 00:11:02.400]   Can you give me that, but in short bullet points?
+[00:11:02.860 --> 00:11:10.680]   If the chat history is not being stored and being sent to our LLM, the LLM will have no idea how to answer this.
+[00:11:11.080 --> 00:11:14.860]   It will just see that we're asking, can you give me that?
+[00:11:14.860 --> 00:11:18.400]   It has no idea what that is, but in short bullet points.
+[00:11:19.220 --> 00:11:19.880]   Okay, cool.
+[00:11:19.880 --> 00:11:22.400]   And we get some nice bullet points.
+[00:11:22.400 --> 00:11:23.280]   Okay.
+[00:11:23.280 --> 00:11:27.380]   So we have that built a LLM pipeline.
+[00:11:27.380 --> 00:11:30.780]   It is conversational and it has that input for video.
+[00:11:30.920 --> 00:11:35.420]   And we're able to ask it questions about video and speak with it in a conversational way.
+[00:11:35.420 --> 00:11:42.860]   Now, what I want to talk about next is using asynchronous code and implementing streaming.
+[00:11:42.860 --> 00:11:45.740]   Now, why do those two things matter?
+[00:11:45.740 --> 00:11:54.080]   Well, async code is actually incredibly important, especially for AI applications.
+[00:11:54.080 --> 00:11:59.900]   The reason I say that is because with AI applications, we tend to use a lot of API calls,
+[00:11:59.960 --> 00:12:02.460]   more so than many other applications.
+[00:12:02.460 --> 00:12:10.660]   And those API calls, not only do we have a lot of them, but they also take a long time
+[00:12:10.660 --> 00:12:12.740]   because they're waiting for an LLM to respond.
+[00:12:12.740 --> 00:12:20.180]   Now, if we're writing synchronous code, whilst we are waiting for a response from our LLM API,
+[00:12:20.180 --> 00:12:23.560]   our Python code is doing nothing.
+[00:12:23.560 --> 00:12:25.500]   It is just waiting.
+[00:12:25.500 --> 00:12:26.160]   It's doing nothing.
+[00:12:26.300 --> 00:12:33.460]   If we write asynchronous code, our Python code can be going and doing other things whilst it is waiting.
+[00:12:33.460 --> 00:12:44.900]   And then once the response is received from the API, our Python code will see that and it can then jump back into that task and continue processing from there.
+[00:12:44.900 --> 00:12:53.380]   Okay, so it frees up a ton of compute time if we write our code asynchronously, especially for AI applications.
+[00:12:53.380 --> 00:12:54.600]   Then we have streaming.
+[00:12:54.600 --> 00:12:58.400]   Now, streaming is more of a preference.
+[00:12:59.180 --> 00:13:06.280]   So, with streaming, let's say we get quite a long response from our LLM.
+[00:13:06.280 --> 00:13:10.300]   Without streaming, that can feel quite painful to a user.
+[00:13:10.300 --> 00:13:15.920]   The user experience is that you're just waiting and waiting and waiting.
+[00:13:16.680 --> 00:13:19.180]   And then you just get this massive chunk of text.
+[00:13:19.180 --> 00:13:22.340]   And that's okay.
+[00:13:22.340 --> 00:13:26.460]   But it's not a great experience.
+[00:13:26.460 --> 00:13:37.100]   And there are so many applications out there that use streaming that most users of AI systems now kind of expect streaming as a standard.
+[00:13:37.320 --> 00:13:42.900]   So, it's almost an essential feature for most, particularly chat, interfaces.
+[00:13:42.900 --> 00:13:49.200]   And another thing that we can do really nicely, which I'll use Perplexity as an example here.
+[00:13:49.200 --> 00:13:59.280]   When we use the Perplexity interface and Perplexity goes and searches for something, the LLM is generating that search query.
+[00:13:59.400 --> 00:14:02.900]   And it's deciding what tool to use, which is, in that case, a web search.
+[00:14:02.900 --> 00:14:08.420]   If we stream our tokens, we can actually implement that in our own applications as well.
+[00:14:08.420 --> 00:14:20.480]   So, whilst, in this case, as we'll see later, whilst our agent is going and looking at our video transcription and performing a search,
+[00:14:20.480 --> 00:14:24.660]   we can actually see that our agent is doing that and can see how it's doing that.
+[00:14:24.700 --> 00:14:33.660]   We can see the search queries that are happening, which allows us to build far more interesting experiences for users, in my opinion.
+[00:14:33.660 --> 00:14:43.740]   Okay, so, let's go ahead and see how we can rewrite this agent class to use async and also implement streaming.
+[00:14:43.740 --> 00:14:47.280]   So, we're not changing anything about how we're initializing our agent here.
+[00:14:47.980 --> 00:14:55.340]   The only thing we're really changing is we're now defining our chat method here with async.
+[00:14:55.340 --> 00:14:57.700]   So, this makes it an asynchronous method.
+[00:14:57.700 --> 00:15:07.760]   And we're switching from Mr. All's synchronous chat method to Mr. All's streaming and async chat method.
+[00:15:07.760 --> 00:15:08.660]   Okay?
+[00:15:08.660 --> 00:15:13.840]   So, async, because of this, this means we will now need to await the response.
+[00:15:14.320 --> 00:15:26.040]   And because we're streaming, that means that we will see just here, we're actually iterating through our response and getting the tokens out from there.
+[00:15:26.040 --> 00:15:26.820]   Okay?
+[00:15:26.820 --> 00:15:32.940]   So, the chunks are coming through from our streaming response description in a slightly different way to what they were before,
+[00:15:32.940 --> 00:15:38.280]   which was the, we just got a single assistant message block and that just had everything inside it.
+[00:15:38.280 --> 00:15:43.060]   Instead, now, we're getting messages, but for each chunk.
+[00:15:43.060 --> 00:15:49.040]   So, we still need to go through, we need to go through into the chunks of data, we need to extract from the choices.
+[00:15:49.040 --> 00:15:52.840]   And we're now looking at the delta, which contains any changes.
+[00:15:52.840 --> 00:15:55.800]   And inside the delta, we have our content.
+[00:15:55.980 --> 00:16:00.020]   So, we're saying if that content is not none, okay?
+[00:16:00.020 --> 00:16:05.320]   If that content is not none, we are going to go into this if statement here.
+[00:16:05.320 --> 00:16:13.320]   And we're also just using the walrus operator here to pipe this information into the token variable here.
+[00:16:13.320 --> 00:16:22.420]   Because that means we don't have to, well, we don't have to take this and put it into here, which would be just not as clean.
+[00:16:22.720 --> 00:16:23.420]   So, we do that.
+[00:16:23.420 --> 00:16:31.720]   Then, the final thing that we do is we also create a list of all of our tokens that we're receiving.
+[00:16:31.720 --> 00:16:39.380]   So, what that allows us to do is, on the next line down here, it allows us to take all of those tokens, join them together,
+[00:16:39.380 --> 00:16:46.260]   and then use them to actually output a final assistant message object, which contains everything.
+[00:16:46.260 --> 00:16:47.640]   So, we do that.
+[00:16:48.220 --> 00:16:51.460]   There's also a slight difference to our usage attribute here.
+[00:16:51.460 --> 00:16:55.080]   So, we have to go chunk data usage.
+[00:16:55.080 --> 00:16:56.820]   All right.
+[00:16:56.820 --> 00:16:57.960]   So, that is it.
+[00:16:57.960 --> 00:17:02.880]   We extract our assistant message from the messages that we added here.
+[00:17:02.880 --> 00:17:05.240]   And let's go ahead and try that.
+[00:17:05.240 --> 00:17:08.080]   So, I'm going to use the same query again.
+[00:17:08.080 --> 00:17:11.120]   Can you summarize the meaning of symbolic in this article?
+[00:17:11.640 --> 00:17:14.900]   And we should see a streamed output.
+[00:17:14.900 --> 00:17:20.420]   Okay.
+[00:17:20.420 --> 00:17:21.700]   Cool.
+[00:17:21.700 --> 00:17:23.720]   So, we're now seeing a streamed output there.
+[00:17:23.720 --> 00:17:30.620]   And one other thing that I should point out is that we have to await our agent.chat method now.
+[00:17:30.960 --> 00:17:31.280]   Okay.
+[00:17:31.280 --> 00:17:33.020]   So, that all looks pretty good.
+[00:17:33.020 --> 00:17:35.800]   We can continue our conversation a little bit here.
+[00:17:35.800 --> 00:17:45.020]   And I want to do this so that we can see the, essentially, the usage of our conversation over time.
+[00:17:45.020 --> 00:17:47.260]   Great.
+[00:17:47.340 --> 00:17:49.440]   So, plenty of tokens output there.
+[00:17:49.440 --> 00:17:52.480]   But then, of course, also plenty of tokens input.
+[00:17:52.480 --> 00:18:06.860]   So, we can see that even though we output a ton of text here, now, they're pretty lengthy responses, that output is still not even comparable to the inputs that we have, which are huge.
+[00:18:07.040 --> 00:18:13.340]   So, the number of inputs here is, of course, all made up by us feeding that article in every single time.
+[00:18:13.340 --> 00:18:17.620]   So, the question now is, one, how much does that cost?
+[00:18:17.620 --> 00:18:20.060]   And then, two, can we optimize it?
+[00:18:20.060 --> 00:18:25.140]   So, we define a cost calculator here.
+[00:18:25.140 --> 00:18:30.700]   And we need to calculate based on these prices here.
+[00:18:30.700 --> 00:18:35.980]   So, input tokens, which is our prompt tokens, and output tokens, which is our completion tokens.
+[00:18:35.980 --> 00:18:39.440]   So, I'm going to run that, and let's just see how much that costs us.
+[00:18:39.440 --> 00:18:50.160]   So, looking at this, we're paying, these seem like pretty small numbers, but this is for, each one of these is for a single interaction.
+[00:18:50.160 --> 00:18:53.600]   So, that actually will add up quite quickly.
+[00:18:53.600 --> 00:18:56.660]   After just 100 interactions, you're paying a dollar.
+[00:18:56.660 --> 00:18:59.680]   Or even, sorry, even more than a dollar.
+[00:18:59.680 --> 00:19:04.240]   Probably, you're hitting a dollar within maybe 70 interactions.
+[00:19:04.240 --> 00:19:14.080]   So, depending on if this is a single conversation that's just getting bigger and bigger, or whether it's multiple conversations over time with a small number of interactions in there.
+[00:19:14.080 --> 00:19:16.520]   But you can see how that would add up very quickly.
+[00:19:17.240 --> 00:19:23.640]   Now, to optimize this, what we're going to do is what I described here.
+[00:19:24.080 --> 00:19:34.740]   So, this component here, where we're breaking up our transcribed document into smaller pieces, and then only using what we need from those chunks.
+[00:19:34.740 --> 00:19:37.740]   So, how do we implement that?
+[00:19:37.740 --> 00:19:39.600]   There are a few steps.
+[00:19:39.600 --> 00:19:44.580]   Like I said, it's not necessarily a simpler system, although it's not complicated.
+[00:19:44.840 --> 00:19:49.920]   But it is a far more efficient, and scalable, and cost-effective system.
+[00:19:49.920 --> 00:19:51.660]   So, what will we do?
+[00:19:51.660 --> 00:19:54.940]   We're going to break our transcribed documents into smaller chunks.
+[00:19:54.940 --> 00:19:57.960]   Embed those chunks into vector embeddings.
+[00:19:57.960 --> 00:20:00.720]   Sore those vector embeddings in a numpy array.
+[00:20:00.720 --> 00:20:07.440]   Then, when querying, our LLM will transform our question into a small query.
+[00:20:07.440 --> 00:20:13.160]   We embed that query into a vector embedding that creates the XQ query vector that I mentioned earlier.
+[00:20:13.340 --> 00:20:20.940]   Then, we compare the semantic similarity between our query vector and chunk vectors to find the most similar chunks,
+[00:20:20.940 --> 00:20:26.180]   and return only those most relevant chunks to our LLM for the final response.
+[00:20:26.180 --> 00:20:30.260]   So, let's start by chunking our document.
+[00:20:30.260 --> 00:20:38.440]   Now that we're using async everything, we can go ahead and use the async Aurelio chunking endpoint as well.
+[00:20:38.440 --> 00:20:42.640]   Although, given that this is preprocessing, we don't necessarily need to.
+[00:20:43.120 --> 00:20:45.280]   But in any case, then we'll come down to here.
+[00:20:45.280 --> 00:20:51.800]   And we first want to set up our chunking options for our semantic chunker.
+[00:20:51.800 --> 00:21:01.720]   So, we're using a semantic chunker, which means that our chunks are going to be produced by looking at the semantic similarities between parallel components in the text.
+[00:21:01.720 --> 00:21:07.700]   Next, we say that we want a maximum chunk length of up to 500 tokens, which is quite big to be honest.
+[00:21:07.700 --> 00:21:10.320]   I might even suggest going lower, but it's okay.
+[00:21:11.600 --> 00:21:13.560]   And we use a window size of 5.
+[00:21:13.560 --> 00:21:23.080]   That is essentially what is the rolling window in which we are comparing the similarities between our parallel components within the text.
+[00:21:23.540 --> 00:21:25.000]   So, then we get our chunks.
+[00:21:25.000 --> 00:21:30.540]   You can see in the first chunk, I'm talking about the Apple Remote program and the Front Row program.
+[00:21:30.540 --> 00:21:36.160]   And then there's a couple of chunks in the middle here that are a little bit disjointed from the other parts.
+[00:21:36.380 --> 00:21:40.340]   It's mostly spoken audio, so I'm rambling a little bit.
+[00:21:40.340 --> 00:21:53.200]   And then we can see down here that this final chunk here is focusing on the React agent and how it relates to a broader definition of agents.
+[00:21:53.200 --> 00:21:55.300]   So, we have those.
+[00:21:55.300 --> 00:22:03.200]   And what we can do now is actually take those chunks and we're going to embed them using Mistral again.
+[00:22:03.200 --> 00:22:09.940]   Again, to keep everything in line with the async approach, we're using the async method for embeddings here.
+[00:22:09.940 --> 00:22:14.800]   And we do actually need to use this async method later on when we're producing our query embedding.
+[00:22:14.800 --> 00:22:16.900]   And we use the Mistral embed model.
+[00:22:16.900 --> 00:22:17.640]   Okay.
+[00:22:17.640 --> 00:22:24.420]   So, we're just taking the content of our chunks out here and inputting them to create our embeddings.
+[00:22:24.420 --> 00:22:32.240]   And if we look in our embeddings response data, we'll see that we have 35 chunks there.
+[00:22:32.240 --> 00:22:37.340]   We can also go in and see the length of each one of those embeddings.
+[00:22:37.340 --> 00:22:50.360]   So, the embedding dimensionality of this Mistral embed model is 1024, which is a very typical dimensionality for most embedding models.
+[00:22:51.040 --> 00:22:55.680]   Now, we take all those and we're just going to combine them all into a single NumPy array.
+[00:22:55.680 --> 00:23:00.160]   This will allow us to perform the dot product comparison later against it.
+[00:23:00.160 --> 00:23:02.360]   And let's see how we would do that.
+[00:23:02.360 --> 00:23:04.840]   So, I'm going to ask the first question.
+[00:23:04.840 --> 00:23:09.780]   Of course, later on, I'm going to want to embed all of this within our search tool.
+[00:23:10.220 --> 00:23:17.020]   But first, I want to ask this first question of, what is the relationship between AI agents and good old-fashioned AI?
+[00:23:17.020 --> 00:23:21.720]   I'm going to embed that query using Mistral embed again.
+[00:23:21.720 --> 00:23:27.840]   And I'm going to convert it into an array and create my query vector.
+[00:23:27.840 --> 00:23:32.420]   The query vector shape gives us the dimensionality of the model.
+[00:23:33.000 --> 00:23:44.300]   And with that, we're actually ready to calculate the similarity, specifically dot product similarity, between our query vector, XQ, and the pre-computed document chunk vectors.
+[00:23:44.300 --> 00:23:48.860]   And you can see in here, these are all of the similarity scores.
+[00:23:49.420 --> 00:23:58.180]   So, if we're looking through this, we would see, okay, these values here, these ones, these are all kind of higher ones around there.
+[00:23:58.180 --> 00:24:05.120]   And they all tend to correlate into a certain segment of the transcribed document.
+[00:24:05.120 --> 00:24:14.740]   And that is generally expected because when you're talking through something, you're going to be switching from one topic to another topic to another topic over time.
+[00:24:15.360 --> 00:24:31.620]   And those topics that share the highest proximity within your, you know, your story or your video, they're probably going to be more related than a random chunk from, you know, let's say the end of the video or the start of the video.
+[00:24:31.620 --> 00:24:41.200]   Okay, so we can use np.org.sort with a top K value of three to return the top three most similar chunks.
+[00:24:42.100 --> 00:24:55.800]   Okay, so we see that that is 10, 12, and 13, which is probably, if we look at these, I think it is this value, 10, 12, and 13, so the ones we pointed out earlier.
+[00:24:55.800 --> 00:24:58.640]   Great, so we have those.
+[00:24:58.640 --> 00:25:10.460]   And then what we're going to do is get those index values, and we're going to use them to get our most relevant chunks or the chunk content from those.
+[00:25:10.860 --> 00:25:11.680]   Like so.
+[00:25:11.680 --> 00:25:22.880]   So looking at these, we can see in here, I'm talking about the symbolic AI stuff in the middle here.
+[00:25:22.880 --> 00:25:29.380]   We're talking about rules, ontologies, and other logical functions, okay, which is the good old-fashioned AI.
+[00:25:30.140 --> 00:25:36.920]   Then here, I actually mentioned good old-fashioned AI directly at the end now, but I think I'm generally talking about the same thing.
+[00:25:36.920 --> 00:25:44.600]   And then here, I think, oh, go-fi, probably I'm saying good old-fashioned AI, i.e. go-fi there.
+[00:25:45.420 --> 00:25:48.600]   And, yeah, I'm talking about how that compares to connectionism.
+[00:25:48.600 --> 00:25:51.960]   So all those seem relevant to the question.
+[00:25:51.960 --> 00:25:59.880]   Now, what we want to do is take what we've just done and compress all that into a single function.
+[00:26:00.240 --> 00:26:02.060]   Okay, that function, again, will be async.
+[00:26:02.640 --> 00:26:14.760]   So, in this function, we are providing a .string, which we're going to use this .string in order to understand how it should use this function and when it should use this function.
+[00:26:15.100 --> 00:26:17.460]   So, I want to give it as much information as possible here.
+[00:26:17.460 --> 00:26:22.280]   That's why I'm saying use this tool to search a relevant chunk of information from the provided video.
+[00:26:22.280 --> 00:26:26.800]   And I'm saying how the LM should use this tool as well.
+[00:26:26.800 --> 00:26:33.220]   So, I'm saying provide as much context as possible to the query parameter, ensuring to write your search query in natural language.
+[00:26:33.220 --> 00:26:35.000]   That's how you would get the best results here.
+[00:26:35.160 --> 00:26:45.500]   Then, I also want to say, okay, if there are multiple questions being asked, to just use this tool for one of those questions at a time.
+[00:26:45.500 --> 00:26:49.880]   And the reason we do that is it can improve the retrieval quality.
+[00:26:49.880 --> 00:27:03.400]   Because if you imagine asking five questions all at once and your LM sends all that to your embedding model, your embedding model is essentially taking a query and it's placing it at one point in vector space.
+[00:27:04.060 --> 00:27:17.920]   And if you have five different meanings to your query and you're trying to compress those five different meanings into one point in vector space, you are essentially diluting the quality of your embedding.
+[00:27:17.920 --> 00:27:25.660]   You're almost averaging out your embedding between those five different meanings that your query actually has.
+[00:27:26.760 --> 00:27:38.200]   So, although it can still give you the results you need, it's generally better to try and separate out your query that can be more concise when you're doing a vector search like this.
+[00:27:38.760 --> 00:27:42.680]   So, all we're doing here is what we just did.
+[00:27:42.680 --> 00:27:43.080]   Okay.
+[00:27:43.080 --> 00:27:54.320]   We're creating our query vector, using it to search across our chunks, getting the highest scoring similarity scores from that, and then using that to retrieve the most relevant chunks.
+[00:27:54.480 --> 00:27:58.860]   And then I also merge those into a single string for our LM to use.
+[00:27:58.860 --> 00:27:59.220]   Okay.
+[00:27:59.220 --> 00:28:00.960]   So let's try that quickly.
+[00:28:00.960 --> 00:28:08.000]   Our query here is, I think it's still what we asked before, which is what is the relationship between AI agents and GoFi?
+[00:28:08.000 --> 00:28:14.180]   So we should see similar results, well, the same results, even, and yes, that is what we can see there.
+[00:28:14.180 --> 00:28:15.320]   Cool.
+[00:28:15.320 --> 00:28:24.020]   So we now need to redefine our agent and plug that new function or tool into it.
+[00:28:24.020 --> 00:28:33.740]   Now, to do that with the Mr API, we actually need to create a function schema object, which is what we're doing here.
+[00:28:34.180 --> 00:28:40.120]   So I am getting the doc string with this from our search function, which we can see here.
+[00:28:40.120 --> 00:28:45.340]   I'm placing that doc string into the description here of our function schema.
+[00:28:45.340 --> 00:28:54.940]   Then I'm taking the name of our, let me even just copy this, just the name of our search function, which is obviously search.
+[00:28:54.940 --> 00:28:57.960]   Then I'm also just initializing these parameters.
+[00:28:58.000 --> 00:29:07.660]   Now the reason I initialize these and don't fill them out directly is because we're going to iterate through all of the parameters of our function dynamically and set those.
+[00:29:07.660 --> 00:29:17.800]   To do that, we also need to be able to map from Python types to the data types that Mistral understands and uses.
+[00:29:18.400 --> 00:29:23.220]   And these are, as far as I'm aware, exactly the same as the OpenAI mappings as well.
+[00:29:23.220 --> 00:29:24.160]   Okay.
+[00:29:24.160 --> 00:29:27.120]   So we get the signature here.
+[00:29:27.120 --> 00:29:29.320]   Let me just show you what that looks like.
+[00:29:29.320 --> 00:29:31.040]   So we get the signature.
+[00:29:31.040 --> 00:29:34.440]   And then we're just going to go through those.
+[00:29:34.440 --> 00:29:37.360]   And let me, again, just show you what those look like very quickly.
+[00:29:37.360 --> 00:29:40.520]   I'll show you the name and D type.
+[00:29:41.460 --> 00:29:43.080]   So what do we have here?
+[00:29:43.080 --> 00:29:46.960]   We have even, let me print D type.
+[00:29:46.960 --> 00:29:48.000]   There we are.
+[00:29:48.000 --> 00:29:57.220]   So we have the name, which is query, and then we have D type, which actually contains both the name and also what type it is.
+[00:29:57.220 --> 00:30:06.620]   The way that we would get the type only from that is we actually do D type annotation, which you can see here.
+[00:30:08.700 --> 00:30:09.320]   Okay, cool.
+[00:30:09.320 --> 00:30:10.660]   So that is what we're processing.
+[00:30:10.660 --> 00:30:15.880]   And we just do that quickly with this loop, which is pretty straightforward.
+[00:30:15.880 --> 00:30:21.380]   And that creates our function schema that we can, you know, we can apply this to any function.
+[00:30:21.380 --> 00:30:27.280]   And then Mistral will be able to use this function schema and use that when it's defining the tools.
+[00:30:27.280 --> 00:30:32.460]   And then all we need to do is transform that into a MistralAI function object.
+[00:30:32.460 --> 00:30:37.300]   We could have done this before, but this is, this is a general format.
+[00:30:37.580 --> 00:30:45.320]   So I do like to show this, but you can view this function as being the same as this function schema that we defined up here.
+[00:30:45.320 --> 00:30:46.320]   Cool.
+[00:30:46.320 --> 00:30:49.640]   So now what do we want to work through here?
+[00:30:49.640 --> 00:30:52.840]   We can actually remove this callable.
+[00:30:52.840 --> 00:30:54.020]   We don't use that.
+[00:30:54.020 --> 00:30:58.460]   And we can go ahead and just work through, okay, what are we, what are we doing?
+[00:30:58.900 --> 00:31:01.460]   So first we're adding in our tool signatures.
+[00:31:01.460 --> 00:31:04.580]   So why do we add tool signatures?
+[00:31:04.580 --> 00:31:10.220]   Well, that is so our LLM knows what tools it has access to and also how to use them.
+[00:31:10.220 --> 00:31:11.900]   So we pass those in for that.
+[00:31:11.900 --> 00:31:17.500]   You can see that we also remove from here our transcribed content.
+[00:31:17.500 --> 00:31:18.520]   We don't need any more.
+[00:31:18.580 --> 00:31:26.140]   We're going to use that or we're going to provide that via our search tool and then make some modifications to our chat method as well.
+[00:31:26.140 --> 00:31:33.160]   So we're still using stream async, but now we've added the tool signatures to the tools parameter.
+[00:31:33.260 --> 00:31:35.080]   And we're also, we don't need to do this.
+[00:31:35.080 --> 00:31:39.340]   This is the default value, but we set tool choice equal to auto.
+[00:31:39.340 --> 00:31:43.300]   So we, yeah, we could just comment that out.
+[00:31:43.300 --> 00:31:43.880]   It doesn't matter.
+[00:31:43.880 --> 00:31:46.040]   We'll do the same thing, but I like to be explicit.
+[00:31:46.040 --> 00:31:52.680]   What you can do if you want to force tool calling is you can set any, and that will essentially tell Mr.
+[00:31:52.680 --> 00:31:54.740]   All you have to use a tool call.
+[00:31:54.740 --> 00:31:58.540]   We're not doing that here because we don't want to force that all the time.
+[00:31:58.540 --> 00:31:59.000]   Okay.
+[00:31:59.540 --> 00:32:04.580]   Then this bit here is kind of the same, but also slightly different.
+[00:32:04.580 --> 00:32:08.260]   So we have two conditions here.
+[00:32:08.260 --> 00:32:17.400]   Whereas before we just had one, which was essentially this bit here, which is saying, okay, if there's some content, we're going to stream that content directly.
+[00:32:17.400 --> 00:32:26.660]   But now we also are getting tool calls and tool calls are sent to a different part of our chunk objects.
+[00:32:27.000 --> 00:32:34.920]   As you can see here, we're going Delta content for the content that we stream, and we're doing Delta tool calls for tool calls.
+[00:32:34.920 --> 00:32:39.840]   So slightly different, you know, we're seeing those being returned in slightly different ways.
+[00:32:39.840 --> 00:32:43.400]   So let's run this and see what happens.
+[00:32:43.400 --> 00:32:51.220]   I am removing these for now because we're, we're not quite done with cleaning up our agent function yet.
+[00:32:51.840 --> 00:32:53.940]   So I'm just removing those for now.
+[00:32:53.940 --> 00:33:00.220]   And instead, I want to return that tool call so we can just have a deeper look at it in a moment.
+[00:33:00.220 --> 00:33:03.420]   So tool call, what do we have?
+[00:33:03.420 --> 00:33:04.420]   This is a tool call.
+[00:33:04.420 --> 00:33:06.080]   It's a tool call object.
+[00:33:06.080 --> 00:33:09.960]   Inside there, we have a function attribute, which contains the function call.
+[00:33:09.960 --> 00:33:17.440]   Inside that function call is the actual instructions from the LM on what tool or function to use.
+[00:33:17.680 --> 00:33:21.260]   So it's saying we need to use search tool and these are the arguments.
+[00:33:21.260 --> 00:33:25.440]   So I want you to provide this string into the query parameter.
+[00:33:25.440 --> 00:33:26.340]   Okay.
+[00:33:26.340 --> 00:33:30.140]   We also importantly need to pull out the tool call ID later.
+[00:33:30.140 --> 00:33:31.860]   So just be aware of that.
+[00:33:31.860 --> 00:33:39.460]   So what we've done here is our LLM is now able to generate the instructions for what tool to use, but it can't use them.
+[00:33:39.460 --> 00:33:45.720]   And that is because we haven't written the code that allows the execution of our tools.
+[00:33:45.720 --> 00:33:48.220]   So we need to do that.
+[00:33:48.220 --> 00:33:51.580]   To do so, we're going to create a tool execution function.
+[00:33:51.580 --> 00:33:54.700]   That tool execution function is going to take our tool call.
+[00:33:54.960 --> 00:33:56.920]   So that is this object here.
+[00:33:56.920 --> 00:33:58.640]   So you're going to take that tool call.
+[00:33:58.640 --> 00:34:02.820]   We're going to get the tool name out from it, which is search.
+[00:34:02.820 --> 00:34:09.180]   Then we're going to load the tool parameters, which are from here.
+[00:34:09.180 --> 00:34:11.600]   So it's just a query and that string.
+[00:34:11.600 --> 00:34:17.340]   And we're also going to get the tool call ID, which is exactly what we saw here.
+[00:34:17.840 --> 00:34:24.200]   So pulling all of that information out, then what we're doing is we're using this tool map dictionary here.
+[00:34:24.200 --> 00:34:25.840]   So what is tool map?
+[00:34:25.840 --> 00:34:29.000]   Let me run this and I will just show you very quickly.
+[00:34:29.000 --> 00:34:38.900]   So tool map is just mapping us from a string, which is our tool name to the actual function that it refers to.
+[00:34:38.900 --> 00:34:39.800]   Okay.
+[00:34:39.800 --> 00:34:40.320]   That's all.
+[00:34:40.320 --> 00:34:41.160]   That's what we've done here.
+[00:34:41.360 --> 00:34:49.440]   So that means that we can access our tool map as a dictionary and actually use it to execute the chosen tool.
+[00:34:49.440 --> 00:35:02.020]   In this case, we just have one chosen tool, but you could imagine if we had multiple tools here, we could have like calculator, code execution, so on and so on.
+[00:35:02.440 --> 00:35:09.460]   This execute tool function would work also for the multi-tool use scenario.
+[00:35:09.460 --> 00:35:20.100]   And from that, we're going to return tool message containing all of that useful information, including the output from us executing our function or tool.
+[00:35:20.100 --> 00:35:21.960]   Great.
+[00:35:21.960 --> 00:35:29.360]   So we're going to take that tool call and we're going to just plug it into the execute tool and see what happens.
+[00:35:30.260 --> 00:35:34.760]   And you see that we get this, so we get this tool message and we get all this content, right?
+[00:35:34.760 --> 00:35:43.220]   So this content is exactly what we wrote before, where we are providing the most relevant chunks based on our user query.
+[00:35:43.220 --> 00:35:45.620]   So that's what we're getting in the content there.
+[00:35:45.620 --> 00:35:47.920]   We're also getting, okay, what tool was that?
+[00:35:47.920 --> 00:35:49.700]   And we're also getting the tool call ID.
+[00:35:49.700 --> 00:35:50.500]   Cool.
+[00:35:50.500 --> 00:35:51.420]   So we've done that.
+[00:35:51.420 --> 00:35:56.220]   Now what I want to do is I want to extend the agent messages.
+[00:35:56.220 --> 00:35:59.760]   I'm doing this like from outside the agent class for now.
+[00:35:59.760 --> 00:36:03.320]   In a moment, we're going to implement this all within the agent class.
+[00:36:03.320 --> 00:36:13.420]   But for now, outside, I'm going to go to agent, send those messages and add an assistant message, which is essentially the LLM saying, I want to use this tool.
+[00:36:13.420 --> 00:36:14.600]   And this is how we're going to use it.
+[00:36:14.600 --> 00:36:19.480]   Followed by the tool output here.
+[00:36:19.860 --> 00:36:20.260]   Okay.
+[00:36:20.260 --> 00:36:27.460]   And then if we look at our agent messages after this, we see that we have a system message.
+[00:36:27.460 --> 00:36:30.160]   That's the first one that we've predefined.
+[00:36:30.160 --> 00:36:34.660]   We have the user message, which is, can you summarize the meaning of symbolic in this article?
+[00:36:34.660 --> 00:36:41.660]   Then we have our assistant message, which is the LLM saying, hey, I want you to use this query for this tool.
+[00:36:41.900 --> 00:36:44.520]   And then we get the response from that tool.
+[00:36:44.520 --> 00:36:52.060]   With all that information, our LLM now has everything it needs in order to answer our original question.
+[00:36:52.060 --> 00:36:57.580]   So let's take what we would usually have in that agent chat method.
+[00:36:57.580 --> 00:37:09.420]   Let's extract that out and just run it against our new agent messages that we have, which include the assistant message and tool response.
+[00:37:10.040 --> 00:37:10.600]   Okay.
+[00:37:10.600 --> 00:37:24.280]   So we can see that it's streaming everything here and saying, okay, symbolic AI refers to those written rules, intelligence, logical functions, so on and so on.
+[00:37:24.280 --> 00:37:24.700]   All right.
+[00:37:24.700 --> 00:37:28.500]   So definitely stuff that is coming from that transcribed document.
+[00:37:28.500 --> 00:37:39.640]   Now, how do we take all that and refactor our agent class for the final time to include all that additional tool execution logic?
+[00:37:39.640 --> 00:37:44.400]   Well, we add one more attribute, which is max steps.
+[00:37:44.400 --> 00:37:47.660]   This is more of a precaution than anything else.
+[00:37:47.660 --> 00:37:59.480]   So if our agent gets stuck in this loop of iterating again and again, and we're hitting the LLM APIs again and again, that can, of course, drive up costs pretty quickly.
+[00:38:00.200 --> 00:38:12.340]   So to put a limit on that, we say, I don't want to go above three iterations of the agent saying, I want to use this tool and this tool and then this tool and then respond, right?
+[00:38:12.480 --> 00:38:14.020]   It will just have three opportunities.
+[00:38:14.020 --> 00:38:17.020]   And that should be all it needs.
+[00:38:17.240 --> 00:38:20.380]   So let's go through our new logic.
+[00:38:20.380 --> 00:38:26.040]   We have a while loop here, which says, okay, we're going to go through a maximum of those max steps.
+[00:38:26.040 --> 00:38:28.200]   We, this bit is pretty similar.
+[00:38:28.200 --> 00:38:31.020]   So we generate our response asynchronously.
+[00:38:31.260 --> 00:38:37.460]   We say, okay, if the tool calls object is a list, we are going to print sort of clean this up a little bit.
+[00:38:37.460 --> 00:38:38.480]   So it's a bit nicer to read.
+[00:38:38.480 --> 00:38:39.520]   We're going to print.
+[00:38:40.020 --> 00:38:49.500]   The function name or the name of the tool that we are calling and the arguments being passed that, then we're going to execute that tool here.
+[00:38:49.500 --> 00:38:52.040]   That will give us our tool message.
+[00:38:52.040 --> 00:39:02.640]   And then as we did before, we're just extending our chat history with the assistant message that told us what tools to use, how to use it and the tool response.
+[00:39:02.700 --> 00:39:10.200]   And that is if we have a tool call, otherwise the logic is exactly the same for if we have just normal tokens being streamed back to us.
+[00:39:10.200 --> 00:39:25.620]   Finally, if we see that the length after going through this async for loop here, if we see that we have all tokens here, that means that our agent has responded to us directly using that content field.
+[00:39:25.620 --> 00:39:30.100]   And we should break out of the loop and which is exactly what we do.
+[00:39:30.440 --> 00:39:32.320]   So let's run that.
+[00:39:32.320 --> 00:39:34.240]   And now let's try again.
+[00:39:34.240 --> 00:39:49.820]   So one thing that we're doing here, just to try or test this out, is I'm actually asking two questions or I'm asking the two questions that should require the LM to search or use the search tool.
+[00:39:49.820 --> 00:39:56.560]   And then I'm asking a final question, which is saying, okay, bring those both together and explain them to me.
+[00:39:56.560 --> 00:40:05.380]   Now also throwing in a little bit of a spanner here by asking about DeepSeq, the transcribed document doesn't mention anything about DeepSeq.
+[00:40:05.380 --> 00:40:09.900]   So let's just see how our agent tackles this problem.
+[00:40:09.900 --> 00:40:11.200]   Okay.
+[00:40:11.240 --> 00:40:14.120]   So we have our outputs here.
+[00:40:14.120 --> 00:40:16.460]   And you'll see it.
+[00:40:16.460 --> 00:40:18.140]   Sometimes this will work.
+[00:40:18.140 --> 00:40:21.380]   Sometimes it will hallucinate, particularly with the DeepSeq part.
+[00:40:21.380 --> 00:40:25.220]   And you see here that the search tool was used twice.
+[00:40:25.220 --> 00:40:28.700]   Once to look for good old fashioned AI.
+[00:40:29.380 --> 00:40:31.780]   And another time search for DeepSeq.
+[00:40:31.780 --> 00:40:36.620]   Then it just explained, okay, yes, the document mentions good old fashioned AI.
+[00:40:36.620 --> 00:40:38.680]   It does not explicitly mention DeepSeq.
+[00:40:38.680 --> 00:40:42.600]   And then, yeah, it just continues answering our questions.
+[00:40:42.600 --> 00:40:47.080]   So we can see that, yeah, that agentic flow does work.
+[00:40:47.460 --> 00:40:50.800]   Now let's look at the usage for our query.
+[00:40:50.800 --> 00:41:00.180]   Now we can see that despite us having two tools being used, right, which is probably the worst case scenario for this sort of question.
+[00:41:00.180 --> 00:41:13.580]   Despite that, which we can see with the usage info for these first two components here, it didn't necessarily add that many tokens, especially when compared to our original costs.
+[00:41:13.580 --> 00:41:25.580]   So if we look at the original costs from here, so this is from the earlier execution that we performed, we spent this much across this is across three interactions.
+[00:41:25.580 --> 00:41:30.200]   So we could say, okay, it was only this much for that one single interaction.
+[00:41:30.200 --> 00:41:39.900]   Now, if we look at the cost for each one of these queries, that is pretty significantly lower.
+[00:41:40.260 --> 00:41:47.440]   Looking at roughly half the price for that first query, despite asking a far more complicated question as well.
+[00:41:47.440 --> 00:41:52.980]   Now, I think this message, this note was from my previous testing, and I probably got lucky one time.
+[00:41:52.980 --> 00:41:56.840]   But this gives you a good idea of just how cheap it can get.
+[00:41:56.840 --> 00:42:03.820]   So I think the, in this scenario, the completion tokens were probably quite low for my final response.
+[00:42:04.040 --> 00:42:04.980]   But, yeah, that is it.
+[00:42:04.980 --> 00:42:15.360]   So we've been through, we've built a fully functional conversational agent with async and streaming using Mistral.
+[00:42:15.360 --> 00:42:22.020]   We've implemented video with that using the Aurelio SDK.
+[00:42:22.760 --> 00:42:30.640]   And we've also seen how we can then optimize further using chunking to essentially just reduce our costs pretty significantly.
+[00:42:30.640 --> 00:42:38.580]   And I believe probably if we optimize this further, we can definitely get that down even further.
+[00:42:38.580 --> 00:42:40.540]   So that's it for this video.
+[00:42:40.540 --> 00:42:42.820]   I hope all this has been useful and interesting.
+[00:42:42.820 --> 00:42:44.460]   For now, I'll leave it there.
+[00:42:44.460 --> 00:42:48.020]   So thank you very much for watching, and I will see you again in the next one.
+[00:42:48.020 --> 00:42:48.620]   Bye.
+[00:42:48.620 --> 00:43:04.860]   I'll see you again in the next one.
+
