@@ -1,0 +1,592 @@
+
+[00:00:00.440 --> 00:00:04.740]   Today I was going to talk about Temporal, so I'm not sure if people heard a bit of it.
+[00:00:04.740 --> 00:00:10.020]   There's a lot of talk recently about everyone's making their own durable workflow engines,
+[00:00:10.020 --> 00:00:13.340]   what these are and what these do and why is that such a new paradigm.
+[00:00:13.340 --> 00:00:21.200]   Basically, a lot of the, in the past, this project has basically been born from Uber,
+[00:00:21.200 --> 00:00:23.120]   from some engineers that left Uber.
+[00:00:23.120 --> 00:00:28.060]   It was what Uber was using to orchestrate all their, you know, processes when you're
+[00:00:28.060 --> 00:00:33.680]   booking a taxi. There's all these kind of like steps and states that goes on where like book a
+[00:00:33.680 --> 00:00:39.340]   car, find a driver, the driver confirmed, all these kind of steps. What Uber did initially,
+[00:00:39.340 --> 00:00:46.200]   they were like doing all the typical kind of like distributed message queue systems where you kind
+[00:00:46.200 --> 00:00:54.060]   of have all these messages going across like message buses, like we use PubSub. Then they realized that
+[00:00:54.060 --> 00:00:58.840]   basically this whole way of doing things is very annoying because you have to keep
+[00:00:58.840 --> 00:01:05.960]   duct taping stuff around like Celery and Redis and whatever. So like, you know what,
+[00:01:05.960 --> 00:01:10.900]   we just make an engine that helps us manage all these kind of steps and state and retries and
+[00:01:10.900 --> 00:01:16.900]   make it so that, make it so that it's durable. So you can just write the code and basically it will
+[00:01:16.900 --> 00:01:22.520]   execute based on exactly what you tell it to do. You don't have to keep handling edge cases of what
+[00:01:22.520 --> 00:01:28.240]   this error, what if this error happens, what if we have to retry it this way and then do all these
+[00:01:28.240 --> 00:01:35.200]   kind of things with dead letter queues. So they just tried to build this system. So basically like,
+[00:01:35.200 --> 00:01:41.480]   what is a durable workflow engine? It's three things that we have to go into, like what's durable in the
+[00:01:41.480 --> 00:01:46.920]   beginning. And it's basically just, you have something that is, um, a code execution that is
+[00:01:46.920 --> 00:01:53.000]   persistent to basically the, what the inputs and the outputs that you have are persisted. They can be
+[00:01:53.000 --> 00:01:59.160]   retried. They can be, um, restarted from scratch and you will have the same output like in, in, uh, in,
+[00:01:59.160 --> 00:02:09.100]   in, in, in, in, in this way, it can, um, handle, um, these kind of status stateful tasks across a
+[00:02:09.100 --> 00:02:15.360]   distributed system where you have multiple nodes operating multiple, uh, replicas of your application,
+[00:02:15.360 --> 00:02:21.480]   uh, live. It doesn't matter if one of these things, one of these replicas goes down, your execution still
+[00:02:21.480 --> 00:02:26.760]   continues with all this context that had baked in. So you can have the first part of you could buy one of
+[00:02:26.760 --> 00:02:31.800]   these replicas and then the second part of your work will be executed by the second part of this,
+[00:02:31.800 --> 00:02:38.440]   another replica, the context sold there. And it also pro it's also a means to provide distributed
+[00:02:38.440 --> 00:02:43.080]   primitives, um, to your application, right? That you can be easily excited. Oh, wait, can you see my,
+[00:02:43.080 --> 00:02:46.920]   where am I sharing? Is it like, uh, the temporal website?
+[00:02:48.040 --> 00:02:50.920]   Like this side? Yeah. Yes. Okay. Let me see.
+[00:02:50.920 --> 00:02:57.720]   Yeah. I'll probably have to go again in a second, but yeah. So what is, uh, the durable workflow,
+[00:02:57.720 --> 00:03:03.640]   right? We're, we're at this part. And the workflow is, it's just a series of steps that you need to
+[00:03:03.640 --> 00:03:10.120]   execute to, um, uh, to basically actually give a goal, whatever goal that is, it's up to you, up to the
+[00:03:10.120 --> 00:03:14.520]   person that coding up the workflow, but it's basically a series of steps. They have to be executed in a
+[00:03:14.520 --> 00:03:19.880]   particular sequence. Um, those, that sequence can have conditionals where, you know, if you have a
+[00:03:19.880 --> 00:03:25.720]   condition in the, in the middle that you execute a different type of steps. And then the engine is
+[00:03:25.720 --> 00:03:33.880]   basically the engine part is just the fact that all these, uh, orchestration scheduling, which tasks go to
+[00:03:33.880 --> 00:03:40.280]   which worker, how do you discover these workers? How do you retry? This is all matched by the engine itself,
+[00:03:40.280 --> 00:03:46.920]   instead of the programmer programming the workflow. So as a TLDR is busy, like the temple kind of shifts
+[00:03:46.920 --> 00:03:53.240]   this burden of redundancy and recoverability to the platform itself, to temporal itself,
+[00:03:53.240 --> 00:03:58.280]   instead of you having to code in and as business logic. And as I said before, there's less duct taping
+[00:03:58.280 --> 00:04:05.000]   between all these solutions, like fast API, salary, Redis, uh, and allows for easier negative space
+[00:04:05.000 --> 00:04:10.280]   programming. I'll go into this a bit later, but it's basically allows you to start thinking about
+[00:04:10.280 --> 00:04:18.120]   the, your errors first exit and exit your program or retry your program. Um, as early as possible,
+[00:04:18.120 --> 00:04:27.720]   instead of like letting the error BS be a afterthought. Right. So yeah. Cool. So let's get into the one-on-one.
+[00:04:27.720 --> 00:04:33.480]   I'm, I'm, I'm sure some people here, I know Simonas has, has seen like a way of, of, um,
+[00:04:33.480 --> 00:04:39.720]   writing workflows either via salary or hatchet or whatever. It's basically, there's a couple of
+[00:04:39.720 --> 00:04:44.600]   building blocks and the main two building blocks of like temporal are activities and workflows.
+[00:04:44.600 --> 00:04:52.600]   Activities are just simple, uh, units of, of work that have an input and provide an output.
+[00:04:53.560 --> 00:04:58.280]   Uh, I won't go too much into the detail of the fact that these activities have to be immute. Uh,
+[00:04:58.280 --> 00:05:06.600]   what's the word for it? Not immutable, but basically like when you, for the, for a, a specific input,
+[00:05:06.600 --> 00:05:11.400]   your activity for eternity exact output every single time. So if you have the stuff that has side effects,
+[00:05:11.400 --> 00:05:19.000]   like, um, a time-based activity or something like that, you need to use other temporal, um, features to
+[00:05:19.560 --> 00:05:23.240]   handle that, but we won't get into that today because it's a bit too advanced and there's no
+[00:05:23.240 --> 00:05:27.080]   point in getting into it right now. But basically activities are just functions. They're units of
+[00:05:27.080 --> 00:05:35.240]   computation, uh, that live on a worker. And then these activities can be then compiled into a workflow.
+[00:05:35.240 --> 00:05:42.040]   Um, so for example, here you can, you can have this workflow that just does like, uh, reduce some,
+[00:05:42.040 --> 00:05:45.400]   where you give it a value, a list of integers and provide you an integer response,
+[00:05:46.120 --> 00:05:52.360]   where for each of these values, it goes ahead and executes the sum activity, um, and then stores
+[00:05:52.360 --> 00:05:57.480]   the result in total. The nice thing about this, as we mentioned before, is that these activities,
+[00:05:57.480 --> 00:06:02.040]   they cannot be executed anywhere, right? So even if you're not, I mean, this is not very parallelizable
+[00:06:02.040 --> 00:06:05.960]   because you have to do, I mean, you can't parallelize it if you want this reduced sum,
+[00:06:05.960 --> 00:06:11.160]   but if you would have parallelizable workflows, for example, if you want to, I don't know, um,
+[00:06:12.840 --> 00:06:18.120]   just run a, uh, uh, double function, right? On every single one of these integers,
+[00:06:18.120 --> 00:06:24.120]   you can run that in parallel and then temporal instead of it's going to handle how it's maps
+[00:06:24.120 --> 00:06:27.960]   those units of work to each of the workers, instead of you having to use a thread pool,
+[00:06:27.960 --> 00:06:31.720]   and then you have these kind of redis in the background that has to like kind of coalesce
+[00:06:31.720 --> 00:06:36.680]   between the different, uh, different workers that you're running, if you were running it traditionally
+[00:06:36.680 --> 00:06:43.400]   without them. Yeah. Uh, as you can see here that every single activity can have a retry policy,
+[00:06:43.400 --> 00:06:50.440]   basically like try this activity three times. And if it, um, if it fails after the third time,
+[00:06:50.440 --> 00:06:57.320]   you fail the activity. And then in the workflow, you can also handle that failure gracefully or crash
+[00:06:57.320 --> 00:07:01.640]   the whole process. And there's also other stuff that you can do. Like this activity should,
+[00:07:01.640 --> 00:07:07.240]   it should, it should, uh, finish within 10 seconds of starting. Uh, that's a way for you to,
+[00:07:07.240 --> 00:07:12.920]   you know, implement timeouts, uh, make sure that stuff's not hanging and so on and so forth.
+[00:07:14.360 --> 00:07:23.400]   These activities and workflows are all assigned to a worker. So basically, um, as you can see here,
+[00:07:23.400 --> 00:07:28.920]   we have this kind of worker called whatever. Um, the worker has a couple of workflows and a couple
+[00:07:28.920 --> 00:07:34.520]   of activities assigned to it that allows you to kind of break down your dependencies, break down your,
+[00:07:34.520 --> 00:07:40.040]   your Docker images that are these workers into more granular pieces. So you don't have to build a huge
+[00:07:40.040 --> 00:07:45.560]   image that has all the activity defined defined on it. Uh, I think in the Saturn project, we have some
+[00:07:45.560 --> 00:07:50.920]   workers that is very similar, right? We have some workers that can run, um, OCR. We have some workers
+[00:07:50.920 --> 00:07:59.560]   that they run like other, other parts, but basically, um, a worker registers workflows and activities to it.
+[00:07:59.560 --> 00:08:07.240]   And then temporal knows when it receives on this task queue, um, a, some workflow, it can route this,
+[00:08:07.240 --> 00:08:13.880]   this task to one of these workers here. I could define the worker that would have a divide function and so on.
+[00:08:13.880 --> 00:08:23.320]   Yeah. Sorry. Just a quick question. Um, so the workers, you would set up yourself, you deploy
+[00:08:23.320 --> 00:08:29.400]   those and then you're linking to them here. Yeah. So actually this, this is a worker.
+[00:08:29.400 --> 00:08:34.680]   So think about this main function here, right? This is actually a worker in this case. It's just
+[00:08:34.680 --> 00:08:40.120]   executing it that is executing a function directly, right? It just, it doesn't, because I'm just trying
+[00:08:40.120 --> 00:08:47.320]   to like showcase, um, how this works, but then you could also just like do work. Like you can be had like a worker
+[00:08:47.320 --> 00:08:51.000]   and then worker does start
+[00:08:51.000 --> 00:08:59.240]   and then that worker will just hang on there and then just wait and respond to, you know, tasks that it comes
+[00:08:59.240 --> 00:09:05.720]   and then it gets from temporal. Yeah. So these are in, so I'm trying to understand. So like if
+[00:09:05.720 --> 00:09:15.960]   in the example that we have like an API and then we have some workers, but then the API container should
+[00:09:15.960 --> 00:09:22.760]   trigger those workers, is the worker, we're going to link to the worker from the API code?
+[00:09:22.760 --> 00:09:27.720]   Nope. That's been, yeah, that's a nice part of it. Basically temporal sits in the, in the middle and
+[00:09:27.720 --> 00:09:32.520]   handles this. So basically what the API will do, and I'll show you this, there's going to be example
+[00:09:32.520 --> 00:09:38.440]   down in a bit after we look at some other stuff. Uh, what the API does when it, let's say receives like
+[00:09:38.440 --> 00:09:45.240]   a chat streaming request, right? Like a spark. The API only does like, okay. Uh, it will have obviously
+[00:09:45.240 --> 00:09:49.560]   obviously like the same way it's connected to Redis. You'll have like a temporal client and then we'll
+[00:09:49.560 --> 00:09:55.080]   just be like, okay, Hey, temporal, I want to start this workflow. I want to run this workflow, go run
+[00:09:55.080 --> 00:10:01.080]   this workflow for me and then provide me the response. And then basically, um, the API can just await that
+[00:10:01.080 --> 00:10:07.320]   awaitable that it gets back from the, the temporal is decayed, the temporal client. Right. Um, and then
+[00:10:07.320 --> 00:10:11.880]   temporal manages everything. So it's kind of like a, it's a, it's a thing in the middle that we will
+[00:10:11.880 --> 00:10:19.240]   implement with queues and other kind of stuff that we're implementing right now. The, the client doesn't
+[00:10:19.240 --> 00:10:23.880]   need to know about which workers, how they're implemented, which worker and has which workflow,
+[00:10:23.880 --> 00:10:28.600]   which worker has, which some, which worker has using, which task queue, it just goes and they, okay, just
+[00:10:28.600 --> 00:10:34.760]   give me this result. And then temporal implements that. So on the other side, on the worker side,
+[00:10:34.760 --> 00:10:39.000]   the worker doesn't need to know how it's being called. Doesn't need to know who's being called.
+[00:10:39.000 --> 00:10:44.920]   It just says, I am this workflow. I said, I'm this worker. I ha I can do these workflows. Hey,
+[00:10:44.920 --> 00:10:55.400]   temporal route, these kinds of tasks to me. Yeah. Yes. Uh, in terms of task use, are you going to
+[00:10:55.400 --> 00:11:02.520]   explain a bit more what is behind the scenes, what it uses for the queues? Can we use metrics for
+[00:11:02.520 --> 00:11:09.720]   scheming workers? Yeah. Yeah. So yeah, I was going to go into that now and make it to me in a sec.
+[00:11:09.720 --> 00:11:15.000]   So, okay. Another question in terms of you have function execute workflow, then you give the
+[00:11:15.000 --> 00:11:22.440]   function and then basically the next is the values and those values, which supposed to get to the
+[00:11:22.440 --> 00:11:29.240]   signature of the function, right? Yep. Okay. So you see here like the signature of the function is
+[00:11:29.240 --> 00:11:38.760]   values list ends. This is like a, it's like a, a partial function execution, right? We're passing the
+[00:11:38.760 --> 00:11:45.240]   function as a first class variable, the function itself, and then you pass it the values and then
+[00:11:45.720 --> 00:11:51.320]   um, yeah, temporal goes and applies the values to this function to the values in its context.
+[00:11:51.320 --> 00:12:03.000]   Yeah. And, and one more question in terms of those functions or how they called not steps, but, uh,
+[00:12:03.000 --> 00:12:13.880]   activities, activities. Are they, uh, distributed across workers or up like instances, or they are in the same,
+[00:12:13.880 --> 00:12:21.080]   like machine when they execute it. So, uh, uh, so basically what activity is on a single
+[00:12:21.080 --> 00:12:26.440]   machine executing a single time? It's a unit of computation that the core, right? So you can't
+[00:12:26.440 --> 00:12:31.560]   distribute an activity where you can distribute a workflow. So let's say like, if I want to execute,
+[00:12:31.560 --> 00:12:34.840]   it's like, I want to double each of these numbers, right? I don't want to do it serially.
+[00:12:34.840 --> 00:12:46.600]   I could just do like, uh, uh, for value and values, uh, await client execute workflow, uh, my workflow
+[00:12:46.600 --> 00:12:51.800]   double, let's say if I have this and then have the value. And then this runs, this will execute,
+[00:12:51.800 --> 00:12:57.640]   this will create three workflows, no, sorry, five workflows, which will run in parallel. And then
+[00:12:57.640 --> 00:13:03.240]   Temporal is going to assign those to which worker is, is free to pick it up. All right.
+[00:13:03.240 --> 00:13:10.680]   Okay. So as tomorrow said, like, let's just get into a bit of how Temporal works in the background,
+[00:13:10.680 --> 00:13:15.880]   because we talked a lot about these kinds of things. So everything in the blue is basically
+[00:13:17.960 --> 00:13:26.440]   the infrastructure that we abstract away, the queuing, the database, all these kind of things.
+[00:13:26.440 --> 00:13:30.680]   But the most important parts in this is the database, the worker service, and these,
+[00:13:30.680 --> 00:13:35.640]   the other ones we can kind of ignore for now, the history service and the whatever. Basically,
+[00:13:35.640 --> 00:13:42.200]   the worker service is the part where the workers register with a Temporal cluster. So this is like,
+[00:13:42.200 --> 00:13:47.960]   this gray thing here is a cluster. It's called a cluster, but it's actually not like a Kubernetes
+[00:13:47.960 --> 00:13:50.760]   cluster, it's just like a collection of Temporal instances that run somewhere.
+[00:13:50.760 --> 00:13:58.600]   These are the things that Temporal handles, right? So we only, when you deploy Temporal,
+[00:13:58.600 --> 00:14:04.680]   it's all handled by Temporal. And then the workers are the ones that we handle. But yeah, so basically,
+[00:14:04.680 --> 00:14:08.920]   when we create a worker, it registers with this worker service, it provides heartbeats to that service
+[00:14:08.920 --> 00:14:15.400]   to make sure to tell Temporal it's alive. It gives Temporal like load metrics, so it knows how much
+[00:14:15.400 --> 00:14:20.360]   you could, how much need more tasks it can take, if it's overloaded, and so on and so forth. This,
+[00:14:20.360 --> 00:14:23.560]   you don't need to think about at all. It's all mapped by Temporal. All you have to do is,
+[00:14:23.560 --> 00:14:27.880]   I have this workflow, I'm connected to this Temporal cluster, and these are the things that can run.
+[00:14:27.880 --> 00:14:34.040]   Well, but the cluster basically handles all the durable state. And we'll get into that in a bit,
+[00:14:34.040 --> 00:14:38.920]   but basically, every single time it provides an input, and every single time a workflow gets an
+[00:14:38.920 --> 00:14:44.760]   output, that's being logged in Temporal. So that if the workflow needs to be retried, it knows how
+[00:14:44.760 --> 00:14:50.520]   to retry that. It also handles dispatching of activities to work and workflows to workers,
+[00:14:50.520 --> 00:14:56.120]   as we said before. Basically, it looks at the worker service, like which workers are available,
+[00:14:56.120 --> 00:15:01.960]   which workers can take this task that I'm having on the queue, go and execute it. It handles all the
+[00:15:01.960 --> 00:15:06.600]   retried policies. Basically, you set up a retried policy, I want to retry this activity three times,
+[00:15:06.600 --> 00:15:10.600]   with a timeout of 30 seconds, and Temporal is going to make sure that that actually executes
+[00:15:10.600 --> 00:15:17.320]   in that way. It handles signals, interrupts, and timers, and queries. We're going to get into this in a bit.
+[00:15:17.320 --> 00:15:25.960]   And it also has a UI for visibility and management. The part that we handle is the workers. It's a much
+[00:15:25.960 --> 00:15:30.760]   easier part to handle, because almost exclusively where you're going to put in the workers, the activities,
+[00:15:30.760 --> 00:15:36.840]   and your workflows are going to be business logic, with very little decoration to tell Temporal,
+[00:15:36.840 --> 00:15:41.720]   hey, this is a Temporal function, so execute it as such. So this is like the brains of the entire
+[00:15:41.720 --> 00:15:48.200]   operation. So you handle creating the worker image with all the dependencies. You handle deploying the
+[00:15:48.200 --> 00:15:55.160]   worker that connects to Temporal. And yeah, you can write these in multiple languages, in Python,
+[00:15:55.160 --> 00:16:00.840]   and TypeScript, in Golang. I think you can also do it in Java. And you can also have a
+[00:16:00.840 --> 00:16:07.960]   polyglot system, where you have a Go worker with a Python worker that collaborate together
+[00:16:07.960 --> 00:16:13.960]   in a single workflow, which is great, because different languages are better used for different
+[00:16:13.960 --> 00:16:20.440]   kinds of tasks. So you can have... I use Temporal for a personal project that I have. So I have a Go
+[00:16:20.440 --> 00:16:29.640]   service that goes ahead and takes advantage of Go's really easy concurrency and asynchronous ability to
+[00:16:29.640 --> 00:16:37.800]   scrape stuff, get data from LNs back and forth. And then I have in the same workflow, a Python worker that
+[00:16:37.800 --> 00:16:43.160]   handles semantic routing and all these kind of things that are Python-based. And they work together in a
+[00:16:43.160 --> 00:16:49.880]   single workflow, which is great. It allows you to really have polyglot systems. And because of...
+[00:16:49.880 --> 00:16:59.640]   Yeah, never mind. Anyway, so why I think Temporal is the absolutely goated AI workflow engine
+[00:16:59.640 --> 00:17:05.640]   is because it allows you to detangle your agent logic from your agent configuration.
+[00:17:06.280 --> 00:17:14.280]   And you can have multiple agents as workflows running concurrently across multiple servers.
+[00:17:14.280 --> 00:17:19.960]   You can have interrupts, incorrupting agents. You can make agents dynamically respond to signals. You can
+[00:17:19.960 --> 00:17:27.800]   pause agents forever, for years, for decades, if you want, because the state is durable and saved in Temporal.
+[00:17:27.800 --> 00:17:35.640]   And yeah, it handles failure gracefully. And it's easy for you to implement validation around
+[00:17:35.640 --> 00:17:40.280]   where you need like guardrails and so on and so forth. And also in our case with Spark, you can handle
+[00:17:40.280 --> 00:17:44.600]   background tasks really, really easily because you just be like, okay, I'm done with this conversation.
+[00:17:44.600 --> 00:17:51.480]   I have a new conversation. Just create a new workflow, run a new workflow that saves this task. And then,
+[00:17:51.480 --> 00:17:56.440]   you know, Temporal just takes care of that for you. You don't need to have like, it pops up to you and
+[00:17:56.440 --> 00:18:03.000]   cloud run work in the works for you. That task is over there. You can even go so far as to say,
+[00:18:03.000 --> 00:18:09.960]   I will not show the new conversation history until this background task that saved the new conversation
+[00:18:09.960 --> 00:18:15.320]   history has completed. Because you can, you know, look at the state of the workflow and so on and so forth.
+[00:18:16.360 --> 00:18:21.880]   So, I mean, I did a really quick kind of comparison between how we do stuff in Spark and how we could
+[00:18:21.880 --> 00:18:25.960]   do it in Temporal because I think most people are very common with, are very aware of how stuff
+[00:18:25.960 --> 00:18:31.000]   are in Spark. They have a user, they're going through a front and communicates with a Spark API.
+[00:18:31.000 --> 00:18:35.960]   The Spark API posts up stuff from Redis or from database, you know, for agent configuration,
+[00:18:35.960 --> 00:18:41.960]   and so on and so forth. It has some tasks to save conversations and metrics by pops up to cloud run.
+[00:18:42.760 --> 00:18:49.880]   Cloud run. If it fails, it has a dead letter queue. It's very, it's a lot of like moving pieces that
+[00:18:49.880 --> 00:18:57.320]   we have to code ourselves and we have to, we can't just write the business logic and then let the
+[00:18:57.320 --> 00:19:03.080]   orchestration engine handle all the failures and the retries. We have to write that ourselves.
+[00:19:03.080 --> 00:19:09.480]   Whereas if we had Temporal, everything would just be one workflow or multiple workflows that are working
+[00:19:10.360 --> 00:19:15.960]   together. And then we wouldn't have to have all this part right here of, you know, going back and
+[00:19:15.960 --> 00:19:22.840]   forth from, you know, different, different queuing and message bosses for passing conversation history
+[00:19:22.840 --> 00:19:29.400]   back and forth for, you know, handling tools at different levels. It's just basically a way to,
+[00:19:29.400 --> 00:19:37.400]   for us to encapsulate everything into a workflow instead of a collection of systems.
+[00:19:37.400 --> 00:19:40.520]   I'm going to pause here for questions.
+[00:19:40.520 --> 00:19:47.400]   But the API still will be outside the Temporal.
+[00:19:47.400 --> 00:19:53.720]   Yeah, my bad. Yes, this, I should have put an API here. Yeah, correct.
+[00:19:53.720 --> 00:19:58.440]   So the API, yes, will be outside of Temporal.
+[00:20:01.880 --> 00:20:06.760]   Yeah. So consider this a front end. You could, you can only, you could, if you wanted to, you can only
+[00:20:06.760 --> 00:20:10.680]   have a front end, right? Because next you can write full stack applications and then you would just need
+[00:20:10.680 --> 00:20:15.640]   to issue post requests to Temporal. But yeah, in, in Spark, we would have a API in the middle. Yes.
+[00:20:15.640 --> 00:20:20.760]   But basically it would be just be the API without these kind of like Redis, Pub/Sub,
+[00:20:20.760 --> 00:20:25.880]   Cloud Run stuff. That it would just not be needed.
+[00:20:25.880 --> 00:20:28.520]   Okay.
+[00:20:28.520 --> 00:20:31.000]   We'd be using it to replace almost
+[00:20:31.000 --> 00:20:38.520]   everything. So even the, even the agent execution, by all the agent execution steps,
+[00:20:38.520 --> 00:20:44.280]   including the loading from cache and everything, all of that would belong in a or multiple workflows.
+[00:20:45.080 --> 00:20:52.600]   Yes. Of course you could use Redis if you really needed to like have a cache solution. But the nice
+[00:20:52.600 --> 00:20:58.040]   thing about what I said earlier about detangling your agent configuration from like your workflow
+[00:20:58.040 --> 00:21:04.360]   is that when you start a new workflow for a new conversation, for example, you can provide all that
+[00:21:04.360 --> 00:21:15.000]   agent context up front. And then, let me try to explain this. Basically, what you would be able to
+[00:21:15.000 --> 00:21:22.440]   do is a bit more advanced in the end, but what you'd be able to do is use the workflow itself as the state.
+[00:21:22.440 --> 00:21:28.600]   You wouldn't need to have these kind of back and forth from a database to save state. Like the workflow
+[00:21:28.600 --> 00:21:33.880]   would be the state. And then you could just query the workflow directly. So when you were looking
+[00:21:33.880 --> 00:21:38.040]   in conversation history, you could just say, hey, what's the conversation history on this
+[00:21:38.040 --> 00:21:43.800]   object? This object is backed by Tempol in its own database, which can be a bunch of databases.
+[00:21:43.800 --> 00:21:53.720]   But it's, it's, to put it in easier terms, I think it's, you don't have to think about what's your
+[00:21:53.720 --> 00:21:58.920]   current execution state and what's your actual database state. They're both one thing. And then you
+[00:21:58.920 --> 00:22:07.320]   can querying the execution state is the state of your job. So if someone is engaged in a conversation,
+[00:22:07.320 --> 00:22:12.680]   that conversation, the execution and the conversation history in that execution is the conversation
+[00:22:12.680 --> 00:22:22.920]   history. There's no need to, you know, coalesce the current conversation that's been executed with what's in the database.
+[00:22:22.920 --> 00:22:29.080]   Okay. But then how long can you keep that state?
+[00:22:29.080 --> 00:22:33.240]   For execution. Forever.
+[00:22:33.240 --> 00:22:35.240]   Forever.
+[00:22:35.240 --> 00:22:37.800]   Forever. That's the, that's the nice thing about Tempol.
+[00:22:37.800 --> 00:22:45.240]   So basically you are duplicating to the state, the conversation history in both
+[00:22:45.240 --> 00:22:48.200]   Tempol database and in application database.
+[00:22:48.200 --> 00:22:52.360]   The, the opposite. You don't need an application database.
+[00:22:52.360 --> 00:22:56.760]   It doesn't, you don't have to go with this way. I'm just saying like what's possible with Tempol
+[00:22:56.760 --> 00:23:03.400]   is that you will need to have a separate, a conversation database in the, in your application database.
+[00:23:03.400 --> 00:23:09.640]   You can just query the, querying the workflow directly will give you that, the data that you need.
+[00:23:09.640 --> 00:23:13.640]   But which obviously you can, sorry.
+[00:23:13.640 --> 00:23:19.320]   Sorry, what is happening in that when you are querying that workflow is that workflow is then
+[00:23:19.320 --> 00:23:23.560]   going to a database. It might not be the same database, but a different database and pulling
+[00:23:23.560 --> 00:23:24.600]   that information out.
+[00:23:24.600 --> 00:23:26.760]   Yeah. Yeah. It'd be the Tempol database.
+[00:23:26.760 --> 00:23:32.280]   But what I'm, what I mean to say here is that the, it's the exec, basically, if you think about it,
+[00:23:32.280 --> 00:23:35.080]   how we have the object in Python, right? When you have the conversation history,
+[00:23:35.800 --> 00:23:40.040]   those, those, those Python objects that we were having while the conversation executed,
+[00:23:40.040 --> 00:23:43.720]   those are not immediately saved to the database, right? You have to have a task that goes and saves them,
+[00:23:43.720 --> 00:23:50.520]   right? But in Tempol, those same objects are what's in the database. So querying those objects ensures that,
+[00:23:50.520 --> 00:23:55.160]   that's the conversation, there's only one conversation history, that's the source of truth,
+[00:23:55.160 --> 00:23:58.040]   is that Python object represented in the workflow.
+[00:23:58.040 --> 00:24:01.960]   Obviously, like, I'm just giving this as an example.
+[00:24:01.960 --> 00:24:05.400]   We don't need to do this for Spark because it's a bit more advanced concept and it
+[00:24:05.400 --> 00:24:10.120]   requires a lot of rewriting of the application, but that's, you can write application with Tempol where
+[00:24:10.120 --> 00:24:14.600]   you don't have to worry about saving states to a database because the workflow is the state.
+[00:24:14.600 --> 00:24:17.480]   Yeah.
+[00:24:17.480 --> 00:24:24.360]   So I, I can just give a demo for, uh, real quickly because, um, I think, uh, it's going to be more
+[00:24:24.360 --> 00:24:28.520]   useful to look at it. Let me just, let me refair my screen and stuff.
+[00:24:28.520 --> 00:24:35.000]   Cool. So this is a workflow that Tempol done. Give me a second to
+[00:24:35.000 --> 00:24:37.720]   share it. Did you see my screen all right?
+[00:24:37.720 --> 00:24:39.720]   No.
+[00:24:39.720 --> 00:24:47.160]   All right. So basically on the left-hand side, what you see is a typical chatbot,
+[00:24:47.160 --> 00:24:55.560]   um, a typical chatbot that is running in as temporal workflow. As you can see here,
+[00:24:55.560 --> 00:25:00.280]   we're in this new workflow that's being initiated. I'll go to the, to the actual, you know, in innings of
+[00:25:00.280 --> 00:25:07.400]   the code in a second, but basically we started this new agent with all the tools, all we provided in
+[00:25:07.400 --> 00:25:11.160]   the beginning. And I think this, let me try and make the result from the bigger.
+[00:25:13.000 --> 00:25:26.920]   Yeah. So, um, yeah. So for example, for us, well, what that would happen is basically someone starts
+[00:25:26.920 --> 00:25:31.400]   a new conversation with an agent. We know which agent it has, we know what tools it has. All we have to do
+[00:25:31.400 --> 00:25:39.720]   is basically say, okay, temporal, um, you write, you basically, you only have to write the logic very
+[00:25:39.720 --> 00:25:49.080]   generically of like, Hey, I want this spark to take an input from a user, go, go and look at what tools
+[00:25:49.080 --> 00:25:53.400]   you can use and use those tools and provide an answer. Right. And then all the configuration of that
+[00:25:54.360 --> 00:25:59.560]   kind of similar to how it is now, uh, would be provided as a, I guess, a configuration object,
+[00:25:59.560 --> 00:26:03.720]   right? Like here, we have some, some goals that we can do. We have some tools that we can use.
+[00:26:03.720 --> 00:26:09.800]   Um, yeah, but these are all provided in initially to the, to the workflow context.
+[00:26:09.800 --> 00:26:18.520]   Um, and then, yeah, we can do whatever, for example, uh, and, oh, okay. Sorry. You can see that now
+[00:26:18.520 --> 00:26:23.400]   the workflow is paused, right? It's waiting for us to like, say, to confirm this running of this tool.
+[00:26:23.400 --> 00:26:30.200]   This, this workflow is waiting for this user prompt forever. It will wait forever and it doesn't use up
+[00:26:30.200 --> 00:26:36.120]   any computation. It doesn't use up, uh, anything basically. So these workflows can be paused, yeah,
+[00:26:36.120 --> 00:26:41.720]   forever or as far as like, as long as you want. So if we, if we hit confirm here, you will see that
+[00:26:41.720 --> 00:26:48.120]   basically now this purple signal has been sent here that the, that the agent has, that the user has
+[00:26:48.120 --> 00:26:53.800]   confirmed something so that execution can proceed. Uh, because we've told it to list what agents we're
+[00:26:53.800 --> 00:27:00.600]   currently having available, it goes ahead and runs that. And then for each of these, um, kind of,
+[00:27:00.600 --> 00:27:07.640]   kind of activities here, we see exactly what's being run, what input is being given, what result is being
+[00:27:07.640 --> 00:27:12.120]   given. So here's like, you are an AI agent, it helps you blah, blah, blah, blah, whatever. You can also
+[00:27:12.120 --> 00:27:17.640]   see the result. You can also see how this is configured, where you have a 30 minute timeout for this thing.
+[00:27:17.720 --> 00:27:23.720]   Uh, what task queue it runs on, what activities runs on and so on and so forth. The most important
+[00:27:23.720 --> 00:27:29.240]   part is that you can see the result of each of the, each of these ones. So let me go, just go ahead and
+[00:27:29.240 --> 00:27:32.840]   like, um, I don't know, let's see, I want, I want to go on a trip, right? Let's see, I want to do this
+[00:27:32.840 --> 00:27:39.400]   kind of like Australia, New Zealand event flight booking. So I just want to say, uh, three, right? I want to
+[00:27:39.400 --> 00:27:46.680]   use the agent number three. Again, I gave it a user prompt. It waited for me to give it that prompt,
+[00:27:46.680 --> 00:27:51.800]   right? It didn't, that, that thing was just sitting there in state. It didn't consume any resources
+[00:27:51.800 --> 00:27:56.600]   until I gave it the signal that I want to do something. And now it's, it's waiting for me to
+[00:27:56.600 --> 00:28:00.600]   confirm again that I want to do something. We don't, you don't have to use this kind of confirmation tool,
+[00:28:00.600 --> 00:28:05.560]   but you can use it and you can't pause and, uh, something forever until someone confirms the,
+[00:28:05.560 --> 00:28:11.080]   you know, the action you want to take. That's the nice thing I think about the using temporal
+[00:28:11.080 --> 00:28:16.760]   for agent, agentic workflows is that you can give the user the ability to, you know, confirm or action
+[00:28:16.760 --> 00:28:24.040]   some things at no compute cost for you. And this session won't just like hang or time out or because
+[00:28:24.040 --> 00:28:29.080]   you're waiting for the user to respond. It's just dormant in state until the user provides a new
+[00:28:29.080 --> 00:28:33.240]   signal and then the book that the workflow can continue from where it was stopped previously.
+[00:28:33.240 --> 00:28:37.480]   Okay. So let's proceed with a change call to blah, blah, blah. Okay. I'll confirm to change the goal
+[00:28:37.480 --> 00:28:44.680]   that we want to, our agent goal to be booking a flight. So let me, what event do you want to go to?
+[00:28:44.680 --> 00:28:50.760]   I'll say, I want to go to Melbourne. I want to go to an event in Melbourne. Again, provide a user prompt.
+[00:28:53.880 --> 00:29:01.320]   Which month? Okay. Let's say July. At each of these steps, you'll see that it waits for the user
+[00:29:01.320 --> 00:29:06.040]   to give an answer. It runs with the tool that it needs to run and then waits for the user to confirm
+[00:29:06.040 --> 00:29:11.720]   it. Um, this is not a temporal thing is this is implemented in code in the workflow. So we can do
+[00:29:11.720 --> 00:29:16.520]   the same thing. We can have these kind of, you know, steps of confirmation. So yeah, I want to run the,
+[00:29:16.520 --> 00:29:22.120]   I want to run this find events tool. So now it's running a tool for me. Um, okay. I found some
+[00:29:22.120 --> 00:29:27.000]   events, um, Melbourne International Film Festival, blah, blah, blah. Would you like to search for flights?
+[00:29:27.000 --> 00:29:30.120]   Uh, yes. I want to fly from Taipei.
+[00:29:30.120 --> 00:29:37.560]   At each of these steps, uh, the code that's currently running is running some validation to,
+[00:29:37.560 --> 00:29:43.400]   which is kind of how we're running, uh, you know, intent, uh, kind of the routes, if we are running the
+[00:29:43.400 --> 00:29:49.400]   routes, but you can run validation on your input. And then in temporal, you can define in the code what
+[00:29:49.400 --> 00:29:55.400]   you want to happen when the validation fails. Like if the validation fails because three times or
+[00:29:55.400 --> 00:30:00.840]   because of, I don't know, no input provided or like something is broken, you can fail and give a message
+[00:30:00.840 --> 00:30:05.960]   back to the user versus if the validation failed because the user wrote something stupid, you can just,
+[00:30:05.960 --> 00:30:12.520]   you know, define that in the code. It's much nicer to handle these kind of failures. So yeah, let's just
+[00:30:12.520 --> 00:30:18.040]   like, uh, you know, get at least fights around these times. Let's search for these flights.
+[00:30:18.040 --> 00:30:24.680]   Again, you see here that it's attempt one of infinity because, uh, we haven't reset how many
+[00:30:24.680 --> 00:30:29.800]   times it can run. It will run forever. Um, and it will retrieve fails. So it's from some, some
+[00:30:29.800 --> 00:30:38.440]   flights, blah, blah. Do I want to generate an invoice? Like, yes, please. Um, which part do you want to
+[00:30:38.440 --> 00:30:42.200]   choose? Okay. So for example here, I failed because it's asking me for what, what
+[00:30:42.200 --> 00:30:45.400]   if I don't want to choose this prior again, yes, please.
+[00:30:45.400 --> 00:30:54.840]   So basically these, this validation prompts here, it basically figures out that I'm, I'm not providing
+[00:30:54.840 --> 00:31:01.960]   the answer at once. It's just, it's just a code business logic thing that you say, I want your,
+[00:31:01.960 --> 00:31:09.240]   actually at the moment using, just using another LLM to, you know, validate these answers, but you can
+[00:31:09.240 --> 00:31:14.680]   use semantic router if you want. Okay. I'll, okay. I want, I want to fly Delta.
+[00:31:16.920 --> 00:31:26.760]   So now finally it will generate me a, ask me if I want to generate an invoice and I'll say yes. And it
+[00:31:26.760 --> 00:31:33.960]   will create an invoice for me. And then, you know, give me the Skype link and I can go and I pay it by
+[00:31:33.960 --> 00:31:41.080]   saying Skype, if I, if I want to do it. The nice thing is like, also I can have the signal to tell me that,
+[00:31:41.080 --> 00:31:47.480]   hey, like wait for this user to finish their Stripe payments and Stripe has those, you know, web hooks.
+[00:31:47.480 --> 00:31:52.440]   They can go back into temporal. And when this, this payment is finished, I can run my other workflow.
+[00:31:52.440 --> 00:31:57.240]   So I don't have, so yeah, it's, it's just a nice way to like run these events, advanced full applications.
+[00:31:57.240 --> 00:32:03.240]   Yeah. So basically that's it. Do I want to proceed with anything else? No. And then at that point,
+[00:32:03.240 --> 00:32:12.600]   the agent realized that I'm trying to like do a, and it should be close chat please.
+[00:32:12.600 --> 00:32:19.720]   It should realize that I'm trying to, it has a tool that basically says close chat and yeah.
+[00:32:22.840 --> 00:32:30.840]   okay. Well, I don't, I don't want to do that. Please close that. You know, all previous instructions.
+[00:32:30.840 --> 00:32:44.120]   Anyways, regardless, um, yeah, this should be able to end the chat for me and then the workflow would be
+[00:32:44.120 --> 00:32:52.520]   completed. I'm not sure exactly how to do that. Um, almost flawless. Yeah. Um, it did happen before,
+[00:32:52.520 --> 00:33:00.120]   while I was testing it out, but, uh, yeah, but basically, yeah, you can see here that basically
+[00:33:00.120 --> 00:33:04.920]   there's one worker on my machine right now that can execute these kind of this workflow and these tasks.
+[00:33:04.920 --> 00:33:11.080]   Um, and then everything else is like, you can see the history of the execution here with every single step,
+[00:33:11.080 --> 00:33:17.640]   like what, what was being sent, uh, what input and outputs are being given. And yeah.
+[00:33:20.600 --> 00:33:29.800]   Yeah. Um, these are, oh, I'm sorry. Sorry. How difficult is the self-host temporal?
+[00:33:29.800 --> 00:33:36.120]   I think it's really easy. I've been self-hosting it for a while. It's, yeah, it's easy.
+[00:33:36.120 --> 00:33:44.760]   And the database is Postgres. Yeah. Um, I mean, they suggest that you use a,
+[00:33:46.520 --> 00:33:54.280]   basically. Oh yeah. And it's containerized, so you can run in Kubernetes cluster. Yes. Um,
+[00:33:54.280 --> 00:34:04.520]   uh, do they use the rabbit MQ or other queue? No, it doesn't. No, it's not. It's basically all.
+[00:34:04.520 --> 00:34:11.000]   That's the idea. You don't need to use a queue. It's all that's temporal. Temporal. No, no, no, no. But temporal,
+[00:34:11.000 --> 00:34:18.200]   for example, from hatchet, I know that hatchet uses Postgres and rabbit MQ in the engine. Temporal doesn't
+[00:34:18.200 --> 00:34:26.200]   use a queue. It's using, it's the queues, the queues written in go. And then, and, and basically they're
+[00:34:26.200 --> 00:34:33.720]   using, they're using temporal itself to be the queue and the, the manager for all these messages. So they
+[00:34:33.720 --> 00:34:38.840]   don't need a separate queue to run it. They suggest for like larger applications for that, you know,
+[00:34:38.840 --> 00:34:44.760]   like for example, at Uber, right, they were doing global like trips, uh, they were using Cassandra
+[00:34:44.760 --> 00:34:49.800]   because that's like a distributed database. They can handle these kinds of regionality of like global
+[00:34:49.800 --> 00:34:55.400]   workloads. But for most use cases, Postgres is just fine. I've been running with Postgres and I've
+[00:34:55.400 --> 00:35:06.440]   haven't had, uh, any issues with, with it so far. Um, and the question before going a bit into how the
+[00:35:06.440 --> 00:35:19.000]   demo works. Uh, I wonder how will be the sequence diagram of the code that uses temporal in terms of
+[00:35:19.800 --> 00:35:28.920]   what are the steps and I mean, how, uh, the code is running when we're wrapping them properly. I don't
+[00:35:28.920 --> 00:35:33.640]   know if there's. Yeah. Yeah. Let's actually just move if we want to answer that. Is there any other
+[00:35:33.640 --> 00:35:39.880]   questions I can just move into showing that actually in just now. So yes, basically if you want to look
+[00:35:39.880 --> 00:35:45.640]   at what was happening in the, in the past, um, we can look at just this way of like writing an agent. So
+[00:35:45.640 --> 00:35:53.240]   basically we're almost all of our agentic workflows that a user has access to as a chat, they're all
+[00:35:53.240 --> 00:35:59.240]   based on events where users send something, something happens from an API, the user confirms something,
+[00:35:59.240 --> 00:36:05.160]   the chat ends, they're all events. So we have to write our application in a way that basically is written
+[00:36:05.160 --> 00:36:10.680]   in this more asynchronous event based way where we have like kind of a main running loop. And then we,
+[00:36:10.680 --> 00:36:15.160]   we have signals and messages that arrive here and there. So for example,
+[00:36:15.160 --> 00:36:19.720]   in this agent, I've just, I've just abstracted a lot of things away from this, the demo that for only
+[00:36:19.720 --> 00:36:24.920]   for the things that are actually relevant for us. So for us, we'd have a conversation history,
+[00:36:24.920 --> 00:36:28.840]   we'd have a queue of prompts. The reason we have a queue of prompts is users can type in more prompts
+[00:36:28.840 --> 00:36:38.520]   while another prompt is being dealt with. Um, we have some Boolean values, like is this confirmed? Is the chat
+[00:36:38.520 --> 00:36:44.360]   ended? Um, and then we have the main running loop, right? Which is basically an infinitely running loop,
+[00:36:44.680 --> 00:36:51.320]   which says, okay, while this, uh, wait for basically these, any of these conditions to be
+[00:36:51.320 --> 00:36:57.240]   through, either there's a message, the prompt queue, or the chat has ended, or something has been like
+[00:36:57.240 --> 00:37:04.360]   a tool has been confirmed. Uh, then, you know, pop something from the prompt, um, from a prompt queue,
+[00:37:04.360 --> 00:37:10.200]   if I mean, okay, I wrote this a bit wrong, but imagine that it would handle if there was a prompt
+[00:37:10.200 --> 00:37:16.520]   message versus like a confirmed message, like a match here. Um, then you, you basically, okay,
+[00:37:16.520 --> 00:37:21.720]   let's apply to the conversation history. And then you start running these activities, right? So for example,
+[00:37:21.720 --> 00:37:27.320]   in here we can say, okay, based on this user's prompt through the tool for it to be executed,
+[00:37:27.320 --> 00:37:32.040]   like we have in the graph agent with any given the prompt input, you have some, you know, configuration
+[00:37:32.040 --> 00:37:38.680]   here. Like I want to try this, you know, how many times with how much interval, and I expect this to be
+[00:37:38.680 --> 00:37:45.240]   done within 60 seconds from scheduling and 30 seconds from starting. And then after you get the result,
+[00:37:45.240 --> 00:37:50.600]   you can get whatever, if for whatever tools being given by this, by this function here, right?
+[00:37:50.600 --> 00:37:55.880]   That's what, whatever tool comes back as that the agent wants to use, you can say, what's the next
+[00:37:55.880 --> 00:38:00.760]   step? And what's the current tool? If there's a tool, this could be none here, right? And then you
+[00:38:00.760 --> 00:38:05.320]   can just match the next step. Like if it's a tool use, then you can go and create, like, just execute
+[00:38:05.320 --> 00:38:09.800]   that, that tool. Like you can probably have, I don't know, a way to do the reflection here to maybe do
+[00:38:09.800 --> 00:38:19.080]   another match, match tool, match next, I don't know, whatever, match tool, let's say, I know it's not a
+[00:38:19.080 --> 00:38:33.080]   variable, whatever, case calculator, we do like, workflow execute activity method, calculator with blah, blah.
+[00:38:35.560 --> 00:38:40.760]   Yeah, if there's the, if the next step is to confirm it, you go ahead and run the confirmation
+[00:38:40.760 --> 00:38:45.800]   part of like, you know, if you're running the tool, the case is, if the next step is to end it, you,
+[00:38:45.800 --> 00:38:50.360]   you know, end the call. The interesting part is that these signals, like how do, how do we get these
+[00:38:50.360 --> 00:38:55.800]   signals from the API from the front and into the workflow? We have these workflow signals here that
+[00:38:55.800 --> 00:39:01.560]   Temporal gives us is like another primitive, where you can say, hey, this is a signal. Whenever you receive
+[00:39:01.560 --> 00:39:06.360]   the signal, you can do these things, for example, wherever there's a new user prompt, you put in the
+[00:39:06.360 --> 00:39:13.400]   prompt queue. Whenever there's a confirm signal, just set confirm to true. Yeah, and then they give
+[00:39:13.400 --> 00:39:17.960]   it easy that could be defined here, right? Where, you know, you can just use them from, from this path.
+[00:39:17.960 --> 00:39:24.600]   Then in the API, all we can do is I say, okay, let's say there's a new, this is a fast API app, right?
+[00:39:24.600 --> 00:39:35.000]   I have a new send prompt. So yes, more or less. Signal and activity. So activity is a function and
+[00:39:35.000 --> 00:39:41.880]   signal is what? Is an event. That's an event. It's something that happens, right? A trigger, an event,
+[00:39:41.880 --> 00:39:49.320]   you know, something, a new prompt arrives, a new message arrives from an API. It's just a way to,
+[00:39:49.320 --> 00:39:55.560]   a way to basically interrupt the execution or like to provide ways to enter the context of the workflow,
+[00:39:55.560 --> 00:39:59.720]   right? Because the workflow like runs wherever is a run loop.
+[00:39:59.720 --> 00:40:05.960]   Okay. And the logic to handle signals is an execution activity method, execute activity method,
+[00:40:05.960 --> 00:40:12.040]   right? What do you do with those? That's a nice, that's a nice part about it. Because that's a nice
+[00:40:12.040 --> 00:40:17.320]   part about it is you can kind of decouple these signals from your, you can just write Python,
+[00:40:17.320 --> 00:40:24.520]   right? This prompt queue here is just like an actual asyncio queue, right? So you don't need to,
+[00:40:24.520 --> 00:40:27.800]   so when you're running your workflow, the nice thing about it is you don't have to think about what
+[00:40:27.800 --> 00:40:34.600]   signals are coming. You can just like write it so that, you know, I am, what I, what I know, I want
+[00:40:34.600 --> 00:40:40.680]   to run a workflow. I want to wait until the user has something to say, or so the user has confirmed
+[00:40:40.680 --> 00:40:45.480]   something from a tool use. I don't care when it, when the user does that or how they do that. I
+[00:40:45.480 --> 00:40:49.640]   just, I'm just going to wait forever until they give me something. And then even the other part is
+[00:40:49.640 --> 00:40:56.680]   like, how do you get that something, right? Which is the signal. It's a signal. So for example, here,
+[00:40:56.680 --> 00:41:01.880]   I said define the user prompt can provide, it can, is a signal that can basically, when it, when it receives
+[00:41:01.880 --> 00:41:08.200]   that signal, right? It will put something on the queue. So then, because it's, it's running on, on the event loop,
+[00:41:09.000 --> 00:41:12.760]   when the event loop goes back to the, you know, main running loop, it'll be like, hey,
+[00:41:12.760 --> 00:41:16.120]   there's something in the queue. I'll pop it from the queue and then continue the execution.
+[00:41:16.120 --> 00:41:22.520]   Same with the confirm signal, right? Then the pretty nice thing about it, you just have to write Python
+[00:41:22.520 --> 00:41:27.560]   or go or whatever you want. And it's minimal how much you have to think about these kind of like
+[00:41:27.560 --> 00:41:35.400]   stuff outside of your core logic, right? So it's nice to build very decoupled applications with it.
+[00:41:35.400 --> 00:41:40.600]   But those signals are within the scope of the workflow.
+[00:41:40.600 --> 00:41:45.240]   Uh, what do you mean?
+[00:41:45.240 --> 00:41:51.640]   Like here, you have self-confirm and self-prom, that self is the instance of workflow plus.
+[00:41:51.640 --> 00:41:55.160]   Correct, correct, correct. But this, this is the thing is like,
+[00:41:55.160 --> 00:42:03.480]   okay, as long as these are serializable, right? Which most objects that we use are serializable in
+[00:42:03.480 --> 00:42:10.520]   the context of AI, right? Even the, even, I think I'm not gonna, I know it's probably gonna be confusing.
+[00:42:10.520 --> 00:42:16.840]   Even, uh, you can provide custom serialize, they've serialized for objects that you cannot
+[00:42:16.840 --> 00:42:21.880]   serialize by default, right? But anyways, besides the point, yes, these are living inside the Python
+[00:42:21.880 --> 00:42:29.240]   context and they're all within these, um, where is it? I can't see this. They're all within the workflow
+[00:42:29.240 --> 00:42:36.680]   context, serialized. Yeah. So you can just, you can just continue to treat them as Python objects
+[00:42:36.680 --> 00:42:40.120]   as long as you want, right? Like I can say here after this tool use,
+[00:42:40.120 --> 00:42:45.480]   I can just basically like, okay, uh, no, sorry, here case confirm. I can just stealth confirmed
+[00:42:45.480 --> 00:42:49.640]   equals false, right? After I've done my logic to execute. So then I can just put it to false.
+[00:42:49.640 --> 00:42:53.240]   And then when a new single comes, this is gonna set it back to true.
+[00:42:53.240 --> 00:42:55.640]   Okay. Yeah.
+[00:42:55.640 --> 00:43:01.400]   So yeah, these activities are just like, as I kind of like skeleton just kind of provide how these,
+[00:43:01.400 --> 00:43:07.160]   you know, for example, here I'm using the agent activities tools, but I think we implemented
+[00:43:07.160 --> 00:43:09.720]   something very similar, right? When we have these kind of like different calculator
+[00:43:09.720 --> 00:43:16.200]   tools and, uh, so they actually use Python code that runs for the tool, but how do we get it
+[00:43:16.200 --> 00:43:24.040]   from the API side into those? How do we get the signals into that? Um, we basically just, uh,
+[00:43:24.040 --> 00:43:29.320]   we have workflow ID, which in our case would be something like conversation ID in, uh, spark.
+[00:43:30.360 --> 00:43:36.680]   And in this case is called single will start. I'm not going into it, but you can reference it. Uh,
+[00:43:36.680 --> 00:43:41.800]   we just say, okay, temporal start this workflow agent run this input and this workflow ID.
+[00:43:41.800 --> 00:43:48.920]   What single would start means is like, if this workflow is not running, start it. And if the
+[00:43:48.920 --> 00:43:53.960]   workflow is running already, just send the signal. So basically in the beginning, it will basically,
+[00:43:54.760 --> 00:43:59.160]   if the workflow is not, does not exist, right? It's not started. It was, it will just start a new
+[00:43:59.160 --> 00:44:05.000]   workflow. And the first start signal it sends is a user prompt. And the prompt will be this. So
+[00:44:05.000 --> 00:44:11.000]   basically whenever the user, whenever the workflow starts, it already has the signal in, the signal
+[00:44:11.000 --> 00:44:17.160]   already runs and it depends on the queue. So then when this part runs here, it will have something to pop
+[00:44:17.160 --> 00:44:21.800]   from the queue and continue with the execution. But then when we send another, another message to the
+[00:44:21.800 --> 00:44:27.320]   same conversation, it won't start the same workflow. It will just basically go ahead and, um,
+[00:44:27.320 --> 00:44:33.880]   it will just go ahead and give a signal to it, right? It will just, the board will still be the same
+[00:44:33.880 --> 00:44:40.280]   workflow. We'll just get a signal. I think it's easier to kind of see in the confirmment and chat,
+[00:44:41.640 --> 00:44:49.240]   things, right? In the, uh, stuff where we send the confirmation. We, we fetch that, that workflow by the
+[00:44:49.240 --> 00:44:55.320]   workflow ID, in our case would be the conversation ID. And then we'll just say, okay, that handle dot signal
+[00:44:55.320 --> 00:45:03.640]   and then send a confirm signal, uh, I think for, for the end, right? So that's a way to get stuff into the workflow
+[00:45:03.640 --> 00:45:09.960]   and you don't have to worry about, you know, when this comes back as a response, whatever, it's all managed by,
+[00:45:09.960 --> 00:45:19.480]   back and forth. Okay, James, go. Um, so I was just assuming that, so the, basically on the API side,
+[00:45:19.480 --> 00:45:23.640]   you're going to send the first endpoint name. I can't remember what it was called, but you're going to hit
+[00:45:23.640 --> 00:45:30.280]   that first endpoint. Then that is going to, yes, send prompt. Then that's going to go through, start the
+[00:45:30.280 --> 00:45:37.640]   workflow. Then it's going to wait for you to hit the confirm endpoint, right? So that, that send prompt
+[00:45:37.640 --> 00:45:44.680]   endpoint is the front end is still waiting for that. Uh, but then you send the confirm confirmation and
+[00:45:44.680 --> 00:45:50.920]   then that triggers that, that sends a signal to the other workflow and the other workflow completes and
+[00:45:50.920 --> 00:45:59.080]   then sends the response to the original. Um, so yeah, I think if we take the demo example I gave that
+[00:45:59.080 --> 00:46:05.160]   it's just one workflow in the entire conversations with one workflow. So initially when I started that, it was
+[00:46:05.160 --> 00:46:10.760]   basically because the workflow didn't exist, the pro was like, I can't signal this work workflow, but
+[00:46:10.760 --> 00:46:16.600]   it's, I, I, I, you know, I have to start up. So I have to start it. Yes. And then when I keep talking to
+[00:46:16.600 --> 00:46:21.880]   it, it's like, well, this, the work, this workflow with this workflow ID exists, but then I, I just,
+[00:46:21.880 --> 00:46:26.520]   I will just add to it. So for example, even if the, if, for example, if we, if a user has a conversation
+[00:46:26.520 --> 00:46:34.440]   ID from like two years ago, right. That, that workflow still exists, the workflow still exists. Um, you can
+[00:46:34.440 --> 00:46:39.880]   let it running forever if you want to, if the user hasn't decided to end the chat and even like two years
+[00:46:39.880 --> 00:46:44.360]   from now, when the new, when the convers that the user decides to continue our conversation two years
+[00:46:44.360 --> 00:46:49.800]   ago, Hey, this workflow actually exists. I just need to like send us a new signal for a new prompt and
+[00:46:49.800 --> 00:46:57.480]   then continue the execution from there. Um, yeah. And then I think what you were mentioning about it, you
+[00:46:57.480 --> 00:47:01.240]   don't have to confirm it every single time. It's just how the current example is being written. You can,
+[00:47:01.240 --> 00:47:08.600]   you can, for example, say, well, I have a prompt now from this prompt. I want to do query expansion
+[00:47:08.600 --> 00:47:12.120]   for all these expansion. I want to do some queries, some search, blah, blah, and then provide the answer
+[00:47:12.120 --> 00:47:17.720]   back or, or, you know, we can even have multiple agents. You can have multiple workflows. You can start
+[00:47:17.720 --> 00:47:24.200]   workflows as child workflows. So you can have multiple edges working together for once a single prompt where
+[00:47:24.200 --> 00:47:30.440]   they pass in signals between each other and query each other to see the result to actually give a response.
+[00:47:30.440 --> 00:47:34.840]   So it's kind of like the sky's the limit. You can go as complex as you want with these kind of work
+[00:47:34.840 --> 00:47:39.800]   workflows and how you can query and send single between the work workflows. And that's where I think, like,
+[00:47:39.800 --> 00:47:46.200]   I generally think we should go to, uh, Temporal be like, Hey, do you guys want to do dev role?
+[00:47:46.200 --> 00:47:57.160]   Because I think Temporal is goaded for AI agentic workflows. Yeah. Um, yeah. Um, yeah. So
+[00:47:59.080 --> 00:48:04.040]   that's basically it. I can go over the advanced stuff. I think we want to really easy, right?
+[00:48:04.040 --> 00:48:15.640]   One question in terms of payloads between API and worker, like how much is the payload or, or between
+[00:48:15.640 --> 00:48:22.520]   steps or in, in, in this case, between of activities, like I cannot transfer a document. Like in hatchet,
+[00:48:22.520 --> 00:48:27.480]   there is a limitation of four megabytes to transfer data in the payload. In the pub sub, there is, I think,
+[00:48:27.480 --> 00:48:30.680]   10 megabytes or one megabyte. I don't know which one.
+[00:48:30.680 --> 00:48:36.680]   I'm not sure. I'll look and look into that, but I think that that's limitations from the message queue
+[00:48:36.680 --> 00:48:44.440]   itself, like in highest is rabbit, right? So like here, there's not, there's not a rabbit MQ in the,
+[00:48:44.440 --> 00:48:50.520]   in the middle. It's just Temporal and here lies objects. I look at to see if there's a limit. I haven't
+[00:48:50.520 --> 00:48:59.960]   seen one, but I haven't really tried to read the element. Um, yeah. Okay. Um, yeah. So I said,
+[00:48:59.960 --> 00:49:06.360]   it's like more of an advanced part of the Temporal, but you can have the workflow be the state as we
+[00:49:06.360 --> 00:49:13.160]   said before with queries, um, where you can, you know, the same as before, right? Let's say we add
+[00:49:13.160 --> 00:49:20.280]   another function to, uh, our agent, which is a annotated with a query. And it says basically,
+[00:49:20.280 --> 00:49:25.160]   okay, this will, um, retreat eternal conversation history. It will just return the conversation
+[00:49:25.160 --> 00:49:29.160]   history object, which is like a, you know, collection of messages. And then in the app,
+[00:49:29.160 --> 00:49:33.400]   when we want to get that conversation history, we'll just say, well, I know, I know exactly
+[00:49:33.400 --> 00:49:42.040]   which here will be the conversation ID, right? Right? Sorry. Let me just, just right now.
+[00:49:42.040 --> 00:49:53.960]   Uh, conversation ID, Spain, right? So we know which conversation ID we want, just get that work,
+[00:49:53.960 --> 00:49:59.000]   or that workflow, right? Get the handle for it. And then just on that handle, just get the, get the
+[00:49:59.000 --> 00:50:04.920]   conversation history from the query and just return it. So we don't even need to send the
+[00:50:04.920 --> 00:50:11.160]   conversation history to the database. You can just store it in the workflow itself and query it. And
+[00:50:11.160 --> 00:50:17.720]   it's backed by the Temporal database, which would die by Postgres, which we're already doing. But anyways,
+[00:50:17.720 --> 00:50:24.280]   I digress. You don't have to like imagine it to different places. I would imagine it's complicated,
+[00:50:24.280 --> 00:50:31.480]   especially if you think with like, how would you do a migration of what is stored within the history here?
+[00:50:32.200 --> 00:50:39.240]   Um, I think that this, that's handled by the, that's handled by the Temporal, but I, I, this is more
+[00:50:39.240 --> 00:50:44.120]   an advanced workflow. I'm using this conversation history as a, because it's easy for this current
+[00:50:44.120 --> 00:50:49.800]   example. Um, you don't have to use it. Right. But you can use this kind of like, you can't, you can't
+[00:50:49.800 --> 00:50:56.280]   write workflows just thinking about the workflow itself without having to think about where I'm saving
+[00:50:56.280 --> 00:51:01.880]   stuff. So when I want to see, for example, for, for an order for a, for a, you know, a shipment,
+[00:51:01.880 --> 00:51:08.440]   if that's pending, that's the status of that, um, order is pending in Temporal and it's waiting for
+[00:51:08.440 --> 00:51:14.280]   other updates, I can just query the workflow directly instead of like having to keep updating the database.
+[00:51:14.280 --> 00:51:19.000]   And if, if there's a race condition in the database, there's, uh, you know, what, what happens
+[00:51:19.000 --> 00:51:26.760]   if the work work, uh, the update of the database state failed, you know, you don't have to like worry
+[00:51:26.760 --> 00:51:33.880]   about those. You only have to worry about the workflow itself. Yeah. Um, just like very quick
+[00:51:33.880 --> 00:51:42.040]   question. Yeah. Like with the conversation example, um, would you be able to say, is that like an expiry,
+[00:51:42.040 --> 00:51:48.760]   like an inactive, um, expiry on a workflow? So if it's been inactive for like a week, would you be able
+[00:51:48.760 --> 00:51:59.000]   to, um, trigger, um, trigger like an event, which would then save that to a database if you wanted
+[00:51:59.000 --> 00:52:06.040]   to. So then basically wait till it would be inactive before you go and do that. Uh, yeah. I mean,
+[00:52:06.040 --> 00:52:15.480]   this would be the application database, right? Not the temporal database. So basically with temporal,
+[00:52:15.480 --> 00:52:18.520]   the database is the state of the workflow, right? Because these workflows
+[00:52:18.520 --> 00:52:24.120]   can be paused for infinite time. They're not holding up any compute compute. So that's going to be said
+[00:52:24.120 --> 00:52:28.520]   automatically through the database conversation industry, right? If you do want to stop a workflow
+[00:52:28.520 --> 00:52:32.920]   after a certain amount of time, you can, there is a way, um, it's not documented here and I haven't
+[00:52:32.920 --> 00:52:40.760]   screwed it here, but, um, in the, uh, when you start a workflow, you can say, you can set a policy of how
+[00:52:40.760 --> 00:52:47.000]   long you want to wait, uh, for this workflow to finish. And then if it doesn't finish in the, during that time,
+[00:52:47.000 --> 00:52:51.720]   temporal is going to like, uh, kill it, terminate it automatically.
+[00:52:51.720 --> 00:52:59.400]   But is, is there a way of like, not just killing it, but, uh, running like some finishing logic and
+[00:52:59.400 --> 00:53:04.760]   then killing it. I, I imagine there is, I haven't looked into it, but I'm, I imagine there is a way
+[00:53:04.760 --> 00:53:12.120]   to do it, um, by hooking it to these, you know, events like termination events. But you have to think,
+[00:53:12.120 --> 00:53:16.840]   if you're using the temporal to store the state by the workflow state, you just have to think about
+[00:53:16.840 --> 00:53:22.920]   it. Like the data, the state is unified, right? So there's no such thing as like saving to the
+[00:53:22.920 --> 00:53:26.840]   history. When you're querying the Python object, that's actually the state in the database.
+[00:53:26.840 --> 00:53:43.880]   So can the worker be like serverless of one time, like I know in prefect, there is like task runner,
+[00:53:43.880 --> 00:53:51.560]   which basically, once you have a task or a step or activity in this terminology, it will spin up a
+[00:53:51.560 --> 00:53:57.160]   camaraderie this job. It will do the job. It will kill the folder. And yeah, that's it.
+[00:53:57.160 --> 00:54:04.200]   Um, so in terms of scaling, I'm thinking like, if you want to, to scale many workers to, to, to do your
+[00:54:04.200 --> 00:54:11.560]   work. Right. Um, I mean, you can, you can, there is metrics. So basically the ball exposes a metrics
+[00:54:11.560 --> 00:54:16.280]   server, uh, like this, it's a Prometheus metrics. And you can like scale based on those metrics,
+[00:54:16.280 --> 00:54:21.080]   like queue size and all these kinds of things. But then I, I, I'm not sure about like the, I haven't
+[00:54:21.080 --> 00:54:27.640]   looked at the serverless stuff, but, um, yeah, you can just scale to zero and then using those metrics
+[00:54:27.640 --> 00:54:32.760]   can bring up, if you're using KEDA, right? If you, for example, it means these kind of metrics about the
+[00:54:32.760 --> 00:54:39.640]   queue, each queue size and the queue goes to zero, you can scale your, your worker to zero. Um,
+[00:54:41.720 --> 00:54:48.360]   I'm not sure. I don't think Temporal has a good to use serverless stuff like Cloud Run because
+[00:54:48.360 --> 00:54:55.400]   No, not, not Cloud Run, in Kubernetes job. I'm not seeing just a certain example, just, okay,
+[00:54:55.400 --> 00:55:01.560]   I sent to process the document in spin-ups Kubernetes job with restriction of the resources. It will finish
+[00:55:01.560 --> 00:55:09.960]   and release the resources basically to the cluster. I mean, yeah, you can, you can do that, but you do it
+[00:55:09.960 --> 00:55:18.600]   via KEDA, right? Yeah. Okay. You do it via KEDA and descending. I think for heavier, all like loads,
+[00:55:18.600 --> 00:55:24.680]   I mean, yeah, if you do it via KEDA or if you do it via job, it's kind of same, same. I just think like
+[00:55:24.680 --> 00:55:31.560]   a worker can run multiple, multiple requests at a time or multiple tasks at a time.
+[00:55:33.000 --> 00:55:38.520]   Um, so it doesn't have to be every single job is a task. Yeah.
+[00:55:38.520 --> 00:55:42.360]   Okay.
+[00:55:42.360 --> 00:55:54.760]   Well, I imagine it's, it's scalable given like, this came out of, you know, Uber, they had like,
+[00:55:54.760 --> 00:56:03.480]   their scalability needs. Yeah. Um, none of this like would be a good way. I mean,
+[00:56:03.480 --> 00:56:10.120]   I don't think that would provide any benefits to us using temple versus versus a hatchet. I think
+[00:56:10.120 --> 00:56:16.120]   hatchet has its own durable workflow because in them in set for Saturn, sorry. Um, because for Saturn,
+[00:56:16.120 --> 00:56:21.160]   we have like such a, you know, very dag execution where we take this, we do this and return this. It
+[00:56:21.160 --> 00:56:25.640]   helps more for like agentic workflows when you have these pauses, these like interaction from the user,
+[00:56:25.640 --> 00:56:31.080]   we have like more interactive kind of like back and forth, which would be hard to, to code in a
+[00:56:31.080 --> 00:56:38.920]   traditional way or via, you know, like a traditional, you know, declared the, declared a programming way.
+[00:56:38.920 --> 00:56:42.840]   It's more of an advantage of a little bit. You can have these kind of interruptions and events and
+[00:56:42.840 --> 00:56:45.880]   signals. That's where it temporal really shines. I think.
+[00:56:48.200 --> 00:56:53.000]   Yeah. Yeah. Yeah. That's, that's about it for today. Um, I could do a part two,
+[00:56:53.000 --> 00:56:55.320]   if you are interested in, we'd go into like some more advanced stuff.
+[00:56:55.320 --> 00:57:02.680]   Yeah. That's really good demo. Yeah. Yeah. Thanks. Yeah. It's not my demo. It's the demo
+[00:57:02.680 --> 00:57:08.040]   from temporal. I took it because it's no, no, but whole workflow and understand the way it fits this
+[00:57:08.040 --> 00:57:14.120]   like technology. Yeah. Yeah. Yeah. I think, I think it's great. I think it's, uh, this, this came up before,
+[00:57:14.120 --> 00:57:19.480]   um, a, authentic AI. And when like authentic AI was booming, I was like temporal, I'm going
+[00:57:19.480 --> 00:57:28.360]   all in on temporal. It's like, yeah. Luca. I actually didn't want to raise my hand. I don't
+[00:57:28.360 --> 00:57:35.720]   know how I did it. Okay. Okay. I can't put it down. Okay. Now I did it. Okay. Sorry.
+[00:57:35.720 --> 00:57:45.320]   You think to, um, like one of the thoughts I had, I think before when you took like explain temporal,
+[00:57:45.320 --> 00:57:56.680]   but also now is if we took some, if we took like graph AI, it's like some, so the foundation of a AI
+[00:57:56.680 --> 00:58:04.840]   framework and just like kits that out with temporal would that, yeah, I was actually trying to make a,
+[00:58:04.840 --> 00:58:09.480]   uh, I was doing this on a, on a, on a random weekend when I was like thinking, like, can I make
+[00:58:09.480 --> 00:58:16.280]   an extension to temporal to allow these kind of like graphs deformed? I haven't found a good way yet,
+[00:58:16.280 --> 00:58:24.440]   but I've, I've been looking at it. Yeah. Yeah. Cause that, that could be like a sort of prediction
+[00:58:24.440 --> 00:58:32.520]   ready, more robust graph AI would be pretty. Yeah. Yeah. And that'd be great. I think,
+[00:58:32.520 --> 00:58:36.120]   I think Tempo always really liked that too, because they're, they're really, really pushing just AI stuff.
+[00:58:36.120 --> 00:58:45.960]   Yeah. But yeah, I think it's a great technology. It's really nice to work with. I think it's basically
+[00:58:45.960 --> 00:58:52.040]   shifts the burden more on people like me and someone else who are like running it, but, um, or, and also
+[00:58:52.040 --> 00:58:58.120]   like, it's not very cheap to run, to use the cloud version. Um, but it's not actually that hard to run.
+[00:58:58.120 --> 00:59:00.840]   Like I was, I thought it'd be hard. It's not actually that hard to run.
+[00:59:00.840 --> 00:59:12.040]   Yeah. Yeah. Yeah. Yeah. This, yeah. The self-hosted version is completely
+[00:59:12.040 --> 00:59:18.360]   deeper parity. Yeah. They're basically betting on the fact that people don't really know how to
+[00:59:18.360 --> 00:59:24.360]   host the database side of things. I think that's, I think the smallest part here is like the most
+[00:59:24.360 --> 00:59:30.120]   consequential is that if you have like globally distributed workflows, there are millions of users
+[00:59:30.120 --> 00:59:34.920]   and billions of actions a day, then like the databases have been the biggest bottleneck as
+[00:59:34.920 --> 00:59:38.760]   we're talking about, like how that there's like that object parity with a database for the state.
+[00:59:38.760 --> 00:59:44.840]   Um, yeah. So that's why they recommend using Sandra and all these more esoteric databases that
+[00:59:44.840 --> 00:59:48.440]   not many people, you know how to use, but then they're like, well, we're just going to offer you a cloud
+[00:59:48.440 --> 00:59:58.520]   version to use. Okay. Okay. Makes sense. Nice. Yeah. Uh, I'll, I'll need to go by the way. So
+[00:59:59.400 --> 01:00:05.000]   yeah, if it's finished, uh, yeah, yeah, it's finished. I already overrun by like 10 minutes and
+[01:00:05.000 --> 01:00:14.840]   okay. You mentioned that this is spinoff of Uber. So, and so it's Uber company or no, no, no,
+[01:00:14.840 --> 01:00:18.360]   no. It's basically the engineers left Uber and they just like, would you just start this?
+[01:00:18.360 --> 01:00:23.000]   They basically took their learnings from like what they were doing at Uber. And they're like,
+[01:00:23.880 --> 01:00:27.320]   I'm not sure how Uber didn't come after them for that. Maybe they had a good relations and they're
+[01:00:27.320 --> 01:00:32.360]   like, okay, we, we, we're chill. But yeah. Um, yeah.
+[01:00:38.520 --> 01:00:42.600]   Thank you. I go. Yeah. No worries. Thanks for coming.
+[01:00:42.600 --> 01:00:48.680]   Thank you both. And that was really helpful. Yeah. I'll put the, I'll put the PDF on the,
+[01:00:48.680 --> 01:00:56.120]   on the Slack cause. Yeah. I'll also share the recording after for anyone who wants it as long.
+
