@@ -1,0 +1,830 @@
+
+[00:00:00.000 --> 00:00:07.300]   Today we are going to be taking a look at how we can take off-the-shelf LLMs and fine-tune them
+[00:00:07.300 --> 00:00:14.280]   on our own data sets so that they can become better agents. Now one of the fundamental
+[00:00:14.280 --> 00:00:24.320]   requirements of LLMs in agentic workflows is that they can reliably use function calls. It is that
+[00:00:24.320 --> 00:00:31.540]   ability to do function calling that takes us from just having an LLM generating text to having an LLM
+[00:00:31.540 --> 00:00:38.980]   that is reviewing our code bases, writing code, opening PRs, checking out emails, doing web search,
+[00:00:38.980 --> 00:00:46.400]   all of that stuff is at its core it's an LLM but it's an LLM that can do function calling. Now despite
+[00:00:46.400 --> 00:00:55.920]   this until I think very recently there was a lot of LLMs like say the LLMs being built and released
+[00:00:55.920 --> 00:01:02.100]   that were good but they were not very good at function calling. Fortunately though for us even
+[00:01:02.100 --> 00:01:10.600]   with those other LMs we can very easily fine-tune them to make them actually pretty good at function
+[00:01:10.600 --> 00:01:15.860]   calling and therefore we can use these tiny LMs like we're going to be using a one billion parameter
+[00:01:15.860 --> 00:01:22.580]   model as agents which is pretty cool. So in this deep dive that's really what we're focusing on
+[00:01:22.580 --> 00:01:31.320]   how we can fine-tune these tiny LLMs or bigger LLMs if you really want to to be better agents and we'll
+[00:01:31.320 --> 00:01:40.040]   see how far we can push a tiny one billion parameter LLM. Now fine-tuning LLMs is pretty heavy you need a lot
+[00:01:40.040 --> 00:01:47.080]   compute. Fortunately we have access to NVIDIA's launchpad and with NVIDIA's launchpad I have
+[00:01:47.080 --> 00:01:52.140]   access to H100 GPUs so we're going to be running all this we're going to be training on a single
+[00:01:52.140 --> 00:02:00.320]   H100 but I can also use more if I want and as well as launchpad we are also going to be using
+[00:02:00.320 --> 00:02:09.040]   the Nemo microservices. Now Nemo microservices is from NVIDIA and the goal of the microservices
+[00:02:09.040 --> 00:02:17.000]   is to make fine-tuning and hosting your own LLMs and then also just running them in production much
+[00:02:17.000 --> 00:02:24.660]   easier or even just realistic to do at all. So these microservices, there's all these different components
+[00:02:24.660 --> 00:02:30.700]   within the microservices that we can use. One of the big ones is the customizer. The customizer is
+[00:02:30.700 --> 00:02:35.380]   what we are going to be fine-tuning with and there's also the evaluator. We're not actually
+[00:02:35.380 --> 00:02:40.280]   I'm not actually going to use this here although I may do in the future but that's of course evaluating
+[00:02:40.280 --> 00:02:46.060]   the models that you're fine-tuned and comparing them to you know where you began and NVIDIA NIMH which
+[00:02:46.060 --> 00:02:53.420]   is the essentially the LLM hosting service and that comes with the standard OpenAI compatible
+[00:02:53.420 --> 00:02:59.300]   endpoints so you can do chat completions and everything as you would with OpenAI. So we have
+[00:02:59.300 --> 00:03:04.700]   all that. There are a few other things here that I'm not going to go into but you can get an idea of what
+[00:03:04.700 --> 00:03:09.400]   they are anyway. So you have the curator which is for creating data sets to train your models,
+[00:03:09.940 --> 00:03:16.720]   retriever which is essentially RAG and then also guardrails which is of course you know protective
+[00:03:16.720 --> 00:03:24.120]   guardrails for LLMs when they're in production. Now we're going to be deploying this service and we're
+[00:03:24.120 --> 00:03:30.020]   going to be using a few different components. I've kind of covered most of those here. So the guardrails
+[00:03:30.020 --> 00:03:33.640]   and evaluator we're not using those so we can just ignore them they're on the side there.
+[00:03:33.640 --> 00:03:39.660]   The rest of these things we are using. So we'll be diving into each one of these components as we get
+[00:03:39.660 --> 00:03:46.120]   to them but let me just give you a quick overview of what this is here now and treat this as almost a
+[00:03:46.120 --> 00:03:52.480]   map of what we're going to building and going through. So to begin with we are going to be
+[00:03:52.480 --> 00:03:57.580]   pulling together a data set. So the data set of course it's going to it's going to come in up here
+[00:03:57.580 --> 00:04:01.600]   all right this is a data set we're going to bring that in and we're going to be sending that over here
+[00:04:01.600 --> 00:04:08.660]   to the data store. Okay so the data store what every single one of these components is accessible via an API
+[00:04:09.380 --> 00:04:17.020]   these all get deployed at once within our broader microservices deployment. So we'll see all that
+[00:04:17.020 --> 00:04:21.960]   later but anyway so we have our data set we do do some data preparation we're going to do that first
+[00:04:21.960 --> 00:04:26.320]   so in the middle here but then we're going to be putting everything in our data store.
+[00:04:26.840 --> 00:04:31.820]   We leave it in the data store there. We do register that data set in the entity store. The entity store
+[00:04:31.820 --> 00:04:38.460]   essentially is where we register all of our data sets and models so that all of the other components
+[00:04:38.460 --> 00:04:44.520]   within our microservices can read that and see what is you know what is accessible within the service.
+[00:04:44.520 --> 00:04:51.900]   Then we have the customizer. So as I mentioned the customizer is what handles the training of our models.
+[00:04:52.200 --> 00:05:00.020]   So the customizer is going to take a base model that we have defined. The way that we've done this is
+[00:05:00.020 --> 00:05:06.780]   we're setting the base models which is going to be llama 3.2 1 billion instruct. We're setting that as
+[00:05:06.780 --> 00:05:13.400]   the base model and we do that within the deployment set of our microservices. So we'll see that soon.
+[00:05:13.580 --> 00:05:20.280]   it's going to then load our train and validation data set from the data store component and then it's
+[00:05:20.280 --> 00:05:25.000]   going to run a training job based on a set of training parameters that we are going to provide
+[00:05:25.000 --> 00:05:31.100]   to us. So that's things like the learning rate, dropout, number of training epochs and so on.
+[00:05:31.100 --> 00:05:40.460]   We'll see that all later. And once that training job is complete our new custom model will be registered
+[00:05:40.460 --> 00:05:47.420]   with our NC store which means it will be accessible or at least viewable from our other components.
+[00:05:47.420 --> 00:05:53.820]   Then at that point, we will be using the deployment management component which you can see over here.
+[00:05:53.820 --> 00:05:58.540]   And what the deployment management is doing is deploying what we would call NIMs.
+[00:05:59.100 --> 00:06:07.420]   Now a NIM is what's a container from NVIDIA that has been built for GPU acceleration tasks.
+[00:06:07.420 --> 00:06:13.820]   So of course, hosting an LLM and running inference on it is the sort of thing that you would deploy within a NIM.
+[00:06:13.820 --> 00:06:25.020]   Now, when we deploy one of these LLM or model NIMs, that will then become usable by our NIM proxy.
+[00:06:25.020 --> 00:06:30.940]   The NIM proxy components is essentially just an API where we are going to send requests to.
+[00:06:30.940 --> 00:06:35.980]   So a chat completion request, for example, and based on the model that we provided,
+[00:06:35.980 --> 00:06:39.580]   it's going to route that to a particular NIM.
+[00:06:39.580 --> 00:06:45.660]   Now, we actually don't deploy NIMs for each specific custom model that we've built.
+[00:06:46.300 --> 00:06:50.060]   Okay, the only NIMs here are actually these two things.
+[00:06:50.060 --> 00:06:54.140]   And these NIMs are pre-made by NVIDIA.
+[00:06:54.140 --> 00:06:55.820]   We can see them in this big catalog.
+[00:06:55.820 --> 00:07:06.940]   And the way that we use them to run our custom models is that our custom models over here all have a base model parameter.
+[00:07:06.940 --> 00:07:15.740]   That base model parameter is going to define all of our custom models here as having a base model of LLAMA 3.2 1b instruct in this case.
+[00:07:15.740 --> 00:07:23.340]   And that means that our NIM proxy will know, okay, I'm using this NIM, but I'm using the model weights from this custom model.
+[00:07:23.340 --> 00:07:31.020]   Okay, so in essence, what this NIM becomes is a container for our custom model.
+[00:07:31.020 --> 00:07:36.060]   So at a high level, that is what we are going to be building.
+[00:07:36.060 --> 00:07:37.180]   I know that's a lot.
+[00:07:37.180 --> 00:07:48.860]   We are, I know for sure this is going to be a fairly long one, but we are going to go through this step by step, starting with the deployment, and then working through each one of those steps I described.
+[00:07:49.340 --> 00:07:53.660]   Okay, so we're going to start by deploying our Nemo microservices.
+[00:07:53.660 --> 00:07:58.700]   So to do that, I have this little notebook that just takes us through everything.
+[00:07:58.700 --> 00:08:02.940]   Now, there are various ways of deploying this in the docs.
+[00:08:02.940 --> 00:08:05.340]   You can, you can find those up here.
+[00:08:05.340 --> 00:08:13.580]   You'll see that they have this beginner tutorial and this does take you through some of the, some alternative ways of setting this up.
+[00:08:13.580 --> 00:08:18.220]   So you can, you can also try this and potentially it will be simpler.
+[00:08:18.220 --> 00:08:24.060]   Although for me, it was simpler to do what I'm going to show you, which is a little more hands up.
+[00:08:24.060 --> 00:08:26.860]   Now, let's run through this.
+[00:08:26.860 --> 00:08:34.460]   Essentially what we're going to be doing is downloading home charts for our Nemo microservices.
+[00:08:34.460 --> 00:08:39.180]   And to have to get those home charts, you will need a NGC account.
+[00:08:39.180 --> 00:08:41.820]   So you would sign up over here.
+[00:08:41.820 --> 00:08:43.980]   So go to NVIDIA NGC.
+[00:08:43.980 --> 00:08:46.380]   I'm going to go James at Aurelio AI.
+[00:08:46.380 --> 00:08:47.500]   Okay.
+[00:08:47.500 --> 00:08:51.580]   And this is going to take me through to their NGC catalog.
+[00:08:51.580 --> 00:08:57.740]   Now in here, you can find a ton of stuff, you know, that we are actually going to be using.
+[00:08:57.740 --> 00:09:01.500]   And I'll take you through this as we, as, as we need them.
+[00:09:01.500 --> 00:09:05.260]   But to begin with, I'm going to type in here, Nemo microservices.
+[00:09:06.860 --> 00:09:09.900]   And you can see that there is this Nemo microservices helm chart.
+[00:09:09.900 --> 00:09:11.340]   And this is what we're going to be using.
+[00:09:11.340 --> 00:09:17.340]   This is a helm chart, which bundles together all the individual home charts of the various
+[00:09:17.340 --> 00:09:20.700]   components of the microservices.
+[00:09:20.700 --> 00:09:26.220]   So we basically deploy this and it gives us everything that we need.
+[00:09:26.220 --> 00:09:28.700]   So it's like customized, evaluated guardrails.
+[00:09:28.700 --> 00:09:35.340]   And then also data store, entity store, deployment management, the NIM proxy operator, and so on.
+[00:09:35.340 --> 00:09:35.580]   Right.
+[00:09:35.580 --> 00:09:38.060]   So it's everything that we would need.
+[00:09:38.060 --> 00:09:44.700]   And okay, right now, the latest version here is 25.4.0.
+[00:09:44.700 --> 00:09:48.940]   You can also check up here for the various versions if you want to use a different one.
+[00:09:48.940 --> 00:09:51.580]   But we are going to go with this one.
+[00:09:51.580 --> 00:09:55.900]   So I just press that, it gave me the fetch command, and we can come over here.
+[00:09:55.900 --> 00:09:58.220]   And we should get it here.
+[00:09:58.220 --> 00:10:01.260]   Okay, so this is what we're going to be doing just here.
+[00:10:01.260 --> 00:10:02.540]   Cool.
+[00:10:02.540 --> 00:10:07.820]   So that is how we navigate and find the various helm charts that we're using for deployment here.
+[00:10:07.820 --> 00:10:14.860]   But before we actually do that, we can't access this without providing our NGC API key.
+[00:10:14.860 --> 00:10:18.940]   So let's just go and grab that quickly.
+[00:10:18.940 --> 00:10:20.620]   We're going to go back into the catalog.
+[00:10:20.620 --> 00:10:22.060]   We go over to the right here.
+[00:10:22.060 --> 00:10:23.740]   Go to setup.
+[00:10:23.740 --> 00:10:26.300]   And I'm just going to generate an API key.
+[00:10:26.300 --> 00:10:27.180]   Okay.
+[00:10:27.180 --> 00:10:28.140]   So you generate that.
+[00:10:28.140 --> 00:10:33.900]   Then come back over here and just run this cell and enter your API key.
+[00:10:33.900 --> 00:10:34.860]   Okay.
+[00:10:34.860 --> 00:10:37.740]   Now we can fetch our helm charts.
+[00:10:37.740 --> 00:10:40.540]   This is just a placeholder.
+[00:10:40.540 --> 00:10:42.140]   You don't need to enter anything for this.
+[00:10:42.140 --> 00:10:45.580]   This is literally the string that we're sending as our username.
+[00:10:46.140 --> 00:10:48.860]   And then what we need to do.
+[00:10:48.860 --> 00:10:52.060]   So this is a helm thing, not specific to the microservices.
+[00:10:52.060 --> 00:10:57.500]   We need to include the values that we would like to set.
+[00:10:57.500 --> 00:10:57.820]   Okay.
+[00:10:57.820 --> 00:11:00.860]   So these are going to override the default values within the helm chart.
+[00:11:01.260 --> 00:11:06.940]   The only one that we 100% need here is the NGC API key.
+[00:11:06.940 --> 00:11:15.740]   Then here I'm adding the LAMA 3.2 1B instruct model so that my customizer later can access that as a model to actually optimize.
+[00:11:15.740 --> 00:11:20.700]   You can also deploy this through the deployment management component otherwise.
+[00:11:21.260 --> 00:11:26.380]   But yeah, here you can also just deploy and it's ready to go when we need it.
+[00:11:26.380 --> 00:11:29.900]   And then here I also set a storage class.
+[00:11:29.900 --> 00:11:40.860]   So this was to handle a bug I was getting where there is essentially no storage for my customizer to save the model to or even I think write logs to.
+[00:11:41.580 --> 00:11:53.020]   So you may need that, may not, as far as I'm aware, it's either a bug or it's my misuse of the system that required that.
+[00:11:53.020 --> 00:12:01.980]   So we create our YAML file here and then we actually use that YAML file to deploy our service.
+[00:12:02.460 --> 00:12:06.940]   So before we do that, we do just create a namespace in Kubernetes.
+[00:12:06.940 --> 00:12:07.980]   I've already created mine.
+[00:12:07.980 --> 00:12:09.980]   So it's just demo namespace.
+[00:12:09.980 --> 00:12:11.900]   You can call it whatever you like.
+[00:12:11.900 --> 00:12:18.380]   Then, oh, the other thing that I also added here is, again, to handle that storage class issue I was seeing.
+[00:12:18.380 --> 00:12:27.820]   This here is going to look for all the default storage class values within our deployment
+[00:12:27.820 --> 00:12:34.620]   and replace them with the new storage class that I have set, which is this, okay, NFS client.
+[00:12:34.620 --> 00:12:40.700]   And you will see here the rule here is add the storage class if it is none, right?
+[00:12:40.700 --> 00:12:45.820]   So if there's already a storage class for the within the Helm chart, it's not going to replace it.
+[00:12:45.820 --> 00:12:50.380]   It's only going to replace it if that storage class has been set to none, okay?
+[00:12:50.380 --> 00:12:54.380]   And so, okay, let me just run these.
+[00:12:56.220 --> 00:13:02.060]   So this is going to apply this logic, this replacement logic within our cluster.
+[00:13:02.060 --> 00:13:04.860]   I've already created it, so I'm going to get all these.
+[00:13:04.860 --> 00:13:06.940]   But when you run this the first time, you shouldn't see this.
+[00:13:06.940 --> 00:13:10.140]   Okay, and that should be it.
+[00:13:10.140 --> 00:13:18.300]   So now what I want to do is, if you like, you can just confirm that you've filled out all the required values
+[00:13:18.300 --> 00:13:20.700]   by creating a Helm template.
+[00:13:20.700 --> 00:13:26.380]   So that can be good for, especially when it comes to debugging, if you have issues with your deployment, that can be quite good.
+[00:13:26.380 --> 00:13:31.340]   Now, we would install the Helm chart into the cluster.
+[00:13:31.340 --> 00:13:36.700]   So mine is going to tell me installation failed because I've already installed it, okay?
+[00:13:36.700 --> 00:13:39.820]   So mine is already there, so I don't actually need to do that.
+[00:13:39.820 --> 00:13:45.580]   But once you have done that, you can actually check your cluster and just see what is in there.
+[00:13:45.580 --> 00:13:49.980]   And you should, for the most part, see either initializing or running.
+[00:13:50.620 --> 00:13:57.180]   Sometimes you might see, especially for, I think, the entity store or the data store, you'll see a crash loop backoff.
+[00:13:57.180 --> 00:14:08.220]   That is, if you run this again, you should see, after not that long, that the status for that will turn to running.
+[00:14:09.020 --> 00:14:17.980]   If you see any errors or crash loop backoff here that are not going away or pending, that doesn't seem to be going away, there's probably an issue.
+[00:14:17.980 --> 00:14:22.460]   And you should look into that and try and figure things out.
+[00:14:22.460 --> 00:14:31.500]   The first time you do run this, you almost definitely will see that for your, I think, the Nemo operator controller manager,
+[00:14:32.140 --> 00:14:37.020]   this one here, you will see that this is stuck in a, I think, a crash loop backoff.
+[00:14:37.020 --> 00:14:42.540]   And the reason for this is because the scheduler dependency, which is Volcano here,
+[00:14:42.540 --> 00:14:46.700]   is not included within our cluster.
+[00:14:46.700 --> 00:14:51.260]   So we just need to run this cell here and this will install Volcano.
+[00:14:51.260 --> 00:14:56.220]   And then you would get your Nemo operator controller.
+[00:14:57.020 --> 00:15:00.540]   You would get the name for that pod from here.
+[00:15:00.540 --> 00:15:03.580]   So in this case, it would be this one.
+[00:15:03.580 --> 00:15:10.140]   And you would come in here and just run this and that would delete a pod and it will automatically restart.
+[00:15:10.140 --> 00:15:11.260]   Okay.
+[00:15:11.260 --> 00:15:13.740]   And that should, that should fix the problem.
+[00:15:13.740 --> 00:15:18.540]   Now, one other thing that we will need to do is set our NVCR image pool secret.
+[00:15:18.540 --> 00:15:26.060]   So this is our ability to access NVIDIA's container registry, which is needed later on.
+[00:15:26.060 --> 00:15:32.380]   When we're training our models, we need to pull the relevant containers from NVCR.
+[00:15:32.380 --> 00:15:36.540]   And if we, if we don't have the secret set, we will not be able to access them.
+[00:15:36.540 --> 00:15:40.460]   So we'll get a, I think a forbidden error if I, if I'm not wrong.
+[00:15:40.460 --> 00:15:44.380]   So we do first just delete the existing secret.
+[00:15:44.380 --> 00:15:48.700]   I think there is just like a placeholder string in there by default.
+[00:15:48.700 --> 00:15:55.180]   Then what we would do is we create a new secret for the NVCR image pool secret.
+[00:15:55.180 --> 00:16:01.020]   For that, we do just need to pass in our, essentially our login details here.
+[00:16:01.020 --> 00:16:04.540]   So we run that, see that we created it.
+[00:16:04.540 --> 00:16:11.180]   And if you like, okay, first we can just check, okay, this is, you know, it's there, it exists.
+[00:16:11.180 --> 00:16:15.020]   And if you like, if yeah, I would recommend doing this.
+[00:16:15.020 --> 00:16:19.180]   You can just confirm that the secret has been read in correctly.
+[00:16:19.180 --> 00:16:22.380]   So if you run this cell, you will be able to see what is in there.
+[00:16:22.380 --> 00:16:27.340]   So that can just be useful if you're, especially if you're wanting to debug things or you're running
+[00:16:27.340 --> 00:16:29.820]   this for the first time, just so you understand what is going on.
+[00:16:29.820 --> 00:16:34.140]   And yeah, I mean, that, that actually should be everything for the deployment.
+[00:16:34.140 --> 00:16:34.940]   Okay.
+[00:16:34.940 --> 00:16:39.900]   There is another step later where we're deploying our name, but we, we will run through that when
+[00:16:39.900 --> 00:16:41.180]   we get to it.
+[00:16:41.180 --> 00:16:46.140]   So with that, our whole deployment is ready to go.
+[00:16:46.140 --> 00:16:52.940]   And yeah, we're ready to start running through that whole data preparation, data storage, customization,
+[00:16:52.940 --> 00:16:54.220]   and so on pipeline.
+[00:16:54.220 --> 00:17:01.900]   Now for our dataset, we are going to be using a dataset from Salesforce, which they use to train
+[00:17:01.900 --> 00:17:04.620]   what they call their large action models.
+[00:17:04.620 --> 00:17:10.700]   Now these large action models are models that do a ton of function calling.
+[00:17:11.180 --> 00:17:18.620]   So the dataset that train those is obviously pretty good for us to fine tune our own LLM to be a
+[00:17:18.620 --> 00:17:22.060]   better agent through better function calling, of course.
+[00:17:22.060 --> 00:17:26.460]   So we need to go ahead and grab that dataset.
+[00:17:26.460 --> 00:17:30.380]   It is available on Hugging Face.
+[00:17:30.380 --> 00:17:33.820]   So we need to navigate to Hugging Face.
+[00:17:33.820 --> 00:17:35.420]   You will need an account for this, by the way.
+[00:17:35.420 --> 00:17:36.700]   I will just pre-warn you.
+[00:17:36.700 --> 00:17:41.740]   So let's just first navigate to the dataset.
+[00:17:42.460 --> 00:17:45.580]   You see Salesforce XLM function calling 60K.
+[00:17:45.580 --> 00:17:46.700]   This is the one we're using.
+[00:17:46.700 --> 00:17:51.020]   And what you will probably see when you scroll down here is that you don't have access to this
+[00:17:51.020 --> 00:17:51.340]   dataset.
+[00:17:51.340 --> 00:17:55.180]   And that's because you need to agree to their terms and conditions for using dataset.
+[00:17:55.180 --> 00:17:59.180]   So, you know, go ahead and agree to those terms and conditions.
+[00:17:59.180 --> 00:18:06.300]   And then once you've done that, you actually cannot programmatically download this dataset
+[00:18:06.300 --> 00:18:09.100]   without providing a Hugging Face API key.
+[00:18:09.100 --> 00:18:13.100]   Because, you know, your account has approved those terms and conditions,
+[00:18:13.100 --> 00:18:16.700]   but you need to prove that it's your account requesting that data programmatically.
+[00:18:16.700 --> 00:18:21.980]   So to do that, we need to go into our settings.
+[00:18:21.980 --> 00:18:28.140]   We go to access tokens and we're going to create a new token here.
+[00:18:28.140 --> 00:18:34.060]   This token, you can you can have fine grained access here if you want.
+[00:18:34.060 --> 00:18:38.460]   Or otherwise, I would just recommend like read only is fine.
+[00:18:38.460 --> 00:18:41.980]   Give it a little name and then create that token and you're good to go.
+[00:18:41.980 --> 00:18:45.820]   I've already created mine down here, so I'm going to create a new one.
+[00:18:46.380 --> 00:18:51.980]   So once you have that token, we need to jump into here and just run this cell
+[00:18:51.980 --> 00:18:55.340]   and enter your Hugging Face API key.
+[00:18:55.340 --> 00:18:56.620]   Okay, cool.
+[00:18:56.620 --> 00:18:57.900]   So we have that.
+[00:18:57.900 --> 00:19:00.940]   Now what we can do is go and download the data.
+[00:19:00.940 --> 00:19:01.740]   So we'll do this.
+[00:19:01.740 --> 00:19:06.140]   And you can see that the more here, we can see the dataset structure.
+[00:19:06.140 --> 00:19:11.260]   So you have ID obviously for each record, a query, which is the user query and an answer,
+[00:19:11.260 --> 00:19:13.500]   which is the assistant answer.
+[00:19:13.500 --> 00:19:17.340]   But it is not a direct answer, it's a tool call or function call.
+[00:19:17.340 --> 00:19:19.740]   And then we also have the tools here.
+[00:19:19.740 --> 00:19:24.300]   So for those of you that have built tool calling agents before,
+[00:19:25.340 --> 00:19:30.700]   with open AI, line chain and everything else, there is always a tools parameter.
+[00:19:30.700 --> 00:19:34.300]   And in that tools parameter or function schema parameter.
+[00:19:34.300 --> 00:19:38.940]   And within that, you always provide a list of function schemas.
+[00:19:38.940 --> 00:19:42.140]   Okay, which essentially just tell the LLM.
+[00:19:42.140 --> 00:19:46.700]   Okay, how, how can or what tools do I have access to?
+[00:19:46.700 --> 00:19:48.540]   And how do I use them?
+[00:19:48.540 --> 00:19:49.820]   That is what that is for.
+[00:19:49.820 --> 00:19:53.420]   Now, we can, I can show you what that looks like even.
+[00:19:53.980 --> 00:19:58.220]   So in here, yeah, we have that user query, the answers.
+[00:19:58.220 --> 00:20:02.780]   You can see here, there are multiple answers.
+[00:20:02.780 --> 00:20:08.460]   That is because, okay, where can I find live giveaways for beta access and games, right?
+[00:20:08.460 --> 00:20:16.140]   What the agent in this training dataset decided to do is it decides to use this live giveaways
+[00:20:16.140 --> 00:20:19.820]   by type tool with the argument beta.
+[00:20:19.820 --> 00:20:25.980]   So it's basically looking for, okay, live giveaways by type, and it's pulling in the beta type.
+[00:20:25.980 --> 00:20:30.300]   But the user is asking for beta access and games, right?
+[00:20:30.300 --> 00:20:37.820]   So in parallel, the LLM is also calling the same tool, but with the type game.
+[00:20:37.820 --> 00:20:44.780]   Now, in our training, we're actually just going to filter for records that have a single function
+[00:20:44.780 --> 00:20:49.260]   call because not all models can support parallel function calling.
+[00:20:49.260 --> 00:20:52.380]   So yeah, we're just sticking with the single one.
+[00:20:52.380 --> 00:20:53.980]   So we'll actually filter these out.
+[00:20:53.980 --> 00:20:57.580]   So we'll only have records where there is a single function call.
+[00:20:57.580 --> 00:21:03.020]   But, you know, the, the same applies, like if you want to train parallel function calling
+[00:21:03.020 --> 00:21:09.340]   and your, your base model is able to, you can, you just process the data as we do later
+[00:21:09.340 --> 00:21:10.620]   a little bit differently.
+[00:21:10.620 --> 00:21:14.540]   And then we have the tools argument here where we see the list of tools that this
+[00:21:15.260 --> 00:21:19.020]   LLM has access to, which is just this live giveaways by type tool.
+[00:21:19.020 --> 00:21:22.540]   So that is it for the data.
+[00:21:22.540 --> 00:21:27.020]   And there is a little bit of a problem with this data set, which is it's not
+[00:21:27.020 --> 00:21:30.940]   quite in the correct format that we need in order to train with.
+[00:21:31.740 --> 00:21:37.100]   The NEMA customizer expects our data to be in the OpenAI compatible format.
+[00:21:37.100 --> 00:21:43.340]   That means that both the messages and the tool streamers, function streamers, they need to be in
+[00:21:43.340 --> 00:21:50.220]   the standard OpenAI format, which the XLM dataset does not provide is, is not in that format.
+[00:21:50.220 --> 00:21:50.780]   format.
+[00:21:50.780 --> 00:21:54.700]   So we actually need to modify this a little bit and we'll, I'll, I'll talk you through,
+[00:21:54.700 --> 00:21:58.300]   okay, how we are doing that and what is actually going on there.
+[00:21:58.300 --> 00:22:00.860]   So let's jump through here.
+[00:22:00.860 --> 00:22:02.940]   Actually, don't worry.
+[00:22:02.940 --> 00:22:04.540]   I already explained this basically.
+[00:22:05.420 --> 00:22:11.980]   In fact, if it wasn't clear, so a function schema is just describing what a function
+[00:22:11.980 --> 00:22:12.940]   is and how to call it.
+[00:22:12.940 --> 00:22:15.420]   So for example, we have this multiply function, very simple.
+[00:22:15.420 --> 00:22:18.140]   We have this natural language description.
+[00:22:18.140 --> 00:22:20.620]   That's for the LLM to know what this does.
+[00:22:20.620 --> 00:22:23.020]   And we have all these parameters.
+[00:22:23.020 --> 00:22:28.700]   When we run this function through a method to turn it into a function schema, which is what
+[00:22:28.700 --> 00:22:32.620]   we're doing here, you see that it turns into this structure, okay?
+[00:22:32.620 --> 00:22:38.300]   This structure is, that is the function schema, is also an OpenAI function schema.
+[00:22:38.300 --> 00:22:43.500]   So just so you're aware, that is basically, this is what we're doing, okay?
+[00:22:43.500 --> 00:22:47.100]   We're defining these schemas, okay?
+[00:22:47.100 --> 00:22:52.300]   So let's first take a look at this, okay?
+[00:22:52.300 --> 00:22:56.940]   You can see here that, okay, this is the XLM dataset.
+[00:22:56.940 --> 00:22:59.100]   There are a few things that I'm missing, okay?
+[00:22:59.100 --> 00:23:05.820]   The first thing is that we need this type function, which I've put up here, okay?
+[00:23:05.820 --> 00:23:10.060]   So you can see, compare this function schema up here.
+[00:23:10.060 --> 00:23:13.180]   This is the OpenAI one to this one, okay?
+[00:23:13.180 --> 00:23:15.500]   We're missing this type function, okay?
+[00:23:15.500 --> 00:23:16.940]   It's very easy to put in, isn't it?
+[00:23:16.940 --> 00:23:18.460]   Not a big deal.
+[00:23:18.460 --> 00:23:21.820]   Then we need to put everything else within a function here.
+[00:23:21.820 --> 00:23:26.140]   So name, description parameters are all going to go inside this dictionary.
+[00:23:26.140 --> 00:23:29.100]   And then for the parameters, okay?
+[00:23:29.100 --> 00:23:34.940]   Here we have parameters and that goes straight into type and then description and so on.
+[00:23:34.940 --> 00:23:41.420]   Here, the parameters have a type object and then they have a properties dictionary inside
+[00:23:41.420 --> 00:23:43.340]   there where we're putting all this other information.
+[00:23:43.340 --> 00:23:50.380]   And then finally, the other final little thing there is that the types in the XLM dataset are using Python types.
+[00:23:50.380 --> 00:23:53.180]   The OpenAI types are slightly different.
+[00:23:53.180 --> 00:23:59.100]   So for example, STR, which is the Python type, which XLM uses, would become string.
+[00:23:59.100 --> 00:24:01.660]   Like the full, that's how you would name it here.
+[00:24:02.220 --> 00:24:06.140]   And then a list of anything would become array, okay?
+[00:24:06.140 --> 00:24:13.500]   And there's a full table here where I've written down all of the various, okay, Python formats, OpenAI format,
+[00:24:13.500 --> 00:24:16.060]   and what that looks like here, okay?
+[00:24:16.060 --> 00:24:21.980]   So we're going to be handling all of this in some logic, which I have written into here, okay?
+[00:24:21.980 --> 00:24:25.900]   So we're just normalizing the type here, looking at the type, converting into an OpenAI type.
+[00:24:25.900 --> 00:24:33.180]   Then we actually need to restructure the, you know, we looked at the structure difference between those two function streamers before.
+[00:24:33.180 --> 00:24:35.020]   We need to handle that as well.
+[00:24:35.020 --> 00:24:36.780]   So that's exactly what we're doing here.
+[00:24:36.780 --> 00:24:40.700]   We're converting from the XLM structure into the OpenAI structure.
+[00:24:40.700 --> 00:24:46.860]   And as part of this, we also do normalize our types, right?
+[00:24:46.860 --> 00:24:52.620]   So we're here, we're converting, you know, to all of these various type mappings, okay?
+[00:24:52.620 --> 00:24:55.020]   So I'll run that.
+[00:24:55.020 --> 00:24:59.260]   And then what we can do, okay, let me, this is the XLM tool schema.
+[00:24:59.260 --> 00:25:06.220]   If we convert this with our new function, we can see that it successfully turns XLM format
+[00:25:06.220 --> 00:25:08.460]   into an OpenAI format here, okay?
+[00:25:08.460 --> 00:25:11.420]   Which exactly, this is exactly what we need.
+[00:25:11.420 --> 00:25:14.940]   Okay, so that is for our tool or function schema.
+[00:25:14.940 --> 00:25:21.260]   Another thing that we need to do is for the actual assistant where it's calling a particular function or tool,
+[00:25:21.260 --> 00:25:25.100]   we also need to handle that in a particular way, which is a lot simpler.
+[00:25:25.100 --> 00:25:27.100]   So we actually just do this.
+[00:25:27.100 --> 00:25:32.380]   So we are saying, okay, if we just have one tool call, we're going to keep it.
+[00:25:32.380 --> 00:25:35.660]   If there are more tool calls in this assistant message,
+[00:25:35.660 --> 00:25:38.460]   we're going to discard this and just skip it.
+[00:25:38.460 --> 00:25:41.020]   That, again, it's just to keep things simple for us.
+[00:25:41.020 --> 00:25:42.460]   We don't necessarily need to do that.
+[00:25:42.460 --> 00:25:46.620]   But you do need to do that for LLMs that don't support parallel function calling.
+[00:25:46.620 --> 00:25:49.740]   And yeah, I mean, we're just restructuring that.
+[00:25:49.740 --> 00:25:51.260]   This is pretty simple.
+[00:25:51.260 --> 00:25:53.420]   I'm not going to go into detail there.
+[00:25:53.420 --> 00:25:57.020]   But yeah, here you can see, right?
+[00:25:57.020 --> 00:25:58.460]   So this is the answers.
+[00:25:58.460 --> 00:26:00.060]   So this is the assistant message.
+[00:26:00.060 --> 00:26:01.340]   What did it say?
+[00:26:01.340 --> 00:26:05.260]   And then here we can see this is our formatted version.
+[00:26:05.260 --> 00:26:07.100]   So it's not that much different.
+[00:26:07.100 --> 00:26:07.420]   Okay.
+[00:26:07.420 --> 00:26:08.780]   But it's also simpler.
+[00:26:08.780 --> 00:26:10.620]   Like, there's a lot less to process here.
+[00:26:10.620 --> 00:26:16.860]   So we actually need to go through and process everything, like all of our messages.
+[00:26:16.860 --> 00:26:20.460]   So that's the user message and also the assistant message, which is here.
+[00:26:20.460 --> 00:26:22.140]   Run that.
+[00:26:23.660 --> 00:26:23.980]   Okay.
+[00:26:23.980 --> 00:26:27.900]   And this is before processing and this is after processing.
+[00:26:27.900 --> 00:26:29.420]   So this is our OpenAI format.
+[00:26:29.420 --> 00:26:31.100]   This is our XLAM format.
+[00:26:31.100 --> 00:26:32.300]   Cool.
+[00:26:32.300 --> 00:26:33.100]   Okay.
+[00:26:33.100 --> 00:26:38.540]   So now we can go through and do that for the full data set.
+[00:26:38.540 --> 00:26:38.780]   Okay.
+[00:26:38.780 --> 00:26:39.660]   So we do that here.
+[00:26:39.660 --> 00:26:43.180]   It might take just a moment.
+[00:26:43.180 --> 00:26:48.140]   And then we can see, okay, this is the first record has been cleaned up.
+[00:26:48.140 --> 00:26:49.100]   It is in the correct format.
+[00:26:49.420 --> 00:26:54.860]   And now what we can do is work on separating these out into our train validation and test
+[00:26:54.860 --> 00:26:55.260]   splits.
+[00:26:55.260 --> 00:27:00.060]   So when we're fine tuning models, we have our training data, which is a
+[00:27:00.060 --> 00:27:05.660]   segmented part of the data that we are actually showing to the LLM during fine tuning
+[00:27:05.660 --> 00:27:07.260]   and is learning from that.
+[00:27:07.260 --> 00:27:12.140]   Then we have a small slice of that data set, which is left for validation.
+[00:27:12.140 --> 00:27:16.540]   So at the end of every training epoch, we're going to run our,
+[00:27:16.540 --> 00:27:20.540]   the current version of the LLM after it's been trained for an epoch on the validation
+[00:27:20.540 --> 00:27:21.660]   data and see how it performs.
+[00:27:21.660 --> 00:27:24.380]   And we just report that performance back to ourselves.
+[00:27:24.380 --> 00:27:27.660]   Then there is also the test split.
+[00:27:27.660 --> 00:27:33.500]   So we're actually not necessarily going to use that here, but in the, if you're evaluating,
+[00:27:33.500 --> 00:27:38.700]   you would reserve that test split for the evaluation step, which comes after training.
+[00:27:38.700 --> 00:27:43.260]   You're going to basically test again on this test data set.
+[00:27:43.260 --> 00:27:49.340]   And that will inform you as to your almost final performance for your model.
+[00:27:49.340 --> 00:27:56.540]   So to do all this, we first are going to shuffle our data and I'm going to split our data into
+[00:27:56.540 --> 00:27:58.540]   that train validation and test split.
+[00:27:58.540 --> 00:28:05.740]   We do a 70% train data followed by 15% and 15% for the validation and test data.
+[00:28:05.740 --> 00:28:06.620]   Okay.
+[00:28:06.620 --> 00:28:11.340]   Which you can see here for the actual number of records and yeah.
+[00:28:11.340 --> 00:28:13.340]   So that is it for the test data.
+[00:28:13.340 --> 00:28:16.540]   If you are going to run that through evaluation, there's a slightly different format for that.
+[00:28:16.540 --> 00:28:19.020]   So you would format it a little bit differently.
+[00:28:19.660 --> 00:28:22.540]   And finally, we're just going to save all those.
+[00:28:22.540 --> 00:28:27.420]   So our training file, validation file and test file.
+[00:28:27.420 --> 00:28:32.060]   And we're going to be uploading those into our data store and registering them now.
+[00:28:32.060 --> 00:28:33.260]   And so pretty soon.
+[00:28:33.260 --> 00:28:40.220]   So, I mean, that's already a lot I know, but that is the data preparation stuff out of the way.
+[00:28:40.220 --> 00:28:40.540]   Okay.
+[00:28:40.540 --> 00:28:47.900]   So we have so far outlined what we're going to do with all the various components for our fine tuning pipeline.
+[00:28:48.620 --> 00:28:58.300]   We have then deployed our Nemo microservices and then we have prepared our dataset for training.
+[00:28:58.300 --> 00:29:03.980]   So we can actually jump into actually using the microservices now.
+[00:29:03.980 --> 00:29:12.300]   In this pipeline of microservices, what we first need to do is, of course, set up our training data.
+[00:29:12.300 --> 00:29:12.620]   Okay.
+[00:29:12.620 --> 00:29:13.580]   Not preparing it.
+[00:29:13.580 --> 00:29:14.620]   We've done that.
+[00:29:14.620 --> 00:29:19.660]   But just, you know, taking out our training data because we've just saved it locally right now.
+[00:29:19.660 --> 00:29:25.580]   Taking that training data and giving it to our Nemo microservices.
+[00:29:25.580 --> 00:29:28.860]   And basically, we're going to put them in the data store.
+[00:29:28.860 --> 00:29:31.020]   Just register them in the entity store.
+[00:29:31.020 --> 00:29:31.340]   Okay.
+[00:29:31.340 --> 00:29:33.580]   And then they're ready for our customizer.
+[00:29:33.580 --> 00:29:35.660]   But first, we need to go ahead and do that.
+[00:29:35.660 --> 00:29:37.740]   So let's jump in.
+[00:29:38.300 --> 00:29:43.980]   So first thing we're going to do, okay, because we're going to need to reference all these IP addresses.
+[00:29:43.980 --> 00:29:47.260]   We're going to be hitting the various APIs throughout this notebook.
+[00:29:47.260 --> 00:29:55.980]   We're first just going to take a look at our deployment and we're going to see, okay, what are the IP addresses for each of our services?
+[00:29:56.940 --> 00:30:01.260]   We have the customizer, data store, actually, almost.
+[00:30:01.260 --> 00:30:04.860]   So these four and also our NimProxy we're going to be using.
+[00:30:04.860 --> 00:30:08.460]   So we need to make sure that we pull these IPs in.
+[00:30:08.460 --> 00:30:12.940]   So for the customizer here, and we're going to pull them in down here.
+[00:30:12.940 --> 00:30:14.060]   Okay.
+[00:30:14.060 --> 00:30:18.620]   Now, the IP addresses for you when you're running this will be different to what you see here.
+[00:30:18.620 --> 00:30:21.660]   So it's important that you do copy those across.
+[00:30:21.660 --> 00:30:24.700]   The ports at the end here should not change.
+[00:30:24.700 --> 00:30:28.620]   And also, you do need to have HTTP at the start there.
+[00:30:28.620 --> 00:30:28.860]   Okay.
+[00:30:28.860 --> 00:30:33.500]   So the only thing you need to be changing is the IP addresses in the middle there.
+[00:30:33.500 --> 00:30:35.660]   Don't change anything else.
+[00:30:35.660 --> 00:30:36.220]   Okay.
+[00:30:36.220 --> 00:30:40.940]   And the other thing, okay, this is less important, but you can modify it if you want.
+[00:30:40.940 --> 00:30:43.420]   You can change your dataset name.
+[00:30:43.420 --> 00:30:48.620]   So this is what we're going to be using when we put our dataset in the data store and sort it later.
+[00:30:48.620 --> 00:30:52.380]   So you can modify that if you want to call it something else.
+[00:30:52.380 --> 00:30:53.500]   Okay.
+[00:30:53.500 --> 00:30:54.460]   So you have that.
+[00:30:54.460 --> 00:31:01.980]   Now, the first thing we need to do is for both our end store and the data store,
+[00:31:01.980 --> 00:31:03.420]   we're going to create a namespace.
+[00:31:03.420 --> 00:31:09.180]   Now, namespace for both of these is going to be equivalent to our namespace that we've set
+[00:31:09.180 --> 00:31:11.740]   already, which is demo.
+[00:31:12.700 --> 00:31:15.020]   So you would need to run this.
+[00:31:15.020 --> 00:31:18.700]   Now, the first time you run this, you should get to 200 responses.
+[00:31:18.700 --> 00:31:22.620]   The reason I'm getting 409 here is because I've already run this.
+[00:31:22.620 --> 00:31:24.380]   So my namespace already exists.
+[00:31:24.380 --> 00:31:26.700]   I don't, yeah, I don't need to recreate it.
+[00:31:26.700 --> 00:31:29.900]   So, okay, that looks good.
+[00:31:29.900 --> 00:31:32.300]   You should get 200 responses.
+[00:31:32.300 --> 00:31:33.340]   Great.
+[00:31:33.340 --> 00:31:38.380]   Now we are going to upload the data to our microservices.
+[00:31:38.380 --> 00:31:41.500]   And for that, we're using the Hunging Face API client.
+[00:31:41.980 --> 00:31:50.060]   Now, the reason that we're using this is that the Hugging Face API client is just very good at data
+[00:31:50.060 --> 00:31:53.660]   processing and fast transfer of data between various places.
+[00:31:53.660 --> 00:31:55.580]   So it's really good.
+[00:31:55.580 --> 00:31:57.340]   But we're not actually using Hugging Face here.
+[00:31:57.340 --> 00:31:59.740]   We're actually modifying the endpoint here.
+[00:31:59.740 --> 00:32:01.900]   So this is not going to Hugging Face Hub.
+[00:32:01.900 --> 00:32:05.020]   This is going to go directly to our data store.
+[00:32:05.020 --> 00:32:14.060]   And the data store has been there's this Hugging Face endpoint, which is kind of like what we do with OpenAI compatibility.
+[00:32:14.060 --> 00:32:17.820]   NVIDIA have done this for the data store.
+[00:32:17.820 --> 00:32:20.780]   They've made it Hugging Face API compatible as well.
+[00:32:21.340 --> 00:32:23.180]   So we run that.
+[00:32:23.180 --> 00:32:25.180]   We have our repo ID here.
+[00:32:25.180 --> 00:32:26.460]   Okay, so repo ID.
+[00:32:26.460 --> 00:32:31.420]   You can see that it is just the namespace followed by the dataset name.
+[00:32:31.420 --> 00:32:34.940]   That is similar to if we go over to Hugging Face.
+[00:32:37.500 --> 00:32:40.060]   And we look here at the datasets.
+[00:32:40.060 --> 00:32:48.860]   There is the like the namespace, which in this case is the Salesforce, followed by the dataset name, which is the XLAM function calling 60K.
+[00:32:48.860 --> 00:32:55.100]   This is it's the same thing, but just locally or within our microservice cluster.
+[00:32:55.100 --> 00:32:59.260]   Okay, now we can go ahead and create our repo.
+[00:32:59.260 --> 00:33:06.620]   You will find, you know, once you've run this once and you run it again, it will not recreate the repo because it already exists.
+[00:33:06.620 --> 00:33:07.980]   Okay, so I've just recreated.
+[00:33:07.980 --> 00:33:10.060]   I've just deleted it and run it again.
+[00:33:10.060 --> 00:33:12.460]   And now it is recreating the dataset.
+[00:33:12.460 --> 00:33:15.100]   But then if I run it again, it's not going to show me anything.
+[00:33:15.100 --> 00:33:16.380]   That's because it already exists.
+[00:33:17.020 --> 00:33:18.860]   So we've created our repo.
+[00:33:18.860 --> 00:33:22.620]   And now we need to do is upload our training validation and test data sets.
+[00:33:22.620 --> 00:33:25.980]   And we do that with this face API upload file.
+[00:33:25.980 --> 00:33:28.380]   And we're just pointing it to each one of our data files.
+[00:33:28.380 --> 00:33:32.140]   Okay, so it's training validation and test data.
+[00:33:32.140 --> 00:33:35.020]   Okay, and that will just upload.
+[00:33:35.020 --> 00:33:36.620]   It's actually pretty quick.
+[00:33:36.620 --> 00:33:38.620]   So we've done that.
+[00:33:38.620 --> 00:33:45.180]   And now what we can do is register the dataset that we just created with our Nemo NC store.
+[00:33:45.180 --> 00:33:50.780]   So all we're going to do here is say, okay, this is our the URL to our files that we just created.
+[00:33:50.780 --> 00:33:54.140]   And so it's at the hugging face endpoint data sets.
+[00:33:54.140 --> 00:33:56.220]   And then we have the namespace and data set name again.
+[00:33:56.220 --> 00:33:56.700]   Okay.
+[00:33:56.700 --> 00:33:57.340]   Okay.
+[00:33:57.340 --> 00:34:01.020]   So all we're doing that is just posting that to the end store.
+[00:34:01.020 --> 00:34:04.220]   Now the entity store knows that we have this dataset.
+[00:34:04.220 --> 00:34:05.260]   Okay.
+[00:34:05.260 --> 00:34:09.180]   And we can just confirm that that has been registered correctly.
+[00:34:09.180 --> 00:34:10.940]   We can see in here, it has been.
+[00:34:10.940 --> 00:34:11.420]   Okay.
+[00:34:11.420 --> 00:34:12.700]   Great.
+[00:34:12.700 --> 00:34:14.140]   That is, that's all good.
+[00:34:14.140 --> 00:34:17.900]   So now we're on to the training part.
+[00:34:17.900 --> 00:34:24.940]   So training, although super exciting, is actually always, there's not a lot to it nowadays.
+[00:34:24.940 --> 00:34:27.980]   So yeah, we'll jump into it.
+[00:34:28.700 --> 00:34:31.020]   We can get some nice charts and everything here.
+[00:34:31.020 --> 00:34:39.020]   So I'll just explain and go through, okay, how we can check in on the progress of our customization,
+[00:34:39.020 --> 00:34:44.540]   our training, how we can check in on the lost charts and so on.
+[00:34:44.540 --> 00:34:45.020]   We'll see.
+[00:34:45.420 --> 00:34:52.780]   So the first thing we want to do is actually check what models or base models we can fine tune from.
+[00:34:52.780 --> 00:34:59.820]   So we run this get customization, customization configs, and I can see, okay, we have this model.
+[00:34:59.820 --> 00:35:05.580]   Now, the reason I can see this is because earlier on when we were deploying everything for the customizer
+[00:35:05.580 --> 00:35:10.300]   within the values like YAML, I specified that I want this model to be available.
+[00:35:10.300 --> 00:35:10.860]   Okay.
+[00:35:10.860 --> 00:35:13.900]   So that is why it is now available.
+[00:35:14.540 --> 00:35:16.460]   Otherwise, this would not be in here.
+[00:35:16.460 --> 00:35:19.740]   I think by default, there is a default model, which is actually this one.
+[00:35:19.740 --> 00:35:21.580]   So I'm looking at the wrong one.
+[00:35:21.580 --> 00:35:26.940]   So this is the default model that the customizer will have access to.
+[00:35:26.940 --> 00:35:32.300]   And then if we scroll down a little bit, we can see the model that I've defined as wanting
+[00:35:32.300 --> 00:35:37.660]   to have access to, which is this one here, the llama3 to 1b in stroke.
+[00:35:37.660 --> 00:35:37.980]   Okay.
+[00:35:37.980 --> 00:35:41.740]   So this is the one we have set in our values like YAML.
+[00:35:41.740 --> 00:35:43.500]   We come up a little bit.
+[00:35:43.500 --> 00:35:52.060]   It's this is the model that is just by default accessible within the by the customizer because
+[00:35:52.060 --> 00:35:57.900]   it's set already in the pre-written values dot YAML that we later overwrite.
+[00:35:57.900 --> 00:35:58.940]   Okay.
+[00:36:00.540 --> 00:36:05.740]   So we have that and we can jump into actually training.
+[00:36:05.740 --> 00:36:12.460]   Now, the one thing, and I would, I would really recommend you do this is you can get a weights
+[00:36:12.460 --> 00:36:17.740]   and biases API key here, and it just makes checking in on the progress of your model.
+[00:36:17.740 --> 00:36:18.940]   So, so much easier.
+[00:36:18.940 --> 00:36:28.460]   So I would really recommend doing that to, to get this, you need to go to W and B dot A I open this.
+[00:36:28.460 --> 00:36:29.900]   You have to sign up for an account.
+[00:36:30.460 --> 00:36:36.940]   I think you, they come with a free trial period and they, they might still do the sort of free
+[00:36:36.940 --> 00:36:37.740]   personal accounts.
+[00:36:37.740 --> 00:36:39.020]   I, I, I'm not sure.
+[00:36:39.020 --> 00:36:41.020]   I haven't used it for a while.
+[00:36:41.020 --> 00:36:44.060]   And you find your API key in the dashboard.
+[00:36:44.060 --> 00:36:51.500]   So once you have that come back over here, run this cell and you need to enter your API key.
+[00:36:51.500 --> 00:36:54.060]   And of course, enter it in the top here.
+[00:36:54.060 --> 00:36:55.340]   Okay.
+[00:36:55.340 --> 00:36:57.100]   And now that has started a job.
+[00:36:57.100 --> 00:37:01.260]   So you can see there's all the various parameters that you set in there.
+[00:37:01.260 --> 00:37:02.300]   Yeah.
+[00:37:02.300 --> 00:37:03.260]   You should see all of this.
+[00:37:03.820 --> 00:37:05.340]   Then what you can also do.
+[00:37:05.340 --> 00:37:07.500]   So, uh, these are just, okay.
+[00:37:07.500 --> 00:37:14.220]   If you are running into some bugs and I mentioned some references to those here, uh, to deal with
+[00:37:14.220 --> 00:37:15.500]   them, but I'm skipping ahead.
+[00:37:15.500 --> 00:37:16.860]   I haven't seen any issues.
+[00:37:16.860 --> 00:37:25.020]   So now what we can do is we can go get our customization ID, and then we can send a request to this
+[00:37:25.020 --> 00:37:27.980]   endpoint to get the status for our job.
+[00:37:27.980 --> 00:37:28.300]   Okay.
+[00:37:28.300 --> 00:37:31.100]   And we should see up here that it will probably be running.
+[00:37:31.100 --> 00:37:31.420]   Okay.
+[00:37:31.420 --> 00:37:32.940]   That's good.
+[00:37:33.660 --> 00:37:39.020]   Now we can also see there is, there's like this big list of like events that are happening.
+[00:37:39.020 --> 00:37:40.940]   You can, you can scroll through those.
+[00:37:40.940 --> 00:37:41.900]   The most recent one.
+[00:37:41.900 --> 00:37:42.140]   Okay.
+[00:37:42.140 --> 00:37:43.980]   We created the training job.
+[00:37:43.980 --> 00:37:45.740]   The training job was pending.
+[00:37:45.740 --> 00:37:48.620]   It got access to some resources and it started running.
+[00:37:48.620 --> 00:37:48.940]   Okay.
+[00:37:48.940 --> 00:37:52.060]   That, that is the, the progress so far.
+[00:37:52.060 --> 00:37:54.060]   We can also check in our cluster.
+[00:37:54.060 --> 00:37:54.620]   Okay.
+[00:37:54.620 --> 00:38:01.420]   So if we look for anything that begins or any pods that begin with this cust, that is a
+[00:38:01.420 --> 00:38:06.780]   customizer, I believe you'll be able to see these and we can see, okay, that this,
+[00:38:06.780 --> 00:38:11.100]   the first one here is already completed and it only took 74 seconds.
+[00:38:11.100 --> 00:38:13.660]   How incredibly fast is that for a training job?
+[00:38:13.660 --> 00:38:15.580]   That isn't the training job.
+[00:38:15.580 --> 00:38:17.740]   That is actually just the entity handler.
+[00:38:17.740 --> 00:38:20.060]   So this is registering the training job.
+[00:38:20.060 --> 00:38:25.340]   I believe pulling in the details and then it triggers the training job once it's complete.
+[00:38:25.340 --> 00:38:29.020]   And then here is our actual training job.
+[00:38:29.020 --> 00:38:30.060]   You can take this, right?
+[00:38:30.060 --> 00:38:31.660]   So we have the name of the pod here.
+[00:38:31.660 --> 00:38:36.460]   You can take that and we can view the logs for that pod here.
+[00:38:36.460 --> 00:38:41.420]   So I'm going here and see, uh, you'll see this right now.
+[00:38:41.420 --> 00:38:44.860]   After a little while, you'll start seeing like training updates.
+[00:38:44.860 --> 00:38:51.100]   So, you know, what step is it on and so on, but most useful, which is why I said, you know,
+[00:38:51.100 --> 00:38:56.620]   get your weights and biases API key, most useful is actually going over to your weights and biases
+[00:38:56.620 --> 00:38:57.180]   dashboard.
+[00:38:57.180 --> 00:39:03.260]   What you should find is that Nemo will automatically create this NVIDIA Nemo
+[00:39:03.260 --> 00:39:06.460]   customizer project within that weights and biases for you.
+[00:39:06.460 --> 00:39:08.060]   So you can click through into that.
+[00:39:08.060 --> 00:39:14.220]   And then we're going to see, well, these are a couple of past jobs I've already run for me,
+[00:39:14.220 --> 00:39:15.980]   but this is what you're going to see.
+[00:39:15.980 --> 00:39:16.380]   Okay.
+[00:39:16.380 --> 00:39:20.540]   So you're going to be able to check in on your validation loss and training loss.
+[00:39:20.540 --> 00:39:25.020]   And yeah, it's, it is pretty useful.
+[00:39:25.020 --> 00:39:31.740]   Now, I think if I look at this, the job that I've just kicked off hasn't quite started yet.
+[00:39:31.740 --> 00:39:33.020]   So I won't be able to see in here.
+[00:39:33.020 --> 00:39:34.780]   Now it has.
+[00:39:34.780 --> 00:39:35.100]   Okay.
+[00:39:35.100 --> 00:39:36.620]   So it's just popped up now.
+[00:39:36.620 --> 00:39:39.980]   So this top one here, I can remove all the rest.
+[00:39:39.980 --> 00:39:43.660]   I can't really see anything because it has literally just started.
+[00:39:44.460 --> 00:39:50.380]   But once we start getting metrics coming through, I will be able to see, you know,
+[00:39:50.380 --> 00:39:55.340]   how things are going and I'll be able to check back in every now and again to see how, you know,
+[00:39:55.340 --> 00:40:00.540]   how my losses coming out, how far along we are and so on.
+[00:40:00.540 --> 00:40:01.900]   So it's really useful.
+[00:40:01.900 --> 00:40:05.500]   And yeah, we, we have that.
+[00:40:05.500 --> 00:40:07.500]   And it's also, also pretty useful.
+[00:40:07.500 --> 00:40:11.660]   If you just look at this, right, I'll remove that one.
+[00:40:12.300 --> 00:40:12.540]   Right.
+[00:40:12.540 --> 00:40:13.420]   I can see, okay.
+[00:40:13.420 --> 00:40:16.060]   My validation loss here is, yeah, it's lower.
+[00:40:16.060 --> 00:40:21.820]   This, this one here, this yellow run scored best for validation loss.
+[00:40:21.820 --> 00:40:23.500]   So that's interesting.
+[00:40:23.500 --> 00:40:27.820]   And what I can do is say, okay, I've got the run ID here.
+[00:40:27.820 --> 00:40:29.740]   So I can, let me just expand this.
+[00:40:29.740 --> 00:40:30.940]   I've got the run ID here.
+[00:40:30.940 --> 00:40:37.260]   So I can, I can take that and I can actually use that when I'm deciding which model to use later.
+[00:40:37.260 --> 00:40:37.660]   Okay.
+[00:40:37.660 --> 00:40:44.460]   So this ID here, we can use to run various models, which is pretty helpful.
+[00:40:44.460 --> 00:40:51.340]   Now, I actually don't want to run another training run because this can take like 45, 50 minutes.
+[00:40:51.340 --> 00:40:54.620]   So what I'm going to do is cancel this training run.
+[00:40:54.620 --> 00:40:58.540]   Of course, you probably won't want to do that, but I'm going to cancel mine.
+[00:40:58.540 --> 00:41:04.300]   And I don't necessarily know, okay, what endpoint do I need to hit to cancel?
+[00:41:04.300 --> 00:41:10.860]   So what I'm going to do is I'm going to navigate to the NVIDIA Nemo Microservices dots.
+[00:41:10.860 --> 00:41:12.700]   Yeah.
+[00:41:12.700 --> 00:41:14.860]   And we have the API dots.
+[00:41:14.860 --> 00:41:15.580]   Okay.
+[00:41:15.580 --> 00:41:19.660]   So this is that Nemo Microservices latest API index.
+[00:41:19.660 --> 00:41:22.700]   And I can come in and say, okay, I need to customize the API.
+[00:41:22.700 --> 00:41:24.940]   And we actually have the dots here.
+[00:41:24.940 --> 00:41:27.020]   A little bit hard to read with dark mode.
+[00:41:27.020 --> 00:41:27.900]   Let me.
+[00:41:27.900 --> 00:41:28.300]   Okay.
+[00:41:28.300 --> 00:41:28.860]   There we go.
+[00:41:28.860 --> 00:41:29.900]   A little better.
+[00:41:29.900 --> 00:41:31.260]   So we can come down.
+[00:41:31.260 --> 00:41:33.820]   I can say here posts.
+[00:41:33.820 --> 00:41:35.500]   So this is what I need.
+[00:41:35.500 --> 00:41:38.380]   V1 customization jobs, job ID, cancel.
+[00:41:38.380 --> 00:41:40.780]   So I'm going to go and hit that.
+[00:41:40.780 --> 00:41:41.260]   Okay.
+[00:41:41.260 --> 00:41:42.940]   So this is actually for status.
+[00:41:42.940 --> 00:41:44.220]   I'm going to modify this.
+[00:41:44.220 --> 00:41:45.660]   We're going to go cancel.
+[00:41:45.660 --> 00:41:47.500]   And this is going to be a post.
+[00:41:47.500 --> 00:41:49.420]   Okay.
+[00:41:49.420 --> 00:41:51.420]   And that will cancel the job.
+[00:41:51.420 --> 00:41:54.060]   So, you know, we have all the information here.
+[00:41:54.060 --> 00:41:58.700]   And that's great because I wanted to use that GPU for running inference,
+[00:41:58.700 --> 00:42:02.700]   which we are going to jump into right now.
+[00:42:02.700 --> 00:42:08.540]   So once that training job is complete, well, we will first see that in here.
+[00:42:08.540 --> 00:42:14.300]   When we do the get to the status, we should see that the status is complete.
+[00:42:15.100 --> 00:42:17.260]   That means we can then go into here.
+[00:42:17.260 --> 00:42:21.100]   We should see that the entity sort has already registered our model.
+[00:42:21.100 --> 00:42:22.140]   Okay.
+[00:42:22.140 --> 00:42:25.020]   So we should see, this is the latest model here.
+[00:42:25.020 --> 00:42:26.860]   We should see our model.
+[00:42:26.860 --> 00:42:27.260]   Okay.
+[00:42:27.260 --> 00:42:34.540]   The name that we gave it followed by at, and then the customizer ID that it was provided.
+[00:42:34.540 --> 00:42:40.860]   And that means that, okay, we have it, this model, our custom model in our entity.
+[00:42:40.860 --> 00:42:41.740]   So that's great.
+[00:42:41.740 --> 00:42:50.220]   But if you remember in here, we cannot actually use chat inference on our custom models,
+[00:42:50.220 --> 00:42:55.420]   unless we have a NIM for the base model already deployed.
+[00:42:55.420 --> 00:42:56.380]   Okay.
+[00:42:56.380 --> 00:42:58.300]   So how do we do that?
+[00:42:58.300 --> 00:42:58.620]   That's it.
+[00:42:58.620 --> 00:42:59.340]   That's the next thing.
+[00:43:00.060 --> 00:43:05.500]   What we need to do is come down here and we're hitting the model deployments component.
+[00:43:05.500 --> 00:43:12.060]   Now, the model deployments component is, that's deciding, okay, I'm going to go and deploy
+[00:43:12.060 --> 00:43:12.620]   a NIM.
+[00:43:12.620 --> 00:43:17.660]   And we need to tell it, okay, which one do we want to deploy right now?
+[00:43:17.660 --> 00:43:19.340]   So the name doesn't matter.
+[00:43:19.340 --> 00:43:21.260]   You put the name that you prefer here.
+[00:43:21.260 --> 00:43:23.420]   It's not a huge big deal.
+[00:43:23.420 --> 00:43:25.660]   But the thing that you do need is, okay, you need the model.
+[00:43:25.660 --> 00:43:29.260]   And this needs to be the base model for your custom models.
+[00:43:29.260 --> 00:43:29.580]   Okay.
+[00:43:29.580 --> 00:43:32.060]   So my custom models were trained off of this model.
+[00:43:32.060 --> 00:43:32.620]   That's fine.
+[00:43:32.620 --> 00:43:38.220]   But the thing that you need to be aware of is, okay, the image name.
+[00:43:38.220 --> 00:43:41.020]   Where on earth do I get that from?
+[00:43:42.140 --> 00:43:42.620]   Okay.
+[00:43:42.620 --> 00:43:51.100]   So you actually need to go to the NGC catalog again, which we can find at catalog.ngc.nvidia.com.
+[00:43:51.100 --> 00:43:56.860]   You go into here, you go to containers here, and then you can actually filter by NVIDIA NIM,
+[00:43:56.860 --> 00:43:57.420]   right?
+[00:43:57.420 --> 00:43:59.180]   Filter by NVIDIA NIM.
+[00:43:59.180 --> 00:44:07.180]   And then what you have is all of the, well, all of the NIMs and the LMs that you can use.
+[00:44:07.740 --> 00:44:12.380]   So I'm going to say that I, well, yeah, I want the 3.21 model.
+[00:44:12.380 --> 00:44:14.140]   So I'll just type in 3.2 here.
+[00:44:14.140 --> 00:44:17.100]   And you can see, okay, these are the models.
+[00:44:17.100 --> 00:44:17.340]   Okay.
+[00:44:17.340 --> 00:44:18.380]   These are NIMs I can use.
+[00:44:19.260 --> 00:44:20.940]   I'm using the 1 billion parameter model.
+[00:44:20.940 --> 00:44:22.300]   So I'm going to jump into that.
+[00:44:22.300 --> 00:44:23.500]   Okay, cool.
+[00:44:23.500 --> 00:44:24.620]   So I have this.
+[00:44:24.620 --> 00:44:28.860]   And then what I want to do is say, okay, I want to get this container.
+[00:44:28.860 --> 00:44:29.820]   I'm going to go here.
+[00:44:29.820 --> 00:44:34.220]   And you can see that this is the latest tags image path, right?
+[00:44:34.220 --> 00:44:39.340]   I'm actually, well, you can take the whole thing, but it will also work with just this.
+[00:44:39.340 --> 00:44:41.580]   I think this image tag might not be correct.
+[00:44:41.580 --> 00:44:42.860]   Yeah.
+[00:44:42.860 --> 00:44:43.980]   The latest tag is 1.
+[00:44:43.980 --> 00:44:47.260]   We'll see in a moment that that's not the latest, but it's fine.
+[00:44:47.260 --> 00:44:48.540]   So I come over here.
+[00:44:48.540 --> 00:44:49.820]   I put this in here.
+[00:44:49.820 --> 00:44:50.860]   So this is my image name.
+[00:44:50.860 --> 00:44:51.740]   Great.
+[00:44:51.740 --> 00:44:56.460]   Then I want to go and check my tags.
+[00:44:56.460 --> 00:44:56.780]   Okay.
+[00:44:56.780 --> 00:45:01.740]   So go into here and you can see, yeah, I don't know why 1 is showing as the latest,
+[00:45:01.740 --> 00:45:04.860]   because there are others, right?
+[00:45:04.860 --> 00:45:06.140]   There is like one point.
+[00:45:06.140 --> 00:45:09.740]   Yeah, the order is kind of messed up here, but it's fine.
+[00:45:09.740 --> 00:45:15.100]   So 1.8.5 is the latest one as far as I can tell here.
+[00:45:15.100 --> 00:45:16.620]   So I'm going to use that.
+[00:45:16.620 --> 00:45:18.380]   So come over here.
+[00:45:18.380 --> 00:45:21.420]   1.8.5 perfect.
+[00:45:21.420 --> 00:45:22.540]   And that is it.
+[00:45:22.540 --> 00:45:24.140]   We're actually ready to go.
+[00:45:24.140 --> 00:45:30.540]   So we, yeah, we run this, that is going to deploy.
+[00:45:30.540 --> 00:45:34.380]   And actually, for me, it's already deployed because I've already done that.
+[00:45:34.380 --> 00:45:36.140]   If I want to create another deployment, I can.
+[00:45:36.140 --> 00:45:37.260]   I just change the name here.
+[00:45:37.260 --> 00:45:40.060]   I can keep the model the same if I really want to.
+[00:45:40.060 --> 00:45:41.420]   Okay.
+[00:45:41.420 --> 00:45:43.020]   So we do that.
+[00:45:43.020 --> 00:45:49.980]   And then we just come into here and we should see that there is a model deployment job going on.
+[00:45:49.980 --> 00:45:53.100]   So it, I think, would be this.
+[00:45:53.100 --> 00:45:55.340]   Yes, I think it is this one here.
+[00:45:55.340 --> 00:45:57.100]   So you'll look for model deployment.
+[00:45:57.100 --> 00:46:01.500]   There are a few different jobs that say like model deployment or model download or whatever.
+[00:46:01.500 --> 00:46:04.220]   So, you know, just be aware of that.
+[00:46:04.220 --> 00:46:07.180]   But yeah, this is the one that we're looking for.
+[00:46:07.180 --> 00:46:12.140]   That, of course, for me, you know, I completed forever ago, 16 hours ago.
+[00:46:13.100 --> 00:46:15.420]   And it is running still.
+[00:46:15.420 --> 00:46:17.420]   So I don't need to worry about that.
+[00:46:17.420 --> 00:46:18.140]   It is running.
+[00:46:18.140 --> 00:46:23.980]   We can then just confirm that the model has been picked up now by our NIM endpoint.
+[00:46:23.980 --> 00:46:27.180]   Which, okay, it looks like it has.
+[00:46:27.180 --> 00:46:29.580]   We have LAMA 3.2 1B Instruct.
+[00:46:29.580 --> 00:46:31.020]   Okay, that's great.
+[00:46:32.060 --> 00:46:34.140]   And what this will also do, right?
+[00:46:34.140 --> 00:46:35.580]   So this is the base model.
+[00:46:35.580 --> 00:46:40.620]   But automatically, it's also pulling in our custom models, right?
+[00:46:40.620 --> 00:46:49.100]   So as soon as our NIM proxy sees that we have the like the base model NIM for our custom models,
+[00:46:49.100 --> 00:46:51.660]   it's also going to load in all those custom models as well.
+[00:46:51.660 --> 00:46:52.780]   So we can see that here.
+[00:46:52.780 --> 00:46:55.260]   There I, you know, we can scroll.
+[00:46:55.260 --> 00:46:58.700]   I'm sure there's probably a few in here, right?
+[00:46:58.700 --> 00:47:00.940]   So we can see, yeah, we have another one here.
+[00:47:00.940 --> 00:47:03.900]   And actually, we just have those.
+[00:47:03.900 --> 00:47:05.500]   Okay.
+[00:47:05.500 --> 00:47:10.300]   So, and I think those are all the ones that I've trained within this version of the instance anyway.
+[00:47:10.300 --> 00:47:11.340]   Cool.
+[00:47:11.340 --> 00:47:12.700]   So that's good.
+[00:47:12.700 --> 00:47:14.860]   And now we can actually go ahead and use the model finally.
+[00:47:14.860 --> 00:47:15.260]   Okay.
+[00:47:15.260 --> 00:47:21.180]   So using the model, as I mentioned, we use OpenAI, right?
+[00:47:21.180 --> 00:47:23.180]   We use OpenAI-compatible endpoints.
+[00:47:23.180 --> 00:47:26.780]   So that means we can use it as we would a normal OpenAI model.
+[00:47:26.780 --> 00:47:29.180]   So we're actually just using the OpenAI library here.
+[00:47:29.180 --> 00:47:33.900]   We set up our OpenAI client pointing to NIM.
+[00:47:33.900 --> 00:47:39.420]   So we just change the base URL to point to the NIM URL, the V1 API there.
+[00:47:39.420 --> 00:47:43.420]   And API key doesn't, you know, just put whatever you want in here.
+[00:47:43.420 --> 00:47:49.180]   I don't, I think you can just buy anything, but you put none if you want to be cautious.
+[00:47:49.180 --> 00:47:54.060]   Now we can test it on our test data that we set up before.
+[00:47:54.060 --> 00:47:54.780]   Okay.
+[00:47:54.780 --> 00:47:59.020]   If we want, we can test, you test it on whatever you want, to be honest, but we can test on this.
+[00:47:59.020 --> 00:48:01.820]   So we have our messages here.
+[00:48:01.820 --> 00:48:07.500]   And this is what would the diabetes risk for a lightly active person away of this so-and-so-and-so-and be.
+[00:48:07.500 --> 00:48:08.540]   All right.
+[00:48:08.540 --> 00:48:11.100]   So we, okay, what tools can we use?
+[00:48:11.100 --> 00:48:13.100]   Let's have a quick look at those.
+[00:48:13.100 --> 00:48:16.860]   Tools.
+[00:48:16.860 --> 00:48:17.260]   Okay.
+[00:48:17.260 --> 00:48:22.300]   We have assessed diabetes risk is probably the one that we would use.
+[00:48:22.860 --> 00:48:23.180]   Okay.
+[00:48:23.180 --> 00:48:25.020]   So let's go ahead and try.
+[00:48:25.020 --> 00:48:28.060]   We'll print out the full message.
+[00:48:28.060 --> 00:48:29.740]   So we just, we can just see everything there.
+[00:48:29.740 --> 00:48:31.900]   Check completion message.
+[00:48:31.900 --> 00:48:32.780]   Content is none.
+[00:48:32.780 --> 00:48:33.020]   Okay.
+[00:48:33.020 --> 00:48:37.820]   Content is none because when there is content, that is the LLM responding directly to you.
+[00:48:37.820 --> 00:48:39.260]   It's not a tool call.
+[00:48:39.260 --> 00:48:39.740]   So it's good.
+[00:48:39.740 --> 00:48:41.020]   We're using a tool call.
+[00:48:41.020 --> 00:48:42.140]   And let's go across.
+[00:48:42.140 --> 00:48:47.820]   We can see tool calls, check completion message, tool call ID, so-and-so-and.
+[00:48:47.820 --> 00:48:48.300]   All right.
+[00:48:48.300 --> 00:48:51.980]   We can see that these are the parameters into some tool.
+[00:48:51.980 --> 00:48:54.540]   The tool was assess diabetes risk.
+[00:48:54.540 --> 00:48:54.780]   Okay.
+[00:48:54.780 --> 00:48:56.700]   That is perfect.
+[00:48:56.700 --> 00:48:58.620]   That's what we need to see.
+[00:48:58.620 --> 00:48:59.180]   That is good.
+[00:48:59.180 --> 00:49:01.740]   Then, okay, weight.
+[00:49:01.740 --> 00:49:03.580]   What was it?
+[00:49:03.580 --> 00:49:05.740]   So let's come up and just confirm.
+[00:49:05.740 --> 00:49:06.060]   Yes.
+[00:49:06.060 --> 00:49:07.900]   165 pounds.
+[00:49:09.020 --> 00:49:13.180]   The height is 70 inches.
+[00:49:13.180 --> 00:49:18.140]   We put lightly active person activity, lightly active.
+[00:49:18.140 --> 00:49:19.260]   Okay, cool.
+[00:49:19.260 --> 00:49:21.500]   And I'm curious.
+[00:49:21.500 --> 00:49:21.900]   Okay.
+[00:49:21.900 --> 00:49:25.100]   So for the activity here, we can actually see the allowed values here.
+[00:49:25.100 --> 00:49:27.500]   We have sedentary, lightly active, and so on.
+[00:49:27.500 --> 00:49:30.860]   So it's actually putting that in correctly, which is great.
+[00:49:30.860 --> 00:49:31.260]   That's cool.
+[00:49:31.260 --> 00:49:36.140]   Then we can also stream as well, because this is, you know, API compatible.
+[00:49:36.140 --> 00:49:42.300]   So to stream, we would, you know, we just set stream there and we stream like so.
+[00:49:42.300 --> 00:49:42.940]   Let's run that.
+[00:49:42.940 --> 00:49:44.140]   Okay.
+[00:49:44.140 --> 00:49:47.260]   And we can see all that coming through as well.
+[00:49:47.260 --> 00:49:47.580]   Right.
+[00:49:47.580 --> 00:49:50.140]   So that is the full pipeline.
+[00:49:50.140 --> 00:49:53.740]   We have deployed our full microservice suite.
+[00:49:53.740 --> 00:49:56.060]   We've done data preparation.
+[00:49:56.060 --> 00:50:02.300]   We upload our data prepared, like put it in the right places for Nemo microservices.
+[00:50:02.300 --> 00:50:05.500]   We fine-tuned our model.
+[00:50:05.500 --> 00:50:07.900]   And then we've just tested it at the end there.
+[00:50:07.900 --> 00:50:14.300]   Of course, in many cases, you probably want to do evaluation and everything else around that.
+[00:50:14.300 --> 00:50:16.140]   All that is also available.
+[00:50:16.140 --> 00:50:21.180]   But we can already see straight away, like this is a 1 billion parameter model.
+[00:50:21.180 --> 00:50:29.340]   Just from that test, straight away, it's able to do function calling, which is, I think, really, really good.
+[00:50:29.340 --> 00:50:36.620]   And it's not something that you would typically get from such a small 1 billion parameter model.
+[00:50:36.620 --> 00:50:40.380]   And you can test it more, like test it more, test it with more data.
+[00:50:40.380 --> 00:50:47.660]   And you will see that it is actually able to very competently use function calling and use it correctly,
+[00:50:47.660 --> 00:50:51.660]   which for a model of its size is really impressive.
+[00:50:51.660 --> 00:50:58.380]   And the reason for that is because we have fine-tuned it on that function calling data set.
+[00:50:58.380 --> 00:51:03.660]   And of course, you know, we can apply it to that function calling data set.
+[00:51:03.660 --> 00:51:11.580]   If you have your own specific tools and everything that you have within your specific use case or industry,
+[00:51:11.580 --> 00:51:20.860]   whatever it is, you can fine-tune on that data as well and make these tiny LMs highly competent agents.
+[00:51:20.860 --> 00:51:28.700]   Which is, I think, in terms of just cost, performance, is really impressive.
+[00:51:28.700 --> 00:51:35.420]   Yeah, so I really like this whole process that NVIDIA built with the microservices.
+[00:51:35.420 --> 00:51:37.980]   It's really powerful.
+[00:51:37.980 --> 00:51:44.700]   And just the fact that you can do this so quickly and build these models is, in my opinion, really exciting.
+[00:51:44.700 --> 00:51:48.140]   It's something that's fine-tuning models, building custom models.
+[00:51:48.140 --> 00:51:56.700]   It's something that has really been lost in maybe the past couple of years with big LMs coming out.
+[00:51:56.700 --> 00:52:05.900]   It's something that I hope this type of service makes more accessible and just a more common thing to do.
+[00:52:05.900 --> 00:52:09.100]   Because the results that you can get from it are really impressive.
+[00:52:09.100 --> 00:52:19.340]   So, yeah, that is it for this video and this big walkthrough and introduction to the Nemo Myroservices and fine-tuning LMs.
+[00:52:19.340 --> 00:52:24.060]   I hope all this has been useful and interesting, but for now I'll leave it there.
+[00:52:24.060 --> 00:52:29.340]   So, thank you very much for watching and I will see you again in the next one. Bye.
+[00:52:29.340 --> 00:52:34.540]   Thanks for watching and I will see you again in the next one.
+[00:52:34.540 --> 00:52:36.540]   Bye.
+[00:52:36.540 --> 00:52:38.540]   Bye.
+[00:52:38.540 --> 00:52:40.540]   Bye.
+[00:52:40.540 --> 00:52:42.620]   Bye.
+
