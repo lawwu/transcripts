@@ -1,0 +1,1088 @@
+
+[00:00:00.000 --> 00:00:18.000]   .
+[00:00:18.000 --> 00:00:27.000]   In the workshop today was everything that comes after once you've, you know, written your thin wrapper around the OpenAI API
+[00:00:27.000 --> 00:00:35.000]   to make your ChatGPT-powered app. You've acquired $100 million in venture funding at a $4 billion valuation.
+[00:00:35.000 --> 00:00:40.000]   And now you're like, what am I supposed to do next?
+[00:00:40.000 --> 00:00:45.000]   So, we're going to split this into two parts so we can take kind of a break.
+[00:00:45.000 --> 00:00:48.000]   It's like a three-hour long workshop. It's a long time.
+[00:00:48.000 --> 00:00:53.000]   So, in the first half, we're going to talk about inference.
+[00:00:53.000 --> 00:01:01.000]   So, about what exactly this workload is that we have given over to the inference as a service provider.
+[00:01:01.000 --> 00:01:09.000]   What's the shape of it? Why do we need these expensive accelerators? What are the other options available?
+[00:01:09.000 --> 00:01:15.000]   And we're going to spend half of our time on that because that's a place where we can actually talk, you know,
+[00:01:15.000 --> 00:01:25.000]   in engineering terms about constraints, about service level objectives and service level agreements, the kinds of things that lead to robust systems.
+[00:01:25.000 --> 00:01:32.000]   And then we'll spend 90 minutes on the rest of the OWL, the rest of what it takes to make a successful AI-powered app,
+[00:01:32.000 --> 00:01:37.000]   just because there's so very little to say just yet about how to engineer these robustly.
+[00:01:37.000 --> 00:01:49.000]   But we'll talk about what the emerging consensus on what to do is so far and what tools are out there and available to start accelerating that process.
+[00:01:49.000 --> 00:01:55.000]   So, yeah, so for inference, what are we talking about when we're doing inference workloads?
+[00:01:55.000 --> 00:02:00.000]   How do we decide between using open and proprietary models to do that inference?
+[00:02:00.000 --> 00:02:06.000]   Where do those models live? Do they live on a device? Do they live in a cloud server?
+[00:02:06.000 --> 00:02:13.000]   And then we'll spend some time talking about what it takes to self-serve inference.
+[00:02:13.000 --> 00:02:18.000]   For the rest of the OWL, we'll talk about architectures and patterns.
+[00:02:18.000 --> 00:02:26.000]   So what are the emerging kind of patterns for usage of large language models in AI applications?
+[00:02:26.000 --> 00:02:35.000]   And we'll talk about monitoring, evaluation, and observability, which is how we try and actually improve applications that fit those patterns over time.
+[00:02:35.000 --> 00:02:40.000]   So, yeah, any high-level questions?
+[00:02:40.000 --> 00:02:47.000]   My mic's off. The Zoom is not hooked up. No questions?
+[00:02:47.000 --> 00:02:50.000]   Probably not. Still at a very high level.
+[00:02:50.000 --> 00:02:55.000]   No? Just stretching. Great. Yeah, maybe we should all stretch.
+[00:02:55.000 --> 00:03:02.000]   Yeah, so who am I? Before we dive in, who am I and why don't you listen to me tell you about any of these things?
+[00:03:02.000 --> 00:03:07.000]   So my name's Charles. I like to teach people about AI. I've been doing it for a while now.
+[00:03:07.000 --> 00:03:18.000]   I went to Berkeley, studied neural networks back in the 2010s, taught people about how to use them and Bayesian networks, RIP, for data science.
+[00:03:18.000 --> 00:03:30.000]   And then I worked in developer relations and education for weights and biases, a previous generation MLOps tool, generation times being shorter than more doubling times, I guess, at this point.
+[00:03:30.000 --> 00:03:49.000]   And then for the last two years I've been working with full-stack deep learning, teaching not just things like the math of machine learning or how to do monitoring of an ML application, but how to build an application that uses ML from soup to nuts, from the GPUs up to the user experience.
+[00:03:49.000 --> 00:04:07.000]   All right. So now let's dive into the first half here on inference and specifically what is actually going on. Why does it cost so much to ping OpenAI?
+[00:04:07.000 --> 00:04:24.000]   And so generative model inference, the kind of inference that's done by the generative AIs, is you see, when you use it via an API, you see a kind of data-to-data function where both sides of that data are human interpretable data.
+[00:04:24.000 --> 00:04:30.000]   So things like text, images, sounds, and outcome back, new generated text, image, and sounds.
+[00:04:30.000 --> 00:04:39.000]   So for example, this is from the Palm E paper from Google, you might show a picture of a restaurant and the question, if a robot wanted to be useful here, what steps should it take?
+[00:04:39.000 --> 00:04:51.000]   And the output of this language modeling generative API would be clean the table, pick up trash, pick up chairs, wipe chairs, put chairs down, which could then be sent to a cleaning robot.
+[00:04:51.000 --> 00:04:56.000]   And now you've got something, you know, it's a pretty useful system there.
+[00:04:56.000 --> 00:05:00.000]   So this is what you see from the outside.
+[00:05:00.000 --> 00:05:13.000]   But as you start digging in a little bit, you'll start hearing about things like tokens and log probs and temperatures and to understand what's going on and weights and networks.
+[00:05:13.000 --> 00:05:18.000]   And to understand what's going on, you have to realize that this has been broken down into kind of three pieces.
+[00:05:18.000 --> 00:05:25.000]   One part that goes from what humans understand, like text and images and sound, to what neural networks understand.
+[00:05:25.000 --> 00:05:33.000]   And then one part that goes back and in between the operations of a neural network that operates on arrays and returns arrays.
+[00:05:33.000 --> 00:05:40.000]   So tokenizers take in text that a human can read and turn it into an array of numbers, a tensor.
+[00:05:40.000 --> 00:05:53.000]   Just due to the kind of physics-y background of people in the ML community, what people would call arrays, I guess, in other software engineering communities, they get called tensors.
+[00:05:53.000 --> 00:06:03.000]   They also, because they have derivatives attached to them a lot of the time, it's like there's a connection there, but really an array of numbers.
+[00:06:03.000 --> 00:06:08.000]   Those tensors get turned back to things that humans care about.
+[00:06:08.000 --> 00:06:12.000]   And in between, neural networks map tensors to tensors.
+[00:06:12.000 --> 00:06:14.000]   This step is the bottleneck.
+[00:06:14.000 --> 00:06:16.000]   This step is the hard part.
+[00:06:16.000 --> 00:06:18.000]   There's interesting stuff going on in the sampling process.
+[00:06:18.000 --> 00:06:20.000]   There's interesting stuff going on in tokenization.
+[00:06:20.000 --> 00:06:23.000]   There's cursed stuff going on in tokenization.
+[00:06:23.000 --> 00:06:25.000]   But this step is the bottleneck.
+[00:06:25.000 --> 00:06:28.000]   This is where the vast majority of the engineering time is spent.
+[00:06:28.000 --> 00:06:32.000]   This is where the vast majority of the compute time, the memory, are spent.
+[00:06:32.000 --> 00:06:33.000]   And this is the interesting part.
+[00:06:33.000 --> 00:06:37.000]   And this is the part where the engineering focus needs to be.
+[00:06:37.000 --> 00:06:41.000]   Or this is the part that you farm out to somebody else.
+[00:06:41.000 --> 00:06:51.000]   So diving in, double clicking on that tensor to tensor arrow at the bottom, that a neural
+[00:06:51.000 --> 00:06:57.000]   network is kind of a fancy term for a composition of a bunch of tensor to tensor functions.
+[00:06:57.000 --> 00:07:02.000]   If you have a function that takes in an A and returns an A, you can just stack those one after
+[00:07:02.000 --> 00:07:03.000]   another.
+[00:07:03.000 --> 00:07:06.000]   And that's what gives neural networks the kind of Lego-y flavor.
+[00:07:06.000 --> 00:07:12.000]   You can grab bricks from one set and bricks from another set and attach them to each other.
+[00:07:12.000 --> 00:07:18.000]   So this neural network, this is an ancient neural network, the Inception V3 model from Google
+[00:07:18.000 --> 00:07:22.000]   that was state of the art in computer vision for a few months in the 2010s.
+[00:07:22.000 --> 00:07:29.000]   And each of those little blocks there takes in a tensor and returns a tensor.
+[00:07:29.000 --> 00:07:32.000]   And so it starts with a tensor that looks like an image.
+[00:07:32.000 --> 00:07:33.000]   So it's got a red, green, and blue channel.
+[00:07:33.000 --> 00:07:38.000]   It comes out something that 8 by 8 by 2048 example there.
+[00:07:38.000 --> 00:07:40.000]   That's probably somewhere in the middle of the network.
+[00:07:40.000 --> 00:07:42.000]   It's not the final classification output.
+[00:07:42.000 --> 00:07:44.000]   Anyway, big block of numbers.
+[00:07:44.000 --> 00:07:46.000]   They get passed into each other.
+[00:07:46.000 --> 00:07:50.000]   And then each one of those is itself parametrized by a tensor.
+[00:07:50.000 --> 00:07:55.000]   So it's not just like a map that you could kind of like write down by hand that's like add
+[00:07:55.000 --> 00:07:57.000]   one to every entry or something like that.
+[00:07:57.000 --> 00:08:06.000]   It's defined by like another big pile of numbers, the weights and biases of the neural network.
+[00:08:06.000 --> 00:08:12.000]   So this is the weights from the first layer of a computer vision network, the Alex net that
+[00:08:12.000 --> 00:08:15.000]   kicked off this whole deep learning revolution.
+[00:08:15.000 --> 00:08:21.000]   And it's these, these are, these are little, this is a visualization of a little block of
+[00:08:21.000 --> 00:08:26.000]   red, green, blue, uh, uh, like tensor with three color channels in it.
+[00:08:26.000 --> 00:08:31.000]   So humans can actually look at it and interpret it unlike the rest of them and see what's going
+[00:08:31.000 --> 00:08:36.000]   on, that it's got little things for detecting edges and textures and color differences and things.
+[00:08:36.000 --> 00:08:45.000]   And so, uh, we want to run a big tensor to tensor map.
+[00:08:45.000 --> 00:08:48.000]   And we are going to parameterize that with a big pile of tensors.
+[00:08:48.000 --> 00:08:55.000]   And before it's time to actually serve users, those tensors need to be generated by the training process.
+[00:08:55.000 --> 00:09:02.000]   And back, uh, a couple of years ago, um, or even as recently as 18 months ago, this would
+[00:09:02.000 --> 00:09:07.000]   be the part where we would stop, talk about gradient descent optimization, statistical learning theory,
+[00:09:07.000 --> 00:09:12.000]   and, uh, you know, GPU acceleration and all the things that are needed to turn something into,
+[00:09:12.000 --> 00:09:21.000]   to like get those numbers, to get things like that involving like grabbing, you know, hoovering up a bunch of information
+[00:09:21.000 --> 00:09:27.000]   from the internet, uh, without consent, um, and then crystallizing it into those piles of numbers.
+[00:09:27.000 --> 00:09:30.000]   But nowadays you don't have to do that anymore.
+[00:09:30.000 --> 00:09:37.000]   Specialized foundation modeling teams, uh, generate these weights and then they either put them behind proprietary service
+[00:09:37.000 --> 00:09:40.000]   or they share them with everybody else to use.
+[00:09:40.000 --> 00:09:45.000]   Um, and so we can skip past all of that stuff and jump into the actual application.
+[00:09:45.000 --> 00:09:48.000]   Um, uh, yeah.
+[00:09:48.000 --> 00:09:54.000]   So any questions before we start talking about, you know, where those, you know, where those weights come from,
+[00:09:54.000 --> 00:10:00.000]   uh, or, or rather what the various ways to get a hold of such a set of weights or to be able to use such a set of weights are?
+[00:10:00.000 --> 00:10:05.000]   Um, any questions at the level of what we're trying to do with inference?
+[00:10:05.000 --> 00:10:07.000]   Probably pretty clear.
+[00:10:07.000 --> 00:10:10.000]   That's, uh, maybe a reminder from the one-on-one stuff.
+[00:10:10.000 --> 00:10:11.000]   All right.
+[00:10:11.000 --> 00:10:13.000]   So now let's start diving a little bit deeper.
+[00:10:13.000 --> 00:10:18.000]   So you want to run an AI.
+[00:10:18.000 --> 00:10:28.000]   Uh, you're one of the first choices that you need to make as is, you know, pretty common with, um, with software is a build versus buy question.
+[00:10:28.000 --> 00:10:34.000]   Um, are you going to like, are you going to make this, uh, you know, out of existing open components?
+[00:10:34.000 --> 00:10:38.000]   Or are you going to, uh, are you going to kick it off to a service?
+[00:10:38.000 --> 00:10:44.000]   So, um, there's in the proprietary corner, there are a couple of players in the open corner.
+[00:10:44.000 --> 00:10:45.000]   There are a couple of players.
+[00:10:45.000 --> 00:10:52.000]   Let's walk through what those are and, um, what the sort of dividing lines are and why to choose one or the other.
+[00:10:52.000 --> 00:11:02.000]   So there's, uh, a number of proprietary modeling services, uh, like Anthropix, uh, from whom we just heard.
+[00:11:02.000 --> 00:11:09.000]   Uh, and the good thing about these proprietary models is that they are the most capable models out there.
+[00:11:09.000 --> 00:11:18.000]   Uh, so this is from the LM SIS, uh, leaderboard, maybe the, the hugging face hosted version of that leaderboard.
+[00:11:18.000 --> 00:11:25.000]   If you look at the, the top five models on that are all proprietary models and they're all from open AI or Anthropic.
+[00:11:25.000 --> 00:11:33.000]   Um, so there are a couple of other players out there and in the future the, you know, they could release really high quality models.
+[00:11:33.000 --> 00:11:38.000]   Um, but for now, this is the, the, the state of things.
+[00:11:38.000 --> 00:11:46.000]   So if you need the absolute highest level of intelligence in your application, uh, then you want to roll with one of these.
+[00:11:46.000 --> 00:11:56.000]   Um, it's also often common to start with some of the most highly capable models and then kind of, uh, prove out your application there and then move to doing it.
+[00:11:56.000 --> 00:12:03.000]   Uh, like with a less capable model, that's cheaper, easier to run, uh, the sort of like rewriting it in rust or something.
+[00:12:03.000 --> 00:12:12.000]   Uh, so the usual concern with using a proprietary service, there's a number of them, including things like vendor lock-in.
+[00:12:12.000 --> 00:12:19.000]   Um, but one of the, one of the ones that comes up immediately is like, how much is it going to cost me to use a proprietary service?
+[00:12:19.000 --> 00:12:22.000]   And can't I save money by doing it myself?
+[00:12:22.000 --> 00:12:32.000]   So the fact that the capabilities are higher with the proprietary models is one reason to say, well, you're not going to get exactly the same thing right now, um, using an open model.
+[00:12:32.000 --> 00:12:38.000]   Um, but then the other kind of kicker here is that the proprietary models are priced very affordably.
+[00:12:38.000 --> 00:12:42.000]   Um, so this is something that's, that has been the case.
+[00:12:42.000 --> 00:12:45.000]   Uh, this right quote here is from a blog post.
+[00:12:45.000 --> 00:12:52.000]   I wrote back in like January, um, when the only open large model was GLM 130 B from Tsinghua.
+[00:12:52.000 --> 00:13:04.000]   Um, and at that time, just like trying to get the thing running, uh, in a day, I got to within an order of magnitude of the cost of open AI, but you know, on the up, on the upper end.
+[00:13:04.000 --> 00:13:14.000]   Um, and then more for a more recent, uh, and more serious example, the folks at Honeycomb, uh, made a natural language sequel, uh, kind of transformation.
+[00:13:14.000 --> 00:13:19.000]   Maybe not sequel, but query language, uh, transform it transformation, uh, AI product.
+[00:13:19.000 --> 00:13:24.000]   And like their opinion was that open AI was very inexpensive to run for their task.
+[00:13:24.000 --> 00:13:35.000]   Uh, and so you'll find it seems that like nobody's attempting to, uh, like extract rents from monopoly pricing the way that you can get with some proprietary services.
+[00:13:35.000 --> 00:13:42.000]   Uh, where they know that you have no choice, but to pay them $10 million for a MATLAB license every year or whatever.
+[00:13:42.000 --> 00:13:48.000]   Um, not to pick on it, sorry for a license for an array programming language.
+[00:13:48.000 --> 00:14:04.000]   Um, uh, yeah, so, and the costs here, you know, a dollar for a million tokens for Claude instance, $10 for a million tokens for Claude 2, uh, relative to how much we're used to paying like humans for text.
+[00:14:04.000 --> 00:14:07.000]   You know, that's, that's like a pretty decent deal.
+[00:14:07.000 --> 00:14:14.000]   Anthropic has been slightly more expensive than open AI without like a clear win on, um, capabilities.
+[00:14:14.000 --> 00:14:17.000]   Uh, but that's the current state of things.
+[00:14:17.000 --> 00:14:20.000]   They do have longer context windows, which is kind of nice.
+[00:14:20.000 --> 00:14:28.000]   But, um, uh, but yeah, most people for the pricing reason and the capability reason, uh, choose open AI at this time.
+[00:14:28.000 --> 00:14:36.000]   Um, so the bad thing about proprietary models, besides like, you know, uh, hearing Richard Stallman,
+[00:14:36.000 --> 00:14:46.000]   screaming in the back of your mind all the time, uh, is that proprietary model models cannot offer you full control by dint of their like very nature as proprietary models.
+[00:14:46.000 --> 00:15:00.000]   Um, so Alex Gravely created a co-pilot part of the team that created co-pilot GitHub, um, was celebrating that GPT 3.5 turbo instruct a recent release from open AI had brought back log probabilities.
+[00:15:00.000 --> 00:15:08.000]   So you can see what, not just like what texts did the model generate, but what probabilities the model gave each token along the way.
+[00:15:08.000 --> 00:15:14.000]   And back when the, back when it was just the GPT 3 API and the playground, you could see that information.
+[00:15:14.000 --> 00:15:21.000]   And that's where a lot of the like early work on sort of like intuition about prompt engineering came from being able to see those numbers.
+[00:15:21.000 --> 00:15:25.000]   and there's all kinds of cool techniques that you can get up to if you have those log props.
+[00:15:25.000 --> 00:15:31.000]   Um, and if you can manipulate those log props, uh, so yeah, you can read out confidence information.
+[00:15:31.000 --> 00:15:36.000]   You can use it like during your development process to sort of like more gather more rich information about the system.
+[00:15:36.000 --> 00:15:44.000]   Um, and there's really, you know, you are, you're interacting with a probabilistic model and you can't see the model's probabilities.
+[00:15:44.000 --> 00:15:46.000]   You're like fundamentally hamstrung.
+[00:15:46.000 --> 00:15:49.000]   Um, and so that was mid September.
+[00:15:49.000 --> 00:15:52.000]   And then like a couple of days ago, they turned that off.
+[00:15:52.000 --> 00:15:59.000]   Um, and the reason why is because if you give somebody that amount of information, they can start to reverse engineer your model pretty quickly.
+[00:15:59.000 --> 00:16:10.000]   Um, and then you are stuck in the situation of IBM creating a personal computer and then a bunch of people with soldering iron irons and oscilloscopes turn around and make clones of your machine like within a year.
+[00:16:10.000 --> 00:16:24.000]   Uh, so proprietary models are like fundamentally disincentivized from giving you that level of control, despite the fact that it's very critical for, um, for like actually effectively operating the system.
+[00:16:24.000 --> 00:16:31.000]   So there needs to be that capabilities edge, um, that like raw capabilities edge in order to, uh, make up for this fact.
+[00:16:31.000 --> 00:16:40.000]   Um, then lastly, maybe some people work in an enterprise, uh, in this room.
+[00:16:40.000 --> 00:16:42.000]   Don't, you don't have to out yourself, but maybe some.
+[00:16:42.000 --> 00:16:52.000]   Um, and if you're operating in this sort of situation, you can't just ship a ping to an external API out there, uh, into your business.
+[00:16:52.000 --> 00:16:57.000]   If people want to know about governance, people want to know about GDPR compliance.
+[00:16:57.000 --> 00:17:11.000]   Um, and the, one of the nice things about opening eyes offering probably true about anthropic by this point and definitely true about Google AI soon is there's a nice white glove enterprise tier, uh, uh, around this.
+[00:17:11.000 --> 00:17:21.000]   That gives you like, right underneath, like, you know, launch an artificial intelligence application and achieve your childhood sci-fi dreams is built in security and compliance.
+[00:17:21.000 --> 00:17:26.000]   Um, we will spend $20 billion on cybersecurity so that you don't have to.
+[00:17:26.000 --> 00:17:34.000]   Um, so this, like if you are in a situation where you need to like, you know, assuage concerns about data privacy.
+[00:17:34.000 --> 00:17:44.000]   Um, this sort of enterprise tier, um, you know, sock to compliance, et cetera, is, uh, can be really critical for making your life easier.
+[00:17:44.000 --> 00:17:47.000]   Uh, any questions about proprietary models and such?
+[00:17:47.000 --> 00:17:52.000]   How much more expensive is it to run to be the API versus the cloud, right?
+[00:17:52.000 --> 00:17:55.000]   Um, with, uh, with, uh, with Azure?
+[00:17:55.000 --> 00:17:56.000]   Yeah.
+[00:17:56.000 --> 00:17:58.000]   I want to say the Azure was cheaper at the start.
+[00:17:58.000 --> 00:18:03.000]   Um, but maybe, uh, I haven't had any reason to use it.
+[00:18:03.000 --> 00:18:05.000]   Um, so I'm, I'm not sure.
+[00:18:05.000 --> 00:18:11.000]   And just about questions, like, are there like any, um, trade-offs in general with regards to performance?
+[00:18:11.000 --> 00:18:14.000]   Um, for a minute consuming the API or--
+[00:18:14.000 --> 00:18:19.000]   Ah, so for, you mean for the enterprise tier versus, yeah.
+[00:18:19.000 --> 00:18:25.000]   So the, uh, the enterprise tier also offers like an actual SLA, which the OpenAI API like doesn't.
+[00:18:25.000 --> 00:18:32.000]   Um, and is like geared, that's, that's, you know, that's maybe another very critical feature besides security and compliance.
+[00:18:32.000 --> 00:18:37.000]   Like they will promise that you will get a response and not like a 500.
+[00:18:37.000 --> 00:18:42.000]   Um, and they have much more generous, uh, rate limits and things like that.
+[00:18:42.000 --> 00:18:47.000]   And I think they also offer like a little bit more control over stuff.
+[00:18:47.000 --> 00:18:51.000]   So you might be able to do some fine tuning that you can't do via the generic OpenAI API.
+[00:18:51.000 --> 00:18:56.000]   Oh, the fine tuning for, for Azure, uh, limited to just like three models.
+[00:18:56.000 --> 00:18:57.000]   Okay.
+[00:18:57.000 --> 00:18:58.000]   Yeah.
+[00:18:58.000 --> 00:19:01.000]   But there's also limits on the public API for fine tuning, right?
+[00:19:01.000 --> 00:19:02.000]   Yeah.
+[00:19:02.000 --> 00:19:09.000]   Um, I personally did not find it particularly useful to like fine tuning API, both like hard to use and not clear benefits.
+[00:19:09.000 --> 00:19:16.000]   Um, I think the example from gradient did show that like, if you want to achieve a style and you don't want to spend money on.
+[00:19:16.000 --> 00:19:25.000]   Like context to set up that style, uh, then maybe you can win with fine tunes, but it's like, it's not really a successful way to inject new information.
+[00:19:25.000 --> 00:19:28.000]   So you aren't saving on the tokens that you would retrieve.
+[00:19:28.000 --> 00:19:32.000]   Um, and you have to pay more to inference a fine tuned model.
+[00:19:32.000 --> 00:19:36.000]   And that just goes down to the fundamental, like you're asking them to do more work for you.
+[00:19:36.000 --> 00:19:39.000]   Um, and they can amortize that cost over fewer users.
+[00:19:39.000 --> 00:19:42.000]   And so it's just always going to be more expensive.
+[00:19:42.000 --> 00:19:47.000]   Um, and so, uh, yeah, so that limits the utility of those fine tuning APIs.
+[00:19:47.000 --> 00:19:48.000]   Yeah.
+[00:19:48.000 --> 00:19:55.000]   Please definitely like ask questions, um, uh, customize to what people are interested in.
+[00:19:55.000 --> 00:19:59.000]   And also if I don't know about something like, please do, uh, interrupt.
+[00:19:59.000 --> 00:20:03.000]   Great.
+[00:20:03.000 --> 00:20:04.000]   Google has vertex.
+[00:20:04.000 --> 00:20:05.000]   Yeah.
+[00:20:05.000 --> 00:20:06.000]   Yeah.
+[00:20:06.000 --> 00:20:10.000]   So, uh, well, so vertex is a little bit different from this.
+[00:20:10.000 --> 00:20:27.000]   I think, um, I think of vertex, which I was going to talk about later as sort of like a, something that I can launch my own services into as opposed to like, uh, oh, here's a private version of the Palm Bison API, but maybe, maybe is that part of vertex?
+[00:20:27.000 --> 00:20:28.000]   Okay.
+[00:20:28.000 --> 00:20:29.000]   Yeah.
+[00:20:29.000 --> 00:20:30.000]   Great.
+[00:20:30.000 --> 00:20:31.000]   Yeah.
+[00:20:31.000 --> 00:20:35.000]   Um, so yeah, that's, um, so they're already available for Google AI.
+[00:20:35.000 --> 00:20:41.000]   Does anybody know of Anthropics AWS like, uh, like enterprise offering is up yet?
+[00:20:41.000 --> 00:20:42.000]   Yes.
+[00:20:42.000 --> 00:20:43.000]   Yes.
+[00:20:43.000 --> 00:20:44.000]   Yes.
+[00:20:44.000 --> 00:20:45.000]   Great.
+[00:20:45.000 --> 00:20:46.000]   Yeah.
+[00:20:46.000 --> 00:20:51.000]   I like refuse to make slides about this stuff more than like 48 hours in advance.
+[00:20:51.000 --> 00:20:53.000]   And I still find myself getting cut.
+[00:20:53.000 --> 00:20:56.000]   Like, yeah.
+[00:20:56.000 --> 00:20:57.000]   Yeah.
+[00:20:57.000 --> 00:21:10.000]   So the question was, uh, between proprietary and open models, which ones are you betting on?
+[00:21:10.000 --> 00:21:12.000]   Um, gambling is illegal in the state of California.
+[00:21:12.000 --> 00:21:15.000]   And so, um, uh, we'll get, we'll get there.
+[00:21:15.000 --> 00:21:21.000]   So, um, let's talk about the open models and then we can answer or, uh, open up that discussion.
+[00:21:21.000 --> 00:21:25.000]   Um, so open models are less capable, but catching up.
+[00:21:25.000 --> 00:21:28.000]   Um, and their hackability is very powerful.
+[00:21:28.000 --> 00:21:34.000]   Um, so going back to that leaderboard that I showed, if you look at the next five out of
+[00:21:34.000 --> 00:21:39.000]   10, um, four of them are Lama two model, uh, actually.
+[00:21:39.000 --> 00:21:42.000]   So this column here to be clear is the license.
+[00:21:42.000 --> 00:21:44.000]   Uh, so the top five are proprietary.
+[00:21:44.000 --> 00:21:47.000]   Like there's no, uh, there is no license for those weights.
+[00:21:47.000 --> 00:21:52.000]   Um, for the bottom five, they have, uh, special licenses.
+[00:21:52.000 --> 00:21:58.000]   Um, so these are fine tunes of meta's Lama model series.
+[00:21:58.000 --> 00:22:05.000]   And this model series has like kind of captured mind share in the free and open source software world.
+[00:22:05.000 --> 00:22:17.000]   So a lot of the people who are like hacking independently, um, and, uh, you know, making public get commits, um, and, you know, funded by the Linux foundation and things like that.
+[00:22:17.000 --> 00:22:24.000]   These people are working in the main on, uh, adjustments to, or improvements to the Lama model series.
+[00:22:24.000 --> 00:22:38.000]   Um, and this is really critical because the secret to like the success of open source software in general is the ability to do this kind of like highly parallelized development where lots and lots of people are adding tiny little features.
+[00:22:38.000 --> 00:22:49.000]   And like, you know, going out into the last mile and adding those tiny little things that they need, um, and sort of like making use of all that, uh, work by others.
+[00:22:49.000 --> 00:23:02.000]   Um, so in so far as you're able to do that, you are able to provide useful open source software that can compete with software that's made by, you know, highly remunerated teams, um, you know, in, in Northern California.
+[00:23:02.000 --> 00:23:08.000]   Um, so the important question, uh, is this actually, uh, open source.
+[00:23:08.000 --> 00:23:16.000]   So you'll notice these licenses here do not have friendly beloved names like LGPL or MIT or Apache.
+[00:23:16.000 --> 00:23:19.000]   They are, they have a special unique name.
+[00:23:19.000 --> 00:23:27.000]   Um, and that's because meta's license for the Lama two weights, the Lama one weights for at least under a research only license and were only sent to certain people.
+[00:23:27.000 --> 00:23:30.000]   And then we're immediately like torrented and the license was violated.
+[00:23:30.000 --> 00:23:40.000]   So they gave up on that, uh, on like fully controlling it, but they did say you cannot use the, uh, data or output to improve other large language models.
+[00:23:40.000 --> 00:23:52.000]   You can only use it to improve Lama models, um, and also release under the same license, which is pretty typical with open source, um, which, uh, is partly an attempt to sort of capture this.
+[00:23:52.000 --> 00:23:59.000]   Like as people are doing parallel development, they should only be contributing to the development of this, um, this branch.
+[00:23:59.000 --> 00:24:09.000]   Um, and then also if your products monthly active users in June of 2023 with 700 million users or above, um, you're not allowed to use it.
+[00:24:09.000 --> 00:24:12.000]   Or sorry, you have to pay for a special license.
+[00:24:12.000 --> 00:24:23.000]   Um, and that, uh, so apologies to anybody, you know, who's, um, you know, if you're running an app with more than 700 million users, um, uh, you'll have to go elsewhere, I guess.
+[00:24:23.000 --> 00:24:34.000]   But the, um, the key thing is that these are violations of the, like, sort of agreed terms of what makes something an open source license according to the open source initiative,
+[00:24:34.000 --> 00:24:41.000]   who, you know, who, you know, has some, uh, claim to controlling how that term is used.
+[00:24:41.000 --> 00:24:59.000]   I didn't, they, I don't think they ever ended up getting a trademark, um, but they, uh, you know, they are, got the community aligned around a small number of licenses that, and around a key set of principles that include, like, you can't tell, you can't say who's allowed to use this software, for example, which is included in the Lama license.
+[00:24:59.000 --> 00:25:06.000]   So there's, like, uh, uh, they're, they have opened up a multi-stakeholder process to define open source AI.
+[00:25:06.000 --> 00:25:13.000]   This is occurring at a time in which, like, the meaning of open source is also being contested in, sort of, like, software as a service.
+[00:25:13.000 --> 00:25:16.000]   So things are a little, things are a little tense there.
+[00:25:16.000 --> 00:25:21.000]   Um, but hopefully we'll come to, uh, an agreement as a community on what that means.
+[00:25:21.000 --> 00:25:31.000]   Um, so this is a fast-moving space still, so just because you get Mindshare early on, if, like, things change rapidly, that doesn't mean, like, Lama's locked in forever.
+[00:25:31.000 --> 00:25:43.000]   Um, so Mistral, for example, dropped a model, like, two weeks ago, um, that at only 7 billion parameters was outperforming, um, like, larger models in the 13 to 30 billion parameter range.
+[00:25:43.000 --> 00:25:47.000]   And those models were outperforming the previous models, um, at their size.
+[00:25:47.000 --> 00:25:58.000]   So there's, like, except insofar as those things, like, continue to get updated, um, you know, they, uh, yeah, they can be outcompeted.
+[00:25:58.000 --> 00:26:10.000]   Um, the other thing to watch out for is that there are a lot of people who are very excited about, like, taking on the death star of open AI or whatever and, um, get very excited about these open models.
+[00:26:10.000 --> 00:26:21.000]   There's also some political things about the politics of how ChatGPT likes to respond to questions versus the politics of how people who meet other people in discords like to respond to questions.
+[00:26:21.000 --> 00:26:28.000]   Um, and that can, that sort of, like, enthusiasm can lead to, like, pretty big errors.
+[00:26:28.000 --> 00:26:46.000]   So, for example, there was a lot of excitement about these models that were, take, take an open llama model, uh, the, the ways from that, and then grab, like, 10,000 requests from the open AI API or scrape, like, r slash ChatGPT or whatever, and then just fine tune.
+[00:26:46.000 --> 00:26:49.000]   Like, now there's a data set, use it to fine tune the model.
+[00:26:49.000 --> 00:26:58.000]   And those are the ones that were, like, up there on the arena, uh, uh, on that, uh, like, ELO ranking, um, from the leaderboard that I showed before.
+[00:26:58.000 --> 00:27:05.000]   Um, and the, there was a claim that these, uh, had, like, 90% of ChatGPT's quality.
+[00:27:05.000 --> 00:27:07.000]   There are only 7 billion parameters.
+[00:27:07.000 --> 00:27:10.000]   Like, you know, people were, like, very enthusiastic about this.
+[00:27:10.000 --> 00:27:15.000]   Back in April when I was talking about this, a lot of people were, like, why are you even talking about open AI anymore?
+[00:27:15.000 --> 00:27:31.000]   We, like, you know, Vicuña's done it, and, like, yeah, uh, so, um, this is a fake screenshot, uh, that's, uh, from a paper, or that I modified from, from a paper about, uh, about this, this topic of how well these models work.
+[00:27:31.000 --> 00:27:40.000]   Um, so, this is one output from a language model, anonymized, um, on answer, uh, how does actor critic improve over reinforce?
+[00:27:40.000 --> 00:27:43.000]   Um, so, this is an algorithm from reinforcement learning.
+[00:27:43.000 --> 00:27:51.000]   Um, so, one language model says, uh, actor critic algorithms are an extension of reinforce that combine both policy-based and value-based methods.
+[00:27:51.000 --> 00:27:56.000]   Um, it's got a critic network, it's got advantage estimation, it's got function approximation.
+[00:27:56.000 --> 00:27:59.000]   So, that's one answer, that's A.
+[00:27:59.000 --> 00:28:09.000]   Answer B, uh, actor critic algorithms are a type of reinforcement learning algorithm that improves the reinforcement algorithm by combining actor, policy, and critic value components.
+[00:28:09.000 --> 00:28:14.000]   Actor-critic algorithms use a single critic, reinforce has a separate critic for each action.
+[00:28:14.000 --> 00:28:19.000]   Actor-critic algorithms learn a policy and actor simultaneously, but reinforce learns them separately.
+[00:28:19.000 --> 00:28:23.000]   Um, so, you know, those might seem fairly similar.
+[00:28:23.000 --> 00:28:27.000]   So, does anybody have a strong preference for, uh, answer A here?
+[00:28:27.000 --> 00:28:34.000]   Anybody have a weak preference for answer A over answer B here?
+[00:28:34.000 --> 00:28:39.000]   Some people raising, like, a, like, a soft hand?
+[00:28:39.000 --> 00:28:40.000]   Maybe, yeah?
+[00:28:40.000 --> 00:28:45.000]   Um, anybody have a strong preference for answer B?
+[00:28:45.000 --> 00:28:51.000]   Maybe one, maybe two, and a weak preference for answer B?
+[00:28:51.000 --> 00:28:57.000]   This one's got, like, they both got these nice numbered lists, you know, which looks very authoritative.
+[00:28:57.000 --> 00:29:01.000]   It reminds me of a Medium article, which is likely to be true, of course.
+[00:29:01.000 --> 00:29:12.000]   Um, uh, so, the, uh, so, uh, answer B comes from, uh, I want to say this was GPT-4, yeah.
+[00:29:12.000 --> 00:29:23.000]   Um, answer B comes from GPT-4 and, oh, wait, wait, sorry, answer A comes from GPT-4 and has the advantage of being correct.
+[00:29:23.000 --> 00:29:30.000]   Um, answer B comes from one of the, uh, fine-tuned models, um, and is, like, gibberish, basically.
+[00:29:30.000 --> 00:29:46.000]   Um, and so, this just, you know, like, just having humans rate the outputs of language models in the way that a lot of those, uh, leaderboards were constructed, um, did not, like, it didn't have any grounding in the actual utility of the answers.
+[00:29:46.000 --> 00:29:57.000]   It was just a lot of people going, like, looks good to me, like, nice, yes, merge, um, and, um, without, like, knowing whether it was actually right or not.
+[00:29:57.000 --> 00:30:05.000]   Um, and so, uh, there's a nice paper from some folks at, uh, Berkeley about, um, sort of walking through, like, what's going on.
+[00:30:05.000 --> 00:30:16.000]   Basically, the models are picking up style from a fine tune, which is things like that delightful little split into bullet points and, like, you know, like, a very authoritative and friendly educational style.
+[00:30:16.000 --> 00:30:20.000]   Um, but not, like, actual knowledge, not, like, reasoning capabilities.
+[00:30:20.000 --> 00:30:27.000]   And, like, a lot of people in the open modeling communities, like, sort of missed this or, like, willfully ignored it.
+[00:30:27.000 --> 00:30:30.000]   Um, some of the sharpest people were definitely up on this.
+[00:30:30.000 --> 00:30:36.000]   Like, the Guanico paper, for example, mentions that there's, uh, some issues with evaluation came out before this paper.
+[00:30:36.000 --> 00:30:38.000]   Um, but definitely a lot of people missed it.
+[00:30:38.000 --> 00:30:49.000]   Um, so the, the immediate question that comes up is, like, between these open models and these, uh, proprietary models, who's going to win long-term?
+[00:30:49.000 --> 00:30:51.000]   Like, who should I bet on?
+[00:30:51.000 --> 00:30:55.000]   Um, and in some ways, I think that's a bit of a misguided question.
+[00:30:55.000 --> 00:30:58.000]   Um, so consider operating systems.
+[00:30:58.000 --> 00:31:07.000]   Uh, like, the first operating system, roughly, was System 360 from IBM on mainframes, extremely closed.
+[00:31:07.000 --> 00:31:10.000]   Um, in the '80s, there was a rash of operating systems.
+[00:31:10.000 --> 00:31:12.000]   Most of them closed.
+[00:31:12.000 --> 00:31:16.000]   The original Xerox Pilot on the Xerox Star, uh, was extremely closed.
+[00:31:16.000 --> 00:31:18.000]   DOS and Win-DOS was closed.
+[00:31:18.000 --> 00:31:21.000]   Uh, Mac OS at the time was, like, completely closed.
+[00:31:21.000 --> 00:31:25.000]   Um, and there were Unix operating systems that were kind of, like, mixed.
+[00:31:25.000 --> 00:31:34.000]   Um, and then over time, the, like, closed versions of Unix lost out to more, like, friendly licensed ones, and in particular to GNU Linux.
+[00:31:34.000 --> 00:31:42.000]   Um, and there's been a bit of a trend towards open, uh, open operating systems kind of taking more mind and market share over time.
+[00:31:42.000 --> 00:31:49.000]   Like, data centers have more Linux in them now than they did in 2005 and then than they did in 1995.
+[00:31:49.000 --> 00:31:55.000]   But, uh, from what I can tell, it's still, like, 70% plus Windows, um, for, uh, for operating web servers.
+[00:31:55.000 --> 00:32:00.000]   In mobile phones, we also have an open operating system and a closed operating system.
+[00:32:00.000 --> 00:32:08.000]   And these things have been able to co-exist and serve different needs for different organizations throughout, like, the history of operating systems.
+[00:32:08.000 --> 00:32:12.000]   Um, and the same is true of databases.
+[00:32:12.000 --> 00:32:21.000]   Uh, so, back in the '70s and '80s, it was Oracle and IBM's DBT2, um, which is still around, I found out.
+[00:32:21.000 --> 00:32:28.000]   Um, like, you live too long in, in the, in San Francisco and you forget that there are people who use IBM DBT2.
+[00:32:28.000 --> 00:32:36.000]   Um, in the '90s, there was some, like, consolidation around more open implementations of, of SQL.
+[00:32:36.000 --> 00:32:44.000]   Uh, and in the 2000s to 2010s, there was the NoSQL movement, but that was still, like, mostly open source databases.
+[00:32:44.000 --> 00:32:50.000]   Uh, so there's been a lot of, like, movement in the direction of open databases, um, with streaming databases,
+[00:32:50.000 --> 00:32:53.000]   we have both proprietary and open options.
+[00:32:53.000 --> 00:33:01.000]   If you look at the top 10, uh, databases as ranked by dbengines.com, which is, you could quibble with the ranking thing,
+[00:33:01.000 --> 00:33:11.000]   but the, the key point is that there are, like, it's like half and half split between, um, between proprietary databases and, um, and open source databases.
+[00:33:11.000 --> 00:33:20.000]   Uh, and that has been, like, relatively stable over time with, like, a soft, maybe a soft trend in the direction of open, uh, databases.
+[00:33:20.000 --> 00:33:29.000]   Uh, so with these, like, very, like, language models, foundation models are this very, like, low-level, uh, component of a software stack.
+[00:33:29.000 --> 00:33:37.000]   More like an, like an operating system or a database, I think, than, like, um, you know, than a SaaS app or a, or a UI.
+[00:33:37.000 --> 00:33:43.000]   Uh, and because of that, they're likely to be subject to some of these same forces that say there's some people who want to work one way,
+[00:33:43.000 --> 00:33:50.000]   there's some people who want it to work in another, and for some of them, that openness, that hackability is going to be critical for others.
+[00:33:50.000 --> 00:33:58.000]   The, like, reliability, the existence of a white-gloved enterprise version is going to be really critical, um, and those will allow these two things to coexist.
+[00:33:58.000 --> 00:34:07.000]   Um, and, uh, yeah, and the CEO of HuggingFace liked my tweet when I said that, so it's probably true.
+[00:34:07.000 --> 00:34:16.000]   Um, but I think a lot of people are, like, well, no, but, like, who's, like, who's gonna win? Like, who should I bet on?
+[00:34:16.000 --> 00:34:26.000]   Um, and I think the closest thing to an answer that I have is that if capabilities requirements saturate, if people no longer want the absolute smartest model out there,
+[00:34:26.000 --> 00:34:32.000]   they just want a model smart enough for X, Y, Z, then open models will probably catch up and then, like, start to dominate.
+[00:34:32.000 --> 00:34:45.000]   Um, the thing that keeps open models behind, proprietary models, is the extreme expense of maintaining a large resource team and, like, you know, continually constructing new data centers at an increased scale, um,
+[00:34:45.000 --> 00:34:50.000]   um, to the tune of, like, $500 million in order to hit that next capability level before everybody else.
+[00:34:50.000 --> 00:34:58.000]   But, you know, uh, uh, at a certain point, processors got fast enough that people were not, like, clamoring for the next upgrade as soon as possible.
+[00:34:58.000 --> 00:35:04.000]   Um, and at that point, we're starting to see, like, a little bit more opening up in the, sort of, like, in the chip space with, like, RISC-V.
+[00:35:04.000 --> 00:35:16.000]   Um, and so, like, at, like, with, in any number of other technological domains, you've seen that when requirements start to saturate, um, then, like, open, uh, like, open versions can catch up.
+[00:35:16.000 --> 00:35:22.000]   Um, if they are unbounded and it's like, you know, uh, what's a good example?
+[00:35:22.000 --> 00:35:23.000]   What's a good example?
+[00:35:23.000 --> 00:35:24.000]   Like, RAM?
+[00:35:24.000 --> 00:35:25.000]   Like, nobody has enough RAM.
+[00:35:25.000 --> 00:35:26.000]   Everybody wants more RAM.
+[00:35:26.000 --> 00:35:31.000]   I don't think there are any, like, open, like, attempts to make, like, an open RAM architecture or something.
+[00:35:31.000 --> 00:35:38.000]   Um, and that's because, and one reason why I think is capabilities requirements there are, remain unbounded.
+[00:35:38.000 --> 00:35:51.000]   Um, and so, um, if that's the case for, uh, cognition and AI models, then proprietary models should be able to maintain that edge in, in capabilities, which would sort of tilt the balance in favor.
+[00:35:51.000 --> 00:35:55.000]   More people would say, oh, no, I need this, this proprietary thing.
+[00:35:55.000 --> 00:35:58.000]   Um, so it's the closest to an answer that I have.
+[00:35:58.000 --> 00:36:05.000]   Um, yeah, any questions on that front before we dive into, uh, um, where we actually run these models?
+[00:36:05.000 --> 00:36:06.000]   Yeah.
+[00:36:06.000 --> 00:36:11.000]   I was curious, uh, what's the language support for these language models?
+[00:36:11.000 --> 00:36:17.000]   Like, can anyone, you know, use, like, a language other than English with these models?
+[00:36:17.000 --> 00:36:22.000]   Yeah, um, so the question was what kind of language support do these models have?
+[00:36:22.000 --> 00:36:28.000]   Um, and because it's only an API call away, you can, of course, use Python or Node.
+[00:36:28.000 --> 00:36:29.000]   code or whatever you want.
+[00:36:29.000 --> 00:36:30.000]   Uh, no.
+[00:36:30.000 --> 00:36:34.000]   So the question was about, like, these are language modeling, like, machines.
+[00:36:34.000 --> 00:36:35.000]   What languages do they model?
+[00:36:35.000 --> 00:36:42.000]   Um, and the basic answer is that the more text in that language that is available on the open
+[00:36:42.000 --> 00:36:46.000]   internet, the better the language models will be on, on that language.
+[00:36:46.000 --> 00:36:57.000]   So they are, like, I want to say GBD-4 is smarter in, maybe smarter in Malayalam than it is in Mandarin.
+[00:36:57.000 --> 00:36:58.000]   Um, I forget.
+[00:36:58.000 --> 00:37:05.000]   There's, like, some interesting inversions of, like, number of people who speak the language versus how, uh, how intelligent the language models are.
+[00:37:05.000 --> 00:37:12.000]   Um, so I think a lot of them release benchmarks that say, like, how multilingual is this language model and for which languages.
+[00:37:12.000 --> 00:37:27.000]   Um, there is, you run into the fundamental token constraint of, like, you need, uh, you need existing, like, you need examples of that language that you can get a hold of in order to train the model in them.
+[00:37:27.000 --> 00:37:31.000]   Um, and there just are more English tokens.
+[00:37:31.000 --> 00:37:44.000]   Um, but for a given capacity, you can probably achieve, like, higher quality in a specific model by looking for, um, by looking for a model trained in that language.
+[00:37:44.000 --> 00:37:52.000]   So there's definitely some, like, good old nationalist European endeavors to make, like, a French-language model that insults you if you ask it for stuff in English.
+[00:37:52.000 --> 00:37:56.000]   Um, which it, of course, picks up just from reading French.
+[00:37:56.000 --> 00:37:57.000]   Um.
+[00:37:57.000 --> 00:38:02.000]   Um, but yeah, but the, but the core models, like, they support English really well.
+[00:38:02.000 --> 00:38:14.000]   The instruction fine-tuning in the ROHF is actually mostly applied to them in English since the annotators who, uh, enforce that policy, uh, through their examples are mostly writing in English.
+[00:38:14.000 --> 00:38:21.000]   Um, so fun fact, you can get ChatGPT and Claude probably to tell you how to build a bomb if you ask in the right low resource level.
+[00:38:21.000 --> 00:38:26.000]   Um, uh, just fun facts about language models.
+[00:38:26.000 --> 00:38:39.000]   Um, yeah, so that, that does, that is a problem, and it does sort of, like, uh, it has a multiplying effect on the English languages, kind of, like, cultural hegemony, um, which is a bit unfortunate.
+[00:38:39.000 --> 00:38:40.000]   Yeah.
+[00:38:40.000 --> 00:38:58.000]   So for the, for the languages that are less represented, is, um, is reading capabilities lower, or, you know, understanding lower, and also, are there arbitrage opportunities in translating first, uh, in the process of translating first, uh, and then...
+[00:38:58.000 --> 00:39:05.000]   Yeah, I'm unaware of any, like, you know, any benchmarking work on this.
+[00:39:05.000 --> 00:39:13.000]   My gut tells me that translating to English first, doing chain of thought, and then translating back to the original language would work better.
+[00:39:13.000 --> 00:39:22.000]   Um, you, you kind of, like, wondering whether the lost in translation effect is bigger than the, like, boost of chain of thought in English.
+[00:39:22.000 --> 00:39:27.000]   A lot of the, like, circuits in language models are very token specific.
+[00:39:27.000 --> 00:39:29.000]   Um, and then, yeah.
+[00:39:29.000 --> 00:39:31.000]   So, it's like the, like, just one example.
+[00:39:31.000 --> 00:39:38.000]   If you ask it who Tom Cruise's mother is, then it answers better than if you ask it that woman's name's son.
+[00:39:38.000 --> 00:39:43.000]   I, I don't know her, her name at all, um, so I can't really do this example effectively.
+[00:39:43.000 --> 00:39:45.000]   Um, JATGPT wins again.
+[00:39:45.000 --> 00:39:50.000]   Um, but the, uh, there, so that's, like, an example of a very, of a token specific circuit.
+[00:39:50.000 --> 00:39:52.000]   It's, like, related to Tom Cruise.
+[00:39:52.000 --> 00:40:03.000]   Uh, and so, you can see, like, it's not reasoning the way that a person would, or that, or that you would guess from, like, you know, how, how you would think about a knowledge graph or something like that.
+[00:40:03.000 --> 00:40:06.000]   Um, and so, that's where you get these unintuitive things.
+[00:40:06.000 --> 00:40:08.000]   Um, but, yeah.
+[00:40:08.000 --> 00:40:14.000]   So, I saw you, um, used to or maybe still do deep learning.
+[00:40:14.000 --> 00:40:15.000]   Oh, yeah.
+[00:40:15.000 --> 00:40:21.000]   And I was wondering, like, one of the pieces of the whole event is, okay, there is these reasoning
+[00:40:21.000 --> 00:40:31.000]   as a service APIs now, right, where you can do a lot more things without having your own
+[00:40:31.000 --> 00:40:32.000]   experience.
+[00:40:32.000 --> 00:40:34.000]   So, if you are aiming for the typical AI engineer, you know, to build this.
+[00:40:34.000 --> 00:40:39.000]   Does it still make sense to learn some amount of those and learning some amount of things, you know,
+[00:40:39.000 --> 00:40:43.000]   like, is it, like, what's the video piece of what post?
+[00:40:43.000 --> 00:40:45.000]   Is it, like, actually being, like, who can?
+[00:40:45.000 --> 00:40:50.000]   Is it, like, actually being made for, like, what would you like to do?
+[00:40:50.000 --> 00:40:53.000]   Yeah, that's a great question.
+[00:40:53.000 --> 00:41:02.000]   Um, for individuals, I think it's a matter of your personal interest in understanding the
+[00:41:02.000 --> 00:41:03.000]   modeling.
+[00:41:03.000 --> 00:41:10.000]   Like, I guess the analogy I would immediately jump to is, as an individual developer, you
+[00:41:10.000 --> 00:41:13.000]   can get away with not knowing anything about databases.
+[00:41:13.000 --> 00:41:14.000]   Like, I have done that.
+[00:41:14.000 --> 00:41:16.000]   I couldn't write a B-tree right now.
+[00:41:16.000 --> 00:41:21.000]   I don't want to ever learn how to do that, like, and to think about page sizes and, yeah,
+[00:41:21.000 --> 00:41:23.000]   it makes me ill to think about that.
+[00:41:23.000 --> 00:41:28.000]   And, whereas I get excited if I wake up in the morning and I can think about Bayesian inference
+[00:41:28.000 --> 00:41:29.000]   in language models.
+[00:41:29.000 --> 00:41:34.000]   And so, as an individual, I think you can, like, kind of be guided by your, like, what you
+[00:41:34.000 --> 00:41:35.000]   find most exciting.
+[00:41:35.000 --> 00:41:40.000]   As a team and as an organization, though, if you have nobody who understands databases
+[00:41:40.000 --> 00:41:43.000]   in your organization, you're probably going to be in trouble.
+[00:41:43.000 --> 00:41:50.000]   Um, just, like, it ends up, like, most applications require, like, pretty decent knowledge of databases
+[00:41:50.000 --> 00:41:53.000]   and when they go down or when they need to be configured.
+[00:41:53.000 --> 00:41:59.000]   Even if you are using Redshift or, you know, you're using some managed service, being able
+[00:41:59.000 --> 00:42:03.000]   to, like, understand some stuff about them is actually critical for debugging and being able
+[00:42:03.000 --> 00:42:08.000]   to know when you need to switch managed services or, like, yeah, or how to reconfigure them.
+[00:42:08.000 --> 00:42:12.000]   So, I think, like, the direction that we're going to go is to evolve there.
+[00:42:12.000 --> 00:42:21.000]   It's a question of whether you want to be a site reliability engineer focused on LLM reliability
+[00:42:21.000 --> 00:42:27.000]   or, you know, a modeling engineer or whether you want to be, like, more at the, like, application layer.
+[00:42:27.000 --> 00:42:28.000]   Yeah.
+[00:42:28.000 --> 00:42:31.000]   So, here's an interesting one.
+[00:42:31.000 --> 00:42:33.000]   What's your personal opinion on this?
+[00:42:33.000 --> 00:42:37.000]   There's a handful of companies that have gotten recent funding to build, like, vertical-oriented
+[00:42:37.000 --> 00:42:40.000]   commercial models in finance, healthcare, et cetera.
+[00:42:40.000 --> 00:42:41.000]   Yeah.
+[00:42:41.000 --> 00:42:42.000]   Yeah.
+[00:42:42.000 --> 00:42:49.000]   So, the question was, what about these models that are foundational but, like, less broad?
+[00:42:49.000 --> 00:42:55.000]   So, it's, like, a foundational model for law, a foundational model for healthcare.
+[00:42:55.000 --> 00:42:56.000]   For healthcare.
+[00:42:56.000 --> 00:42:57.000]   Yeah.
+[00:42:57.000 --> 00:43:05.000]   I -- my experience has been that if you bet that some capability is not going to be available
+[00:43:05.000 --> 00:43:12.000]   in a language model or in a foundation model, like, you will get -- you will lose that bet.
+[00:43:12.000 --> 00:43:19.000]   So, just as an example, in the deep learning boot camp, we spent a long time trying to make
+[00:43:19.000 --> 00:43:21.000]   an optical character recognition system.
+[00:43:21.000 --> 00:43:26.000]   And it's, like, you know, it's the, like, pinnacle of the class where you can finally, like, deploy
+[00:43:26.000 --> 00:43:29.000]   a web service that does optical character recognition.
+[00:43:29.000 --> 00:43:34.000]   And that's, like, an accidental side feature of GPT-4v, and it's, like, better at it than
+[00:43:34.000 --> 00:43:35.000]   the thing that we built.
+[00:43:35.000 --> 00:43:39.000]   Um, and a lot of ML teams have experienced something like that.
+[00:43:39.000 --> 00:43:45.000]   Um, so, I worry -- I would worry if -- if somebody were, like, offering me that as a job opportunity,
+[00:43:45.000 --> 00:43:50.000]   for example, I would worry that it's going to get, like, scooped on either side by a hyper-specific
+[00:43:50.000 --> 00:43:54.000]   model that's, like, 10 times more efficient and isn't, like, a generic healthcare model,
+[00:43:54.000 --> 00:44:01.000]   but is, like, a, um, uh, ultrasound for the heart model, the one I worked on before.
+[00:44:01.000 --> 00:44:11.000]   Um, yeah, or just send it to the chat GPT API, or to the GPT API.
+[00:44:11.000 --> 00:44:12.000]   Great questions.
+[00:44:12.000 --> 00:44:19.000]   Um, so, uh, maybe another reason to think that there might be, like, a little more alpha in -- in
+[00:44:19.000 --> 00:44:26.000]   actually learning more about the models is, um, inference doesn't have to be executed over
+[00:44:26.000 --> 00:44:27.000]   a network.
+[00:44:27.000 --> 00:44:30.000]   It doesn't have to be executed, like, in some central server.
+[00:44:30.000 --> 00:44:38.000]   There are lots of reasons why you might want to execute your, uh, your inference on an end-user
+[00:44:38.000 --> 00:44:39.000]   device.
+[00:44:39.000 --> 00:44:43.000]   Um, so we'll talk about the different types of end-user devices and the different constraints
+[00:44:43.000 --> 00:44:48.000]   that they put on inference and the implications, um, like engineering and strategic, and then also
+[00:44:48.000 --> 00:44:53.000]   uh, talk about what the options are for doing things over a network.
+[00:44:53.000 --> 00:45:00.000]   Um, so running stuff for end-users is, like, uh, like where the -- sorry, the end-user actually
+[00:45:00.000 --> 00:45:05.000]   executes it themselves is not quite there yet, but it's, like, uh, it's getting there and maybe
+[00:45:05.000 --> 00:45:07.000]   a little bit faster than I personally expected.
+[00:45:07.000 --> 00:45:16.000]   like, I've run llama 2, uh, 13b on this very laptop, um, without it catching on fire.
+[00:45:16.000 --> 00:45:22.000]   Um, so there's, uh, there's some hope, uh, that there will -- that that will continue to get
+[00:45:22.000 --> 00:45:23.000]   better.
+[00:45:23.000 --> 00:45:29.000]   Um, and so this, uh, this is critical for latency-sensitive applications.
+[00:45:29.000 --> 00:45:35.000]   So, like, being able to actually execute the inference at the same place that the user -- at the
+[00:45:35.000 --> 00:45:36.000]   same place where the user is.
+[00:45:36.000 --> 00:45:41.000]   Um, and the reason why it goes back to this, like, this famous set of numbers every engineer
+[00:45:41.000 --> 00:45:47.000]   should know from, uh, Peter Norvig and Jeff Dean at Google, um, which is that the time it
+[00:45:47.000 --> 00:45:53.000]   takes to send a packet -- just one packet, so probably -- this probably isn't even a whole
+[00:45:53.000 --> 00:45:54.000]   HTTP request.
+[00:45:54.000 --> 00:45:55.000]   I'd have to check again.
+[00:45:55.000 --> 00:46:00.000]   But let's just say you send information back and forth from, like, here in California to
+[00:46:00.000 --> 00:46:01.000]   Europe and back.
+[00:46:01.000 --> 00:46:03.000]   It's 150 milliseconds.
+[00:46:03.000 --> 00:46:11.000]   Um, and there's, like, a number of kind of made-up numbers in the UX world about, like, how
+[00:46:11.000 --> 00:46:14.000]   fast you need to be for something to feel interactive.
+[00:46:14.000 --> 00:46:19.000]   Um, so one of them going back to, like, the '70s or '80s is the Doherty threshold, which
+[00:46:19.000 --> 00:46:24.000]   says the user and the computer can interact with each other in under 400 milliseconds.
+[00:46:24.000 --> 00:46:28.000]   Then the, like, human won't feel like they're waiting on the computer.
+[00:46:28.000 --> 00:46:33.000]   And as you're programming things, you won't, like, end up blocked on human input.
+[00:46:33.000 --> 00:46:37.000]   Um, but you'll -- and you'll still have plenty of time for doing stuff in -- in side threads
+[00:46:37.000 --> 00:46:38.000]   and things like that.
+[00:46:38.000 --> 00:46:43.000]   Uh, so if you were -- like, if you have to, like, do a network call every single time, you're
+[00:46:43.000 --> 00:46:47.000]   using up, like, a third of your budget just on, like, waiting for information -- information
+[00:46:47.000 --> 00:46:48.000]   to come back.
+[00:46:48.000 --> 00:46:52.000]   And now you're going to spend a ton of engineering effort on, like, trying to find ways -- things
+[00:46:52.000 --> 00:46:56.000]   that you can do asynchronously during that, like, that network call.
+[00:46:56.000 --> 00:46:59.000]   And, like, you can -- you can work around it, but it is punishing.
+[00:46:59.000 --> 00:47:04.000]   Um, and that's -- like, there are even tighter, like, reaction time things.
+[00:47:04.000 --> 00:47:09.000]   Like, if you have a self-driving car, um, you can't wait 150 milliseconds, uh, to find out
+[00:47:09.000 --> 00:47:10.000]   that you need to brake.
+[00:47:10.000 --> 00:47:15.000]   Um, so, uh, yeah.
+[00:47:15.000 --> 00:47:20.000]   So, and the nice thing about this, uh, the other benefit to it, besides it being necessary
+[00:47:20.000 --> 00:47:26.000]   in some places, is that if end users run the computation, then you don't need to pay for it.
+[00:47:26.000 --> 00:47:34.000]   Um, so your inferencing costs can be zero dollars, which would be -- which would be great.
+[00:47:34.000 --> 00:47:37.000]   Um, so the cost that you pay, um, is control.
+[00:47:37.000 --> 00:47:41.000]   So, you have less control of the execution environment.
+[00:47:41.000 --> 00:47:45.000]   Um, your ability to do telemetry and see what is going on is limited.
+[00:47:45.000 --> 00:47:51.000]   Uh, people don't like it when you, like, carefully observe their activity using software on their
+[00:47:51.000 --> 00:47:57.000]   machine, but if they -- you put the same software at a URL, you can spy on them as much as you
+[00:47:57.000 --> 00:47:58.000]   want, and they don't get mad.
+[00:47:58.000 --> 00:48:01.000]   Um, so you lose out on telemetry.
+[00:48:01.000 --> 00:48:05.000]   You, uh, have to worry about compatibility with different execution environments, and you
+[00:48:05.000 --> 00:48:10.000]   have to actually support past versions, unlike, uh, if you're running it as a service.
+[00:48:10.000 --> 00:48:15.000]   Um, or rather, if you, like, you know, control the execution environment.
+[00:48:15.000 --> 00:48:20.000]   Um, so the things that are unlocked by this are some of the best applications here.
+[00:48:20.000 --> 00:48:23.000]   Uh, like, some of the most exciting ones, especially to me.
+[00:48:23.000 --> 00:48:28.000]   So, uh, use on smart -- use in smartphones, use in robots, use in wearables.
+[00:48:28.000 --> 00:48:34.000]   Um, so Google, just in the past couple days, announced that the Pixel Pro 8, um, is going
+[00:48:34.000 --> 00:48:37.000]   to have, uh, large language models directly on device.
+[00:48:37.000 --> 00:48:41.000]   Um, they mostly showed off stuff that looked, like, kind of, like, summarization and some,
+[00:48:41.000 --> 00:48:47.000]   like, light image editing, so not, like, full-on, like, you know, like, "Hey Siri, why did the
+[00:48:47.000 --> 00:48:48.000]   Ottoman Empire fall?"
+[00:48:48.000 --> 00:48:50.000]   Like, I don't know what you talk about with ChatGPT.
+[00:48:50.000 --> 00:48:56.000]   Um, but, uh, like, it's not quite that level, but it's a move in that direction, and a trend
+[00:48:56.000 --> 00:49:00.000]   we can expect to kind of continue getting that inference onto the device.
+[00:49:00.000 --> 00:49:08.000]   Um, and, uh, there was also a recent hardware hack, um, on, like, using, you know, getting
+[00:49:08.000 --> 00:49:11.000]   this inference on mobile robotics platforms.
+[00:49:11.000 --> 00:49:16.000]   Um, and so there's -- there was a ton of cool applications there, like, um, yeah, some stuff
+[00:49:16.000 --> 00:49:21.000]   with, like, three -- like, point cloud rendering from -- for your -- for inside your house, like
+[00:49:21.000 --> 00:49:23.000]   a Roomba you can control with your voice.
+[00:49:23.000 --> 00:49:24.000]   Very cool stuff.
+[00:49:24.000 --> 00:49:31.000]   Um, the -- the constraints that appear here, uh, that you'll have to engineer around are, like,
+[00:49:31.000 --> 00:49:34.000]   very tight hardware constraints.
+[00:49:34.000 --> 00:49:37.000]   So, um, there -- there's memory limits.
+[00:49:37.000 --> 00:49:42.000]   Both disk and, like, VRAM and RAM are, like -- are extremely tight.
+[00:49:42.000 --> 00:49:49.000]   And, like, current language models, you can always trade more -- up to points where you're
+[00:49:49.000 --> 00:49:54.000]   spending, like, $100,000 on a machine, you can trade more money for smarter models.
+[00:49:54.000 --> 00:50:02.000]   Um, and phones are down at, like, gigabytes, uh, low gigabytes of RAM, uh, like -- yeah.
+[00:50:02.000 --> 00:50:06.000]   Um, was running a language model on a single board computer, and that had, like, two gigabytes
+[00:50:06.000 --> 00:50:08.000]   of shared RAM between the CPU and GPU.
+[00:50:08.000 --> 00:50:10.000]   Not a lot of space.
+[00:50:10.000 --> 00:50:15.000]   Um, and the, like, real, uh, deep limit is power.
+[00:50:15.000 --> 00:50:23.000]   Um, it's, uh -- or the -- sorry, there's a limit on power, which is, like, an A100, uh, which
+[00:50:23.000 --> 00:50:27.000]   you might use for inference, draws 300 watts of power, and something like the single board
+[00:50:27.000 --> 00:50:30.000]   computer, or using the Jetson Nano, that's 10 watts of power.
+[00:50:30.000 --> 00:50:32.000]   So, a factor of 30.
+[00:50:32.000 --> 00:50:34.000]   Not gonna make that up anytime soon.
+[00:50:34.000 --> 00:50:38.000]   Um, and underneath both of these is the problem of heat dissipation.
+[00:50:38.000 --> 00:50:43.000]   Um, there's -- that's, like, a really, like, tough thing to deal with when you are in these,
+[00:50:43.000 --> 00:50:48.000]   like, small environments, um, and, like, prevents them from just being, like, oh, I'll just, like,
+[00:50:48.000 --> 00:50:52.000]   make a chip where you can actually move, like, nine petabytes a second.
+[00:50:52.000 --> 00:50:55.000]   Um, like, across an inch.
+[00:50:55.000 --> 00:50:59.000]   And it's, like, uh, like, you just do some, like, back-of-the-envelope math, and it's, like,
+[00:50:59.000 --> 00:51:03.000]   that's gonna, like, egress so much heat the thing's gonna catch on fire.
+[00:51:03.000 --> 00:51:07.000]   Um, so, um, yeah.
+[00:51:07.000 --> 00:51:10.000]   This is -- we're talking about some hardcore engineering stuff here.
+[00:51:10.000 --> 00:51:19.000]   Um, all right, so the, like, mobile environments, uh, maybe, like, further out in the future to get, uh,
+[00:51:19.000 --> 00:51:22.000]   large capabilities onto them, but, um, not impossible.
+[00:51:22.000 --> 00:51:25.000]   What about, um, what about other consumer hardware?
+[00:51:25.000 --> 00:51:31.000]   Desktops, um, which are a place where you could have video games with actual artificial intelligence in them.
+[00:51:31.000 --> 00:51:40.000]   Uh, operating system-level assistants, native apps with these, like, kinds of features that we're starting to see in, um, in browser apps.
+[00:51:40.000 --> 00:51:46.000]   Uh, so you still run -- like, you run into even more heterogeneous hardware, and that's gonna give you different constraints,
+[00:51:46.000 --> 00:51:53.000]   depending on the system that you're on, and that is gonna require, like, really heterogeneous software to meet those constraints.
+[00:51:53.000 --> 00:52:00.000]   Like, you probably can't assume that everybody has an NVIDIA 30 series or later GPU, even though it would make your life a lot easier.
+[00:52:00.000 --> 00:52:08.000]   And you probably can't assume that you can use up all the RAM on that, uh, uh, uh, you know, on that chip, even if it would make your life easier.
+[00:52:08.000 --> 00:52:15.000]   Um, I think the long-term, we might be able to expect ecosystems to adjust around the requirements of these workloads,
+[00:52:15.000 --> 00:52:22.000]   a bit, so, like, kind of, uh, like, make it, uh, like, make cleaner interfaces for using these things,
+[00:52:22.000 --> 00:52:27.000]   so you don't have to write 15 different versions, um, or write a make file that looks like llama.cpps.
+[00:52:27.000 --> 00:52:28.000]   Don't look at it.
+[00:52:28.000 --> 00:52:30.000]   Um, uh, very scary.
+[00:52:30.000 --> 00:52:36.000]   Uh, there's kind of a sweet spot, actually, in what little, like, next-generation video game consoles,
+[00:52:36.000 --> 00:52:40.000]   because you have total authority to just use up as much of the system as you want.
+[00:52:40.000 --> 00:52:42.000]   People pay lots of money for them.
+[00:52:42.000 --> 00:52:46.000]   They often build custom silicon based on what developers want.
+[00:52:46.000 --> 00:52:51.000]   So that could be, if you're thinking about what you want to be doing in, like, five years, seven years in this field,
+[00:52:51.000 --> 00:52:54.000]   consider that as a possibility.
+[00:52:54.000 --> 00:53:05.000]   Lots of people would love to have, um, a real, like, human-like intelligence in the, um, uh, in the things they're shooting in their first-person shooter, you know?
+[00:53:05.000 --> 00:53:07.000]   Like, that, I think that would make a lot of money.
+[00:53:07.000 --> 00:53:08.000]   Yeah.
+[00:53:08.000 --> 00:53:12.000]   Uh, when it comes to building, especially for mobile hardware, with those constraints you're talking about.
+[00:53:12.000 --> 00:53:13.000]   Yeah.
+[00:53:13.000 --> 00:53:14.000]   Can you say a little bit about quantization?
+[00:53:14.000 --> 00:53:23.000]   Yeah, so the question was, for mobile hardware, like, what are solutions and specifically quantization?
+[00:53:23.000 --> 00:53:34.000]   So, um, when one of the key constraints is memory, like, just trying to make the size of the model smaller and the size of the computation smaller is helpful.
+[00:53:34.000 --> 00:53:46.000]   So, the, like, people are pushing to try and take the parameters of language models down from being two bytes to one byte to half a byte to, like, a single bit.
+[00:53:46.000 --> 00:53:50.000]   Um, and I think people are kind of stalling out at the, like, half byte level.
+[00:53:50.000 --> 00:54:00.000]   Um, and often to actually recognize those gains, you need to, like, write a assembler and stuff.
+[00:54:00.000 --> 00:54:02.000]   It's, like, it can get pretty gnarly.
+[00:54:02.000 --> 00:54:09.000]   Um, so that's often only, like, highly resourced teams working for a long time that they can actually see those benefits.
+[00:54:09.000 --> 00:54:15.000]   Um, the other thing that people talk about a lot, uh, for, like, making models work on smaller devices is sparsity.
+[00:54:15.000 --> 00:54:20.000]   Um, and so sparsity means, like, oh, there's this giant weight matrix.
+[00:54:20.000 --> 00:54:22.000]   Maybe most of them are close to zero.
+[00:54:22.000 --> 00:54:24.000]   And maybe we can just, like, get rid of those.
+[00:54:24.000 --> 00:54:27.000]   Like, if we were gonna go to one bit, there's zero or one, like, why not?
+[00:54:27.000 --> 00:54:28.000]   There's zeros.
+[00:54:28.000 --> 00:54:31.000]   And then zero is, like, a very easy number to work with.
+[00:54:31.000 --> 00:54:35.000]   Like, you, the number that comes out is multiply at zero, add, you just keep the number.
+[00:54:35.000 --> 00:54:39.000]   So it's, you don't need, like, a full logic circuit to handle it.
+[00:54:39.000 --> 00:54:43.000]   Um, so there are some things that make use of sparsity.
+[00:54:43.000 --> 00:54:48.000]   The problem is that the type of sparsity that neural networks need is called unstructured sparsity.
+[00:54:48.000 --> 00:54:52.000]   You have just had zeros kind of, like, scattered around your matrix multiply.
+[00:54:52.000 --> 00:55:02.000]   And all the, like, existing, easy to use, has, like, you know, Python API stuff is, um, uh, is in structured sparsity.
+[00:55:02.000 --> 00:55:04.000]   And so you get gains there.
+[00:55:04.000 --> 00:55:12.000]   And it's, like, you might need, yeah, a lot, like, yeah, hand-tuned CUDA kernels or, yeah, to, like, actually take use, make use of unstructured sparsity.
+[00:55:12.000 --> 00:55:17.000]   So that's something, you know, if there's a ton of pressure, we could see those developments in five years or so.
+[00:55:17.000 --> 00:55:22.000]   But, um, we haven't seen, people have been thinking about that for almost, for, like, seven years.
+[00:55:22.000 --> 00:55:25.000]   And it's, like, not made a ton of progress.
+[00:55:25.000 --> 00:55:28.000]   But, yeah, helps definitely has made it easier.
+[00:55:28.000 --> 00:55:36.000]   And, like, Google has been able to fit decent amount of language modeling capabilities on a, uh, on a mobile device.
+[00:55:36.000 --> 00:55:42.000]   Um, using distillation and quantization and probably more secrets that I won't share.
+[00:55:42.000 --> 00:55:43.000]   I had a dumb question.
+[00:55:43.000 --> 00:55:48.000]   What's the size of these models in terms of memory like it could be?
+[00:55:48.000 --> 00:55:49.000]   Yeah.
+[00:55:49.000 --> 00:55:51.000]   Does it only have the whole model in memory?
+[00:55:51.000 --> 00:55:52.000]   Mm-hmm.
+[00:55:52.000 --> 00:55:53.000]   Yeah.
+[00:55:53.000 --> 00:56:07.000]   Um, so the, if somebody tells you a number, like, 50B, you know, like, Lama, Lama, Anthropic 52B, Lama 70B, that's billions of parameters.
+[00:56:07.000 --> 00:56:11.000]   And then the question is, like, how, what, what, how big is a parameter?
+[00:56:11.000 --> 00:56:12.000]   Like, how many bytes?
+[00:56:12.000 --> 00:56:18.000]   And the, like, they're trained or where they, the way, the way they come out of the factory is two bytes per parameter.
+[00:56:18.000 --> 00:56:24.000]   So take the number that somebody gives you, multiply it by two, and then the B is giga.
+[00:56:24.000 --> 00:56:29.000]   So, like, a small Lama model is, like, 14 gigabytes.
+[00:56:29.000 --> 00:56:32.000]   Seven B times two, 14 gigabytes.
+[00:56:32.000 --> 00:56:34.000]   So not gonna fit that in phone RAM.
+[00:56:34.000 --> 00:56:39.000]   Uh, and that does make, yeah, doing this a lot harder.
+[00:56:39.000 --> 00:56:46.000]   Um, you can do things, you can, like, try and do stuff with paging, like, put stuff on the disk, bring it, bring it into RAM, then, like, execute with it.
+[00:56:46.000 --> 00:56:50.000]   Um, but that, like, slows things down a ton.
+[00:56:50.000 --> 00:56:51.000]   Um, so in general.
+[00:56:51.000 --> 00:56:52.000]   Yeah?
+[00:56:52.000 --> 00:56:53.000]   Hmm?
+[00:56:53.000 --> 00:57:00.000]   So, people used to train in float 32 and release models in float 32.
+[00:57:00.000 --> 00:57:03.000]   Maybe, I thought the Lama models were released in float 16.
+[00:57:03.000 --> 00:57:04.000]   No?
+[00:57:04.000 --> 00:57:10.000]   Yeah, a lot of, like, a lot of people train in this new, like, Google Brain float, uh, thing.
+[00:57:10.000 --> 00:57:14.000]   And then they, they're doing that because they want to be able to use float 16.
+[00:57:14.000 --> 00:57:16.000]   And so have two bytes per parameter.
+[00:57:16.000 --> 00:57:21.000]   But, like, definitely the, so the, like, the default before that was four bytes per, per parameter.
+[00:57:21.000 --> 00:57:32.000]   And before that, when people were doing scientific computing with graphics, with graphics cards, like, um, people at the national labs, the default was, like, four bytes per parameter.
+[00:57:32.000 --> 00:57:35.000]   Like, um, or, sorry, eight bytes, 64 bits.
+[00:57:35.000 --> 00:57:38.000]   Um, because they really needed that, like, high precision and high range.
+[00:57:38.000 --> 00:57:43.000]   Um, and, yeah, but now the trend has been to push them lower.
+[00:57:43.000 --> 00:57:48.000]   And many model releases are now, like, already two bytes, 16 bits.
+[00:57:48.000 --> 00:57:49.000]   Yeah.
+[00:57:49.000 --> 00:57:57.000]   Um, and now, Georgi Gergenov is, like, immediately converting them down to four bits, uh, and three bits.
+[00:57:57.000 --> 00:57:59.000]   Um, which is, like, wild.
+[00:57:59.000 --> 00:58:01.000]   Like, what does that even mean?
+[00:58:01.000 --> 00:58:04.000]   Um, like, a non-power of two.
+[00:58:04.000 --> 00:58:05.000]   It's scary.
+[00:58:05.000 --> 00:58:06.000]   Unsettling.
+[00:58:06.000 --> 00:58:07.000]   Um, okay.
+[00:58:07.000 --> 00:58:23.000]   So, uh, with -- there's another execution target that gets you a lot of the benefits of desktops, which is, like, you have a beefy machine to run on, and it's not yours, so you don't have to pay for it.
+[00:58:23.000 --> 00:58:27.000]   Um, but then you get a more homogeneous execution environment, which is the browser.
+[00:58:27.000 --> 00:58:36.000]   Um, so this is not, like, a web app where they, like, talk to a model running in a service, but, like, there is a model inside of the browser that runs inside the browser's, like, runtime.
+[00:58:36.000 --> 00:58:42.000]   Uh, and that, like, the homogenization environments would be very huge.
+[00:58:42.000 --> 00:58:47.000]   Um, right now, this is kind of, like, awaiting some technical improvements in the world of browsers.
+[00:58:47.000 --> 00:58:55.000]   So, there is a target in WebAssembly that you could compile your programs down to, um, and in principle run them.
+[00:58:55.000 --> 00:58:59.000]   Uh, the support for, uh, GPUs is very gross.
+[00:58:59.000 --> 00:59:05.000]   Um, there is, uh, a working draft from the WWW Consortium for WebGPU.
+[00:59:05.000 --> 00:59:08.000]   For WebGPU, which would make it cleaner and easier to use.
+[00:59:08.000 --> 00:59:15.000]   Um, so that would help the, like, ecosystem, the, like, stack and ecosystem around this for other kinds of web applications is developing.
+[00:59:15.000 --> 00:59:21.000]   Will, like, maybe lead developments in using this for, uh, delivering inference.
+[00:59:21.000 --> 00:59:31.000]   Um, you have a new constraint distinct from the other ones, which is you now, at least as it stands right now, you would need to deliver weights over the network.
+[00:59:31.000 --> 00:59:37.000]   And so now it's, like, you're, you're, you have kind of the model size constraints that you might associate with mobile hardware.
+[00:59:37.000 --> 00:59:40.000]   Um, but only during the, like, first load.
+[00:59:40.000 --> 00:59:46.000]   Um, so, um, there are probably clever ways to get around that, like, progressively delivering them.
+[00:59:46.000 --> 00:59:57.000]   Um, or, uh, like, browser, uh, companies sort of agreeing to incorporate some foundation models into the actual browser runtime itself.
+[00:59:57.000 --> 01:00:07.000]   Um, so, like, inside of, uh, like, uh, like, v9, uh, an update to v8 with a foundation model already built into the runtime.
+[01:00:07.000 --> 01:00:09.000]   That would make your life a lot easier.
+[01:00:09.000 --> 01:00:21.000]   Um, so, this, like, would, uh, yeah, browser assistance, maybe sort of, like, general, uh, like, executing apps inside of a browser that feel more like native apps.
+[01:00:21.000 --> 01:00:23.000]   Um, that's the potential applications here.
+[01:00:23.000 --> 01:00:28.000]   But, um, still a little, um, at the edge.
+[01:00:28.000 --> 01:00:29.000]   At the edge.
+[01:00:29.000 --> 01:00:31.000]   That was a pun, I guess.
+[01:00:31.000 --> 01:00:32.000]   At the edge.
+[01:00:32.000 --> 01:00:33.000]   Um, okay.
+[01:00:33.000 --> 01:00:37.000]   So, because, oh yeah, question.
+[01:00:37.000 --> 01:00:42.000]   How many gigabytes is a small and a large model right now?
+[01:00:42.000 --> 01:00:44.000]   A small and a large model.
+[01:00:44.000 --> 01:00:50.000]   So when I hear small, large language model, first I cringe internally.
+[01:00:50.000 --> 01:00:55.000]   And then I accept GPS system, ATM machine, whatever.
+[01:00:55.000 --> 01:01:06.000]   Um, so a small, large language model in my mind is something that has, like, kind of limited ability to, like, speak and interact with.
+[01:01:06.000 --> 01:01:12.000]   And that's what you see at, like, the, like, 13 billion to 30 billion parameter range.
+[01:01:12.000 --> 01:01:18.000]   Like, the medium size is, like, the 70 billion parameter range, which is, like, the largest open models.
+[01:01:18.000 --> 01:01:23.000]   And then, like, a true large language model, the ones that, like, make people scared about losing their jobs,
+[01:01:23.000 --> 01:01:28.000]   are generally, like, mixtures of 70 to 100 billion parameter models.
+[01:01:28.000 --> 01:01:32.000]   Or maybe they are themselves 200 billion, 280 billion parameter models.
+[01:01:32.000 --> 01:01:33.000]   Yeah.
+[01:01:33.000 --> 01:01:38.000]   So then, for all of those, take that and multiply it by, we'll call it two, um, to get the number of gigabytes.
+[01:01:38.000 --> 01:01:50.000]   So, like, half a terabyte for the, um, for, like, a, you know, palm, well, a whole terabyte for palm 540b, um, which is one of the larger ones ever trained.
+[01:01:50.000 --> 01:01:59.000]   I guess the context for, like, if they are pre-loaded in the browser, would it have to be a smaller one, like, still in the tens of gigabytes?
+[01:01:59.000 --> 01:02:00.000]   Um, yeah.
+[01:02:00.000 --> 01:02:03.000]   It's been a long while since I downloaded a browser to my computer.
+[01:02:03.000 --> 01:02:09.000]   But I want to say that the package that you download to install a browser is in the, like, couple of gigabytes range, right?
+[01:02:09.000 --> 01:02:11.000]   No, I think it's, like, hundreds of megs.
+[01:02:11.000 --> 01:02:12.000]   Hundreds of megs?
+[01:02:12.000 --> 01:02:13.000]   Yeah.
+[01:02:13.000 --> 01:02:16.000]   They actually download the whole thing in the installer.
+[01:02:16.000 --> 01:02:18.000]   Uh, yeah.
+[01:02:18.000 --> 01:02:19.000]   Oh.
+[01:02:19.000 --> 01:02:20.000]   Uh.
+[01:02:20.000 --> 01:02:21.000]   Yeah.
+[01:02:21.000 --> 01:02:23.000]   Wait, so you download an installer, and then you have to download-- anyway.
+[01:02:23.000 --> 01:02:24.000]   Yeah.
+[01:02:24.000 --> 01:02:28.000]   So if people want to install stuff that's only a few hundred megabytes, then that's a non-starter.
+[01:02:28.000 --> 01:02:36.000]   Um, I guess I expect a Linux distro image to be in the, like, couple of gigabytes, like, if I'm playing around with containers.
+[01:02:36.000 --> 01:02:41.000]   So that's, um, uh, that's, like, another anchor point.
+[01:02:41.000 --> 01:02:50.000]   Um, and also, like, for those things, we're probably talking, like, two, four, eight years before that kind of, like, standardization effort agreement, like, happens.
+[01:02:50.000 --> 01:02:59.000]   And we can hope that internet speeds will increase in that time to match the increasing needs, uh, uh, of the internet.
+[01:02:59.000 --> 01:03:05.000]   Um, but yeah, that's-- it's a pretty tight constraint, and, like, probably looks a lot more like mobile stuff for a very long time.
+[01:03:05.000 --> 01:03:07.000]   Um, yeah.
+[01:03:07.000 --> 01:03:12.000]   Uh, programming that can change any of this map?
+[01:03:12.000 --> 01:03:13.000]   No.
+[01:03:13.000 --> 01:03:20.000]   I think, like, right now, I've been kind of assuming that you're doing stuff relatively efficiently.
+[01:03:20.000 --> 01:03:23.000]   And to be honest, like, PyTorch is, like, pretty good at this already.
+[01:03:23.000 --> 01:03:29.000]   Like, um, the fact that the application layer is written in Python isn't the problem.
+[01:03:29.000 --> 01:03:31.000]   Um, but yeah, good question.
+[01:03:31.000 --> 01:03:32.000]   I have a question.
+[01:03:32.000 --> 01:03:33.000]   I have a question.
+[01:03:33.000 --> 01:03:35.000]   I was curious, what's the cost of inference?
+[01:03:35.000 --> 01:03:36.000]   Like, um--
+[01:03:36.000 --> 01:03:37.000]   Yeah.
+[01:03:37.000 --> 01:03:40.000]   Inference on CPU, what's this inference on code?
+[01:03:40.000 --> 01:03:43.000]   How is it, like, distributed through data?
+[01:03:43.000 --> 01:03:44.000]   Yeah.
+[01:03:44.000 --> 01:03:50.000]   Um, I think we'll come to that in, uh, once, like, wanted to talk about, um, after we talk about
+[01:03:50.000 --> 01:03:53.000]   running AI over network, talk about the actual inference workloads.
+[01:03:53.000 --> 01:03:55.000]   Um, so we'll definitely get to talking about that.
+[01:03:55.000 --> 01:03:58.000]   I don't think-- I'm not going to have a price number to give to you.
+[01:03:58.000 --> 01:04:03.000]   Um, but you have to take whatever tokens per second you can get, and then, like, however
+[01:04:03.000 --> 01:04:09.000]   much you're spending on GPUs, um, and then convert that into a dollars per token.
+[01:04:09.000 --> 01:04:14.000]   Um, and that's going to give you something you can compare to the, like, model providers.
+[01:04:14.000 --> 01:04:19.000]   Um, and until you put some decent optimization into it, you aren't going to match them.
+[01:04:19.000 --> 01:04:23.000]   Um, you did ask about CPU inference.
+[01:04:23.000 --> 01:04:25.000]   That is rapidly evolving.
+[01:04:25.000 --> 01:04:28.000]   I think there are cases where you can kind of, like, compete in price there.
+[01:04:28.000 --> 01:04:32.000]   But, um, yeah, we'll cover that more later.
+[01:04:32.000 --> 01:04:36.000]   Uh, it seems like-- let's put a pin in those two things, and we'll come back to them after
+[01:04:36.000 --> 01:04:41.000]   we talk about, like, really the thing that almost everybody's going to do, like, immediately after
+[01:04:41.000 --> 01:04:45.000]   they leave is going to be run AI somewhere in a data center.
+[01:04:45.000 --> 01:04:47.000]   Um, but those are important questions long-term.
+[01:04:47.000 --> 01:04:48.000]   Okay.
+[01:04:48.000 --> 01:04:56.000]   So, uh, like, uh, the running stuff on end-user devices has a lot of reasons why it's not so
+[01:04:56.000 --> 01:05:02.000]   great right now, so what do you get when you run AI workloads in a data center?
+[01:05:02.000 --> 01:05:04.000]   Um, the biggest win is simplicity.
+[01:05:04.000 --> 01:05:07.000]   Uh, the biggest pain point is latency, as we've already discussed.
+[01:05:07.000 --> 01:05:10.000]   Um, so simplicity, like, you just-- you control the whole environment.
+[01:05:10.000 --> 01:05:12.000]   It makes your life a lot easier.
+[01:05:12.000 --> 01:05:13.000]   Yeah?
+[01:05:13.000 --> 01:05:15.000]   You said that latency is the biggest pain point.
+[01:05:15.000 --> 01:05:18.000]   Is that really a thing for LLMs compared to, like, vision models?
+[01:05:18.000 --> 01:05:23.000]   Because, like, anyway, the tokens that you can infer for seconds are quite a bit slower
+[01:05:23.000 --> 01:05:27.000]   than any of the network latency that you talked about.
+[01:05:27.000 --> 01:05:32.000]   Yeah, so I would say that you can-- let's see.
+[01:05:32.000 --> 01:05:34.000]   So the question is whether latency is actually a problem.
+[01:05:34.000 --> 01:05:41.000]   So, um, if you need to do, like, back and forth, like, you need to get something back from the
+[01:05:41.000 --> 01:05:48.000]   OpenAI API, then possibly, like, call it again with some added context or, like, run some if statements
+[01:05:48.000 --> 01:05:52.000]   and then send it back, now you're looking at, like, multiple network calls.
+[01:05:52.000 --> 01:05:56.000]   And you could avoid all of that overhead if you were running things locally.
+[01:05:56.000 --> 01:05:59.000]   So that's an example of the case where people would run into a latency problem.
+[01:05:59.000 --> 01:06:09.000]   But locally you're gonna get way lower tokens per second anyway, so you're completely dominated by the time it takes to generate tokens.
+[01:06:09.000 --> 01:06:13.000]   So tokens per second is a throughput number, not a latency number, right?
+[01:06:13.000 --> 01:06:20.000]   So it doesn't matter if your tokens per second is half-- if your tokens per second is half that of what OpenAI is getting,
+[01:06:20.000 --> 01:06:23.000]   but you only need to generate 30 tokens, right?
+[01:06:23.000 --> 01:06:31.000]   that-- then, like, the latency number is going to be the larger one, even though your, like, throughput is lower.
+[01:06:31.000 --> 01:06:37.000]   Like, this is definitely something that people have, like, run into when you have, like, highly interactive things.
+[01:06:37.000 --> 01:06:43.000]   Like, they're definitely-- so to be clear, there are tons of applications in which you don't feel this pain.
+[01:06:43.000 --> 01:06:51.000]   And, like, ChatGPT, for example, is at this point, like, the latency of the response from the machine is not really the problem.
+[01:06:51.000 --> 01:06:56.000]   So, yeah, it's not guaranteed to be a pain point, I would say, as well.
+[01:06:56.000 --> 01:06:58.000]   Yeah.
+[01:06:58.000 --> 01:07:12.000]   So, yeah, and I guess I'm also kind of maybe imagining situations that are closer to the computer vision case in which you need cognition,
+[01:07:12.000 --> 01:07:19.000]   well, in the computer vision case, you need rapid responses because it's, like, in the motor loop of a system, for example.
+[01:07:19.000 --> 01:07:25.000]   And if we want to use language models as the cognitive component of a moving system, then they would need latencies like that,
+[01:07:25.000 --> 01:07:27.000]   like in the tens of milliseconds or something.
+[01:07:27.000 --> 01:07:29.000]   Yeah.
+[01:07:29.000 --> 01:07:34.000]   And you are never going to be able to achieve that over a network.
+[01:07:34.000 --> 01:07:37.000]   But, yeah, great question.
+[01:07:37.000 --> 01:07:41.000]   All right, so inference as a service providers, this makes it super easy to get started.
+[01:07:41.000 --> 01:07:46.000]   It's what, you know, when you're using OpenAI, they are inference as a service provider.
+[01:07:46.000 --> 01:07:48.000]   Also, all the proprietary models basically live here.
+[01:07:48.000 --> 01:07:54.000]   There's not some, like, way that they would ship you the model and you could run it and it's proprietary license.
+[01:07:54.000 --> 01:07:56.000]   That doesn't exist yet.
+[01:07:56.000 --> 01:07:59.000]   Open models are also available.
+[01:07:59.000 --> 01:08:10.000]   So, like, if you want to bet on the, like, open ecosystem, you can use a service like Replicate that will, like, they'll run open models for you.
+[01:08:10.000 --> 01:08:13.000]   It's generally, like, easy to get started.
+[01:08:13.000 --> 01:08:18.000]   It's not that much more expensive than running it yourself in a lot of cases.
+[01:08:18.000 --> 01:08:20.000]   But you have limited control of the model.
+[01:08:20.000 --> 01:08:26.000]   For proprietary models, we already talked about how you would have less control kind of inherently.
+[01:08:26.000 --> 01:08:45.000]   So, for even for people who are providing open models, since they don't have IP they want to protect, in order for them to, like, serve it cheaply to you, they need to have, like, and to have, like, an economic win that they can, like, pass on to you and, like, keep a little bit for themselves, they need to do something like amortize costs across many users of models.
+[01:08:45.000 --> 01:08:47.000]   Many more than you have.
+[01:08:47.000 --> 01:08:50.000]   And that requires some amount of homogeneity of usage.
+[01:08:50.000 --> 01:08:56.000]   And it's, like, right now it's proven to be, like, pretty hard to give people control while also giving them homogeneity of usage.
+[01:08:56.000 --> 01:09:10.000]   For something like AWS, they came up with really smart ways to cache pieces of containers so that the fact that everybody's using kind of the same software allows them to amortize while also giving customization.
+[01:09:10.000 --> 01:09:19.000]   But people have not figured out a similar trick for language models or image generation models yet.
+[01:09:19.000 --> 01:09:23.000]   So, you don't have as much control as you would have yourself.
+[01:09:23.000 --> 01:09:25.000]   So, new constraints arise.
+[01:09:25.000 --> 01:09:28.000]   So, there are things like API rate limits.
+[01:09:28.000 --> 01:09:31.000]   And now this is sort of like a cost management game.
+[01:09:31.000 --> 01:09:39.000]   You look at this as, like, rather than, like, paying up front for compute that you have, and then you think about maxing,
+[01:09:39.000 --> 01:09:41.000]   the use of that compute.
+[01:09:41.000 --> 01:09:43.000]   You think the other direction.
+[01:09:43.000 --> 01:09:46.000]   You try to minimize your use of compute while fitting the rest of your constraints.
+[01:09:46.000 --> 01:09:52.000]   So, it's a very different feeling, you know, if you ever switch between having your own compute and switching to cloud.
+[01:09:52.000 --> 01:09:53.000]   It's the same idea.
+[01:09:53.000 --> 01:09:58.000]   Yeah.
+[01:09:58.000 --> 01:10:01.000]   So, right.
+[01:10:01.000 --> 01:10:02.000]   Right.
+[01:10:02.000 --> 01:10:05.000]   So, you could do that inference yourself.
+[01:10:05.000 --> 01:10:08.000]   So, rather than having somebody else do it for you.
+[01:10:08.000 --> 01:10:11.000]   And this works pretty well and is getting easier every day.
+[01:10:11.000 --> 01:10:20.000]   So, cloud, like, this is, like, running stuff on a public cloud is, like, one of the most popular choices for how to run ML workloads.
+[01:10:20.000 --> 01:10:30.000]   And for, like, SaaS in general, there's some specialist cloud providers in this space, like Lambda Labs, that can be, like, very competitive.
+[01:10:30.000 --> 01:10:35.000]   They're, like, often cheaper than the, like, big three.
+[01:10:35.000 --> 01:10:43.000]   And it's a nice balance of control with, like, complexity and, like, which things you actually care about having to deal with versus not.
+[01:10:43.000 --> 01:10:45.000]   It can get expensive over time.
+[01:10:45.000 --> 01:10:52.000]   It's definitely, like, you know, more expensive than, like, over a long period of time than if you bought the stuff yourself.
+[01:10:52.000 --> 01:10:58.000]   GPUs sometimes feel like second-class citizens and especially a lot of, like, big public clouds.
+[01:10:58.000 --> 01:11:05.000]   Google Cloud's a bit of a distinction there in that you can just add GPUs to any instance.
+[01:11:05.000 --> 01:11:06.000]   It's kind of nice.
+[01:11:06.000 --> 01:11:10.000]   But in other public clouds, that's not really the case.
+[01:11:10.000 --> 01:11:14.000]   And, again, this is, like, a cost management problem.
+[01:11:14.000 --> 01:11:22.000]   And one of the popular ways to solve the cloud costs is to just agree to a large deal up front.
+[01:11:22.000 --> 01:11:27.000]   And now you're starting to get some of the illiquidity associated with actually building buying hardware.
+[01:11:27.000 --> 01:11:33.000]   And you start to get some of the, like, vendor lock-in that you would also associate with that.
+[01:11:33.000 --> 01:11:36.000]   So you have the opportunity to kind of, like, trade those things off.
+[01:11:36.000 --> 01:11:39.000]   But they are your constraints to work with.
+[01:11:39.000 --> 01:11:47.000]   I did want to call out that there are some serverless approaches, which gives you some of the, like, usage-based,
+[01:11:47.000 --> 01:11:52.000]   like, really tightly usage-based pricing associated with inference-as-a-service providers.
+[01:11:52.000 --> 01:12:00.000]   But also the, like, control associated with, like, you know, renting servers in the cloud.
+[01:12:00.000 --> 01:12:05.000]   And by this, by serverless, I mean anything with, like, scale-to-zero semantics and pricing.
+[01:12:05.000 --> 01:12:09.000]   That doesn't involve you having to, like, literally manage servers.
+[01:12:09.000 --> 01:12:13.000]   So, like, thinking about the operating system, for example.
+[01:12:13.000 --> 01:12:15.000]   And that offers high availability.
+[01:12:15.000 --> 01:12:20.000]   This is, like, a relatively new category in software in general and especially in machine learning.
+[01:12:20.000 --> 01:12:22.000]   There's a couple of players here.
+[01:12:22.000 --> 01:12:29.000]   Modal Labs is one that I like quite a bit because it doesn't just do the ML stuff, though it is very good at it.
+[01:12:29.000 --> 01:12:33.000]   So, Replicate, which also does inference-as-a-service, will do this.
+[01:12:33.000 --> 01:12:37.000]   Hugging face spaces recently changed their endpoints to scale-to-zero.
+[01:12:37.000 --> 01:12:41.000]   And there's also, yeah, banana.dev and others.
+[01:12:41.000 --> 01:12:48.000]   The good thing is that it's, like, easier to get started, especially if you're not, like, a cloud ops person.
+[01:12:48.000 --> 01:12:52.000]   And very inexpensive at low traffic, like, you only have to pay when you have traffic.
+[01:12:52.000 --> 01:13:00.000]   And if you're, like, running a small, if you're running a demo that only needs to be up when you're showing it to investors.
+[01:13:00.000 --> 01:13:06.000]   Or if you are working on a tiny feature at a large organization, then you might have very low traffic patterns.
+[01:13:06.000 --> 01:13:08.000]   Oh, my.
+[01:13:08.000 --> 01:13:10.000]   It's Fleet Week, I think.
+[01:13:10.000 --> 01:13:12.000]   So that might be the Blue Angels.
+[01:13:12.000 --> 01:13:13.000]   Yeah.
+[01:13:13.000 --> 01:13:32.000]   Scale-to-zero means that you, when there are no requests, you are not, when your requests go to zero, the amount of resources that you are using and being charged for also goes to zero.
+[01:13:32.000 --> 01:13:33.000]   Yes.
+[01:13:33.000 --> 01:13:45.000]   So, yeah, for a while, Hugging Face spaces, endpoints, they changed, there's inference endpoints, and, yeah.
+[01:13:45.000 --> 01:13:48.000]   For a while, it was, like, it could scale down to one, and it would autoscale.
+[01:13:48.000 --> 01:13:57.000]   So there's, like, having a cloud server with autoscaling built in, and then there's that thing, but then it also scales to zero, and you don't have to think about server management.
+[01:13:57.000 --> 01:14:04.000]   And that, like, is the combination, like, it's the original, like, AWS definition of serverless that has kind of fallen.
+[01:14:04.000 --> 01:14:06.000]   Not everyone goes by the old ways.
+[01:14:06.000 --> 01:14:07.000]   Yeah.
+[01:14:07.000 --> 01:14:14.000]   So inexpensive at low traffic, when nobody's calling your API, you don't pay for anything.
+[01:14:14.000 --> 01:14:18.000]   If you, like, come up with a feature, it doesn't work, then it doesn't matter.
+[01:14:18.000 --> 01:14:41.000]   The bad news is that you kind of generally lose, like, tight control over autoscaling behavior that you could have if you were, like, you know, if you have a, you know, Kubernetes team to work with, they can very tightly set it up so that the autoscaling delivers exactly the throughput and latencies, P99s, that you promised.
+[01:14:41.000 --> 01:14:48.000]   And you kind of give all over some of that control to these serverless providers who are themselves probably running Kubernetes, but for a lot of people.
+[01:14:48.000 --> 01:14:59.000]   And then the thing that has kind of prevented this from being as successful as maybe serverless architectures in many other places is latency.
+[01:14:59.000 --> 01:15:26.000]   So when you're, it shows up as kind of P99 latency, so the 99th percentile of requests that hit a point when you need to do autoscaling, the, you need to get the weights of the model you're using into, not just off of disk and into RAM, but then from there into the RAM of the accelerator.
+[01:15:26.000 --> 01:15:31.000]   And that takes, like, that can take a very long amount of time.
+[01:15:31.000 --> 01:15:41.000]   And so you're looking at, like, 30-second, one-minute, three-minute cold boots in some cases because you are moving half a terabyte of data around.
+[01:15:41.000 --> 01:15:47.000]   And so that's a place where people could maybe come up with these, like, clever ways to cache and share.
+[01:15:47.000 --> 01:15:54.000]   But, yeah, it's the memory constraint that you hit in other domains showing up, like, in disguise as latency.
+[01:15:54.000 --> 01:16:06.000]   And, yeah, so the, like, you still are probably going to be thinking of this in terms of, like, cost management and cost reduction as opposed to, like, resource maximization.
+[01:16:06.000 --> 01:16:07.000]   Yeah.
+[01:16:07.000 --> 01:16:08.000]   Yeah.
+[01:16:08.000 --> 01:16:24.000]   So the point was about Cloudflare workers.
+[01:16:24.000 --> 01:16:34.000]   So I did see that Cloudflare, I didn't include them on the slide, but Cloudflare actually recently released these, like, GPU workers, which is their entry into this.
+[01:16:34.000 --> 01:16:37.000]   And I haven't had time to play with it, so I don't know that much about it.
+[01:16:37.000 --> 01:16:56.000]   I think if I need to go from not consuming any of your resources to having a terabyte of my own personal bytes, like, in the VRAM of a GPU, I find it hard to believe that they don't have a latency problem there.
+[01:16:56.000 --> 01:17:00.000]   Like, so I'm curious what you know about the solution.
+[01:17:00.000 --> 01:17:01.000]   Yeah.
+[01:17:01.000 --> 01:17:02.000]   Yeah, yeah, yeah.
+[01:17:02.000 --> 01:17:05.000]   Yeah, that's interesting.
+[01:17:05.000 --> 01:17:07.000]   Yeah, I'd love to hear about that.
+[01:17:07.000 --> 01:17:10.000]   That's been my experience with the other serverless GPU providers.
+[01:17:10.000 --> 01:17:13.000]   So I'd love to hear more about the Cloudflare workers.
+[01:17:13.000 --> 01:17:20.000]   And, yeah, if that goes away, then serverless becomes a much more competitive way of delivering inference.
+[01:17:20.000 --> 01:17:22.000]   So, yeah.
+[01:17:22.000 --> 01:17:34.000]   So I maintain a page for full-stack deep learning that has information about, like, cloud GPUs and serverless providers pricing and what compute they provide.
+[01:17:34.000 --> 01:17:37.000]   So you can check that out from the slides later if you're interested.
+[01:17:37.000 --> 01:17:38.000]   All right.
+[01:17:38.000 --> 01:17:51.000]   And then last, let's talk, like, actually, what if you actually physically owned the computers that the inference ran on?
+[01:17:51.000 --> 01:17:53.000]   Like, you can do that.
+[01:17:53.000 --> 01:18:07.000]   And rather than having to, like, actually, you know, construct a building which maybe the largest enterprises could go about, using a co-location facility isn't so bad.
+[01:18:07.000 --> 01:18:12.000]   And there's more reason to do this than for other kinds of workloads.
+[01:18:12.000 --> 01:18:20.000]   And in particular, there's actually room to beat a lot of the major public clouds, which is why there's competitive clouds, like, alternatives in this space.
+[01:18:20.000 --> 01:18:33.000]   A lot of data centers that have been, like, around or that were designed before 2021 or so are configured for, like, disk and network heavy workloads rather than power heavy workloads.
+[01:18:33.000 --> 01:18:48.000]   So even if you can get a hold of, like, 30,000 A100s, you can't just necessarily put them in the same U.S. East data center that used to run -- that was designed for, like, running databases.
+[01:18:48.000 --> 01:18:53.000]   So it's capital intensive but ends up being cheaper in the long run.
+[01:18:53.000 --> 01:18:57.000]   You have total control if you need it, which is awesome.
+[01:18:57.000 --> 01:19:06.000]   But it's very hard, very rare skill set because it, like, kind of crosses this, like, the ML stuff and the hardware stuff.
+[01:19:06.000 --> 01:19:11.000]   And all of these people can go and work for OpenAI for, like, a million and a half a year.
+[01:19:11.000 --> 01:19:15.000]   So good luck holding on to them.
+[01:19:15.000 --> 01:19:18.000]   And the biggest constraint that shows up is illiquidity.
+[01:19:18.000 --> 01:19:21.000]   So you're going to make a big bet on what this looks like.
+[01:19:21.000 --> 01:19:28.000]   For example, that inference is not going to move on to CPU or not going to move on to custom silicon that behaves very differently from graphics cards.
+[01:19:28.000 --> 01:19:34.000]   There's a great talk from Mitesh Agrawal of Lambda Labs about this that goes into kind of detail.
+[01:19:34.000 --> 01:19:38.000]   I think it's only, like, a year old, if I remember this talk right.
+[01:19:38.000 --> 01:19:53.000]   And, of course, he makes it sound very hard because he wants you to use their cloud or to pay them to, like, help you build your co-location -- help you actually build it.
+[01:19:53.000 --> 01:19:56.000]   But it is a detailed explanation of everything involved.
+[01:19:56.000 --> 01:19:59.000]   And, you know, there's not very many of those out there.
+[01:19:59.000 --> 01:20:02.000]   So let's go ahead.
+[01:20:02.000 --> 01:20:03.000]   All right.
+[01:20:03.000 --> 01:20:05.000]   We're at half time.
+[01:20:05.000 --> 01:20:12.000]   So I plan to take a break when I finish part one, which goes to the rest of self-serve inference, which we'll all say is another 15 minutes.
+[01:20:12.000 --> 01:20:13.000]   So let's do that.
+[01:20:13.000 --> 01:20:18.000]   And we'll leave an hour for part two after a little break.
+[01:20:18.000 --> 01:20:31.000]   So we actually haven't talked in great detail about, like, you know, why are we using GPUs in the first place?
+[01:20:31.000 --> 01:20:33.000]   Like, what is actually going on here?
+[01:20:33.000 --> 01:20:43.000]   When we run this, like, tensor-to-tensor map with neural networks, like, what actually does that workload turn into?
+[01:20:43.000 --> 01:20:44.000]   We have two tasks.
+[01:20:44.000 --> 01:20:49.000]   We need to load numbers from memory, and then we need to do math on those numbers.
+[01:20:49.000 --> 01:20:52.000]   Those are our, like, two basic tasks.
+[01:20:52.000 --> 01:21:03.000]   And that is the reason why we have -- why we end up using graphics processing units, because memory is slow and math is fast.
+[01:21:03.000 --> 01:21:22.000]   And in most -- in the transformer architecture in particular, but in many, like, sort of most neural network architectures you might write down, you only need a given number from the weights, like, one time per input.
+[01:21:22.000 --> 01:21:32.000]   So that means you need to do a memory read, like, of this, of, like, a couple of bytes for a particular parameter to use it in a single floating-point operation.
+[01:21:32.000 --> 01:21:37.000]   And the memory read is going to be very slow, and the floating-point operation is going to be basically instant.
+[01:21:37.000 --> 01:21:43.000]   So in order to do this economically, you need to do a lot of math for each read for memory.
+[01:21:43.000 --> 01:21:49.000]   You need to, like, load, you know, load the weight out.
+[01:21:49.000 --> 01:21:59.000]   And in particular, we're talking here about, like, getting out of the VRAM and into the place where the -- you know, into the -- like, the -- what is it called?
+[01:21:59.000 --> 01:22:04.000]   Well, yeah, it's basically like an L1 cache, like, closer to the actual computation.
+[01:22:04.000 --> 01:22:14.000]   And so you want to do that and then, like, use it multiple times, you know, and that means you want to run on multiple inputs at once.
+[01:22:14.000 --> 01:22:24.000]   And that is memory intensive, single instruction, multiple data, parallel linear algebra, the same thing you need for graphics workloads.
+[01:22:24.000 --> 01:22:30.000]   So the, like, graphics cards have turned out to be, like, pretty good at solving this problem.
+[01:22:30.000 --> 01:22:46.000]   And the numbers there in the corner are, like, demonstrate this, like, general fact of, like, memory is slow, logic or math is fast.
+[01:22:46.000 --> 01:22:57.000]   The -- you can do 312 teraflops per second in -- for two-byte numbers, two-byte floating-point numbers in a tensor core in an A100.
+[01:22:57.000 --> 01:23:04.000]   And you only get one and a half terabytes a second of memory bandwidth.
+[01:23:04.000 --> 01:23:11.000]   And when you're using, like, you know, optimized existing CUDA kernels, these two things are, like, multiplexed.
+[01:23:11.000 --> 01:23:18.000]   So, like, you load a weight where you start doing math on it and then the next weight gets loaded, like, you know, concurrently.
+[01:23:18.000 --> 01:23:29.000]   But you do still have this, like, mismatch in the bandwidths that means that you want to be able to, like, amortize a memory load across as many computations as possible.
+[01:23:29.000 --> 01:23:35.000]   And, like, in principle, this could be flipped around and we would have, like, very -- you know, things would look very different.
+[01:23:35.000 --> 01:23:57.000]   So, you can get, like, very, very large throughput gains by amortizing memory reads where, basically, if you are operating on a very small number of tokens, then you'll see that as you add -- like, if you're running this workload yourself, as you add more tokens, you would think, like, you should expect, like, a slight increase in the amount of time that it takes.
+[01:23:57.000 --> 01:24:01.000]   And you'll see, like, basically a flat curve for a very long time.
+[01:24:01.000 --> 01:24:16.000]   And then once you hit the point where the -- yeah, so if you look -- batch size at which you'll see that flip.
+[01:24:16.000 --> 01:24:21.000]   So, for an A100, it's about 200 elements in the batch.
+[01:24:21.000 --> 01:24:29.000]   And you'll see -- for an H100, you'll see that that ratio -- these numbers both go up, but the ratio becomes more extreme.
+[01:24:29.000 --> 01:24:42.000]   So, you -- there's a great blog post from Carol Chen on, like, inference arithmetic that both goes through in greater detail and then, like, matches that onto some, like, actual experimental results.
+[01:24:42.000 --> 01:24:49.000]   And it's able to, like, track where did each, you know, microsecond, basically, of inference time come from.
+[01:24:49.000 --> 01:24:59.000]   So, the, like, key takeaway from this is that if you want to get large throughput in, like, an inference system that you're running yourself,
+[01:24:59.000 --> 01:25:06.000]   you're going to need batching, you're going to need to, like, collect up multiple inputs from multiple users and operate on them at the same time.
+[01:25:06.000 --> 01:25:13.000]   So, this is -- it's challenging to achieve the same thing in an end-user device.
+[01:25:13.000 --> 01:25:21.000]   You are -- like, if you're only working for one person, then they might not make 10 requests, you know, quickly enough for you to fill up a batch.
+[01:25:21.000 --> 01:25:36.000]   And that actually might kind of tilt things in the direction of CPUs or of, you know, different architecture with different, you know, memory bandwidth versus --
+[01:25:36.000 --> 01:25:41.000]   TensorFlow versus math bandwidth trade-off.
+[01:25:41.000 --> 01:25:49.000]   One of the useful things that came out of this -- I guess this is a restatement of kind of what I just said.
+[01:25:49.000 --> 01:26:00.000]   When you have a, like, low load API, you will end up with smaller batch sizes, because maybe you have -- you have to deliver with a certain latency, so you can't just wait forever.
+[01:26:00.000 --> 01:26:04.000]   And so you will make different decisions about compute memory trade-offs.
+[01:26:04.000 --> 01:26:16.000]   For example, like, caching past computations of keys and values is very common when you're doing batch inference, but it's actually not necessarily the right choice when you are already memory bound.
+[01:26:16.000 --> 01:26:20.000]   Trading off memory for compute isn't a good idea.
+[01:26:20.000 --> 01:26:29.000]   If you're, like, at -- for larger batch sizes, you -- if you're doing something that's an API where, like, serving requests directly, then you would want to --
+[01:26:29.000 --> 01:26:40.000]   like, roughly balance being flop bound and memory bound so that you can get quick latency of responses, even though your throughput is less than it would be otherwise.
+[01:26:40.000 --> 01:26:52.000]   Whereas if you're doing, like, a batch job, like an overnight-type job, or that is, like, typical of data science or big data workloads, then you would just go for the largest batch that you can.
+[01:26:52.000 --> 01:26:54.000]   And that's what people do during training.
+[01:26:54.000 --> 01:26:58.000]   They go for the absolute largest batch that they can, because there's no latency requirement.
+[01:26:58.000 --> 01:26:59.000]   There's only throughput.
+[01:26:59.000 --> 01:27:03.000]   I'm assuming all this still applies to the other accelerators.
+[01:27:03.000 --> 01:27:04.000]   Yeah, yeah.
+[01:27:04.000 --> 01:27:25.000]   So TPUs end up -- I, like, looked around, and I've never personally used them for anything serious, so I wasn't able to, like, directly map on, like, pull out the equivalent of a tensor core, like, flop bandwidth and VRAM to L1 latency.
+[01:27:25.000 --> 01:27:31.000]   But the results and benchmarks that I've seen is that they're, like, 30% better.
+[01:27:31.000 --> 01:27:41.000]   Like, they have a -- they do have a slightly different choice of trade-off, and they -- and it's better for neural network workloads than graphics workloads.
+[01:27:41.000 --> 01:27:57.000]   And that gets what -- from what I have seen, like, 30% improvement, but not, like, a 10 to 50x improvement, which is what you would really like to see if you're making as drastic a decision as, like, going over to a completely different accelerator with a completely different software stack.
+[01:27:57.000 --> 01:28:12.000]   Yeah, I guess -- yeah, I got into a discussion with one of the people on the TPU team about, like, the hardware lottery, and he was, like, the GPU is already, like, is just an excellent machine.
+[01:28:12.000 --> 01:28:14.000]   Like, it does this workload really, really well.
+[01:28:14.000 --> 01:28:17.000]   And I think that is borne out in the numbers.
+[01:28:17.000 --> 01:28:18.000]   Yeah?
+[01:28:18.000 --> 01:28:27.000]   From what I heard, the main advantage of TPUs is operational efficiency and power efficiency, not, like, good performance.
+[01:28:27.000 --> 01:28:28.000]   Yeah.
+[01:28:28.000 --> 01:28:35.000]   So, for the folks listening online, repeating the point, one of the benefits of TPUs is power.
+[01:28:35.000 --> 01:28:36.000]   I totally buy that.
+[01:28:36.000 --> 01:28:37.000]   Yeah.
+[01:28:37.000 --> 01:28:46.000]   I think -- yeah, the numbers that tend to get reported in things like Google's Pathways paper and Palm Papers are open -- and, like, what is known about OpenAI.
+[01:28:46.000 --> 01:28:54.000]   It's, like, it's all about, like, flop utilization and total flops and stuff like that, and not things like power that do matter.
+[01:28:54.000 --> 01:29:08.000]   I'd say, like, people have not gone rushing to try and get a hold of them, which feels like a strong signal, similar with, like, other types of custom silicon, like Cerebris' chip.
+[01:29:08.000 --> 01:29:10.000]   But, you know, who knows?
+[01:29:10.000 --> 01:29:15.000]   I think this is getting back to a question that got asked earlier, I believe.
+[01:29:15.000 --> 01:29:22.000]   The, like, having custom chips works really well when workloads stay very fixed in, like, kind of precise detail.
+[01:29:22.000 --> 01:29:25.000]   Not just this, like, oh, we need to load from memory and then we need to do it.
+[01:29:25.000 --> 01:29:30.000]   But, like, no, we need to do this shaped thing, like, with this many -- like, that works super well.
+[01:29:30.000 --> 01:29:40.000]   And you can see that in blockchain mining where there is, like, for many chains for a long time, ASICs were the, like, only profitable way to mine.
+[01:29:40.000 --> 01:29:43.000]   Or, like, the most profitable way to mine.
+[01:29:43.000 --> 01:29:48.000]   And that's the workload is, like, unchangeable except by, like, distributed consensus.
+[01:29:48.000 --> 01:29:52.000]   And that allows you to, like, very tightly target a specific workload.
+[01:29:52.000 --> 01:29:57.000]   Whereas, like, neural network architectures actually kind of change reasonably often.
+[01:29:57.000 --> 01:30:12.000]   And the, like, you know, even the difference -- the difference between a 7 billion parameter model, a 13 billion parameter model, a 170 billion parameter model, that's, like, a bigger difference than you would see between workloads for, like, the same blockchain over time.
+[01:30:12.000 --> 01:30:27.000]   And so that's -- that, like, difference in -- like, that technical difference is, I think, a big reason why we haven't seen much uptake of custom -- custom --
+[01:30:27.000 --> 01:30:36.000]   Yeah, I think -- like, they're one of the -- like, they're one of the -- they're one of the providers for -- like, they're one of the startups working on this.
+[01:30:36.000 --> 01:30:38.000]   They come up most frequently.
+[01:30:38.000 --> 01:30:44.000]   I don't -- it's still, like, fairly experimental, I think.
+[01:30:44.000 --> 01:30:51.000]   Like, it's not -- it's not the -- it's not, like, generally available in a public cloud or something.
+[01:30:51.000 --> 01:30:56.000]   So, yeah, I don't have much to say about it, I guess.
+[01:30:56.000 --> 01:30:57.000]   Yeah.
+[01:30:57.000 --> 01:31:04.000]   I think the main thing you can see there is the memory that they have is 40 gigabytes.
+[01:31:04.000 --> 01:31:07.000]   Compare that with an Android, which is 80.
+[01:31:07.000 --> 01:31:10.000]   And for most of Elements, memory is .
+[01:31:10.000 --> 01:31:14.000]   Mm-hmm?
+[01:31:14.000 --> 01:31:24.000]   Yeah, yeah, so Cerebus has done some large model training, so it's definitely, like, possible.
+[01:31:24.000 --> 01:31:33.000]   They -- they have this very fast memory bandwidth, I think, is, like, maybe the big one, 20 petabytes memory bandwidth.
+[01:31:33.000 --> 01:31:41.000]   Now, like, the point that was raised about the bottleneck being the memory capacity is very -- is well taken.
+[01:31:41.000 --> 01:31:46.000]   You can network multiple chips together, and then you have more storage.
+[01:31:46.000 --> 01:31:57.000]   But, yeah, and so, like, better balancing of memory bandwidth and math bandwidth would maybe get you more -- like, more efficacy at lower batch sizes.
+[01:31:57.000 --> 01:32:00.000]   But you can't exactly put that chip in a phone.
+[01:32:00.000 --> 01:32:03.000]   So that -- yeah.
+[01:32:03.000 --> 01:32:16.000]   But definitely, like, people are really converging on transformer architectures, so that could mean that this custom silicon works better in five years.
+[01:32:16.000 --> 01:32:26.000]   Yeah, I think I -- yeah, the way that you, like -- the way that you solve this problem is if you have multiple GPUs, these -- the, like, memory per second and flops per second, like, scale at the same amount, right?
+[01:32:26.000 --> 01:32:31.000]   You have -- now you have two GPUs loading, you have two GPUs doing operations.
+[01:32:31.000 --> 01:32:32.000]   They both scale linearly.
+[01:32:32.000 --> 01:32:36.000]   If you're really clever, you can, like, actually get that linear scaling in practice.
+[01:32:36.000 --> 01:32:39.000]   The GPU memory goes up as well.
+[01:32:39.000 --> 01:32:46.000]   And so you can serve larger batches and eventually hit -- this ratio is staying the same, so you can eventually hit that point.
+[01:32:46.000 --> 01:32:56.000]   And that's what -- and then, like, once you hit the point where you're actually, you know, flops bound, you can just, like, crank it, you know, just crank it up.
+[01:32:56.000 --> 01:33:02.000]   Just get really big -- really big batches, speed up -- speed up the computation.
+[01:33:02.000 --> 01:33:07.000]   And that is what people do during -- are, like, used to do -- used to doing during training.
+[01:33:07.000 --> 01:33:12.000]   And so you'll very commonly see people talking about this way of making inference efficient.
+[01:33:12.000 --> 01:33:20.000]   So if you are running a -- like, a web service, this is going to give you your, sort of, like, pod size, roughly.
+[01:33:20.000 --> 01:33:25.000]   Like, a pod in Kubernetes is, like, a bunch of services that end up on a single physical machine.
+[01:33:25.000 --> 01:33:40.000]   So this is your, like, unit -- is determined by, like, how many GPUs do you need to hit the, like, batch size for efficiency implied by the, like, this flops memory per second.
+[01:33:40.000 --> 01:33:43.000]   And you check in to make sure this is also true for your architecture.
+[01:33:43.000 --> 01:33:44.000]   Yeah.
+[01:33:44.000 --> 01:33:48.000]   All that's, like, kind of theoretical stuff.
+[01:33:48.000 --> 01:33:52.000]   or sort of, like, trying to be relatively first principles.
+[01:33:52.000 --> 01:34:00.000]   When you -- when it comes time to actually check whether you're doing things correctly, make sure to use, like, a profiler or a tracer and actually, like, look at these things.
+[01:34:00.000 --> 01:34:06.000]   Even, like, people who are pretty good at this will, like, miss stuff that shows up on a tracer.
+[01:34:06.000 --> 01:34:15.000]   Like, like, the VLLM implementation was launching a CUDA kernel for, like, every individual element of a batch.
+[01:34:15.000 --> 01:34:21.000]   And, like, a tiny change made it switch to, like, one CUDA kernel launch.
+[01:34:21.000 --> 01:34:26.000]   And that saved them, like, increased their throughput by 33%.
+[01:34:26.000 --> 01:34:40.000]   And it's something that shows up as, like, way more CUDA kernel launches, which would show up as, like, I guess -- if I had the interactive version of this -- would show up as this, like, huge thing of red lines.
+[01:34:40.000 --> 01:34:49.000]   And also just the, like, general utilization shows up as these big, like, patches of gray here, which shows you where you're, like, not actually using your GPU at all.
+[01:34:49.000 --> 01:35:03.000]   And I found, like, looking directly at these traces, not just at statistical profiles, helps, like, catch those kinds of easy-to-fix 80/20 kind of bugs.
+[01:35:03.000 --> 01:35:06.000]   You can also profile and trace memory.
+[01:35:06.000 --> 01:35:12.000]   And that's going to be, like, given that memory is this key constraint that's likely to be at least as useful.
+[01:35:12.000 --> 01:35:24.000]   And these two are examples from PyTorch, these -- the compute trace and the memory trace, both from PyTorch.
+[01:35:24.000 --> 01:35:37.000]   You might not be using PyTorch, so you might have to fall back on generic, like, GPU profiling or CPU profiling or memory profiling and tracing tools if you're using, like, a custom inference solution.
+[01:35:37.000 --> 01:35:44.000]   Yeah, speaking of which, there's a bunch of specialized LLM inference libraries out there.
+[01:35:44.000 --> 01:35:50.000]   There's a nice blog post from Hamil Hussain about using these, and this is specifically for, like, batch size one.
+[01:35:50.000 --> 01:36:00.000]   And so the VLM is -- people are, like, pretty -- that seems to be getting, like, the most community excitement and community contribution.
+[01:36:00.000 --> 01:36:12.000]   But Hamil suggests some reasons why you might be into NLC and C Translate, too, instead for doing your LLM inference.
+[01:36:12.000 --> 01:36:29.000]   So, actually -- so all that was about, like, just thinking in terms of, like, an individual workload, setting up an entire inference service, which is now something that maybe, like, somebody in the company sets up an inference service or an inference platform.
+[01:36:29.000 --> 01:36:33.000]   And then people can, you know, submit workloads to it.
+[01:36:33.000 --> 01:36:35.000]   That can be fairly challenging.
+[01:36:35.000 --> 01:36:41.000]   Containerization for GPU accelerated workloads is less painful now than it used to be.
+[01:36:41.000 --> 01:36:48.000]   Like, NVIDIA Docker actually works in a way that it did not, like, early on.
+[01:36:48.000 --> 01:36:58.000]   But containerization is, like, fundamentally, you know, more dubious for these workloads than a lot of other ones.
+[01:36:58.000 --> 01:37:04.000]   So one is that the, like, application layer of the container is probably where the weights are going to live.
+[01:37:04.000 --> 01:37:07.000]   Like, it doesn't live in the operating system yet.
+[01:37:07.000 --> 01:37:09.000]   It's not built into the Docker engine.
+[01:37:09.000 --> 01:37:15.000]   So it's, like, that's up there, and that's, like, maybe half a terabyte in bad situations.
+[01:37:15.000 --> 01:37:21.000]   So now your container images are really large, and that's -- that can be pretty unpleasant.
+[01:37:21.000 --> 01:37:26.000]   You could try and do the things that people do with databases and, like, move it into remote storage.
+[01:37:26.000 --> 01:37:31.000]   But, yeah, then the container is not as, like, unitary.
+[01:37:31.000 --> 01:37:46.000]   And then the, like, the worst problem maybe is that the CUDA driver changes the choices that you need to make kind of at the, like, application level of, like, we were just talking about actually going one level down.
+[01:37:46.000 --> 01:37:57.000]   But, like, which GPU is going to run on changes the point at which you switch from being memory bound to flops bound because that has a different, like, memory bandwidth to math bandwidth ratio.
+[01:37:57.000 --> 01:38:07.000]   So things at the level of the NVIDIA of the GPU are entangled with things at the application layer, like choices of, like, batching strategy.
+[01:38:07.000 --> 01:38:10.000]   So that's -- and a similar thing can be said for the CUDA driver.
+[01:38:10.000 --> 01:38:21.000]   I was, like, naive about containers, and I was, like, why is the, like, CUDA driver showing up as 12.0, which is what I have installed in my host operating system,
+[01:38:21.000 --> 01:38:29.000]   when I specifically downloaded the CUDA 11.2 container, and it's, like, containers can only virtualize so much.
+[01:38:29.000 --> 01:38:35.000]   And so that also changes, like, which kernels are available by default.
+[01:38:35.000 --> 01:38:40.000]   I guess what kernels would be a layer above.
+[01:38:40.000 --> 01:38:47.000]   So there are features of CUDA drivers that change the, like, you know, how hugging face transformers or PyTorch will work.
+[01:38:47.000 --> 01:38:51.000]   And so that will -- and that will also change decisions that are made at the application layer.
+[01:38:51.000 --> 01:38:56.000]   So when you're in these, like, super -- like, this is clearly a performance-limited regime that we're talking about here.
+[01:38:56.000 --> 01:39:09.000]   Like, the inference is, like, extremely expensive, and we're, like, trying to maximize performance really aggressively, and that, like, starts to reveal the limitations of virtualization and containerization.
+[01:39:09.000 --> 01:39:11.000]   So that doesn't mean it's impossible.
+[01:39:11.000 --> 01:39:12.000]   It just means it's hard.
+[01:39:12.000 --> 01:39:26.000]   And, yeah, I don't know if you've ever worked with, like, you know, trying to set up a heterogeneous compute Kubernetes cluster where there's, like, some have GPUs and some have ARM and some have, like, x86.
+[01:39:26.000 --> 01:39:35.000]   You, like, this -- dealing with this requires a better ops engineer than if you can ignore that.
+[01:39:35.000 --> 01:39:44.000]   Speaking of which, this, like, application serving can be and is, in fact, done with the, like, industry standard for container orchestration in Kubernetes.
+[01:39:44.000 --> 01:39:54.000]   I would note that now the, like, Nvidia stuff is showing up here again and, like, all the problem -- like, the entangling -- and now Kubernetes is in between them.
+[01:39:54.000 --> 01:39:59.000]   So now there's, like, a lot of opportunity for crosstalk, a lot of opportunity for tiers.
+[01:39:59.000 --> 01:40:09.000]   And so this is a hard mode version of that problem, which is not notorious for being easy.
+[01:40:09.000 --> 01:40:12.000]   So you might choose and need to do it by hand.
+[01:40:12.000 --> 01:40:21.000]   There was a comment on r/moops that was, like, oh, yeah, we look -- you know, I was looking around to see what the opinions are on these tools.
+[01:40:21.000 --> 01:40:38.000]   And an opinion I saw in a couple places was, like, if you care about -- like, you've chosen to do serving of inference yourself and not do, like, just API calls, then maybe you should make mloops a core competency of your company.
+[01:40:38.000 --> 01:41:03.000]   And you're going to want to do something more, like, building it out of the, like, Kubernetes-affiliated ecosystem of open-source tools or other open-source things, like Q-Ray to do -- to run Ray on Kubernetes for serving, or Selden Core to run that on -- again, on Kubernetes as your container orchestration layer.
+[01:41:03.000 --> 01:41:25.000]   But given how, like, painful that is and the fact that there are so many people who are trying to run a relatively similar workload, you might consider, like, either of two kind of tiers of managed services, either the, like, white-glove end-to-end kind of cloud provider approach, the oldest one, Amazon SageMaker, more recently, Vertex AI from Google.
+[01:41:25.000 --> 01:41:29.000]   I'm sure there's an Azure version that I'm forgetting.
+[01:41:29.000 --> 01:41:40.000]   There are also, from some startups, a sort of more toolbox-y approach, a less end-to-end approach, in part because it's not, like, integrated all the way at the layer of the, like, actual hardware like the cloud providers are.
+[01:41:40.000 --> 01:41:53.000]   So, Bento Cloud, Selden, and AnyScale, AnyScale being a managed version of Ray, Selden offers a managed version of Selden Core, Bento Cloud, managed version of Bento ML.
+[01:41:53.000 --> 01:42:04.000]   So, depending on where you want to -- maybe you have a really great, sweet deal with GCP, and so Vertex is the right choice.
+[01:42:04.000 --> 01:42:11.000]   But, yeah, I think from -- I have had limited experience with these things because I've tried to keep my life simple and happy.
+[01:42:11.000 --> 01:42:21.000]   But if you're -- if you end up in this space -- I've seen some nice things and played around with RayServe and AnyScale.
+[01:42:21.000 --> 01:42:26.000]   Ray's the tool that a lot of people use for cluster management for training.
+[01:42:26.000 --> 01:42:29.000]   So, a lot of the teams that train the foundation models use Ray.
+[01:42:29.000 --> 01:42:39.000]   And so, there's kind of, like, a natural competency for them, both in the open source library and AnyScale as a layer around that.
+[01:42:39.000 --> 01:42:44.000]   So, maybe it'd be a good choice for inference as well.
+[01:42:44.000 --> 01:42:46.000]   All right.
+[01:42:46.000 --> 01:42:57.000]   So, rather than take questions, I think I'm going to do a five-minute break in which you can ask me questions up here while we all get a little stretch, maybe a little air.
+[01:42:57.000 --> 01:43:15.000]   And we'll come back for the rest of the OWL in five minutes.
+

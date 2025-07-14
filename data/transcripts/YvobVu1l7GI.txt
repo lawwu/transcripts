@@ -1,0 +1,269 @@
+
+[00:00:00.000 --> 00:00:14.000]   .
+[00:00:14.000 --> 00:00:17.000]   Hey everyone, I'm Linus, I'm here to talk about embedding.
+[00:00:17.000 --> 00:00:20.000]   I'm grateful to be here at the inaugural AI engineer conference.
+[00:00:20.000 --> 00:00:22.000]   Who learned something new today?
+[00:00:22.000 --> 00:00:24.000]   Yeah.
+[00:00:24.000 --> 00:00:26.000]   Before I talk about that, a little bit about myself.
+[00:00:26.000 --> 00:00:28.000]   If you don't know me already, I am Linus.
+[00:00:28.000 --> 00:00:32.000]   I work on AI at Notion for the last year or so.
+[00:00:32.000 --> 00:00:34.000]   Before that, I did a lot of independent work prototyping,
+[00:00:34.000 --> 00:00:37.000]   experimenting with, trying out different things with language models,
+[00:00:37.000 --> 00:00:40.000]   with traditional LLP, things like TF-IDF, BM25,
+[00:00:40.000 --> 00:00:42.000]   to build interesting interfaces for reading and writing.
+[00:00:42.000 --> 00:00:44.000]   In particular, I worked a lot with embedding models
+[00:00:44.000 --> 00:00:48.000]   and latent spaces of models, which is what I'll be talking about today.
+[00:00:48.000 --> 00:00:51.000]   But before I do that, I want to take a moment to say
+[00:00:51.000 --> 00:00:54.000]   it's been almost a year since Notion launched Notion AI.
+[00:00:54.000 --> 00:00:58.000]   Our public beta was first announced in around November 2022.
+[00:00:58.000 --> 00:01:04.000]   So as we get close to a year, we've been steadily launching new and interesting features inside Notion AI.
+[00:01:04.000 --> 00:01:10.000]   From November, we have AI autofill inside databases, translation, and things coming soon,
+[00:01:10.000 --> 00:01:12.000]   though not today, so keep an eye on the space.
+[00:01:12.000 --> 00:01:14.000]   And obviously we're hiring, just like everybody else here.
+[00:01:14.000 --> 00:01:18.000]   We're looking for AI engineers, product engineers, machine learning engineers
+[00:01:18.000 --> 00:01:21.000]   to tackle the full gamut of problems that people have been talking about today.
+[00:01:21.000 --> 00:01:28.000]   Agents, tool use, evaluations, data, training, and all the interface stuff that we'll see today and tomorrow.
+[00:01:28.000 --> 00:01:32.000]   So if you're interested, please grab me, and we'll have a little chat.
+[00:01:32.000 --> 00:01:36.000]   Now, it wouldn't be Alan's talk without talking about latent spaces, so let's talk about it.
+[00:01:36.000 --> 00:01:41.000]   One of the problems that I find always motivated by is the problem of steering language models.
+[00:01:41.000 --> 00:01:46.000]   And I always say that prompting language models feels a lot like you're steering a car from the backseat with a pool noodle.
+[00:01:46.000 --> 00:01:50.000]   Like, yes, technically you have some control over the motion of the vehicle.
+[00:01:50.000 --> 00:01:51.000]   It's like there's some connection.
+[00:01:51.000 --> 00:01:55.000]   But you're not really in the driver's seat, the control isn't really there, it's not really direct.
+[00:01:55.000 --> 00:01:58.000]   There's like three layers of indirection between you and what the vehicle's doing.
+[00:01:58.000 --> 00:02:05.000]   And that, to me, trying to prompt a model, especially smaller, more efficient models that we can use for production,
+[00:02:05.000 --> 00:02:10.000]   with just tokens, just prompts, feels a lot like there's too many layers of indirection.
+[00:02:10.000 --> 00:02:14.000]   And even though models are getting better at understanding prompts, I think there's always going to be this fundamental barrier
+[00:02:14.000 --> 00:02:21.000]   between indirect control of models with just prompts and getting the model to do what we want them to do.
+[00:02:21.000 --> 00:02:26.000]   And so perhaps we can get a closer layer of control, a more direct layer of control, by looking inside the model,
+[00:02:26.000 --> 00:02:28.000]   which is where we look at latent spaces.
+[00:02:28.000 --> 00:02:35.000]   Latent spaces arise, I think, most famously inside embedding models.
+[00:02:35.000 --> 00:02:42.000]   If you embed some piece of text, that vector of 1536 numbers or 1024 numbers is inside a high-dimensional vector space.
+[00:02:42.000 --> 00:02:49.000]   That's a latent space, but also you can look at the latent spaces inside activation spaces of models, inside token embeddings, inside image models,
+[00:02:49.000 --> 00:02:51.000]   and then obviously other model architectures like auto-encoders.
+[00:02:51.000 --> 00:02:56.000]   Today we're going to be looking at embedding models, but I think a lot of the general takeaways apply to other models,
+[00:02:56.000 --> 00:03:00.000]   and I think there's a lot of fascinating research work happening inside other models as well.
+[00:03:00.000 --> 00:03:04.000]   When you look at an embedding, you kind of see this, right?
+[00:03:04.000 --> 00:03:09.000]   You see rows and rows of numbers if you ever debug some kind of an embedding pipeline and you'll print out the embedding.
+[00:03:09.000 --> 00:03:14.000]   You can kind of tell it has like a thousand numbers, but it's just looking at a matrix screen of numbers raining down.
+[00:03:14.000 --> 00:03:18.000]   But in theory, there's a lot of information actually packed inside those embeddings.
+[00:03:18.000 --> 00:03:29.000]   If you get an embedding of a piece of text or image, these latent spaces, these embeddings represent, in theory, the most salient features of a text or the image that the model is using to lower its loss or do its task.
+[00:03:29.000 --> 00:03:34.000]   And so maybe if we can disentangle some meaningful attributes or features out of these embeddings,
+[00:03:34.000 --> 00:03:37.000]   if we can look at them a little more closely and interpret them a little better,
+[00:03:37.000 --> 00:03:43.000]   maybe we can build more expressive interfaces that let them control the model by interfering or intervening inside the model.
+[00:03:43.000 --> 00:03:49.000]   Another way to say that is that embeddings show us what the model sees in a sample of input.
+[00:03:49.000 --> 00:03:53.000]   So maybe we can read out what it sees and try to understand better what the model's doing.
+[00:03:53.000 --> 00:04:00.000]   And maybe we can even control the embedding, intermediate activations to see what the model can generate.
+[00:04:00.000 --> 00:04:04.000]   So let's see some of that.
+[00:04:04.000 --> 00:04:16.000]   So some of this some of you might have seen before, but I promise there's some new stuff at the end, so hang tight.
+[00:04:16.000 --> 00:04:18.000]   So here's some sentence that I have.
+[00:04:18.000 --> 00:04:22.000]   It's a sentence about this novel, one of my favorite novels, named Diaspora.
+[00:04:22.000 --> 00:04:27.000]   It's a science fiction novel by Greg Egan that explores evolution and existence, post-human artificial intelligences,
+[00:04:27.000 --> 00:04:31.000]   something to do with alien civilizations and the questioning the nature of reality and consciousness,
+[00:04:31.000 --> 00:04:35.000]   which you might be doing a lot given all the things that are happening.
+[00:04:35.000 --> 00:04:41.000]   And so I have trained this model that can generate some embeddings out of this text.
+[00:04:41.000 --> 00:04:44.000]   So if I hit the center, it's going to give us an embedding.
+[00:04:44.000 --> 00:04:47.000]   But it's an embedding of length 2048, and so it's quite large.
+[00:04:47.000 --> 00:04:49.000]   But it's just a row of numbers, right?
+[00:04:49.000 --> 00:04:54.000]   But then I have a decoder half of this model that can take this embedding and try to reconstruct
+[00:04:54.000 --> 00:04:57.000]   the original input that may have produced this embedding.
+[00:04:57.000 --> 00:04:59.000]   So in this case, it took the original sentence.
+[00:04:59.000 --> 00:05:00.000]   There's some variation.
+[00:05:00.000 --> 00:05:02.000]   You can tell it's not exactly the same length, maybe.
+[00:05:02.000 --> 00:05:05.000]   But it's mostly reconstructed the original sentence, including the specific details like
+[00:05:05.000 --> 00:05:08.000]   the title of the book and so on.
+[00:05:08.000 --> 00:05:14.000]   So we have an encoder that's going from text to embedding and a decoder that's going from embedding back to text.
+[00:05:14.000 --> 00:05:19.000]   And now we can start to do things with the embedding to vary it a little bit and see what the decoder might see
+[00:05:19.000 --> 00:05:22.000]   if we make some modifications to the embedding.
+[00:05:22.000 --> 00:05:29.000]   So here I've tried to kind of blur the embedding and sample some points around the embedding with this blur radius.
+[00:05:29.000 --> 00:05:32.000]   And you can see the text that's generated from those blurry embeddings.
+[00:05:32.000 --> 00:05:33.000]   They're a little off.
+[00:05:33.000 --> 00:05:35.000]   Like, this is not the correct title.
+[00:05:35.000 --> 00:05:38.000]   The title's kind of gone here.
+[00:05:38.000 --> 00:05:40.000]   It still kept the name Greg, but it's a different person.
+[00:05:40.000 --> 00:05:45.000]   And so there's kind of a semantic blur that's happened here.
+[00:05:45.000 --> 00:05:46.000]   But this is kind of boring.
+[00:05:46.000 --> 00:05:47.000]   This is not really useful.
+[00:05:47.000 --> 00:05:51.000]   What's a little more useful is trying to actually manipulate things in more meaningful directions.
+[00:05:51.000 --> 00:05:53.000]   Now we have the same taste of text.
+[00:05:53.000 --> 00:05:55.000]   And now here I have a bunch of controls.
+[00:05:55.000 --> 00:05:59.000]   So maybe I want to find a direction in this embedding space.
+[00:05:59.000 --> 00:06:02.000]   Here I've computed a direction where if you push an embedding in that direction,
+[00:06:02.000 --> 00:06:06.000]   that's going to represent a shorter piece of text of roughly the same topic.
+[00:06:06.000 --> 00:06:09.000]   And so I pick this direction and I hit go.
+[00:06:09.000 --> 00:06:15.000]   And it'll try to push the embedding of this text in that direction and decode them out.
+[00:06:15.000 --> 00:06:19.000]   And you can tell they're a little bit shorter if I push it a little bit further even.
+[00:06:19.000 --> 00:06:23.000]   So now I'm taking that shorter direction and moving a little farther along it
+[00:06:23.000 --> 00:06:26.000]   and sampling, generating text out of those embeddings again.
+[00:06:26.000 --> 00:06:28.000]   And they're even a little bit shorter.
+[00:06:28.000 --> 00:06:33.000]   But they've still kept the general kind of idea, general topic.
+[00:06:33.000 --> 00:06:36.000]   And with that kind of building block, you can build really interesting interfaces.
+[00:06:36.000 --> 00:06:39.000]   Like, for example, I can plop this piece of text down here.
+[00:06:39.000 --> 00:06:43.000]   And maybe I want to generate a couple of sort of shorter versions.
+[00:06:43.000 --> 00:06:46.000]   So this is like a little bit shorter.
+[00:06:46.000 --> 00:06:48.000]   This is even more short.
+[00:06:48.000 --> 00:06:50.000]   But maybe I like this version.
+[00:06:50.000 --> 00:06:52.000]   So I'm going to clone this over here.
+[00:06:52.000 --> 00:06:57.000]   And I'm going to make the sentiment of the sentence a little more negative.
+[00:06:57.000 --> 00:07:03.000]   And you can start to explore the latent space of this embedding model, this language model,
+[00:07:03.000 --> 00:07:07.000]   by actually moving around in a kind of spatial canvas interface, which is kind of interesting.
+[00:07:07.000 --> 00:07:15.000]   Another thing you can do with this kind of embedding model is now that we have a vague sense that there are specific directions in this space that mean specific things,
+[00:07:15.000 --> 00:07:26.000]   we can start to more directly look at a text and ask the model, hey, where does this piece of text lie along your length direction or along your negative sentiment direction?
+[00:07:26.000 --> 00:07:29.000]   So this is the original text that we've been playing with.
+[00:07:29.000 --> 00:07:31.000]   It's pretty objective, like a Wikipedia-style piece of text.
+[00:07:31.000 --> 00:07:36.000]   Here I've asked ChatGPT to take the original text and make it sound a lot more pessimistic.
+[00:07:36.000 --> 00:07:41.000]   So things like the futile quest for meaning and plunging deeper into the abyss of nihilism.
+[00:07:41.000 --> 00:07:48.000]   And if I embed both of these, what I'm asking the model to do here is embed both of these things in the embedding space of the model,
+[00:07:48.000 --> 00:07:53.000]   and then project those embeddings down onto each of these directions.
+[00:07:53.000 --> 00:07:59.000]   So one way to read this table is that this default piece of text is at this point in this negative direction,
+[00:07:59.000 --> 00:08:02.000]   which by itself doesn't mean anything, but it's clearly less than this.
+[00:08:02.000 --> 00:08:06.000]   So this piece of text is much further along the negative sentiment axis inside this model.
+[00:08:06.000 --> 00:08:11.000]   When you look at other properties, like how much of the artistic kind of topic does it talk about is roughly the same,
+[00:08:11.000 --> 00:08:20.000]   the length is roughly the same, maybe the negative sentiment text is a bit more elaborate in its vocabulary,
+[00:08:20.000 --> 00:08:23.000]   and so you can start to project these things into these meaningful directions and say,
+[00:08:23.000 --> 00:08:29.000]   what are the features of the models, what are the attributes of the models finding in the text that we're feeding it?
+[00:08:29.000 --> 00:08:34.000]   Another way you could test out some of these ideas is by mixing embeddings.
+[00:08:34.000 --> 00:08:37.000]   And so here I'm going to embed both of these pieces of text.
+[00:08:37.000 --> 00:08:38.000]   This one's the one that we've been playing with.
+[00:08:38.000 --> 00:08:41.000]   This one is the beginning of a short story that I wrote once.
+[00:08:41.000 --> 00:08:47.000]   It's about this town in the Mediterranean coast that's calm and a little bit old.
+[00:08:47.000 --> 00:08:49.000]   And both of these have been embedded.
+[00:08:49.000 --> 00:08:53.000]   And so I'm going to say, this is a 2,000-dimensional embedding.
+[00:08:53.000 --> 00:08:58.000]   I'm going to say, give me a new embedding that's just the first 1,000 or so dimensions from the one embedding,
+[00:08:58.000 --> 00:09:02.000]   and then take the last 1,000 dimensions of the second embedding and just like slam them together,
+[00:09:02.000 --> 00:09:04.000]   you're going to have this new embedding.
+[00:09:04.000 --> 00:09:06.000]   And naively, you wouldn't really think that that would amount too much.
+[00:09:06.000 --> 00:09:07.000]   That would be kind of gibberish.
+[00:09:07.000 --> 00:09:13.000]   But actually, if you generate some samples from it, you can tell, you can see in a bit,
+[00:09:13.000 --> 00:09:16.000]   you get a sentence that's kind of a semantic mix of both.
+[00:09:16.000 --> 00:09:19.000]   You have structural similarities to both of those things.
+[00:09:19.000 --> 00:09:22.000]   Like you have this structure where there's a quoted kind of title of a book in the beginning.
+[00:09:22.000 --> 00:09:27.000]   There's topical similarities, there's punctuation similarities, tone similarities.
+[00:09:27.000 --> 00:09:31.000]   And so this is an example of interpolating in latent space.
+[00:09:31.000 --> 00:09:36.000]   The last thing I have, you may have seen on Twitter, is about,
+[00:09:36.000 --> 00:09:39.000]   okay, I have this un-embedding model and I have kind of an un-embedding model.
+[00:09:39.000 --> 00:09:40.000]   That works pretty well.
+[00:09:40.000 --> 00:09:48.000]   Can I use this un-embedding model and somehow fine-tune it or otherwise adapt it so we can read out text from other kinds of embedding spaces?
+[00:09:48.000 --> 00:09:52.000]   So this is the same sentence we've been using, but now when I hit this run button,
+[00:09:52.000 --> 00:09:58.000]   it's going to embed this text not using my embedding model, but using OpenAI's text-to-eta2.
+[00:09:58.000 --> 00:10:04.000]   And then there's a linear adapter that I've trained so that my decoder model can read out not from my embedding model,
+[00:10:04.000 --> 00:10:06.000]   but from OpenAI's embedding space.
+[00:10:06.000 --> 00:10:08.000]   So I'm going to embed it.
+[00:10:08.000 --> 00:10:12.000]   It's going to try to decode out the text from given just the OpenAI embedding.
+[00:10:12.000 --> 00:10:22.000]   And you can see, okay, it's not as perfect, but there's a surprising amount of detail that we've recovered out of just the embedding
+[00:10:22.000 --> 00:10:24.000]   with no reference to the source text.
+[00:10:24.000 --> 00:10:28.000]   So you can see this proper noun, diaspora, it's surprisingly still in there.
+[00:10:28.000 --> 00:10:31.000]   This feature where there's a quoted title of a book is in there.
+[00:10:31.000 --> 00:10:34.000]   It's roughly about the same topic, things like the rogue AI.
+[00:10:34.000 --> 00:10:40.000]   Sometimes when I rerun this, there's also references to the author where the name is roughly correct.
+[00:10:40.000 --> 00:10:48.000]   So even surprising features like proper nouns, punctuation, things like the quotes, general structure and topic, obviously,
+[00:10:48.000 --> 00:10:55.000]   those are recoverable given just the embedding because of the amount of detail that these high-capacity embedding spaces have.
+[00:10:55.000 --> 00:10:59.000]   But not only can you do this in the text space, you can also do this in image space.
+[00:10:59.000 --> 00:11:04.000]   So here I have a few prepared files.
+[00:11:04.000 --> 00:11:07.000]   Let's start with me.
+[00:11:07.000 --> 00:11:10.000]   And for dumb technical reasons, I have to put two of me in.
+[00:11:10.000 --> 00:11:13.000]   And then let's try to interpolate in this image space.
+[00:11:13.000 --> 00:11:15.000]   So this is now using clip, clip's embedding space.
+[00:11:15.000 --> 00:11:24.000]   I'm going to try to generate, say, like six images in between me and the Notion avatar version of me, the cartoon version of me,
+[00:11:24.000 --> 00:11:29.000]   if the backend will warm up, cold starting models is sometimes difficult.
+[00:11:29.000 --> 00:11:33.000]   There we go.
+[00:11:33.000 --> 00:11:39.000]   So now it's generating six images, bridging, kind of interpolating between the photographic version of me and the cartoon version of me.
+[00:11:39.000 --> 00:11:45.000]   And again, it's not perfect, but you can see here, on the left, it's quite photographic.
+[00:11:45.000 --> 00:11:51.000]   And then as you move further down this interpolation, you're seeing more kind of cartoony features appear.
+[00:11:51.000 --> 00:11:54.000]   And it's actually quite a surprisingly smooth transition.
+[00:11:54.000 --> 00:12:01.000]   Another thing you can do on top of this is you can do text manipulations as well, because clip is a multimodal text and image model.
+[00:12:01.000 --> 00:12:06.000]   And so I can say, let's add some text.
+[00:12:06.000 --> 00:12:12.000]   I'm going to subtract the vector for a photo of a smiling man.
+[00:12:12.000 --> 00:12:18.000]   And instead, I'm going to add the vector for a photo of a very sad, crying man.
+[00:12:18.000 --> 00:12:21.000]   And then I'll embed these pieces of text.
+[00:12:21.000 --> 00:12:24.000]   And empirically, I find that for text, I have to be a little more careful.
+[00:12:24.000 --> 00:12:27.000]   So I'm going to dial down how much of those vectors I'm adding and subtracting.
+[00:12:27.000 --> 00:12:29.000]   And then generate six again.
+[00:12:29.000 --> 00:12:32.000]   And...
+[00:12:32.000 --> 00:12:41.000]   It's taking a bit.
+[00:12:41.000 --> 00:12:44.000]   Okay.
+[00:12:44.000 --> 00:12:45.000]   I'm really sad.
+[00:12:45.000 --> 00:12:50.000]   And you can do even more fun things.
+[00:12:50.000 --> 00:12:51.000]   Like, you can try to add...
+[00:12:51.000 --> 00:12:53.000]   Like, here's a photo of a beach.
+[00:12:53.000 --> 00:12:55.000]   I'm going to try to add some beach in this.
+[00:12:55.000 --> 00:12:58.000]   This time, maybe just generate four for the sake of time.
+[00:12:58.000 --> 00:13:03.000]   Or maybe there's a bug and it won't let me generate.
+[00:13:03.000 --> 00:13:16.000]   So in all these images that I've done, both in the text and image domain...
+[00:13:16.000 --> 00:13:19.000]   Okay, the beach didn't quite survive the latent space arithmetic.
+[00:13:19.000 --> 00:13:25.000]   But in all these demos, the only thing I'm doing is calculating vectors, calculating embeddings for examples.
+[00:13:25.000 --> 00:13:30.000]   And embedding them and just adding them together with some normalization.
+[00:13:30.000 --> 00:13:35.000]   And it's surprising that just by doing that, you can try to manipulate interesting features in text and images.
+[00:13:35.000 --> 00:13:40.000]   And with this, you can also do things like add style and subject at the same time.
+[00:13:41.000 --> 00:13:42.000]   You can...
+[00:13:42.000 --> 00:13:44.000]   This is a cool image that I thought I generated when I made my first demo.
+[00:13:44.000 --> 00:13:47.000]   And then you can also do some pretty smooth transitions between landscape imagery.
+[00:13:47.000 --> 00:13:49.000]   So...
+[00:13:49.000 --> 00:13:53.000]   That's interesting.
+[00:13:53.000 --> 00:14:03.000]   In all these prototypes, one principle that I've tried to reiterate to myself is that oftentimes when you're studying this very complex, sophisticated models,
+[00:14:04.000 --> 00:14:07.000]   you don't necessarily have the ability to look inside and say, "Okay, what's happening?"
+[00:14:07.000 --> 00:14:08.000]   Not even getting an intuitive understanding.
+[00:14:08.000 --> 00:14:12.000]   Even getting an intuitive understanding of what is the model thinking, what is the model looking at, can be difficult.
+[00:14:12.000 --> 00:14:18.000]   And I think these are some of the ways that I've tried to render these invisible parts of the model a little bit more visible.
+[00:14:18.000 --> 00:14:22.000]   To let you a little bit more directly observe exactly what the model is.
+[00:14:22.000 --> 00:14:25.000]   The representations the model is operating in.
+[00:14:26.000 --> 00:14:34.000]   And sometimes you can also take those and directly interact or let humans directly interact with the representations to explore what these spaces represent.
+[00:14:34.000 --> 00:14:39.000]   And I think there's a ton of interesting, pretty groundbreaking research that's happening here.
+[00:14:39.000 --> 00:14:42.000]   On the left here is the Othello world model paper, which is fascinating.
+[00:14:42.000 --> 00:14:44.000]   Neurons in a haystack.
+[00:14:44.000 --> 00:14:48.000]   And then on the right is a very, very recent, I had to add this in last minute because it's super relevant.
+[00:14:49.000 --> 00:14:54.000]   In a lot of these examples, I've calculated these feature dimensions by just giving examples and calculating centroids between them.
+[00:14:54.000 --> 00:15:01.000]   But here, Anthropix and Newark, along with other work from Conjecture and other labs, have found unsupervised ways to try to automatically discover these dimensions inside models.
+[00:15:01.000 --> 00:15:03.000]   So that's super exciting.
+[00:15:03.000 --> 00:15:12.000]   And in general, I'm really excited to see latent spaces that appear to encode, by some definition, interpretable, controllable representations of the models, input and output.
+[00:15:12.000 --> 00:15:16.000]   I want to talk a little bit in the last few minutes about the models that I'm using.
+[00:15:16.000 --> 00:15:17.000]   The text model is a custom model.
+[00:15:18.000 --> 00:15:24.000]   I won't go into too much detail, but it's fine-tuned from a T5 checkpoint as a denoising autoencoder.
+[00:15:24.000 --> 00:15:27.000]   It's an encoder-decoder transformer with some modifications that you can see in the code.
+[00:15:27.000 --> 00:15:30.000]   So here's a general transformer.
+[00:15:30.000 --> 00:15:32.000]   Encoder on the left, decoder on the right.
+[00:15:32.000 --> 00:15:34.000]   I have some pooling layers to get an embedding.
+[00:15:34.000 --> 00:15:36.000]   This is like a normal T5 embedding model stack.
+[00:15:36.000 --> 00:15:43.000]   And then on the right, I have this special kind of gated layer that pulls from the embedding to decode from the embedding.
+[00:15:43.000 --> 00:15:44.000]   You can look at the code.
+[00:15:44.000 --> 00:15:46.000]   It's a little more easy to understand.
+[00:15:47.000 --> 00:15:52.000]   But we take this model, and we can adapt it to other models as well, as you saw with the OpenAI embedding recovery.
+[00:15:52.000 --> 00:15:57.000]   And so on the left is the normal trading regime where you have an encoder, you get an embedding, and you try to reconstruct the text.
+[00:15:57.000 --> 00:16:04.000]   On the right, we just train this linear adapter layer to go from embedding of a different model to then reconstruct the text with a normal decoder.
+[00:16:04.000 --> 00:16:14.000]   And today, I'm excited to share that these models that I've been dealing with, that you may have asked about before, are open on HuggingFace.
+[00:16:14.000 --> 00:16:16.000]   So you can go download them and try them out now.
+[00:16:16.000 --> 00:16:17.000]   These are the links.
+[00:16:17.000 --> 00:16:18.000]   On the left is the HuggingFace models.
+[00:16:18.000 --> 00:16:24.000]   And then there's a Colab notebook that lets you get started really quickly and try to do things like interpolation and interpretation of these features.
+[00:16:24.000 --> 00:16:27.000]   And so if you find any interesting results with these, please let me know.
+[00:16:27.000 --> 00:16:31.000]   And if you have any questions, also reach out and I'll be able to help you out.
+[00:16:31.000 --> 00:16:35.000]   The image model that I was using at the end was CacaoBrainsCarlo.
+[00:16:35.000 --> 00:16:38.000]   Excited to see Korea stepping up there.
+[00:16:38.000 --> 00:16:45.000]   In this model, this model is an unclip model, which is trained kind of like the way that DALI 2 was trained as a diffusion model that's trained to invert clip embedding.
+[00:16:45.000 --> 00:16:48.000]   So go from clip embedding of images back to text.
+[00:16:48.000 --> 00:16:52.000]   And that lets us do similar things as the text model that we used.
+[00:16:52.000 --> 00:16:57.000]   In all this prototyping, I think a general principle, if you have one takeaway from this talk,
+[00:16:57.000 --> 00:17:02.000]   it's that when you're working with these really complex models and kind of inscrutable pieces of data,
+[00:17:02.000 --> 00:17:06.000]   if you can get something into a thing that feels like it can fit in your hand that you can play with,
+[00:17:06.000 --> 00:17:11.000]   that you can concretely see and observe and interact with, can be directly manipulated, visualized,
+[00:17:11.000 --> 00:17:14.000]   all these things, all the tools and prototypes that you can build around these things,
+[00:17:14.000 --> 00:17:18.000]   I think help us get a deeper understanding of how these models work and how we can improve them.
+[00:17:18.000 --> 00:17:24.000]   And in that way, I think models, language models and image models, generative models,
+[00:17:24.000 --> 00:17:31.000]   are a really interesting laboratory for knowledge, for studying how these different kinds of modalities can be represented.
+[00:17:31.000 --> 00:17:36.000]   And Brad Victor said, "The purpose of a thinking medium is to bring thought outside the head
+[00:17:36.000 --> 00:17:41.000]   to represent these concepts in a form that can be seen with the senses and manipulated with the body.
+[00:17:41.000 --> 00:17:44.000]   In this way, the medium is literally an extension of the mind."
+[00:17:44.000 --> 00:17:51.000]   And I think that's a great poetic way to kind of describe the philosophy that I've approached a lot of my prototyping with.
+[00:17:51.000 --> 00:17:56.000]   So, if you follow some of these principles and try to dig deeper in what the models are actually looking at,
+[00:17:56.000 --> 00:18:00.000]   build interfaces around them, I think more humane interfaces to knowledge are possible.
+[00:18:00.000 --> 00:18:03.000]   I'm really excited to see that future.
+[00:18:03.000 --> 00:18:04.000]   Thank you.
+[00:18:04.000 --> 00:18:05.000]   Thank you.
+[00:18:05.000 --> 00:18:06.000]   Thank you.
+[00:18:06.000 --> 00:18:07.000]   Thank you.
+[00:18:07.000 --> 00:18:08.000]   Thank you.
+[00:18:08.000 --> 00:18:08.000]   Thank you.
+[00:18:08.000 --> 00:18:09.000]   Thank you.
+[00:18:09.000 --> 00:18:10.000]   Thank you.
+[00:18:10.000 --> 00:18:14.180]   I'll see you next time.
+

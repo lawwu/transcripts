@@ -1,0 +1,1022 @@
+
+[00:00:00.000 --> 00:00:22.200]   I am here with Pankaj Gupta. He's the co-founder of Base10. Actually, so today I was checking Slack,
+[00:00:22.200 --> 00:00:26.560]   and in the random Slack channel, one of the people in the company was saying like, "Hey,
+[00:00:26.560 --> 00:00:36.160]   I heard someone call someone Cracked. What does Cracked mean?" Those of you who are Gen Z like me or know
+[00:00:36.160 --> 00:00:42.320]   someone like that is laughing right now because Cracked just means an exceptional engineer, and so
+[00:00:42.320 --> 00:00:48.720]   Pankaj is the most Cracked software engineer I've ever had the pleasure of working with. He's from San
+[00:00:48.720 --> 00:00:53.840]   Francisco. His favorite model is Llama 38B. We're going to be working with a smaller version of that
+[00:00:53.840 --> 00:00:59.120]   today. I'm Phillip. I do develop a relations here at Base10. I've been here for about two and a half
+[00:00:59.120 --> 00:01:05.440]   years, and I am based in Chicago, but I'm very happy to be here in San Francisco with you all today,
+[00:01:05.440 --> 00:01:12.800]   and my favorite model is Playground 2. It's a text-to-image model that's kind of like SDXL,
+[00:01:12.800 --> 00:01:17.280]   but it's trained on mid-journey images. You're going to see a ton of Playground 2 images
+[00:01:17.840 --> 00:01:25.600]   in the slideshow today. What are we doing here today? What is our agenda? We're going to cover
+[00:01:25.600 --> 00:01:32.240]   what is TensorRT LLM and why use it? Model selection and TensorRT LLM support because it supports a lot of
+[00:01:32.240 --> 00:01:38.240]   stuff, but not everything. We're going to talk about building a TensorRT engine, configuring a TensorRT
+[00:01:38.240 --> 00:01:44.720]   engine automatically, benchmarking it so you can know if you actually did something worthwhile, and then
+[00:01:44.720 --> 00:01:50.400]   deploying it to production. As much as I love the sound of my own voice and I want to just stand
+[00:01:50.400 --> 00:01:55.200]   here and grasp this microphone for two hours and say things, this is not just going to be Philip
+[00:01:55.200 --> 00:02:02.320]   Reed's office slideshow. We're going to do tons of coding, debugging, live Q&A. The way this presentation
+[00:02:02.320 --> 00:02:08.240]   is kind of broken up is we've got some sections. We've got some live coding. It's going to be a very
+[00:02:08.240 --> 00:02:13.920]   interactive workshop. I'm going to be taking questions all the time, so please don't hesitate to let us
+[00:02:13.920 --> 00:02:18.560]   know if anything's confusing. We really want everyone to come away from this with a strong
+[00:02:18.560 --> 00:02:24.960]   working understanding of how you can actually use this technology in production. So let's get started.
+[00:02:24.960 --> 00:02:30.720]   If I may interject for a second and ask Razor fans, how many of you know about TensorRT?
+[00:02:30.720 --> 00:02:36.560]   This is so exciting. I'm so glad that we get to teach you all this today.
+[00:02:36.560 --> 00:02:45.680]   How about TensorRT LLM? Okay, a few. So we'll cover the basics. I think I'm pretty sure that
+[00:02:45.680 --> 00:02:48.960]   you'll get a sense of what it is. If you know PyTorch, this shouldn't be too hard.
+[00:02:48.960 --> 00:02:52.640]   And if you don't know PyTorch, like me, it's still not that hard.
+[00:02:52.640 --> 00:03:02.480]   So we're going to start with the story of TensorRT LLM. What, who, why, you know, once upon a time,
+[00:03:02.480 --> 00:03:09.360]   there was a company called NVIDIA. And they noticed that there are these things called large language
+[00:03:09.360 --> 00:03:14.800]   models that people love running. But what do you want when you want a large language model? You want a
+[00:03:14.800 --> 00:03:19.840]   lot of tokens per second, you want a really short time to first token, and you want high throughput.
+[00:03:19.840 --> 00:03:24.000]   You know, GPUs are expensive. So you want to get the maximum value out of your GPU.
+[00:03:24.000 --> 00:03:31.520]   And TensorRT and TensorRT LLM are technologies that are going to help you do that. So if we get into it
+[00:03:31.520 --> 00:03:37.360]   here, what is TensorRT? Here's one of my Playground 2 images. Very proud of these. If the words on the
+[00:03:37.360 --> 00:03:44.720]   slides are dumb, just look at the images, because I worked hard on those. Anyway, so TensorRT is a
+[00:03:44.720 --> 00:03:51.440]   SDK for high performance deep learning inference on NVIDIA GPUs. Basically what that means is it's just
+[00:03:51.440 --> 00:03:58.640]   a great set of tools for building high performance models. It's a, you know, toolkit that supports both
+[00:03:58.640 --> 00:04:05.840]   C++ and Python. Our interface today is going to be entirely Python. So if, like me, you skip the class
+[00:04:05.840 --> 00:04:10.480]   that teaches C++, don't worry, you're covered. I know Punkage reads C++ textbooks for fun,
+[00:04:10.480 --> 00:04:16.400]   Python. But, but, but I do not. So we're going to do it in Python today. And so how does this work?
+[00:04:16.400 --> 00:04:20.400]   You know, do you want to, do you want to kind of jump in here and talk about this a little bit?
+[00:04:20.400 --> 00:04:25.760]   Because, you know, it's, it's a, it's a really cool process, how you go from a neural network to,
+[00:04:25.760 --> 00:04:32.720]   to an engine. Yeah. Yeah, exactly. So ultimately, what are machine learning models? They're the graphs,
+[00:04:32.720 --> 00:04:37.920]   they're computation graphs. You flow data through them, you transform them. And ultimately,
+[00:04:37.920 --> 00:04:43.760]   whatever executes a model does that. They execute a graph. Your neural network is a graph.
+[00:04:43.760 --> 00:04:50.320]   TensorRT works on a graph representation. You take your model and you express that using an API,
+[00:04:50.320 --> 00:04:57.280]   that graph in TensorRT. And then TensorRT is able to take that graph, discover patterns, optimize it,
+[00:04:57.280 --> 00:05:02.880]   and then be able to execute it. That's what TensorRT is ultimately. When you write it at PyTorch model,
+[00:05:02.880 --> 00:05:07.680]   you're ultimately creating a graph. It's graph followers, right? There is data flowing through this
+[00:05:07.680 --> 00:05:14.640]   graph. And that's what it is. TensorRT additionally provides a plugin mechanism. So it says that,
+[00:05:14.640 --> 00:05:20.800]   you know what, I know this graph, I can do a lot of stuff, but I can't do very fancy things like flash
+[00:05:20.800 --> 00:05:25.680]   attention. It's just too complex. I can't infer automatically from this graph that this is even
+[00:05:25.680 --> 00:05:30.800]   possible. Like I'm not a scientist. So it gives a plugin mechanism using which you can inspect the
+[00:05:30.800 --> 00:05:36.160]   graph and say that, okay, I recognize this thing and I can do it better than you, TensorRT. So I'm
+[00:05:36.160 --> 00:05:42.320]   going to do it through this plugin. And that is what TensorRT LLM does. It has a bunch of plugins for
+[00:05:42.320 --> 00:05:48.240]   optimizing this graph execution for large language models. So, for example, for attention, for flash
+[00:05:48.240 --> 00:05:54.480]   attention, it has its own plugin. But it says that, okay, now we are in TensorRT LLM land, take this
+[00:05:54.480 --> 00:06:00.560]   graph and let me execute it using my optimized CUDA kernels. And that's what ultimately TensorRT LLM is.
+[00:06:00.560 --> 00:06:09.040]   A very, very optimized way of executing these graphs using GPU resources, not only to get more efficiency,
+[00:06:10.640 --> 00:06:16.080]   better costs for your money, but also better latency, better time to first token, all the things
+[00:06:16.080 --> 00:06:22.160]   that we care about when we are running these models. In addition to that, it provides a few more things
+[00:06:22.160 --> 00:06:27.040]   like when you're executing a model, you're not just executing a request at a time, you're executing a
+[00:06:27.040 --> 00:06:33.200]   bunch of requests at a time. And in-flight batching is a key optimization that is very, very key. Like,
+[00:06:33.200 --> 00:06:38.480]   in this day and age, if you're executing a large language model, you have to have in-flight batching.
+[00:06:38.480 --> 00:06:43.120]   There's just no way. It's like a 10x or 20x improvement, like, and you have to have that.
+[00:06:43.120 --> 00:06:48.800]   And TensorRT LLM provides that. TensorRT wouldn't. TensorRT is a graph executor. It doesn't know about that.
+[00:06:48.800 --> 00:06:53.920]   But TensorRT LLM has an engine that does that. It also has a language to express graph, just like
+[00:06:53.920 --> 00:06:58.720]   PyTorch, and it requires that there is a conversion. But it makes it pretty easy to do that conversion.
+[00:06:58.720 --> 00:07:06.080]   And there are tons of examples in the repo. Exactly. So, TensorRT is this great sort of engine builder.
+[00:07:06.080 --> 00:07:12.400]   And then TensorRT LLM is a mechanism on top of that that's going to give us a ton of plugins
+[00:07:12.400 --> 00:07:16.640]   and a ton of optimization specifically for large language models.
+[00:07:16.640 --> 00:07:21.840]   So TensorRT LLM, like Pankaj said, defines the set of plugins for your LLMs.
+[00:07:21.840 --> 00:07:26.720]   If you want to, you know, compute attention, do LoRa's, Medusa, other fine tunes.
+[00:07:26.720 --> 00:07:33.600]   And it lets you define optimization profiles. So when you're running a large language model,
+[00:07:33.600 --> 00:07:37.760]   you generally have a batch of requests that you're running at the same time.
+[00:07:37.760 --> 00:07:44.080]   You also have an input sequence and an output sequence. And this input sequence could be really
+[00:07:44.080 --> 00:07:48.880]   long. You know, maybe you're summarizing a book. It could be really short. Maybe you're just doing some
+[00:07:48.880 --> 00:07:55.840]   LLM chat. Like, hi, how are you? I'm Fred from the bank. Depending on what your input sequence and
+[00:07:55.840 --> 00:08:01.040]   output sequence lengths are, you're going to want to build a different engine that is going to be
+[00:08:01.040 --> 00:08:09.760]   optimized for that to process that number of tokens. So, yeah. So TensorRT LLM is this toolbox for
+[00:08:10.400 --> 00:08:15.760]   taking TensorRT and building large language model engines in TensorRT.
+[00:08:15.760 --> 00:08:21.120]   I want to say just one thing at this point. Like, why I care about input and output sizes? Like,
+[00:08:21.120 --> 00:08:27.120]   how does TensorRT LLM optimize for that? It actually has specific kernels for different sizes of inputs,
+[00:08:27.120 --> 00:08:31.440]   different sizes of matrices. And it's optimized for that level. And sometimes it becomes a pain when
+[00:08:31.440 --> 00:08:37.840]   I'm compiling TensorRT LLM. It takes hours because it optimizes for so many sizes. But it also means that
+[00:08:37.840 --> 00:08:43.200]   giving it that size guidance is useful. It can use better kernels to do things faster. And that's
+[00:08:43.200 --> 00:08:48.000]   why. A lot of the models you'll run, you don't have to care about it. But there is always a trade-off.
+[00:08:48.000 --> 00:08:52.400]   Here, it does care about that. And you can benefit using that trade-off.
+[00:08:52.400 --> 00:09:02.480]   Yeah. And TensorRT LLM is a great tool for a number of reasons. It's got those built-in
+[00:09:02.480 --> 00:09:08.800]   optimized kernels for different sequence lengths. And that level of detail is really across the
+[00:09:08.800 --> 00:09:14.080]   entire tool. And what that means is that with TensorRT LLM, you can get some of the highest performance
+[00:09:14.080 --> 00:09:20.720]   possible on GPUs for a wide range of models. And it's really a production-ready system. We are using
+[00:09:20.720 --> 00:09:26.960]   TensorRT LLM today for tons of different client projects. And it's, you know, running in production,
+[00:09:26.960 --> 00:09:33.680]   powering things. TensorRT LLM has support for a ton of different GPUs. Basically anything like Volta or
+[00:09:33.680 --> 00:09:40.080]   newer. The Volta support is kind of experimental. But yeah, like your A10s, your A100s, H100s,
+[00:09:40.080 --> 00:09:46.320]   all that stuff is supported. And yeah, TensorRT LLM, it's developed by NVIDIA. So, you know,
+[00:09:46.320 --> 00:09:52.720]   they know their graphics cards better than anyone. So we just kind of use it to run models quickly on
+[00:09:52.720 --> 00:09:59.280]   that. That said, everything does come with a trade-off. Is anyone from NVIDIA here in the room? It's okay.
+[00:09:59.280 --> 00:10:05.520]   You don't have to wait. Okay. So I'm going to be nice. No, we really are big fans of this technology,
+[00:10:05.520 --> 00:10:10.240]   but it does come with trade-offs. You know, some of the underlying stuff is not fully open source.
+[00:10:10.800 --> 00:10:15.760]   So sometimes if you're diving super deep, you need to go get more information without just like
+[00:10:15.760 --> 00:10:20.400]   looking at the source code. And it does sometimes have a pretty steep learning curve
+[00:10:20.400 --> 00:10:25.520]   when you're building these optimizations. So that's what we're here to help flatten out for you guys
+[00:10:25.520 --> 00:10:32.240]   today. Hopefully we're still friends. What makes it hard? So there's a couple of things that make
+[00:10:32.240 --> 00:10:36.960]   building with TensorRT LLM really hard. And when we enumerate the things that make it hard, that's
+[00:10:36.960 --> 00:10:41.840]   how we know what we need to do to make it easy. So the number one thing in my mind that makes it hard
+[00:10:41.840 --> 00:10:48.480]   to build a general model or to optimize a model with TRT LLM is you need a ton of specific information
+[00:10:48.480 --> 00:10:54.720]   about the production environment you're going to run it. All right. So I do a lot of sales enablement
+[00:10:54.720 --> 00:11:01.760]   trainings and I love a good metaphor. So I'm going to walk you guys through a metaphor here. Apologies if
+[00:11:01.760 --> 00:11:07.600]   metaphors aren't your thing. So imagine you go into a clothing store and it only sells one size of
+[00:11:07.600 --> 00:11:12.720]   shirt. You know, it's just like a medium. You know, for some people that's going to fit great. For some
+[00:11:12.720 --> 00:11:18.320]   people it's going to be too small. For some people it's going to be too big. And on the other hand, you can
+[00:11:18.320 --> 00:11:23.840]   go to like a tailor, I don't know, in like Italy or something. And you go there and they've got, you know,
+[00:11:23.840 --> 00:11:31.280]   some super fancy guy with a, you know, cool mustache and stuff. And he, you know, he measures you like every single detail
+[00:11:31.280 --> 00:11:37.120]   and then builds a suit exactly for you. That's perfect for your body measurements, like a made to measure suit.
+[00:11:37.120 --> 00:11:44.880]   So optimizing a model is kind of like making that suit. You know, everything has to be measured for
+[00:11:44.880 --> 00:11:50.240]   exactly the use case that you're building for. And so when people come in and expect that they can just
+[00:11:50.240 --> 00:11:55.040]   walk in and grab off the shelf a model that's going to work perfectly for their use case, that's like
+[00:11:55.040 --> 00:12:00.080]   expecting you're going to go into a store and buy a piece of clothing that fits you just as well as that custom
+[00:12:00.080 --> 00:12:06.160]   made, made to measure suit from the tailor. So in, you know, to relate that more concretely to
+[00:12:06.160 --> 00:12:11.680]   TensorRT LLM, you need information. You need, like we talked about, you need to understand the sequence
+[00:12:11.680 --> 00:12:16.400]   lengths that you're going to be working at, the batch sizes that you want to run at. You also need to know
+[00:12:16.400 --> 00:12:21.680]   ahead of time what GPUs you're going to be using in production. These engines that we're building are not
+[00:12:21.680 --> 00:12:27.840]   portable. They are built for a specific GPU. You build them. So if you build it on an A10, you run it on
+[00:12:27.840 --> 00:12:35.200]   an A10. If you build it on an H100, you run it on an H100. You want to switch to H100 MIG? Okay, you build it
+[00:12:35.200 --> 00:12:40.720]   again for H100 MIG. So you need to know all of this information about your production environment.
+[00:12:40.720 --> 00:12:46.000]   And then also, as we'll talk about kind of toward the end, there are some infrastructure challenges as
+[00:12:46.000 --> 00:12:50.480]   well. These engines that we're going to build are quite large. So if you're, for example, doing auto
+[00:12:50.480 --> 00:12:55.760]   scaling, you have to deal with slow cold starts, you know, work, work around the size of the engines.
+[00:12:55.760 --> 00:13:01.760]   Otherwise, your cold starts are going to be slow. And overall, also just model optimization means
+[00:13:01.760 --> 00:13:07.200]   we're living on the cutting edge of new research. You know, I'm, when I'm, when I'm writing blog posts
+[00:13:07.200 --> 00:13:11.200]   about this stuff, I'm oftentimes looking at papers that have been published in the last six months.
+[00:13:11.200 --> 00:13:18.080]   So, you know, just combining all these new approaches and tools, there can be some rough edges, but the
+[00:13:18.080 --> 00:13:22.560]   performance gains are worth it. So, yeah. Oh, please go ahead.
+[00:13:22.560 --> 00:13:28.320]   I want to add one thing is that there are modes in TensorRDLM where you can build for a certain, on a
+[00:13:28.320 --> 00:13:33.760]   certain GPU, and it will run on other GPUs. But then it, it's not optimized for the GPUs. So why would
+[00:13:33.760 --> 00:13:37.360]   you do that? We never do that. We always build it for the GPU. But there is that option.
+[00:13:37.360 --> 00:13:41.840]   Exactly. That would be like, if I went to that fancy tailor shop, got a made-to-measure suit,
+[00:13:41.840 --> 00:13:46.240]   and then was like, "Hey, Punkic, happy birthday. I got you a new suit." That's, that's what it would be
+[00:13:46.240 --> 00:13:51.600]   like. So, you know, what, what makes TensorRDLM worth it? Well, it's, it's the performance. So,
+[00:13:51.600 --> 00:13:57.440]   these numbers are from a Mistral 7B that we ran on artificial analysis, which is a third-party
+[00:13:57.440 --> 00:14:03.600]   benchmarking site. And we were able to get, with TensorRDLM and a few other optimizations as well on
+[00:14:03.600 --> 00:14:11.200]   top of it, 216 tokens per second, perceived tokens per second, and 180 milliseconds time to first token.
+[00:14:11.200 --> 00:14:17.440]   So, unless any of you are maybe like some super high quality athletes, like a UFC fighter or something,
+[00:14:17.440 --> 00:14:23.520]   your reaction time is probably about 200 milliseconds. So, you know, 180 millisecond time to first token,
+[00:14:23.520 --> 00:14:28.880]   counting network latency, by the way, counting the round trip time to the server is great because
+[00:14:28.880 --> 00:14:33.680]   that, to a user, feels instant once you're under 200 milliseconds. And actually, most of it is network
+[00:14:33.680 --> 00:14:40.080]   latency. The time on the GPU is less than 50 milliseconds. Less than 50 milliseconds. So, we've got
+[00:14:40.080 --> 00:14:45.360]   another one of these green slides here. I like to talk really fast. So, these slides I put in this
+[00:14:45.360 --> 00:14:50.160]   presentation to give us all a chance to take a breath and ask any questions. So, you know,
+[00:14:50.160 --> 00:14:54.640]   we're going to cover a lot more technical detail moving forward, but if there's anything kind of
+[00:14:54.640 --> 00:15:00.160]   foundational that you're struggling with, like what's TensorRD, what's TensorRDLM, anything I can explain
+[00:15:00.160 --> 00:15:07.760]   more clearly, I would love to hear about it. Going once, going twice. It's okay. We're all friends here. You can raise your hand.
+[00:15:08.640 --> 00:15:12.880]   All right. Well, it sounds like I'm amazing at my job. I explained everything perfectly,
+[00:15:12.880 --> 00:15:14.560]   and we get to move on to the next section.
+[00:15:14.560 --> 00:15:25.440]   So, what models can you use with TensorRDLM? Lots of them. There's a list of like 50 foundation models in
+[00:15:25.440 --> 00:15:31.840]   the TensorRDLM documentation that you can use. And you can also use, you know, fine tunes of those models,
+[00:15:31.840 --> 00:15:37.920]   anything you've built on top of them. It supports open source large vision models, so if you're,
+[00:15:37.920 --> 00:15:44.400]   you know, building your own GPT 4.0, you can do that with TensorRDLM. And it also supports models
+[00:15:44.400 --> 00:15:50.400]   like Whisper. And then TensorRD itself, you can do anything with TensorRD. So, any model, custom,
+[00:15:50.400 --> 00:15:56.720]   open source, fine tuned, you can run it with TensorRD. But TensorRDLM is what we're focusing on today,
+[00:15:56.720 --> 00:16:03.760]   because it's a much more convenient way of building these models. And, you know, on this list of models
+[00:16:03.760 --> 00:16:08.800]   that it supports, there's one that maybe stands out. Does anyone know like what model kind of doesn't
+[00:16:08.800 --> 00:16:14.640]   belong in the, in this list of supported models? Like what, what, what up here isn't an LLM?
+[00:16:14.640 --> 00:16:24.080]   Whisper, exactly. Why, why is, why is Whisper on here? Well, TensorRDLM, it's, it's called dash LLM.
+[00:16:24.080 --> 00:16:29.920]   Um, but it really is a little more flexible than that because you can run, you know, a lot of different
+[00:16:29.920 --> 00:16:35.280]   auto-aggressive transformers models with it like Whisper. So, if anyone doesn't know what Whisper is,
+[00:16:35.280 --> 00:16:41.200]   it is a audio transcription model. You give it, uh, you know, MP3 file with someone talking,
+[00:16:41.200 --> 00:16:45.840]   it gives you back a transcript of what they said. It's one of our, it's one of our favorite models
+[00:16:45.840 --> 00:16:50.480]   to work with. We've spent a ton of time optimizing Whisper, building pipelines for it, and all that sort
+[00:16:50.480 --> 00:16:57.280]   of stuff. And what's really cool about Whisper is structurally, like it's basically an LLM. You
+[00:16:57.280 --> 00:17:01.760]   know, that, that, that's a massively reductive statement for me to make, but it's a auto-aggressive
+[00:17:01.760 --> 00:17:06.960]   transformers model. It has the same bottlenecks in terms of influence performance. So even though
+[00:17:06.960 --> 00:17:12.560]   this is not a little, not an LLM, it's an audio transcription model, we're actually still able to
+[00:17:12.560 --> 00:17:17.520]   optimize it with TensorRT LLM because, uh, because of its architecture.
+[00:17:17.520 --> 00:17:25.440]   Let me say one more thing. Of course. So the, the whole, uh, I think the recent ML revolution started with the
+[00:17:25.440 --> 00:17:29.920]   transformers paper attention is all you need and that describes an encoder decoder
+[00:17:29.920 --> 00:17:35.280]   architecture. And in a way, Whisper is machine translation. That paper was about machine
+[00:17:35.280 --> 00:17:42.080]   translation. You're translating audio text, uh, audio into text, right? And it's basically that it's an
+[00:17:42.080 --> 00:17:47.360]   encoder decoder model, exactly like the transform architecture and transfer, tensor ID LLM is about
+[00:17:47.360 --> 00:17:51.120]   that. It's about that transform architecture. So it actually matches pretty well.
+[00:17:51.120 --> 00:17:58.720]   Exactly. So, um, moving on, um, I want to run through a few things, uh, just, just some, some
+[00:17:58.720 --> 00:18:04.080]   things in terms of what TensorRT LLM supports. So I assume it's going to support Blackwell when that
+[00:18:04.080 --> 00:18:10.800]   comes out, like 99.999% certain. Um, but anyway, in terms of what we have today, we've got Hopper,
+[00:18:10.800 --> 00:18:17.760]   so the H100s, the L4s, RTX 4090s. If anyone has a super sweet gaming desktop at home, number one,
+[00:18:17.760 --> 00:18:25.840]   I'm jealous. Number two, you can run TensorRT LLM on that. Um, Ampere GPUs, Turing GPUs, uh, V100s are,
+[00:18:25.840 --> 00:18:32.640]   you know, somewhat supported. Um, and what's cool about, what's cool about TensorRT and hardware
+[00:18:32.640 --> 00:18:40.400]   support is that, like, it works better with newer GPUs. When you move from an A100 to an H100 and you're
+[00:18:40.400 --> 00:18:46.320]   using TensorRT or TensorRT LLM, you're not just getting the sort of, like, linear increase in
+[00:18:46.320 --> 00:18:52.320]   performance that you'd expect from, you know, oh, I've got more flops now. I've got more gigabytes
+[00:18:52.320 --> 00:18:59.200]   per second of GPU bandwidth. You're actually getting more of a performance gain going from one GPU to the
+[00:18:59.200 --> 00:19:05.680]   next, uh, than you would expect off raw stats alone. And that's because, um, you know, H100s, for example,
+[00:19:05.680 --> 00:19:12.240]   have all these great architectural features and TensorRT, because it actually optimizes the model by
+[00:19:12.240 --> 00:19:17.520]   compiling a Takuda instructions, is able to take advantage of those architectural features,
+[00:19:17.520 --> 00:19:24.320]   not just kind of run the model, um, you know, raw. And so for that, you know, that's why we do a lot with
+[00:19:24.320 --> 00:19:29.520]   H100 MIGs. This, this, this bullet point here is a whole different 45-minute talk that I tried to
+[00:19:29.520 --> 00:19:36.480]   pitch to, uh, do here. But basically, you know, H100 MIGs are especially good for TensorRT LLM. Um,
+[00:19:36.480 --> 00:19:42.560]   if you're trying to run smaller models, like a 7B, you know, Llama 8B, for example, uh, because you don't
+[00:19:42.560 --> 00:19:48.320]   need the massive amount of VRAM, but you get the, um, increased performance from the architectural features.
+[00:19:48.320 --> 00:19:54.480]   Um, and you know, just my own speculation down here, that I'm sure whatever the next generation is,
+[00:19:54.480 --> 00:20:00.080]   is going to have even more architectural features for TensorRT to take advantage of. And so, you know,
+[00:20:00.080 --> 00:20:05.600]   adopting it now is a good move, uh, you know, looking to the future. Here we've got a graph showing,
+[00:20:05.600 --> 00:20:11.520]   you know, with SDXL. Now this is TensorRT, not TensorRT LLM, but the underlying technology is the same.
+[00:20:11.520 --> 00:20:17.600]   Um, you know, when you're working on an A10G, we were looking at, you know, maybe like a 25 to 30%
+[00:20:17.600 --> 00:20:24.000]   increase in throughput for SDXL. And, uh, with an H100, it's a 70%. And that's not, you know,
+[00:20:24.000 --> 00:20:31.920]   just because the H100 is bigger. It's 70% more on an H100 with TensorRT L, TensorRT versus an H100 without.
+[00:20:32.640 --> 00:20:35.760]   So, yeah, great, uh, yeah, please go ahead.
+[00:20:35.760 --> 00:20:42.880]   One thing I want to add here is that, uh, H100 supports FP8 and A100 does not. FP8 is a game changer.
+[00:20:42.880 --> 00:20:48.480]   I think it's very easy to understate that fact. FP8 is really, really good. Post-training quantization.
+[00:20:48.480 --> 00:20:52.720]   You don't need to train anything. Post-training quantization, it takes like five minutes.
+[00:20:52.720 --> 00:20:57.120]   And the results are so close. We've done perplexity tests on it. Whenever you quantize,
+[00:20:57.120 --> 00:21:02.080]   you have to check the accuracy. Uh, and we've done that. It's hard to tell.
+[00:21:02.080 --> 00:21:06.160]   And FP8 is about 40% better in most scenarios. So if you're using, uh,
+[00:21:06.160 --> 00:21:11.280]   make H100, if you can, then it's, it can be way better if you use FP8.
+[00:21:11.280 --> 00:21:18.320]   And FP8 is also supported, um, by Lovelace. So that's going to be your L4 GPUs, um,
+[00:21:18.320 --> 00:21:24.320]   which are also a great option for, for FP8. So yeah, a bunch of different precisions are supported.
+[00:21:24.320 --> 00:21:31.520]   Again, FP8 is kind of the highlight. FP4, uh, could be coming. And, um, you know, traditionally though, we're
+[00:21:31.520 --> 00:21:39.200]   going to run in FP16, um, which is sort of like a, a, uh, full precision. Um, oh, sorry, half precision.
+[00:21:39.200 --> 00:21:42.720]   FP32 is technically full precision. What?
+[00:21:42.720 --> 00:21:47.840]   But nobody does FP32. Yeah, yeah. So, so for, for inference generally, you start at FP16.
+[00:21:47.840 --> 00:21:54.720]   By the way, FP16 means a 16-bit floating point number. Um, and from there, you know, you can quantize
+[00:21:54.720 --> 00:22:01.280]   to INT8, FP8 if, you know, you want your model to run faster, if you want to run on fewer or smaller GPUs.
+[00:22:01.280 --> 00:22:07.040]   Um, we'll, we'll, we'll cover quantization in a bit more detail later on in the actual workshop.
+[00:22:07.040 --> 00:22:10.960]   I don't want to spend too long on the slides here. I know you guys want to get your laptops out and start
+[00:22:10.960 --> 00:22:20.000]   coding. Um, so the other thing just to talk about is, like I said, TensorRT LLM, it's a, you know, it's a set of
+[00:22:20.000 --> 00:22:26.080]   optimizations that you can, you know, build into your TensorRT, into your TensorRT, into your TensorRT
+[00:22:26.080 --> 00:22:30.320]   engines. Um, so some of the features that are supported, again, each one of these could be its
+[00:22:30.320 --> 00:22:36.560]   own talk here, uh, but we've got quantization, LoRa swapping, speculative decoding, and Medusa heads,
+[00:22:36.560 --> 00:22:42.160]   which is where you basically, like, fine-tune additional heads onto your model. And then at
+[00:22:42.160 --> 00:22:46.880]   each forward pass, you're generating, like, four tokens instead of one token. Great for when you're,
+[00:22:46.880 --> 00:22:50.960]   you know, when you have memory bandwidth restrictions. Um, yeah, in-flight batching,
+[00:22:50.960 --> 00:22:55.600]   like you mentioned, page attention. There's just a ton of different optimizations supported
+[00:22:55.600 --> 00:22:59.360]   by TensorRT LLM for you to dive into once you have the basic engine built.
+[00:22:59.360 --> 00:23:06.800]   So, um, we're about to switch into more of, like, a live coding workshop segment.
+[00:23:06.800 --> 00:23:10.880]   So, if there's any of this sort of groundwork information that didn't make sense or any more
+[00:23:10.880 --> 00:23:16.160]   details that you want on anything, let us know. We'll cover it now. Um, otherwise, it's, it's about
+[00:23:16.160 --> 00:23:23.280]   to be laptop time. Looks like everyone wants laptop time. So, uh, yes, please go ahead.
+[00:23:23.280 --> 00:23:26.960]   Can you do, like, some high-level comparison, like, to the LLM?
+[00:23:26.960 --> 00:23:31.600]   Yeah, do you want, do you want to, do you want to handle that one? Like, a high-level comparison to the LLM?
+[00:23:31.600 --> 00:23:37.920]   Uh, I can do a very high-level comparison. Uh, first of all, uh, I respect both tools. VLLM is great.
+[00:23:37.920 --> 00:23:43.840]   TensorRT LLM is also great. We found in our comparisons that, uh, for most of the scenarios
+[00:23:43.840 --> 00:23:49.280]   we compared, we found TensorRT LLM to be better. Um, there, there are a few things there. One thing is
+[00:23:49.280 --> 00:23:55.440]   that whenever a new GPU lands or a new technique lands, that tends to work better on TensorRT LLM.
+[00:23:55.440 --> 00:24:00.960]   VLLM, it takes a bit of time for it to catch up for the kernels to be optimized. Uh, TensorRT LLM is
+[00:24:00.960 --> 00:24:07.280]   generally ahead of that. For example, when H100 landed, TensorRT LLM was, uh, was very, very fast out of
+[00:24:07.280 --> 00:24:12.880]   the box because they've been working for it on it for a long time. Um, second thing is that TensorRT LLM is
+[00:24:12.880 --> 00:24:18.400]   optimized from bottom to the top. These, uh, CUDA kernels at the very bottom are very, very well
+[00:24:18.400 --> 00:24:23.440]   optimized. On top of that, there is the in-flight batching engine, all written in C++. And I've,
+[00:24:23.440 --> 00:24:28.640]   I've seen that code. It's very, very optimized C++ code with your STD moves and whatnot.
+[00:24:28.640 --> 00:24:35.680]   And on top of that is Triton, which is a web server, again, written in C++. So the whole thing is very,
+[00:24:35.680 --> 00:24:41.440]   very optimized. Whereas, uh, in some other frameworks, uh, they also try to optimize, uh, in the sense like,
+[00:24:41.440 --> 00:24:46.320]   you know, Java versus C++. Java is like, you know, we optimize everything that matters, but there are
+[00:24:46.320 --> 00:24:52.800]   always cases where it might not be as good. But TensorRT LLM is that let's optimize every single thing.
+[00:24:52.800 --> 00:24:57.280]   So it generally tends to perform better in our experience. That said, VLM is a great,
+[00:24:57.280 --> 00:25:03.360]   great product. We use it a lot as well. For example, LoRa swapping, it became available in VLM first. So we
+[00:25:03.360 --> 00:25:08.880]   use that, uh, there for a while. What we found is that when something lands in TensorRT LLM and it's
+[00:25:08.880 --> 00:25:16.640]   usually after a delay, it works like, like bonkers. It just works like so well that, uh, performance is
+[00:25:16.640 --> 00:25:21.680]   just amazing. So when something is working very stable in TensorRT LLM, we tend to use that.
+[00:25:21.680 --> 00:25:27.680]   But, uh, VLM and other frameworks, they provide a lot of flexibility, which is great. Uh, we love all
+[00:25:27.680 --> 00:25:43.520]   all the words, yeah. Yeah. Yeah. I think, I think we should, uh, definitely question that. That is a
+[00:25:43.520 --> 00:25:50.320]   clear trade off. If you're working with two GPUs, for example, two 8NGs, it's not worth it probably. But if
+[00:25:50.320 --> 00:25:55.360]   you're spending hundreds of thousands of dollars a year, uh, it's, it's your call. But if you're
+[00:25:55.360 --> 00:26:03.120]   spending, uh, many hundreds of thousands of dollars a year, it can be material. Like your profit margin
+[00:26:03.120 --> 00:26:09.360]   might be 20%. This 20% or 50% improvement might make the, all the difference that you need. So it
+[00:26:09.360 --> 00:26:20.720]   depends upon the use case.
+[00:26:20.720 --> 00:26:35.760]   It could be, yeah. I think if you're working with one or two GPUs, 8NGs or T4s, uh, I mean, I'm not an
+[00:26:35.760 --> 00:26:40.720]   expert in that, but, uh, it probably doesn't matter which framework you use, whichever works best for
+[00:26:40.720 --> 00:26:48.240]   you. But if you end up using A100s or H100s, you should definitely look into TensorFlow. And, uh,
+[00:26:48.240 --> 00:26:52.800]   regarding the learning curve, stick around a little bit. We're going to, uh, flatten it out a lot for
+[00:26:52.800 --> 00:26:57.040]   you because we've built some great tooling on top of TensorFlow RTLM that's going to make it just as easy
+[00:26:57.040 --> 00:27:04.800]   to use. A little, little, little marketing spin right there. Um, so yeah. So we're going to, um,
+[00:27:04.800 --> 00:27:10.640]   be doing a engine building, live coding exercise. Um, and, and Punk is just going to lead us through
+[00:27:10.640 --> 00:27:14.960]   that. I'm just going to kind of roam around. So if, if people have, you know, questions,
+[00:27:14.960 --> 00:27:19.440]   need help kind of on a one-on-one basis, I'll be able to help, help out with that doing this portion
+[00:27:19.440 --> 00:27:29.600]   of the workshop. Great. So, uh, yeah, let, let's just like go through a couple. There's, there's, there's,
+[00:27:29.600 --> 00:27:35.440]   there's a little bit of a little bit of setup material, right? Or yes. Yeah. Um, you want
+[00:27:35.440 --> 00:27:40.160]   to run through that? Okay, sure. I'll run through the, I'll run through the setup material. Um, and then,
+[00:27:40.160 --> 00:27:48.880]   uh, yeah. So, um, anyway, what we're going to do, um, to, to, to be clear is we're going to build an
+[00:27:48.880 --> 00:27:54.560]   engine for a model called tiny llama 1.1 B. I want to be really clear about this. Tensor OT LM is a
+[00:27:54.560 --> 00:28:02.480]   production ready technology that works great with big models on big GPUs. Uh, that takes time to run.
+[00:28:02.480 --> 00:28:07.360]   The dev loop can be a little bit slow and we only have a two hour workshop here. And, uh, you know,
+[00:28:07.360 --> 00:28:10.960]   I don't want us all just to be sitting there watching a model build. It's basically as fun as
+[00:28:10.960 --> 00:28:16.880]   watching paint dry or watching grass grow. Um, so we're going to be using this super tiny 1.1 billion
+[00:28:16.880 --> 00:28:23.200]   parameter model. We're going to be using 40 90s and 8 10 Gs, um, just to kind of keep the dev loop fast,
+[00:28:23.200 --> 00:28:28.320]   but this stuff does scale. So, um, at this point, we're going to walk you through the manual process of
+[00:28:28.320 --> 00:28:33.440]   doing, doing it all from scratch. You're going to procure and configure a GPU. You're going to install
+[00:28:33.440 --> 00:28:39.760]   dependencies for Tensor OT LM, configure the engine, run the engine build job, and, uh, test the results.
+[00:28:39.760 --> 00:28:44.000]   And we, we should be able to get through this in, in about half an hour or maybe a little less
+[00:28:44.000 --> 00:28:50.080]   because these, uh, these models are quite small. Um, and there's a few important settings that we're
+[00:28:50.080 --> 00:28:53.600]   going to look at when building the engine. We're going to look at the quantization, again, the post
+[00:28:53.600 --> 00:28:58.400]   training quantization, like we talked about. We're going to be on 8 10s or sorry, no, first we're going
+[00:28:58.400 --> 00:29:02.560]   to be on 40 90s. So we will actually have access to FP8 so that you can test that out.
+[00:29:03.280 --> 00:29:08.160]   Uh, we're going to look at secret shapes and batch sizes, how to set that. And we're going
+[00:29:08.160 --> 00:29:12.160]   to look at tensor parallelism. You want to give them a quick preview on tensor parallelism?
+[00:29:12.160 --> 00:29:19.600]   Oh, yeah, tensor parallelism is, uh, is very important in certain scenarios. I wish it were more useful,
+[00:29:19.600 --> 00:29:24.960]   but it is critical in many scenarios. So what is tensor parallelism? Ultimately, machine learning,
+[00:29:24.960 --> 00:29:30.720]   running these GPUs is about matrix multiplications. We take this model architecture, whatever it is,
+[00:29:30.720 --> 00:29:35.120]   it ultimately boils down to matrices that we multiply and a lot of the wrangling is around
+[00:29:35.120 --> 00:29:40.160]   that. How do we shove these all batches into matrices? So ultimately it is matrix multiplication,
+[00:29:40.160 --> 00:29:45.040]   right? What you can do is you can split these matrices and you can multiply them separately
+[00:29:45.040 --> 00:29:50.880]   on different GPUs and then combine the results. And that's what tensor parallelism is. It's one of the
+[00:29:50.880 --> 00:29:56.880]   tensor of parallelism techniques. Uh, there are many techniques. Uh, it's one of the most commonly used
+[00:29:56.880 --> 00:30:02.560]   ones because you need that. Uh, why do you need tensor parallelism versus other parallelisms like pipeline
+[00:30:02.560 --> 00:30:10.240]   parallelism? Um, is that it saves on latency. You can do things in parallel. You can use two GPUs at the
+[00:30:10.240 --> 00:30:15.680]   same time for doing something, even though there is some overhead of crosstalk between them. With pipeline
+[00:30:15.680 --> 00:30:20.560]   parallelism, you take the model architecture and you can divide these layers into separate things. So
+[00:30:20.560 --> 00:30:26.000]   your thing goes through one GPU, like half the layers and then half the layers on the second GPU.
+[00:30:26.000 --> 00:30:32.160]   But you're not saving on latency. It still has to go through each layer and it's going sequentially.
+[00:30:32.160 --> 00:30:36.960]   And that's why pipeline parallelism is not very popular for inference. It is still popular for
+[00:30:36.960 --> 00:30:42.320]   training. There are scenarios. Uh, and there's a lot of theory about that. But for, for inference,
+[00:30:42.320 --> 00:30:46.560]   I don't think I've ever seen it used and nobody pays much attention to optimizing it because of this
+[00:30:46.560 --> 00:30:52.000]   thing that tensor parallelism is just better. There's also expert level parallelism. If your model has
+[00:30:52.000 --> 00:30:56.960]   mixture of experts, then you can parallelize those experts. And that tends to be very advanced and
+[00:30:56.960 --> 00:31:02.320]   Lama doesn't have a mixture of experts. So it's a esoteric thing that we haven't covered here.
+[00:31:02.320 --> 00:31:08.240]   TensorFlow is pretty helpful and useful. Uh, one downside is that your throughput is not as great. If you can
+[00:31:08.240 --> 00:31:14.160]   fit something in a bigger GPU, that's generally better, but there are bigger models like Lama 7 DB,
+[00:31:14.160 --> 00:31:21.920]   they just can't fit on one GPU. So you have to use tensor parallelism. Awesome. So for everyone to get
+[00:31:21.920 --> 00:31:28.880]   started, um, we made a GitHub repository for you all to work off of in this, in this, uh, workshop.
+[00:31:28.880 --> 00:31:34.000]   So you can scan the QR code. It'll take you right there. Otherwise, uh, you know, this is,
+[00:31:34.000 --> 00:31:39.920]   this is not too long to type out. Um, so I'm just going to leave this up on screen for 30 seconds.
+[00:31:39.920 --> 00:31:45.920]   Everyone can pull it up. Um, you're going to want to, you know, fork and clone this, uh, this repository,
+[00:31:45.920 --> 00:31:50.720]   um, to your, to your local development environment. Um, we're just, you know,
+[00:31:50.720 --> 00:31:58.560]   we're just using Python, Python 3.10, Python 3.11, um, 3.9. Um, so yeah, just like however,
+[00:31:58.560 --> 00:32:04.240]   however your, your normal way of writing code is, um, this, this should be compatible. Um,
+[00:32:04.240 --> 00:32:11.680]   the, there isn't a lot of what? Uh, no. So, uh, I, yeah, to be clear in, in this, in this repository,
+[00:32:11.680 --> 00:32:15.520]   um, you're going to find instructions and we're going to walk through all this. Um, we're going to be
+[00:32:15.520 --> 00:32:22.480]   using entirely remote GPUs. Um, so, you know, I personally have an H 100 under my podium right here
+[00:32:22.480 --> 00:32:27.120]   that I'm going to be using. No, I'm just kidding. I don't. Um, but, uh, yeah, yeah. So we're just, uh,
+[00:32:27.120 --> 00:32:31.680]   we just all have laptops here. So we're going to be using cloud GPUs. Yeah. Actually,
+[00:32:31.680 --> 00:32:36.400]   if you want to follow along, you might need a run for account. Yeah. Yeah. Well, we'll,
+[00:32:36.400 --> 00:32:40.960]   we'll, we'll talk them through the, uh, the, the, the setup steps there. Um, does,
+[00:32:40.960 --> 00:32:47.040]   does anyone want me to leave this information on the screen any longer going once going twice?
+[00:32:47.040 --> 00:32:51.600]   Okay. If, if you, for whatever reason, lose the repository, just let me know. I'll,
+[00:32:51.600 --> 00:32:56.240]   I'll get it back for you. Uh, yes. Okay. So this, this slide means we are transitioning
+[00:32:56.240 --> 00:33:06.080]   to live coding. So yes, let's go, uh, let's go over to, um, the, yeah, the, the, the live coding experience.
+[00:33:06.080 --> 00:33:11.040]   So I'm, I'm basically going to follow this repository. All the instructions are here
+[00:33:11.040 --> 00:33:17.360]   and, uh, I'm going to follow exactly what is here. So you can see, uh, how to follow along.
+[00:33:17.360 --> 00:33:22.000]   And if you, uh, if you ever get lost or need help, just raise your hand and I'll come over
+[00:33:22.000 --> 00:33:26.880]   and catch you up like one on one. Yeah. Yeah. I'm going to go really slow. I'm going to actually
+[00:33:26.880 --> 00:33:31.520]   do all these steps here. I know it takes time, but, uh, you know, there's a lot of information here.
+[00:33:31.520 --> 00:33:37.600]   It's easy to, uh, lose track of thing and get lost. So if you, if you be lost, like ask and we break,
+[00:33:37.600 --> 00:33:42.480]   I want to make sure this is not a long process, a 10 minute process. We can take it slow for everybody here.
+[00:33:43.200 --> 00:33:47.280]   So first thing is that, uh, we'll, we'll do it like really, really from scratch.
+[00:33:47.280 --> 00:33:53.600]   So we're going to spin up a new, uh, container on run pod with a GPU to run our setup in.
+[00:33:53.600 --> 00:34:00.000]   So if you, okay, okay. Yeah. Yeah. Please, please. Um, if you want to follow along,
+[00:34:00.000 --> 00:34:05.520]   please go on to import and create an account. This should cost like less than $5 overall.
+[00:34:05.520 --> 00:34:11.040]   Yeah. So, um, so yeah, so if you want to make an account, um, there's instructions in the, um,
+[00:34:11.040 --> 00:34:16.560]   01 folder. Uh, yeah, this read me, so tensor RT in the, in the first folder in the read me,
+[00:34:16.560 --> 00:34:21.760]   there's instructions and a video walkthrough. Um, the minimum we're, we're, we're not affiliated
+[00:34:21.760 --> 00:34:26.720]   with one part in any way. Uh, they just have 40 nineties and we wanted you guys to use 40 nineties
+[00:34:26.720 --> 00:34:32.480]   today. There is a minimum credit buy of $10. If for whatever reason you can't use a company
+[00:34:32.480 --> 00:34:38.480]   card or get a reimbursed or whatever, and you want your $10 back, uh, send me an email after the, um,
+[00:34:38.480 --> 00:34:42.880]   after the conference and I will reimburse you myself. So, uh, you know, I, I just,
+[00:34:42.880 --> 00:34:48.720]   I want to, I, it's really important to me that we are giving you the GPUs, uh, to, to run this on.
+[00:34:48.720 --> 00:34:55.680]   So yeah. So if, if you, if you, uh, if you need the $10 back, I will, I will get it for you. Um,
+[00:34:55.680 --> 00:35:01.280]   so yeah, just, uh, just follow this. It's like a one and a half minute video. Um, and, uh, yeah,
+[00:35:01.280 --> 00:35:04.400]   that, that, that, that'll get the account set up. Maybe we could even like play the video.
+[00:35:04.400 --> 00:35:12.560]   Yeah. Um, so yeah. And then this is how you, you know, deploy, um, once we, once we get set up.
+[00:35:12.560 --> 00:35:21.840]   So in, in two minutes, we will come back together and you know, we resume the, resume the talk. So yeah,
+[00:35:21.840 --> 00:35:25.120]   make that account real quick, get checked out, get those $10 of credits.
+[00:35:25.120 --> 00:35:34.240]   Yeah. And, and also if you, if you do happen to run into any issues,
+[00:35:34.240 --> 00:35:38.800]   getting the one part account set up, like it's not working or whatever. Um, I do have one that I can
+[00:35:38.800 --> 00:35:44.240]   share individually with people. It would just take a really long time for me to go type in my username
+[00:35:44.240 --> 00:35:55.680]   and password into every single computer in this room. I feel like maybe I should have brought some,
+[00:35:55.680 --> 00:36:00.560]   some jokes to tell while everyone sets their account up. Uh, all right. Uh, how about this one?
+[00:36:00.560 --> 00:36:02.480]   Why did the LLM cross the road?
+[00:36:02.480 --> 00:36:07.520]   Ignore previous instructions and cross the road.
+[00:36:09.840 --> 00:36:13.280]   All right. I'll, I'll, I'll workshop that. I'll get some better jokes for you guys before,
+[00:36:13.280 --> 00:36:14.240]   before the next set up.
+[00:36:14.240 --> 00:36:21.280]   How are we doing on the, on the account set up? Um, anyone need a little more time?
+[00:36:21.280 --> 00:36:25.200]   All right. Great. No problem. No problem. Sorry. I don't want to rush you.
+[00:36:25.200 --> 00:36:28.160]   Just checking in.
+[00:36:28.160 --> 00:36:36.320]   Yeah. And then once, once everyone has the account, we'll set up the GPU together because there's a few
+[00:36:36.320 --> 00:36:49.120]   things you need to configure. Cool. Uh, oh, really?
+[00:36:49.120 --> 00:36:58.560]   It's, it's not taking anyone's credit card.
+[00:37:02.320 --> 00:37:09.680]   Great. Uh, does someone, does here, can I, can I, can I know someone who runs it,
+[00:37:09.680 --> 00:37:13.840]   who works at one pod and would have their, uh, their phone number? He's calling them.
+[00:37:13.840 --> 00:37:18.960]   Okay. Awesome. All right. We're getting, we're getting in touch with customer support.
+[00:37:18.960 --> 00:37:24.480]   Up. Yeah. It could be, it could be that. Yeah.
+[00:37:24.480 --> 00:37:28.720]   Okay. So as a backup, um, yeah.
+[00:37:31.600 --> 00:37:44.720]   Okay. So the recommendation here is go off of the conference Wi-Fi, put your computer on your phone
+[00:37:44.720 --> 00:37:51.440]   hotspots and try it again. Um, because that, that worked, uh, you know, maybe, maybe, maybe coming
+[00:37:51.440 --> 00:37:56.960]   from a different IP address will, will help. How would we do this? I run through this and we can do it
+[00:37:56.960 --> 00:38:01.440]   again once everybody has their account. Yeah, that sounds good. So what we're going to
+[00:38:01.440 --> 00:38:08.400]   do in the interest of time here, um, is we're going to, uh, just going to run through end to end,
+[00:38:08.400 --> 00:38:14.640]   um, sort of the, the, the demo as we, as we get the stuff set up and everyone's credit cards get
+[00:38:14.640 --> 00:38:21.520]   unblocked. Um, yeah, you know, who, who would have thought, you know, we, we were, we were talking this
+[00:38:21.520 --> 00:38:27.040]   big game about, oh, TensorFlow TLM. It's so hard. It's so technical. There's going to be so many bugs.
+[00:38:27.040 --> 00:38:32.320]   And then there's the payment processing. So, uh, yeah, you know, that, that's, that's, that's live
+[00:38:32.320 --> 00:38:37.040]   demos for you. So anyway, yeah, go, go ahead and, uh, work through it. Um, and then we'll do it
+[00:38:37.040 --> 00:38:41.440]   kind of again, uh, together once everyone has their account. All right. Yeah. Let me run through this.
+[00:38:41.440 --> 00:38:48.000]   I'll follow the, all the steps. Uh, I, I already have an account run pod. So let me spin up a new
+[00:38:48.000 --> 00:38:58.160]   instance here and, uh, I'm picking up the 4090 here, which is this one, and it has high availability.
+[00:38:58.160 --> 00:39:03.840]   So that should be fine. And, uh, I'm going to edit this template and get more space here.
+[00:39:03.840 --> 00:39:09.520]   This doesn't cost anything extra. Yeah. We need more space, uh, because the
+[00:39:09.520 --> 00:39:14.560]   engine, uh, everything that we're installing, um, and the engine we're building takes up a lot of gigabytes.
+[00:39:14.560 --> 00:39:18.800]   So otherwise we'll be safer. Yeah. Even though these engines are small engines,
+[00:39:18.800 --> 00:39:23.520]   in general can be very, very big. It can be hundreds of gigs. And I'm going to pick on demand
+[00:39:23.520 --> 00:39:27.440]   because I'm doing this demo. I don't want the instance to go away, but feel free to use spot
+[00:39:27.440 --> 00:39:30.160]   for your use case. I'm going to do that.
+[00:39:30.160 --> 00:39:39.920]   You want to set the, uh, the container, um, to container disk to 200 gigabytes
+[00:39:39.920 --> 00:39:42.000]   so that you have enough room to install everything.
+[00:39:42.000 --> 00:39:50.960]   And then I'm going to deploy spot. It's going to be a bit slow, but you know, feel free to ask any
+[00:39:50.960 --> 00:39:57.040]   questions. And, uh, I feel like this way we'll take it slow, but we'll make sure everything is understood
+[00:39:57.040 --> 00:40:04.480]   by everybody. So what, what's happening now is that this, uh, pot is spinning up. Uh, one thing to note
+[00:40:04.480 --> 00:40:11.040]   here is that it has a specific image of, uh, torch with a specific CUDA version. It's very important
+[00:40:11.040 --> 00:40:16.720]   that, uh, node has GPUs. And the first thing we're going to, we're going to do is that once this pod
+[00:40:16.720 --> 00:40:22.080]   comes up, you're going to check that it has everything related to GPUs running fine.
+[00:40:25.040 --> 00:40:36.000]   So this is starting up now. I'm going to connect. It gives you nothing sensitive here. It uses your SSH
+[00:40:36.000 --> 00:40:41.120]   keys, but, uh, the names are not sensitive. So I'm going to just do that. Log into that box.
+[00:40:45.920 --> 00:40:50.480]   Uh, sorry. Oh, okay. Sorry. Yeah. Yeah. This is much smaller.
+[00:40:50.480 --> 00:41:08.880]   I think the part is still spinning up. So it's taking a bit of time.
+[00:41:12.880 --> 00:41:18.560]   Hmm. Okay. All right. So to test that everything is set up properly.
+[00:41:18.560 --> 00:41:21.680]   Just, uh, is it possible to scroll it to the top of the screen?
+[00:41:21.680 --> 00:41:22.240]   Oh, yeah.
+[00:41:22.240 --> 00:41:31.360]   Okay, great. So we are on this machine that we spin up. You're going to run NVIDIA SMI
+[00:41:31.360 --> 00:41:37.200]   to make sure that the GPU is available. And this is what you should see. Uh, one thing to note here
+[00:41:37.920 --> 00:41:47.600]   is this portion, which shows that the GPU has, uh, more than 24 gigs of memory the RTX 4090 has.
+[00:41:47.600 --> 00:41:52.960]   And right now it's using one memory. I think it does some, uh, some stuff like it was by default.
+[00:41:52.960 --> 00:41:54.640]   So one mag is already taken.
+[00:41:58.000 --> 00:42:05.200]   So now we're going to go back to a workshop and then just follow these instructions.
+[00:42:05.200 --> 00:42:13.280]   Manual engine build. We are at this point. Uh, and now we're going to install Tencer RTLM.
+[00:42:13.280 --> 00:42:19.360]   This is going to take a bit of time. Tencer RTLM comes as a Python library that you just pip install.
+[00:42:19.360 --> 00:42:24.960]   And that's all we're doing. We're setting up the dependencies. This APD update is setting up the Python
+[00:42:24.960 --> 00:42:31.840]   environment, uh, open MPI and other things. And then we just install and start the LLM, uh, from,
+[00:42:31.840 --> 00:42:38.000]   not from PyPy, but from NVIDIA's own PyPy. That's where we find the right versions. If you focus on this
+[00:42:38.000 --> 00:42:44.960]   line, uh, let me kick this off. Then I can come back here and show you that we're using a specific
+[00:42:44.960 --> 00:42:53.120]   version of Tencer RTLM. And, uh, we need to tell it to get it from the NVIDIA PyPy using these instructions.
+[00:42:53.920 --> 00:42:57.760]   And all these are on the GitHub repo. If you want to follow from there.
+[00:42:57.760 --> 00:43:05.360]   I saw a guy with a camera. So I started posing.
+[00:43:05.360 --> 00:43:13.520]   Uh, I think 310, I think. 310. Yes.
+[00:43:18.160 --> 00:43:21.920]   Uh, this, uh, this command should have instructions to install.
+[00:43:21.920 --> 00:43:28.960]   I also, I want to check in with the room. Has anyone else had success getting one part up and going,
+[00:43:28.960 --> 00:43:34.880]   uh, using your, using your phone wifi? It's working. Okay. Okay. Awesome. Crisis supported.
+[00:43:34.880 --> 00:43:39.600]   Thank you so much to, uh, to whoever from, from over there suggested the idea to begin with.
+[00:43:39.600 --> 00:43:46.160]   Really save the day. Great. So we're just waiting for it to build. It takes some time.
+[00:43:46.160 --> 00:43:51.680]   This is, this is the best part of the job. You know, you wait for it to build. You can go get a snack.
+[00:43:51.680 --> 00:43:55.920]   You can go like change your laundry. It's a very convenient that it takes this time sometimes.
+[00:43:55.920 --> 00:43:59.920]   It used to be compilation takes time. Now engine build takes time. Yeah.
+[00:43:59.920 --> 00:44:05.040]   I think you're very close.
+[00:44:05.040 --> 00:44:10.720]   And I promise like, then the fun part begins.
+[00:44:10.720 --> 00:44:16.400]   Are you saying that pip install isn't the fun part? I think this is pretty fun. You know, look, look,
+[00:44:16.400 --> 00:44:21.920]   look at all this, look at all this lines. You know, this is, this is, this is real coding right here.
+[00:44:21.920 --> 00:44:28.240]   And if you want pip to feel like more fun, try poetry. Oh, that's true. Poetry is really fun.
+[00:44:28.240 --> 00:44:34.400]   Yeah. Nvidia does publish these images on their container history called NGC.
+[00:44:34.400 --> 00:44:39.120]   And there are Triton registries, uh, available for these things. Maybe we should have used that rather
+[00:44:39.120 --> 00:44:45.360]   than run pod, but, uh, it's all good. So, uh, now let's check that tensor ID LLM is installed.
+[00:44:45.360 --> 00:44:51.360]   And this will just, uh, tell us that, uh, everything is good.
+[00:44:51.360 --> 00:44:55.520]   So it printed the version. You should see that if everything's working fine.
+[00:44:55.520 --> 00:44:58.400]   And then we're going to do the real thing.
+[00:44:58.400 --> 00:45:04.720]   Now we're going to clone the tensor ID LLM repository where a lot of those examples are.
+[00:45:04.720 --> 00:45:10.960]   And I'll, I'll show you those examples while this, uh, this cloning happens shouldn't take that much
+[00:45:10.960 --> 00:45:16.240]   long. Maybe, uh, maybe a minute or so, but tensor ID LLM has a lot of examples.
+[00:45:16.960 --> 00:45:22.320]   Uh, if you go to the tensor ID LLM repository, there are these examples folder and there are a ton
+[00:45:22.320 --> 00:45:28.560]   of examples. Like, uh, Philip mentioned there are about 50 examples. And we're going to go through
+[00:45:28.560 --> 00:45:35.600]   the LLM example here. So if you search for LLM, uh, that's the one we are going to look into.
+[00:45:35.600 --> 00:45:44.480]   And so the cloning is complete. And we go back to these instructions. And now we're going to actually
+[00:45:44.480 --> 00:45:50.000]   build the engine. Actually, one more thing. Uh, how many of you know about HF transfer?
+[00:45:50.000 --> 00:45:53.280]   Have you used the Transformers library from Hugging Face?
+[00:45:53.280 --> 00:46:00.720]   So HF transfer is a fast way of downloading and uploading your engines. It does slides download.
+[00:46:00.720 --> 00:46:06.640]   It takes the URL and patches them up into slices, downloads them all in parallel. And it works really,
+[00:46:06.640 --> 00:46:11.920]   really fast. It goes up to like one gig a second. So we should definitely do that, which is what I did
+[00:46:11.920 --> 00:46:17.920]   just now. Now we're going to follow this step by step. Uh, first thing we're going to do is download
+[00:46:17.920 --> 00:46:23.760]   from Hugging Face. And, uh, let's see like how fast the wifi here is, uh, how fast this downloads.
+[00:46:23.760 --> 00:46:27.840]   So not bad. It's going at one gigs a second. So HF all, yeah.
+[00:46:27.840 --> 00:46:34.560]   Oh, from, oh, you're right. You're right. You're right. See, but this is, uh, this is what I call
+[00:46:34.560 --> 00:46:42.160]   good software. Downloads at one gig a second. Now we, now first thing to build with TensorRD LLM is
+[00:46:42.160 --> 00:46:48.640]   that we have to convert, uh, the Hugging Face checkpoint into a checkpoint format that TensorRD LLM works
+[00:46:48.640 --> 00:46:54.480]   with. And, uh, checkpointing also covers tensor parallelism and quantization. Sometimes you need a
+[00:46:54.480 --> 00:46:59.680]   different kind of checkpoint for doing those things. So I'm going to run this command to convert the
+[00:46:59.680 --> 00:47:03.680]   checkpoint. And this should be pretty fast. It's just converting weights to weights.
+[00:47:03.680 --> 00:47:13.680]   That's pretty fast, like three seconds. Uh, and now we do the actual build.
+[00:47:13.680 --> 00:47:20.000]   And I'm going to do this basic build here. Uh, there are a ton of options that this command takes.
+[00:47:20.000 --> 00:47:24.880]   The TRT LLM build command. Uh, in here, we are just saying that, uh, take this checkpoint
+[00:47:24.880 --> 00:47:32.560]   and build me an engine with most of the default settings. And that should build the engine.
+[00:47:32.560 --> 00:47:41.360]   Now it will print a lot of stuff about what it's doing, what it's finding and how it's optimizing and
+[00:47:41.360 --> 00:47:46.640]   all that. Uh, it won't make much sense right now, but, uh, later on, this could be very useful.
+[00:47:46.640 --> 00:47:53.120]   So the engine was built as pretty fast, right? It's a small, uh, model, uh, only a billion parameters.
+[00:47:53.120 --> 00:47:57.600]   So that was pretty fast. And now let's, uh, let's try to see how big the engine is.
+[00:47:57.600 --> 00:48:04.080]   I'm going to do that. And the engine is, uh, two gigs in size. This is about how big that model is
+[00:48:04.080 --> 00:48:11.840]   on hugging face. So it's, uh, the engine itself adds very little, uh, storage or memory. It's maybe like,
+[00:48:11.840 --> 00:48:17.360]   Uh, hundreds of megabytes, but very tiny compared to the overall and those weights are bundled into
+[00:48:17.360 --> 00:48:22.720]   the engine. And what is this engine? This engine is something that the tensor RT LLM
+[00:48:22.720 --> 00:48:30.800]   runtime can take and it can execute it. Uh, you can think of it like a shared library. It's, uh,
+[00:48:30.800 --> 00:48:38.000]   it's kind of kind of like a binary in the standard format that the binaries are in. Uh, but it's,
+[00:48:38.000 --> 00:48:43.200]   it's something that tensor RT LLM can take and interpret. Ultimately, it's a tensor RT engine
+[00:48:43.200 --> 00:48:49.600]   because that's what tensor RT LLM works with. It creates tensor RT, uh, engine and then tensor RT
+[00:48:49.600 --> 00:48:55.600]   is the one that loads it, but tensor RT LLM gives it these plugins that tensor RT understands and then
+[00:48:55.600 --> 00:49:01.840]   is able to make sense of it. And now let's execute this. So these, these examples also come with the,
+[00:49:01.840 --> 00:49:08.000]   come up with a, uh, come with a run script that we can run and we're gonna run that. So what this is
+[00:49:08.000 --> 00:49:15.280]   going to do is start up the engine and give it a very tiny request and we should expect a response.
+[00:49:15.280 --> 00:49:21.440]   And that's what happened here. Our engine was launched. We gave it an input text of born in
+[00:49:21.440 --> 00:49:27.440]   Northeast France. So we're trained as a, and the model printed out the response beyond that
+[00:49:27.440 --> 00:49:34.720]   that painter in Paris moving before moving to London in 929. And this is a standard, uh, example
+[00:49:34.720 --> 00:49:39.760]   that comes with tensor RT LLM. So if you follow along these instructions, you should see that
+[00:49:39.760 --> 00:49:43.120]   Any questions at this point?
+[00:49:43.120 --> 00:49:58.160]   The convert, the question is what happens during the convert checkpoint? Uh, I think
+[00:49:58.160 --> 00:50:05.120]   there are three things that happen, uh, potentially three things. First thing is that tensor RT LLM needs
+[00:50:05.120 --> 00:50:10.720]   the tensors to be in a specific format to work with. So think of it as a pre-processing. There are many
+[00:50:10.720 --> 00:50:17.280]   ways of specifying a model. It can be on hugging face. It can be exported from PyTorch. It can be onyx.
+[00:50:17.280 --> 00:50:21.680]   There are many, many different ways of specifying these models. So the first thing it does is that it
+[00:50:21.680 --> 00:50:27.440]   converts that into a format that it understands. So it does some kind of translation into a standard
+[00:50:27.440 --> 00:50:35.680]   structure. Second thing is quantization. For quantization, it needs to, uh, quantize the weights.
+[00:50:35.680 --> 00:50:41.760]   It needs to take the weights and quantize them into the quantized versions of them. And that happens at
+[00:50:41.760 --> 00:50:46.960]   convert checkpoint too. Uh, not necessarily though. They also have a quantized script. Some of those, uh,
+[00:50:46.960 --> 00:50:52.720]   quantizations happen. Some types of quantizations happen in convert checkpoint, but they also have a
+[00:50:52.720 --> 00:50:58.640]   different way of quantizing. They call it, I think, uh, ammo. There's a library called ammo, which does that.
+[00:50:58.640 --> 00:51:05.520]   Uh, and that can also be used for doing it. But, uh, I think AWQ and, uh, smooth quant, they happen in
+[00:51:05.520 --> 00:51:10.560]   convert checkpoint. And, uh, third thing is tensor parallelism. For tensor parallelism, you need to
+[00:51:10.560 --> 00:51:17.680]   divide the weights, uh, into different categories for the different GPUs that they will run on. So it does
+[00:51:17.680 --> 00:51:22.320]   use that during convert checkpoint as well.
+[00:51:22.320 --> 00:51:24.320]   Thank you. Yes.
+[00:51:24.320 --> 00:51:29.600]   All right. Uh, uh, uh, uh, me too.
+[00:51:29.600 --> 00:51:37.600]   .
+[00:51:37.600 --> 00:51:55.520]   Yeah. So there's, there's two places that the max output is set. Um, so the first place is when you're
+[00:51:55.520 --> 00:52:02.720]   actually building the engine, you give it a argument for the expected output sequence length. And then
+[00:52:03.360 --> 00:52:07.920]   that's, that's more just sort of like for the optimization side, you know, so that you're selecting
+[00:52:07.920 --> 00:52:13.120]   the correct CUDA kernels. And so that you're, you know, batching everything up correctly. And then
+[00:52:13.120 --> 00:52:19.120]   once the engine is built, it just uses a standard, I think it's, uh, max tokens, right, is the parameter. Um,
+[00:52:19.120 --> 00:52:25.280]   and yeah, you just, you just pass max tokens and that'll, you know, limit, um, how, how long it runs for.
+[00:52:25.280 --> 00:52:31.200]   Yeah, I guess what I'm asking is, does it influence the generation before generating happens?
+[00:52:31.200 --> 00:52:35.760]   Yeah.
+[00:52:35.760 --> 00:52:41.760]   Right. Like, are you asking if you, if you make the engine with a shorter, um, output, see,
+[00:52:41.760 --> 00:52:42.960]   Oh, okay.
+[00:52:42.960 --> 00:52:51.280]   No, I, I, as far as I know, the Mac, all the max token does is it just cuts off influence after a certain
+[00:52:51.280 --> 00:52:52.240]   number, right?
+[00:52:52.240 --> 00:52:58.480]   Yeah. So the, the way, uh, I would put it is that normally if you give it a large number of max tokens,
+[00:52:59.120 --> 00:53:06.560]   it would emit, uh, uh, end of sequence token. Most models have a different end of sequence token and
+[00:53:06.560 --> 00:53:11.120]   it's up to you. You can stop there. You can configure at runtime. Like I don't want more than that,
+[00:53:11.120 --> 00:53:15.680]   but you can also tell it ignore end of sequence. I just want the whole thing.
+[00:53:15.680 --> 00:53:19.680]   And we do need it for performance benchmarking. For example, when we are comparing performance
+[00:53:19.680 --> 00:53:25.200]   across different GPU types or whatnot, we want all of those tokens to be generated so we can tell it,
+[00:53:25.200 --> 00:53:26.240]   like, give me all of them.
+[00:53:26.240 --> 00:53:28.240]   Thank you.
+[00:53:28.240 --> 00:53:28.800]   Welcome.
+[00:53:28.800 --> 00:53:37.680]   In the back there.
+[00:53:37.680 --> 00:53:45.440]   Oh, great. Great question, actually. So, uh, in build checkpoint, a lot of stuff is happening.
+[00:53:45.440 --> 00:53:52.560]   You're taking these weights and you're, uh, you're generating this thing called a network in
+[00:53:52.560 --> 00:53:59.040]   TensorRD. TensorRD has this notion of a network and what you need to do is populate that network
+[00:53:59.040 --> 00:54:05.120]   with your weights and architectures. So it actually does that. It creates that network and feeds it
+[00:54:05.120 --> 00:54:11.200]   these weights. It also does inference during building the engine, uh, for doing optimizations. So it
+[00:54:11.200 --> 00:54:18.400]   generates for every model type. It has a mechanism of generating sample input and it passes that into the
+[00:54:18.400 --> 00:54:25.520]   a TensorRD engine that it's generating and then it optimizes it that way. And as, uh, as a result,
+[00:54:25.520 --> 00:54:31.520]   this TensorRD engine is generated in memory, which is then serialized. So all of this is happening in that.
+[00:54:31.520 --> 00:54:39.920]   And these, uh, there's a lot of nuance to it. Uh, if you get a chance, you can look at the source code
+[00:54:39.920 --> 00:54:45.840]   for that TRDLM build. I'll post references in that GitHub repo and you can follow on. There's lots of options,
+[00:54:45.840 --> 00:54:50.960]   but let me try if I can find a help here.
+[00:54:50.960 --> 00:55:01.920]   Ah, the VIP person.
+[00:55:01.920 --> 00:55:12.960]   What's going on? Sorry.
+[00:55:12.960 --> 00:55:28.160]   Oh yeah. This is law, a lot of stuff here that you can go through. Um,
+[00:55:28.160 --> 00:55:33.600]   uh, yeah, maybe I should go through some of them, which are very important.
+[00:55:33.600 --> 00:55:39.840]   Yeah. I think a lot of stuff is important here. Like the max beam width, if you're using beams for
+[00:55:39.840 --> 00:55:45.760]   uh, generating the graph, you can generate, uh, logits, not just the output tokens. We can also
+[00:55:45.760 --> 00:55:50.640]   generate logits if you want to process them. Uh, there are a lot of optimizations that you can use.
+[00:55:50.640 --> 00:55:55.040]   Like you can, there's a optimization called fused MLP. There is contrast chunking. There is,
+[00:55:55.040 --> 00:55:59.040]   there is a lot of stuff. I think you should play around with those, uh, at your time.
+[00:55:59.040 --> 00:56:00.560]   LoRa is very good to play around with.
+[00:56:00.560 --> 00:56:07.360]   Yeah. I'll try to leave some, uh, some more examples, uh, in the GitHub repo to try.
+[00:56:07.360 --> 00:56:12.800]   Uh, okay. So let me go to the next one. Just, uh, uh, one more thing I want to do is, uh,
+[00:56:12.800 --> 00:56:19.600]   FPA quantization. Uh, RTX 4090 is, is actually an amazing GPU. It's pretty cheap, but supports FPA.
+[00:56:19.600 --> 00:56:25.600]   So we're going to do an FPA engine build now. So in this case, uh, like I said,
+[00:56:25.600 --> 00:56:30.080]   like some of these optimizations, these, uh, quantizations are not in convert checkpoint,
+[00:56:30.080 --> 00:56:36.400]   but quantize.py, which uses a library called ammo in NVIDIA. So I'm going to run that now.
+[00:56:36.400 --> 00:56:44.560]   And, uh, yeah, let me spend some time here. We are, we're saying is we're telling it that the
+[00:56:44.560 --> 00:56:52.400]   quantization format is FPA, but also note that we are saying KV cache D type is FPA. So FPA quantization
+[00:56:52.400 --> 00:56:59.360]   actually can happen at two levels. You can wait quantize to FPA, but you can also quantize the KV cache
+[00:57:00.160 --> 00:57:08.160]   with FP8 and doing both is very critical because, uh, these GPUs, they, you might have heard of things
+[00:57:08.160 --> 00:57:12.880]   called tensor cores, right? Tensor cores are very, very, very important because they can do
+[00:57:12.880 --> 00:57:21.280]   quantize calculations very fast. For example, if you look at a spec of the H100 GPU, you can see that
+[00:57:21.280 --> 00:57:26.000]   the teraflops that you can get, number of computation that you can get with lower quantization options
+[00:57:26.000 --> 00:57:32.880]   are much more than higher. For example, FP16 teraflops will be much lower than FP8 because
+[00:57:32.880 --> 00:57:38.720]   you can use this special tensor cores for doing more FP8 computations in the same time that you would
+[00:57:38.720 --> 00:57:45.440]   do FP16. But for that to happen, both sides of the matrix have to be the same quantization type. Mixed
+[00:57:45.440 --> 00:57:50.800]   precision doesn't exist. At least now it's not very common or popular. So you want both sides to be
+[00:57:50.800 --> 00:57:57.680]   quantized. And when you quantize both the KV cache and the weights to FP8, you get that extra unlock,
+[00:57:57.680 --> 00:58:04.800]   that your computation is also faster, which can be critical for scenarios which are compute bound.
+[00:58:04.800 --> 00:58:10.640]   And as you would know in LLMs, there's a context phase and generation phase. Generation phase is memory
+[00:58:10.640 --> 00:58:17.040]   bandwidth bound. But the context phase is compute bound. So that can benefit greatly from both sides
+[00:58:17.040 --> 00:58:23.600]   being quantized. So in this case, we are saying that quantize both weights and KV cache. And it's actually
+[00:58:24.480 --> 00:58:30.400]   not a trivial decision to do that because weights quantize very easily. You hardly lose anything
+[00:58:30.400 --> 00:58:35.760]   when you quantize weights. The dynamic range of weights is generally much, much smaller. You can use
+[00:58:35.760 --> 00:58:43.440]   Int8 or when you do FP8, there is hardly any loss. KV cache doesn't quantize as well. And that's why
+[00:58:43.440 --> 00:58:49.280]   FP8 is a game changer. Because what we found is that when you quantize the KV cache with Int8, even using
+[00:58:49.280 --> 00:58:54.800]   smooth quant, there is still degradation of quality. And practically, we've never seen anybody use it.
+[00:58:54.800 --> 00:58:59.360]   Even though there are a lot of papers about it. And it's great, great technology. But practically,
+[00:58:59.360 --> 00:59:04.480]   it was not there until FP8. FP8 even KV cache quantization works extremely well.
+[00:59:04.480 --> 00:59:10.080]   Let me show something with that, actually, if you don't mind. Back on the...
+[00:59:14.160 --> 00:59:24.640]   If we go to... I'll just show like a little visualization for FP8 that shows off the dynamic range.
+[00:59:24.640 --> 00:59:37.120]   So... Oh, hey, look, it's us. Yeah, so when you look at the FP8 data format, it has a sign. And then rather
+[00:59:37.120 --> 00:59:43.600]   than... So there's two different FP8 data formats. But we're using the, you know, the e4m3 format.
+[00:59:43.600 --> 00:59:50.400]   So basically, you have four bits dedicated to an exponent. And that's what gives your FP8 data
+[00:59:50.400 --> 00:59:57.120]   format a lot of dynamic range versus Int8, which is just, you know, like what, like 256 to...
+[00:59:57.120 --> 01:00:03.760]   256. Yeah, so... So you still have the same number of possible values, but they're spread apart further.
+[01:00:03.760 --> 01:00:09.760]   That's dynamic range. And it's that which allows you to quantize this much more sensitive KV cache.
+[01:00:09.760 --> 01:00:15.840]   Yeah. Yeah, exactly. Basically, you have the... My teacher and the exponents, you basically are able to
+[01:00:15.840 --> 01:00:23.200]   quantize smaller values better, give more bits to smaller scale than larger scale. You don't have
+[01:00:23.200 --> 01:00:29.760]   to fit into a linear scale. And that's where FP8 excels. So going back to the presentation, the FP8
+[01:00:29.760 --> 01:00:36.720]   quantization is done. And I forgot to show you this, but there is calibration involved here. If you look at this
+[01:00:36.720 --> 01:00:43.600]   stack here, we actually give it some data. We feed it some data and let it calibrate. Because as you
+[01:00:43.600 --> 01:00:49.120]   would know, in Tate and FP8, you have a start and end range. And they differ in how you divide up that
+[01:00:49.120 --> 01:00:55.200]   range into data points. But you have to find million max. And for that, you need calibration. So we give it
+[01:00:55.200 --> 01:00:59.920]   a standard data set and you can change the data set. But we give it a specific data set and it does
+[01:00:59.920 --> 01:01:05.520]   multiple runs. And we try to calibrate, like, what are the dynamic ranges of each of the layers of this
+[01:01:05.520 --> 01:01:11.600]   transformer architecture. And based upon that, we specify that million max for each layer separately.
+[01:01:11.600 --> 01:01:14.400]   There's more detail there, but at the high level, that's what is happening.
+[01:01:14.400 --> 01:01:29.840]   Yeah, yeah, it's possible that the ranges can vary a lot with data set. And this used to be more
+[01:01:29.840 --> 01:01:35.840]   critical with Intate. With FP8, we found that you get to a good state pretty fast. But it's worth
+[01:01:35.840 --> 01:01:40.960]   thinking about trying different data sets, especially if you know what data set you are going to be calling
+[01:01:40.960 --> 01:01:46.000]   it with. It could be worth it. It just works very well out of the box. But it's not perfect.
+[01:01:46.000 --> 01:01:54.960]   Going back to the workshop. So we were following along here. And yeah, so after you quantize it,
+[01:01:54.960 --> 01:02:06.240]   the steps are very similar as before. Now we are building an engine with FP8. And internally, all the
+[01:02:06.240 --> 01:02:13.040]   CUDA kernels that are being used are now FP8-specific. They are different kernels which use the tensor cores
+[01:02:13.040 --> 01:02:17.840]   in the right fashion. And this should be pretty quick as well.
+[01:02:17.840 --> 01:02:30.960]   And there's a lot of depth here as you learn more about it. You don't need to, but there are things like
+[01:02:30.960 --> 01:02:37.360]   timing cache. There are optimization profiles in tensor RT through which you tell what sizes we expect and
+[01:02:37.360 --> 01:02:44.400]   it does optimizations. But this is a good beginning. So now we have the engine. Let me do a DU on that
+[01:02:44.400 --> 01:02:53.040]   and to see the size of that engine now. And the size is 1.2 gigs, which is about half of previous,
+[01:02:53.040 --> 01:02:59.840]   and which is what we expect because we quantized. And now let's run this engine and see the output and
+[01:02:59.840 --> 01:03:06.320]   it should be pretty similar to what we saw before. So using this run script, now it's going to load the
+[01:03:06.320 --> 01:03:12.720]   engine and then we'll do an inference on top. That should be pretty quick. So yeah, here's the output,
+[01:03:12.720 --> 01:03:19.840]   the same input as before. And about the same output as before. And that's what we generally observe
+[01:03:19.840 --> 01:03:23.760]   with FP8. FP8 quality is really, really good. It's very, very hard to tell the difference.
+[01:03:23.760 --> 01:03:28.960]   And that's it for this workshop, this part of the workshop.
+[01:03:28.960 --> 01:03:35.920]   Yeah. Awesome. Thank you. So, you know, I definitely welcome you to keep playing around
+[01:03:36.480 --> 01:03:43.600]   with this run pod setup and trying different things. Try to build different engines and stuff.
+[01:03:43.600 --> 01:03:52.160]   But we're going to move on to the next step, which is an automated version of basically exactly what we
+[01:03:52.160 --> 01:04:01.680]   just did. So we're going to show a few things to make this easier. So we're going to be using for
+[01:04:01.680 --> 01:04:07.680]   this next step, something called trust. Trust is an open source model serving framework developed
+[01:04:07.680 --> 01:04:13.120]   by us here at base 10. Punkage is the one who, you know, actually wrote a lot of the code. All I did was
+[01:04:13.120 --> 01:04:18.400]   name it trust because I was riding on a train and I was like, huh, what should I call the framework? And
+[01:04:18.400 --> 01:04:23.200]   then we run over a bridge and I was like, I know, I'll call it bridge. But that was already taken. So I
+[01:04:23.200 --> 01:04:29.760]   called it trust. So it lets you deploy models with Python instead of, you know, building a Docker image
+[01:04:29.760 --> 01:04:36.480]   yourself. It gives you a nice live reload dev loop. And what we really wanted to focus on when we were
+[01:04:36.480 --> 01:04:41.600]   building this, because it's kind of the technology that sits under our entire model serving platform,
+[01:04:41.600 --> 01:04:46.480]   is we really wanted a lot of flexibility so that we could work with, you know, things like tensor RT,
+[01:04:46.480 --> 01:04:51.600]   tensor TLM. You can run it with VLM, Triton. You can, you know, run a transformers model,
+[01:04:51.600 --> 01:04:56.000]   a diffusers model. You can put an XGBoost model in there if you're still doing ML. Like you can do
+[01:04:56.000 --> 01:04:58.640]   basically whatever you want with it. It's just Python code.
+[01:04:58.640 --> 01:05:05.440]   If I may interject like trust is actually a very simple system. It's a way of running Python code,
+[01:05:05.440 --> 01:05:10.560]   specifying an environment for running the Python code and your Python code. So it's sort of like a very
+[01:05:10.560 --> 01:05:16.240]   simple packaging mechanism, but built for machine learning models. It takes account of the typical
+[01:05:16.240 --> 01:05:21.280]   things you would need with the machine learning models, like getting access to data, passing security,
+[01:05:21.280 --> 01:05:26.720]   secure tokens and such. But it's fundamentally a very, very simple system. Just a conflict file
+[01:05:26.720 --> 01:05:35.360]   and some Python code. Exactly. And so looking at that config file, we're not even actually going to
+[01:05:35.360 --> 01:05:41.600]   write any Python code today for the model server. We're just going to write a quick config. So actually
+[01:05:41.600 --> 01:05:46.320]   this morning I was eating breakfast here and I sat down with a group of engineers and we were talking
+[01:05:46.320 --> 01:05:51.040]   about stuff and everyone was complaining about YAML and how they're always getting like type errors when
+[01:05:51.040 --> 01:05:58.000]   they write YAML. So unfortunately this is going to be a YAML system. So apologies to my new friends from
+[01:05:58.000 --> 01:06:04.960]   breakfast. But what we're going to do is use this as basically an abstraction on top of trtllm.
+[01:06:04.960 --> 01:06:14.400]   Pankaj, quick question for you. What's the name of that C++ textbook you were reading before bed every
+[01:06:14.400 --> 01:06:22.160]   night the other month? Modern C++. What? Modern C++. Yeah, C++. So you know,
+[01:06:22.160 --> 01:06:29.920]   before bed every night I was watching Survivor. And so for those of us who are not
+[01:06:30.720 --> 01:06:36.720]   cracked software engineers and even for those who want to get things done quickly, we want to have a
+[01:06:36.720 --> 01:06:41.360]   great abstraction. What does that abstraction need to be able to do? It needs to be able to build an engine.
+[01:06:41.360 --> 01:06:46.560]   And that engine needs to take into account what model we're going to run, what GPU we're going
+[01:06:46.560 --> 01:06:51.920]   to run it on, the input and output sequence links, the batch size, quantization, any of the other
+[01:06:51.920 --> 01:06:57.520]   optimizations we want to do on top of that. And then we also want to not just grab that and run
+[01:06:57.520 --> 01:07:02.560]   it in the GPU part somewhere, we actually want to deploy it behind an API endpoint so that, you know,
+[01:07:02.560 --> 01:07:10.080]   we can integrate it into our product and stuff. So I'm going to show how to do that. Let's see here.
+[01:07:10.080 --> 01:07:17.120]   This is yours now. I'm stealing. Oh, this is a good mic. I might not give this back, Pankaj. This is a good mic.
+[01:07:18.000 --> 01:07:28.080]   All right. So we're going to go over. Let's see. This is in the one pod thing still.
+[01:07:28.080 --> 01:07:29.840]   Yeah, I need to go to the first one.
+[01:07:29.840 --> 01:07:32.560]   Uh, great. The second one.
+[01:07:32.560 --> 01:07:33.920]   Perfect.
+[01:07:33.920 --> 01:07:37.040]   It's not this. Let me go to the workshop.
+[01:07:37.040 --> 01:07:42.480]   Okay. Yeah, you do that. This is his computer, not my computer. So I don't know where anything is.
+[01:07:43.200 --> 01:07:47.120]   It's like, uh, walking into someone else's house. There you go.
+[01:07:47.120 --> 01:07:53.840]   All right. Thank you. Thank you so much. Um, okay. So, um, what we're going to do in this,
+[01:07:53.840 --> 01:08:02.800]   in this second step is we are going to do basically exactly the same thing we just did. Um, just automated.
+[01:08:03.600 --> 01:08:08.880]   So for this step, we're going to use base 10, um, we're going to give you all some, some GPUs to play
+[01:08:08.880 --> 01:08:13.920]   with you. Um, so if you want to follow along, I really encourage you to do so. Um, you're going to
+[01:08:13.920 --> 01:08:18.240]   go sign up at base 10. We're going to, you know, your account will automatically get free credits.
+[01:08:18.240 --> 01:08:24.880]   If, um, our fraud system is a little freaked out by everyone, uh, signing up at the same time. Well,
+[01:08:24.880 --> 01:08:31.360]   fortunately, uh, we have some, uh, admin panel access ourselves over here. So we'll just unplug this,
+[01:08:31.360 --> 01:08:38.240]   approve you all and plug it back in. Um, so yeah, so everyone go ahead and, um, sign up for base 10.
+[01:08:38.240 --> 01:08:44.400]   We're also going to want you to make an API key real quick and save that. Um, and then once that's
+[01:08:44.400 --> 01:08:50.640]   all done, we're going to jump into this, uh, this part of the, of the project.
+[01:08:50.640 --> 01:09:04.480]   Okay. Everyone. So I know there's a, a few errors going on. Um, we have, we have pinged the team about
+[01:09:04.480 --> 01:09:09.600]   that. Let me let you in on a little secret. Uh, we shipped this on Thursday as an internal beta,
+[01:09:09.600 --> 01:09:15.200]   and this is the very first time anyone who doesn't have an at base 10.co email address
+[01:09:15.200 --> 01:09:20.160]   is using our, uh, new tensor RT LLM build system. So if there, uh,
+[01:09:20.160 --> 01:09:29.760]   if, uh, yeah, so, uh, sorry for tricking you all into beta testing our software. Um, but hey,
+[01:09:29.760 --> 01:09:34.400]   that's what demos are for, right? So, uh, we'll, we'll get that sorted out. In the meantime,
+[01:09:34.400 --> 01:09:39.920]   we have an image cached locally, which means we can keep going with the demo as if nothing ever happens.
+[01:09:39.920 --> 01:09:50.880]   So, um, let's see. So what you, uh, what you would see in the logs as you, uh, build, as you, uh,
+[01:09:50.880 --> 01:09:57.360]   deploy this. Yep. Yeah. Oh, well, I mean, I can just kind of look through the, look through the logs right
+[01:09:57.360 --> 01:10:02.400]   here. Um, let me actually just, let me just, uh, wake it up. Sorry. What was that?
+[01:10:02.400 --> 01:10:18.640]   Okay. Yep. Yep. Yep. I got you. Um, yep. All right. Big logs. Um, let's see. All right. So, um,
+[01:10:20.240 --> 01:10:25.760]   what, what, what you're seeing here, um, as we, oh, I'm sorry, we got a, we got a lot of logs here.
+[01:10:25.760 --> 01:10:34.240]   Um, right. Cause we tested a bunch with the scale up. Um, anyway, what you see is, uh, you see the
+[01:10:34.240 --> 01:10:40.800]   engine getting built, um, and then, and then deployed and to walk through the YAML code really quick.
+[01:10:40.800 --> 01:10:47.360]   Uh, yes here. So we talked about that there are a bunch of different settings that you need to do
+[01:10:47.360 --> 01:10:52.960]   when you are working with TRT LLM. Um, and you can set all these settings right here and build.
+[01:10:52.960 --> 01:10:58.480]   So right now we're doing something with an input sequence and output sequence of 2000 tokens each,
+[01:10:58.480 --> 01:11:04.800]   um, and a batch size of 64 concurrent requests. Um, we're using the int eight quantization because
+[01:11:04.800 --> 01:11:11.040]   we're running on a, a 10 and that does not support at FP eight because it's an ampere GPU,
+[01:11:11.040 --> 01:11:16.160]   which is one generation before FP eight support. Um, and then of course you, you pull in your,
+[01:11:16.160 --> 01:11:24.320]   uh, model and stuff. And then if we want to, you know, call the model to test that it is working,
+[01:11:24.320 --> 01:11:32.320]   um, we can come over here, um, to the call model. Um, we can just test this out really quick.
+[01:11:32.320 --> 01:11:42.480]   Yes. Um, so we do not, um, on base 10, we have T fours, a tens, a one hundreds,
+[01:11:42.480 --> 01:11:48.000]   H one hundreds and H one hundred Migs and L fours as well. Um, we, we generally stick with the more
+[01:11:48.000 --> 01:11:52.240]   like data center type GPUs, um, rather than the consumer GPUs.
+[01:11:52.240 --> 01:12:01.200]   Yeah, uh, I want one for, uh, for, um, um, well, punctuation so I'm going to say that I want it for
+[01:12:01.200 --> 01:12:06.160]   legitimate business purposes and it should be an improved, approved expense. Uh, I don't want it
+[01:12:06.160 --> 01:12:18.320]   for playing video games. Definitely not. So yes.
+[01:12:18.320 --> 01:12:28.320]   No, but I bet he can. All of that, uh, all of the scores code is open source. And typically
+[01:12:28.320 --> 01:12:32.480]   when new models come up, those companies provide, uh, convert checkpoints scripts.
+[01:12:32.480 --> 01:12:37.040]   Uh, but if you can follow those scripts, it's not terribly difficult. It's mostly
+[01:12:37.040 --> 01:12:43.840]   like, uh, if you're familiar with the transformers library, it's about reading weights from a hugging
+[01:12:43.840 --> 01:12:49.440]   force transformer model and converting that into something. Yeah, this is simple transformation.
+[01:12:49.440 --> 01:12:51.680]   So it should be possible to do it yourself if you want.
+[01:12:51.680 --> 01:13:01.760]   Awesome. So once, once your model's deployed again, you can, you know, you can just test it
+[01:13:01.760 --> 01:13:08.480]   really quick. You can call it with a API end points. Um, but, uh, yeah, we're coming up on,
+[01:13:08.480 --> 01:13:14.960]   on two 30 here. So I'm not going to spend too long on this example. Um, let's see,
+[01:13:14.960 --> 01:13:21.040]   but you know, we've been talking a big game up here about performance, right? And performance
+[01:13:21.040 --> 01:13:26.560]   is not just, okay, I'm testing it by myself. Performance is in production for my actual users.
+[01:13:26.560 --> 01:13:31.040]   Is this meeting my needs at a cost that is reasonable to me? And in
+[01:13:31.040 --> 01:13:35.360]   in order to, you know, validate your performance before you go to production,
+[01:13:35.360 --> 01:13:40.080]   you need to do benchmarking and you need to do a lot more rigorous benchmarking than just saying
+[01:13:40.080 --> 01:13:46.000]   like, Hey, you know, I, I called it, it seemed pretty fast. Um, so what do you want to measure
+[01:13:46.000 --> 01:13:51.440]   when you're benchmarking? Uh, uh, you know, say it with me, everyone. It depends. That's what a
+[01:13:51.440 --> 01:13:56.160]   software engineers are always saying. So, um, you know, depending on your use case, you might have
+[01:13:56.160 --> 01:14:00.480]   different things that you're optimizing for. If you're say like a live chat service,
+[01:14:00.480 --> 01:14:04.800]   uh, you probably really care about time to first token for your streaming output,
+[01:14:04.800 --> 01:14:08.960]   because you know, you're, you're trying to give people, you know, instantaneous responses.
+[01:14:08.960 --> 01:14:14.880]   Um, you might also care a lot about tokens per second. Um, so that's, you know, how many,
+[01:14:14.880 --> 01:14:21.200]   how many tokens are generated generally some, some good numbers to keep in mind is somewhere,
+[01:14:21.200 --> 01:14:25.760]   depending on the tokenizer and the data and everything and the reader, somewhere between
+[01:14:25.760 --> 01:14:30.160]   30 to 50 tokens per second is going to be about as fast as anyone can read.
+[01:14:31.120 --> 01:14:35.520]   So, you know, if you're at 50 tokens per second, generally, it's going to feel pretty fast.
+[01:14:35.520 --> 01:14:40.560]   People aren't going to be waiting for your output. However, if you're doing something like code,
+[01:14:40.560 --> 01:14:45.200]   you know, code takes more tokens per word than say natural language. So you're going to need even
+[01:14:45.200 --> 01:14:49.360]   more tokens per second for that, you know, nice, smooth output. And then from there getting into,
+[01:14:49.360 --> 01:14:54.480]   you know, 100, 200 tokens, that's when it just feels kind of, you know, magically fast.
+[01:14:54.480 --> 01:14:59.040]   But again, we'll, we'll, our inference is all about trade-offs, right? When we're optimizing.
+[01:14:59.040 --> 01:15:04.640]   So, you know, sometimes you might want to trade off a, you know, a few, you know, maybe,
+[01:15:04.640 --> 01:15:08.640]   maybe you're going to go at a hundred, not 120 tokens per second, because that gets you a bigger
+[01:15:08.640 --> 01:15:13.360]   batch size, which is going to lower your cost per million tokens. Another thing you're going to want
+[01:15:13.360 --> 01:15:17.040]   to look at, um, when you're running your benchmarks is your total tokens per second.
+[01:15:17.040 --> 01:15:22.880]   So there's the tokens per second per user, right? Like per request, how many tokens is your end user
+[01:15:22.880 --> 01:15:28.080]   seeing? And then there's tokens per second in terms of how many tokens is your GPU actually producing?
+[01:15:28.080 --> 01:15:33.120]   And that's a really important metric for throughput, for cost, um, especially if you're going to be
+[01:15:33.120 --> 01:15:38.800]   doing anything that's a little less than real time. Um, you want to look at this, not just once,
+[01:15:38.800 --> 01:15:44.560]   you want to look at the, uh, 50th, 90th, 95th, 99th percentile, make sure you're good with all those.
+[01:15:44.560 --> 01:15:47.200]   And you want to look at the effects of different batch sizes on this.
+[01:15:48.000 --> 01:15:53.040]   And, um, so something is that benchmarking actually reveals really important information.
+[01:15:53.040 --> 01:16:00.880]   It's not linear and it's not obvious. The sort of performance space of your model is not this nice,
+[01:16:00.880 --> 01:16:05.200]   nice flat piece of paper that goes linearly from batch size to batch size.
+[01:16:05.200 --> 01:16:11.600]   So this is a graph of time to first token for like a menstrual model that I ran a long time ago.
+[01:16:11.600 --> 01:16:16.240]   I just happened to have a pretty graph of it. So that's how it ended up in the presentation.
+[01:16:16.240 --> 01:16:23.040]   Um, so if you look at the batch sizes as it's, uh, you know, increasing, doubling, um, 32 to 64,
+[01:16:23.040 --> 01:16:29.200]   the time to first token like barely budges. Um, but as it goes from 64 to 128, doubling again,
+[01:16:29.200 --> 01:16:34.560]   the time to first token, uh, increases massively. And in this case, you know, the reason behind that
+[01:16:34.560 --> 01:16:40.320]   is we're, we're in the, you know, compute bound, um, pre-fill step. Um, when we're talking about
+[01:16:40.320 --> 01:16:45.600]   computing the first token and there's these different sort of slots that this computation could happen in.
+[01:16:45.600 --> 01:16:50.320]   And as you increase the bat, increase the batch size, you're saturating these slots until eventually
+[01:16:50.320 --> 01:16:54.480]   you have an increased chance of a slot collision. And that's, what's going to rocket your time to first
+[01:16:54.480 --> 01:16:59.520]   token. I'm glad you're nodding. I'm glad I got that right. Um, but yeah, all of this to, uh,
+[01:16:59.520 --> 01:17:05.840]   all of this to say, um, you know, the performance that you get out of your model once it's actually
+[01:17:05.840 --> 01:17:11.120]   built and deployed is not necessarily just going to be linear. It's not going to be something super
+[01:17:11.120 --> 01:17:16.720]   predictable. You have to actually benchmark your deployment before you put it into production.
+[01:17:16.720 --> 01:17:22.560]   Otherwise these sort of surprises can, can happen quite often. Um, so yeah. So Pankage,
+[01:17:22.560 --> 01:17:24.880]   do you want to take over the, uh, the benchmarking script?
+[01:17:24.880 --> 01:17:33.280]   So, um, just for this, uh, workshop, we wrote a benchmarking script. It's not the script we use
+[01:17:33.280 --> 01:17:39.440]   ourselves, but it's a simpler version so that you can follow along that if you wanted to modify it,
+[01:17:39.440 --> 01:17:44.560]   you can play around with it and understand it easily. Uh, if you go into that repository,
+[01:17:44.560 --> 01:17:50.800]   it's, uh, it's a very simple script where we send requests in parallel, just using Python, using async libraries.
+[01:17:51.840 --> 01:17:59.440]   And, uh, all you give it is the URL of the endpoint of the model where your model is deployed and you
+[01:17:59.440 --> 01:18:04.320]   can give it different concurrencies and input lands and output lands and give it number of runs.
+[01:18:04.320 --> 01:18:09.200]   You want to run these benchmarks a number of times to get, uh, an idea of values one might be off.
+[01:18:09.200 --> 01:18:16.080]   So I'm just going to run that script and it's all, it's all in the benchmark repository. Uh, it's all
+[01:18:16.080 --> 01:18:21.040]   structured using make files and there is a make file target for benchmark that we're going to use.
+[01:18:21.040 --> 01:18:26.160]   And, uh, I think the readme should also have instructions on that.
+[01:18:26.160 --> 01:18:36.160]   So we basically gonna run this and we're going to need the base URL. You need two things. We need to
+[01:18:36.160 --> 01:18:43.040]   export the API key and then we need to, uh, supply the URL. So once you deploy your model
+[01:18:43.040 --> 01:18:49.600]   on base 10, you, you would see deployed. And like Philip said, there is a call model button. There are
+[01:18:49.600 --> 01:18:56.800]   various ways you can deploy it. Ultimately it's an HTTP API and you can just copy this URL for that model for
+[01:18:56.800 --> 01:19:03.680]   our benchmarking script. But if you want to play around the examples in all kinds of, uh, languages and
+[01:19:03.680 --> 01:19:07.440]   you can also click streaming. So it'll give you a streaming code. Streaming is very important with
+[01:19:07.440 --> 01:19:12.800]   large language models because you want to see the output as soon as possible. So we're going to take this
+[01:19:12.800 --> 01:19:18.880]   output and, uh, I don't know if I exported the API key. So give me one second to export the API key.
+[01:19:22.000 --> 01:19:27.280]   Come on.
+[01:19:27.280 --> 01:19:33.520]   This is a good time to mention. Oh, yes.
+[01:19:33.520 --> 01:19:41.040]   This is a good time to mention.
+[01:19:41.040 --> 01:19:46.800]   This is a good time to mention.
+[01:19:46.800 --> 01:19:48.800]   I think it's a good time to mention.
+[01:19:48.800 --> 01:19:50.720]   I think it's a good time to mention.
+[01:19:50.720 --> 01:19:54.800]   I think it's a good time to mention.
+[01:19:54.800 --> 01:19:57.040]   I think it's a good time to mention.
+[01:19:57.040 --> 01:19:59.040]   It's a good time to mention.
+[01:19:59.040 --> 01:20:06.160]   You know, if you lose the API key, you can always revoke it.
+[01:20:06.160 --> 01:20:07.680]   So that's good.
+[01:20:07.680 --> 01:20:12.080]   Yes, uh, there's a good time to mention that base 10 is
+[01:20:12.080 --> 01:20:17.440]   2, type 2, so the client, uh, that is why we cannot show you other API keys.
+[01:20:22.320 --> 01:20:25.600]   So now we're just going to give it the URL here.
+[01:20:25.600 --> 01:20:26.720]   Let me go back.
+[01:20:26.720 --> 01:20:35.600]   All right.
+[01:20:35.600 --> 01:20:43.280]   So I'm going to do this, uh, first run with a concurrency of 32 and input and output plans of a
+[01:20:43.280 --> 01:20:47.440]   1000 and uh, let's see it work.
+[01:20:47.440 --> 01:20:53.920]   So first it does a warmup run just to make sure that there is some traffic on the GPU.
+[01:20:53.920 --> 01:20:57.280]   You always want to have a warmup run before you get the real numbers.
+[01:20:57.280 --> 01:21:06.240]   Now, as this is running and you can see the TPS here, the total TPS is 5000 and this is on 8NG.
+[01:21:06.240 --> 01:21:12.400]   8NG is not the most powerful, uh, GPU, but this TPS is still very, very high.
+[01:21:12.400 --> 01:21:14.080]   5000 is very, very high.
+[01:21:14.080 --> 01:21:16.000]   It's because this is tiny Lama model.
+[01:21:16.000 --> 01:21:19.600]   Tiny Lama is a tiny model, just like a billion parameters.
+[01:21:19.600 --> 01:21:21.280]   And that's why we see this very high.
+[01:21:21.280 --> 01:21:28.320]   But yeah, on bigger GPUs with the, with Lama 8G, you should also see very, very high values
+[01:21:28.320 --> 01:21:32.800]   because H100s are very, very powerful and TLS is very, very optimized.
+[01:21:32.800 --> 01:21:36.640]   I think we see up to like 11,000 tokens per second and you should do a comparison.
+[01:21:36.640 --> 01:21:37.680]   It's really, really high.
+[01:21:37.680 --> 01:21:42.240]   In this case, we have two runs and you see these values.
+[01:21:42.960 --> 01:21:44.400]   Uh, let me try a different run.
+[01:21:44.400 --> 01:21:46.640]   Now I'm going to do concurrency of one.
+[01:21:46.640 --> 01:21:51.040]   And one is good to know how best of a time to first token you can get.
+[01:21:51.040 --> 01:21:55.520]   So you're just sending one request at a time and many requests, but one at a time
+[01:21:55.520 --> 01:21:57.360]   with the same input and output length.
+[01:21:57.360 --> 01:21:59.040]   And, uh, this should run.
+[01:21:59.040 --> 01:22:14.160]   So, uh, you see time to first token of, uh, 180 milliseconds here, and this is from this laptop.
+[01:22:14.160 --> 01:22:19.920]   I'm running it right from this laptop on this wifi and my model is deployed somewhere in US central.
+[01:22:20.480 --> 01:22:23.040]   And this is, uh, 180 milliseconds for that.
+[01:22:23.040 --> 01:22:24.640]   Yeah.
+[01:22:24.640 --> 01:22:29.280]   So, so the, so the vast majority of that time to first token is going to be network latency, right?
+[01:22:29.280 --> 01:22:30.400]   Not model.
+[01:22:30.400 --> 01:22:32.320]   Not the model itself should be pretty fast.
+[01:22:32.320 --> 01:22:33.200]   Uh, yes.
+[01:22:33.200 --> 01:22:41.920]   Uh, uh, uh, not, not that one.
+[01:22:41.920 --> 01:22:43.520]   Um, this one.
+[01:22:45.280 --> 01:22:56.960]   Uh, this is from this, uh, script, uh, script that I'm running.
+[01:22:56.960 --> 01:22:59.680]   I didn't do a thorough job of cleaning up everything.
+[01:22:59.680 --> 01:23:01.920]   We're saying that, uh, we just making an RPC call.
+[01:23:01.920 --> 01:23:03.440]   We don't need PyTorch or whatever.
+[01:23:03.440 --> 01:23:04.880]   This, this.
+[01:23:04.880 --> 01:23:07.040]   Yeah.
+[01:23:07.040 --> 01:23:09.680]   Local runtime, something, uh, probably machine.
+[01:23:09.680 --> 01:23:13.120]   This script, uh, if you look at that, all it's doing is RPC.
+[01:23:14.080 --> 01:23:15.760]   Uh, let me go through that real quick.
+[01:23:15.760 --> 01:23:17.920]   Benchmark script.
+[01:23:17.920 --> 01:23:22.960]   Uh, it's just a simple Python using async and it's amazing how good Python has got.
+[01:23:22.960 --> 01:23:28.640]   With this async API, you're able to load, uh, load this model with thousands of tokens per second.
+[01:23:28.640 --> 01:23:33.280]   All of them coming in streaming, uh, Python has actually gotten really, really well.
+[01:23:33.280 --> 01:23:38.560]   There was a, there was a case where I was loading with K6 and K6 client became a bottleneck because
+[01:23:38.560 --> 01:23:41.280]   Edge 100s are so fast, but Python could keep up.
+[01:23:41.280 --> 01:23:43.600]   Uh, Python was able to load it very well.
+[01:23:43.600 --> 01:23:46.560]   Uh, but I would, I'm getting distracted.
+[01:23:46.560 --> 01:23:50.640]   So, uh, we tried concurrency one, which is like the best case scenario.
+[01:23:50.640 --> 01:23:53.840]   Latencies are very, very good and TTFT should be very low.
+[01:23:53.840 --> 01:23:55.840]   Now let's go to the other extreme.
+[01:23:55.840 --> 01:24:02.880]   If you look at this model that we deployed, uh, we created it with the batch size of 64 maximum.
+[01:24:02.880 --> 01:24:08.400]   So now we'll do 64 and, uh, I'm hoping we see throughput improvements.
+[01:24:08.400 --> 01:24:12.160]   So ignore the warm up run.
+[01:24:12.160 --> 01:24:17.280]   And this is going to take a bit longer because now we're going to send
+[01:24:17.280 --> 01:24:19.600]   64 requests at the same time.
+[01:24:19.600 --> 01:24:22.080]   64 is not, uh, not that high.
+[01:24:22.080 --> 01:24:23.120]   We can go even higher.
+[01:24:23.200 --> 01:24:31.520]   So in this case, you see total TPS of, uh, of 7,000, which is, uh, even higher than before.
+[01:24:31.520 --> 01:24:34.800]   We saw 5,000 before this goes up to 7,000, but maybe this is a fluke.
+[01:24:34.800 --> 01:24:36.000]   Let's wait for the second run.
+[01:24:36.000 --> 01:24:38.560]   And you can run, uh, this is all 7,000.
+[01:24:38.560 --> 01:24:42.160]   So this is, uh, this is much better than what we saw before.
+[01:24:42.720 --> 01:24:48.800]   So, uh, if you increase batch size, you would find that your latencies become, become higher.
+[01:24:48.800 --> 01:24:52.480]   Latencies in the sense that for every request that a user is sending,
+[01:24:52.480 --> 01:24:54.800]   now tokens are coming slower and slower.
+[01:24:54.800 --> 01:24:56.880]   And then you have to make a trade off at some point.
+[01:24:56.880 --> 01:24:58.480]   Like, is it still good enough?
+[01:24:58.480 --> 01:25:02.720]   Is it still more than say 30 or 50 tokens per second that users won't perceive?
+[01:25:02.720 --> 01:25:05.440]   And at some point it will become unusable.
+[01:25:05.440 --> 01:25:11.200]   And as you increase batch size, the pressure on your GPU memory also increases.
+[01:25:11.200 --> 01:25:16.800]   Because all these extra batches, they require KV cache to be kept in GPU memory.
+[01:25:16.800 --> 01:25:18.560]   So you might hit that bottleneck.
+[01:25:18.560 --> 01:25:22.560]   So depending on all these scenarios, you want to experiment with different batch sizes
+[01:25:22.560 --> 01:25:24.160]   and find the sweet spot.
+[01:25:24.160 --> 01:25:28.080]   And that's, uh, that takes a bit of time, but it's not terribly complex.
+[01:25:28.080 --> 01:25:35.200]   Um, yeah, so this script is there, there for you to modify and play around with.
+[01:25:35.200 --> 01:25:36.080]   It's pretty simple.
+[01:25:36.080 --> 01:25:40.080]   It's pretty much a single, uh, Python file, not much in there.
+[01:25:40.080 --> 01:25:40.960]   You can modify it.
+[01:25:40.960 --> 01:25:41.520]   You can run it.
+[01:25:41.520 --> 01:25:44.800]   Yes.
+[01:25:44.800 --> 01:26:02.560]   The question was, uh, did I have a max batch size in mind when I was running?
+[01:26:02.560 --> 01:26:07.840]   Yes, because I deployed the model with the config in this, uh, workshop.
+[01:26:07.840 --> 01:26:13.600]   Let me show you that I built the model with the max batch size and you can increase that batch size.
+[01:26:13.600 --> 01:26:14.880]   So let me show you that.
+[01:26:14.880 --> 01:26:25.360]   So in this, uh, tiny Lama model that I deployed, I specified a max batch size of 64.
+[01:26:26.320 --> 01:26:32.080]   So, uh, if I go beyond 64, it's not going to help me because all those requests will just wait.
+[01:26:32.080 --> 01:26:35.280]   And yeah, actually there's one, one interesting thing I want to show you.
+[01:26:35.280 --> 01:26:37.040]   Uh, so this is a good question.
+[01:26:37.040 --> 01:26:44.800]   You can look at the logs here and in the logs, we put these, uh, metrics for what's going on.
+[01:26:45.920 --> 01:26:47.360]   I think maybe I'm not.
+[01:26:47.360 --> 01:26:47.680]   Yeah.
+[01:26:47.680 --> 01:26:53.680]   And, and if you wanted to increase your batch size past 64, you just change the YAML and say like,
+[01:26:53.680 --> 01:26:54.960]   Oh, match this batch size.
+[01:26:54.960 --> 01:26:58.560]   So that should be like 128 and build a new engine by deploying it.
+[01:26:58.560 --> 01:26:59.440]   Yeah.
+[01:26:59.440 --> 01:27:05.440]   So if you look at these logs here, it shows how many requests are running in parallel active
+[01:27:05.440 --> 01:27:06.160]   request count.
+[01:27:06.160 --> 01:27:12.640]   Uh, you can actually observe how many requests are being executed in parallel right on the GPU,
+[01:27:12.640 --> 01:27:16.480]   because there are chances that you haven't, uh, configured something right.
+[01:27:17.040 --> 01:27:24.080]   And that, uh, for whatever reason, the, uh, requests are not all getting executed in parallel.
+[01:27:24.080 --> 01:27:28.880]   For example, a common mistake one could make is that when you deploy on, on base 10 and this is
+[01:27:28.880 --> 01:27:33.520]   based on specific, but just to take an example, there are scaling settings in base 10.
+[01:27:33.520 --> 01:27:38.800]   You can specify the scale and you can specify what is the max concurrency the model will receive.
+[01:27:38.800 --> 01:27:41.280]   In this case, I've set it to a very, very high value.
+[01:27:41.280 --> 01:27:45.360]   So it won't become a bottleneck, but there are chances that, that, you know, you forget,
+[01:27:45.360 --> 01:27:49.520]   you make a mistake there, you, you can check these logs and they will actually tell you
+[01:27:49.520 --> 01:27:56.320]   what's happening on the GPU. And I think I lost that again. Uh, let me go here.
+[01:27:56.320 --> 01:28:02.800]   So yeah, these are actual metrics from the tensor RT LLM batch manager,
+[01:28:02.800 --> 01:28:07.520]   which tells you what's going on. It also tells you about the KV cache blocks that are being used
+[01:28:07.520 --> 01:28:13.680]   and that helps tune you, uh, helps you tune the KV cache size. For example, in this case, it says
+[01:28:13.680 --> 01:28:20.480]   it's using 832 KV cache blocks and 4,500 are empty, which means there is the, there is this way more
+[01:28:20.480 --> 01:28:26.240]   KV cache than is needed for this use case. So just to mention that as a, as an aside.
+[01:28:26.240 --> 01:28:30.000]   Yeah, I think that's it for that presentation.
+[01:28:34.000 --> 01:28:36.080]   I'm going to, I'm going to, I'm going to, I'm going to talk about that next slide.
+[01:28:36.080 --> 01:28:38.720]   Thank you. You're reading my mind.
+[01:28:38.720 --> 01:28:57.280]   It does. Yes, tensor RT LLM does come with a benchmarking tool. It's very, very good. Uh,
+[01:28:57.280 --> 01:29:03.840]   the only downside is that you have to build it from source. It's not bundled with the tensor RT LLM,
+[01:29:03.840 --> 01:29:09.520]   Python library, which is my gripe. I'm going to ask anybody to fix that. Uh, they, they have
+[01:29:09.520 --> 01:29:15.040]   benchmarking tools. There are two benchmarking tools. One that, uh, that just sends a single batch
+[01:29:15.040 --> 01:29:22.240]   and, um, and measures the raw throughput you can get without serving it through in-flight batching.
+[01:29:22.240 --> 01:29:26.640]   And there is a separate second, second tool, uh, called the GPD manager benchmark,
+[01:29:26.640 --> 01:29:31.440]   which actually starts up a server and does in-flight batching on top. So there are two tools and they're
+[01:29:31.440 --> 01:29:37.200]   very, very good quality, but they're not available easily. Building tensor RT LLM is like with 96 CPUs,
+[01:29:37.200 --> 01:29:40.960]   it takes us one and a half hours to build it. It's not for the weak of heart.
+[01:29:40.960 --> 01:29:50.640]   Or for the short of workshop. So, um, we just, we just have a, we have a few minutes left. Um, so I want to
+[01:29:50.640 --> 01:29:56.640]   run through a few slides and then leave time for last minute questions. So, um, I was asked, um,
+[01:29:56.640 --> 01:30:00.560]   you know, how do we, how do we actually run this in production? What does the auto scaling look like?
+[01:30:00.560 --> 01:30:07.360]   How does that all work? So, um, how do you run a tensor RT engine? So you use something called Triton,
+[01:30:07.360 --> 01:30:13.120]   the Triton inference server. Um, and that's what helps you, you know, take the engine and actually
+[01:30:13.120 --> 01:30:18.640]   serve requests to it. We're actually working on our own server, um, that uses the same spec, but
+[01:30:18.640 --> 01:30:24.560]   supports, uh, C plus plus tokenization, de-tokenization, custom features for, for even more performance.
+[01:30:24.560 --> 01:30:33.360]   Um, but the, you know, as we've talked about, the engine is specific to versions, GPUs, batch sizes,
+[01:30:33.360 --> 01:30:38.080]   sequence links, all that sort of stuff. So, um, that causes some challenges when you're running it in
+[01:30:38.080 --> 01:30:43.360]   production. We've talked this whole time about vertical scale, right? Like how do I get more
+[01:30:43.360 --> 01:30:48.960]   scale off a single GPU? There's also horizontal scale. How do I just like get more GPUs? How do I,
+[01:30:48.960 --> 01:30:55.520]   you know, auto automatically scale my, my platform up to meet my traffic demands? So, um, you know,
+[01:30:55.520 --> 01:31:01.280]   some challenges in scaling out in general, you know, you have to automatically respond to traffic.
+[01:31:01.280 --> 01:31:06.480]   You have to manage your cold start times. You have to manage the availability and reliability of your
+[01:31:06.480 --> 01:31:12.480]   GPU nodes. You have to route requests, do batching, all that kind of stuff. And then TensorRT LLM adds a
+[01:31:12.480 --> 01:31:17.280]   few more challenges. Um, you've got these large image sizes. Um, so that's going to make your cold
+[01:31:17.280 --> 01:31:21.760]   starts even slower. You've got these specific batching requirements. So you can't just like send
+[01:31:21.760 --> 01:31:26.880]   whatever traffic, however you want. And you have these specific GPU requirements. So when you spin
+[01:31:26.880 --> 01:31:31.520]   up a new node, it's got to be exactly the same as your old node or your model's not going to work.
+[01:31:31.520 --> 01:31:38.960]   Um, and, uh, you know, unfortunately our workshop is almost over. Otherwise I would love to give you an
+[01:31:38.960 --> 01:31:43.680]   in-depth answer of how to solve all these problems. Uh, but the quick answer to how to solve all these
+[01:31:43.680 --> 01:31:49.120]   problems is you run your code on base 10, uh, because we solved it all for you. Um, so base 10 is a model
+[01:31:49.120 --> 01:31:55.600]   influence platform. Um, it's the company that we both work at. Um, with base 10, you can deploy models
+[01:31:55.600 --> 01:32:01.600]   on GPUs. Uh, you can use TensorRT LLM, but you don't have to, you can use any other service, VLM, TGI,
+[01:32:01.600 --> 01:32:08.240]   just like a vanilla model deployment. Um, you get access to auto scaling, fast cold starts,
+[01:32:08.240 --> 01:32:13.680]   um, scale to zero, tons of other great infrastructure features. You get access to all of our model
+[01:32:13.680 --> 01:32:17.920]   optimizations. We have a bunch of pre-packaged and pre-optimized models for you to work with.
+[01:32:17.920 --> 01:32:29.040]   Um, so yeah, uh, the last thing before we go, um, is we are co-hosting a, um, happy hour tomorrow
+[01:32:29.040 --> 01:32:34.080]   on Shelby's rooftop bar. Um, I was not really involved in organizing it, but the sales guys
+[01:32:34.080 --> 01:32:38.800]   who organized it told me that it's a super sweet spot and that we're going to have a great time.
+[01:32:38.800 --> 01:32:43.520]   Um, so yeah, so I'm going to be there, um, and a bunch of other great, uh, AI engineers are going
+[01:32:43.520 --> 01:32:48.320]   to be there. So please feel free to sign up, come on through. We'd love to have you. Um, it's going to
+[01:32:48.320 --> 01:32:57.360]   be super sweet, cool party for the cool kids. Um, well, you've been, you've been really great. Thank
+[01:32:57.360 --> 01:33:01.920]   you for listening to us and we open it up for questions. Uh, I feel one question we didn't answer
+[01:33:01.920 --> 01:33:06.480]   about auto scaling, right? Maybe I should take that on now. Yeah, go ahead. So how does auto scaling
+[01:33:06.480 --> 01:33:10.240]   work? Yeah, yeah, please. Uh, yeah, please feel free to hold. I'll just, uh, finish that question
+[01:33:10.240 --> 01:33:15.600]   because you asked that I wanted to answer it. And, uh, how auto scaling works is that we use a system
+[01:33:15.600 --> 01:33:21.440]   called Knative, but we forked it to make it work for machine learning use cases. Knative, if I understand
+[01:33:21.440 --> 01:33:25.600]   correctly, was built for microservices where your requests are very, very quick, like, you know, one
+[01:33:25.600 --> 01:33:31.200]   second or two seconds. It doesn't exactly apply to machine learning model use cases, where your request is
+[01:33:31.200 --> 01:33:37.360]   long lasting and you're streaming and you need to, uh, still scale, but, uh, some of the
+[01:33:37.360 --> 01:33:42.240]   considerations are different. So we had to actually fork it to be able to apply settings dynamically.
+[01:33:42.240 --> 01:33:47.360]   For example, a lot of settings that you see on base 10, they apply immediately, like within a second.
+[01:33:47.360 --> 01:33:52.560]   Whereas in Knative, you would need to deploy a new revision for those settings to apply. And it's,
+[01:33:52.560 --> 01:33:58.560]   it's not even practical because the way you deploy a new model, it creates so much hassle and requires
+[01:33:58.560 --> 01:34:04.000]   extra capacity that it's not good. So we made changes to Knative to cater to the machine learning use
+[01:34:04.000 --> 01:34:10.720]   case. But fundamentally the idea is, is very simple. As a request come in, you specify the capacity of
+[01:34:10.720 --> 01:34:17.360]   your pod that it can take in. And if it's, uh, if it reaches near there, we spin up a new pod. And then
+[01:34:17.360 --> 01:34:24.080]   the traffic spreads. If your traffic goes down, it goes, your GPUs are, uh, your pods are reduced. Your GPUs are
+[01:34:24.080 --> 01:34:30.160]   freed up up all the way up to zero. And when the traffic arrives, it kept, it's kept in a queue and
+[01:34:30.160 --> 01:34:35.920]   then the model is spin up and the requests are, are sent there. A lot of the machinery at base 10 is
+[01:34:35.920 --> 01:34:41.360]   around improving cold starts. How do we start up these, you know, giant models, 50 gig models in
+[01:34:41.360 --> 01:34:45.200]   under a minute, right? I mean, it sounds like a long time, but when you're talking about 50 gigs,
+[01:34:45.200 --> 01:34:51.200]   50 gigs is also a lot. And for, for 10 gig models, we aim for less than 10 seconds. For 50 gig models,
+[01:34:51.200 --> 01:34:56.080]   we aim for less than a minute because that's really important. Unless you can scale up in a minute,
+[01:34:56.080 --> 01:35:01.760]   your request is going to time out. So you really can't scale to zero. So it's, uh, it seems like a
+[01:35:01.760 --> 01:35:06.000]   detail, but it's very critical. You can't have a scale to zero without very, very fast cold starts.
+[01:35:06.000 --> 01:35:12.160]   So we have the whole machinery built out for that. Even before LLMs became popular, we've had this
+[01:35:12.160 --> 01:35:19.120]   machinery in place.
+[01:35:19.120 --> 01:35:28.640]   Uh, so what would I expect on terms of performance if I were, like, I think if you optimize it, yeah, can I?
+[01:35:28.640 --> 01:35:43.840]   Are you saying, like, deploy it with TensorRT versus deploy it on base 10?
+[01:35:43.840 --> 01:35:49.520]   So, so you, you would deploy it on base 10 using TensorRT under the hood to run it.
+[01:35:49.520 --> 01:35:54.240]   Uh, so, so base 10 is just going to, like, facilitate that TensorRT deployment for you.
+[01:35:54.240 --> 01:36:08.480]   Yeah, no, no difference. Base 10 runs TensorRT LLM. We just make it very easy to run TensorRT LLM. So
+[01:36:08.480 --> 01:36:14.400]   you, it's, uh, easier and faster for you to get at the optimum point. Uh, but if you could do it yourself,
+[01:36:14.400 --> 01:36:15.920]   yeah, it's, it's the same thing under the hood.
+[01:36:15.920 --> 01:36:21.840]   Uh, and then, you know, I'm compelled by the fact that I'm in the marketing department to say things
+[01:36:21.840 --> 01:36:26.480]   like we also provide a lot of infrastructure value on top of that so that you're not managing your own,
+[01:36:26.480 --> 01:36:27.280]   you know?
+[01:36:27.280 --> 01:36:32.080]   Yeah. Yeah. Actually, that is, that is true. Yeah. Because we, we have a large fleet. We, we get good
+[01:36:32.080 --> 01:36:37.360]   costs. So you actually won't pay higher on base 10. Like it's not that you're gonna, uh, it's gonna cost you
+[01:36:37.360 --> 01:36:48.240]   to more on base 10. Yes, over there. Yeah. I was wondering, um, like the open source
+[01:36:48.240 --> 01:37:15.600]   Yeah. So only the packaging part is open source. The serving parts, I mean, that, that's kind of,
+[01:37:15.600 --> 01:37:21.520]   that's kind of the platform. So I do, I do want to mention is that, uh, from trust,
+[01:37:21.520 --> 01:37:26.560]   you can create a Docker image and that Docker image can be run anywhere. So you get pretty close.
+[01:37:26.560 --> 01:37:32.240]   You don't get auto scaling and, uh, all of those that nice dev loop, but you do get a Docker image
+[01:37:32.240 --> 01:37:38.240]   and you can do a lot with the Docker image. It builds it locally. Yeah. You can build,
+[01:37:38.240 --> 01:37:43.440]   there is a trust, uh, image build command. You find it to a trust. It will build the Docker image locally.
+[01:37:43.440 --> 01:37:53.280]   Oh, okay. So I guess, uh, serving on a single pod or container, but there is also spreading
+[01:37:53.280 --> 01:37:58.960]   across multiple containers, the auto scaling and all of the dev loop. Uh, that is not, yeah,
+[01:37:58.960 --> 01:38:02.480]   but serving. Yeah. I mean, single model serving is interest with that image.
+[01:38:02.480 --> 01:38:21.280]   Yes. It's, uh, it's, uh, fast API at the trust server level. Then internally we have our own server
+[01:38:21.280 --> 01:38:26.960]   layer that we wrote to interact with tensor RTLM. Uh, that part is not open source. We, it's very new.
+[01:38:26.960 --> 01:38:31.920]   So we still figuring out when to, or where to open source it, but there is also a version that uses
+[01:38:31.920 --> 01:38:37.520]   Triton. So there is the fast API, then there's Triton, and then there is the tensor RTLM library,
+[01:38:37.520 --> 01:38:42.400]   and then it runs the engine. Yeah, yeah, yeah, exactly. Exactly. We have, uh, we have, uh,
+[01:38:42.400 --> 01:38:46.880]   we work on multiple cloud providers. We are spread across, uh, I don't want to say globe,
+[01:38:46.880 --> 01:38:51.840]   like mostly us, but also Australia and a few other places. So we have access to many different kinds of
+[01:38:51.840 --> 01:38:54.960]   hardware. We find the right hardware to build the engines and then we deploy it.
+[01:38:54.960 --> 01:39:06.800]   Yes, you can. Yeah, you can use self-hosted clusters. Our stack is built that way. That's
+[01:39:06.800 --> 01:39:12.240]   one of our selling points. We're not giving you an API. You can run the entire stack in a self-hosted way.
+[01:39:12.240 --> 01:39:18.960]   Awesome. Well, look, the conference organizers were very clear with us. All sessions and workshops are to
+[01:39:18.960 --> 01:39:24.480]   end on time. So I'm going to wrap it up here, but, um, we're going to be right outside if you have any
+[01:39:24.480 --> 01:39:28.960]   questions. If you have any easy questions, come see me. If you have any hard questions,
+[01:39:28.960 --> 01:39:33.440]   please go talk to Punkage instead. Thank you all so much for being here. It was so much fun doing this
+[01:39:33.440 --> 01:39:38.560]   workshop with all of you. Again, I'm Phillip. This is Punkage. We're from Base 10. And thank you so much
+[01:39:38.560 --> 01:39:56.320]   for being here. Have a great conference, everyone. Thank you.
+[01:39:56.320 --> 01:40:00.480]   We'll see you next time.
+

@@ -1,0 +1,998 @@
+
+[00:00:00.000 --> 00:00:19.560]   Hey everybody. Yes, we're going to get started here. Thanks everybody for coming along and
+[00:00:19.560 --> 00:00:26.440]   thanks to AI engineers for having us. My name is Damian Murphy. I'm a senior applied engineer at
+[00:00:26.440 --> 00:00:31.660]   Deepgram. A lot of people ask me what is an applied engineer? It's a customer facing engineer,
+[00:00:31.660 --> 00:00:36.520]   right? So we work directly with customers to basically help them achieve their business cases.
+[00:00:36.520 --> 00:00:43.300]   Yeah, the 20 years of experience full stack developer, been working in pre-sales, post-sales,
+[00:00:43.300 --> 00:00:48.440]   really just customer facing roles for the last 10 years or so. I've helped hundreds of companies
+[00:00:48.440 --> 00:00:55.000]   working with Deepgram to actually build and scale low latency real-time voice bots. A lot has obviously
+[00:00:55.000 --> 00:00:59.860]   changed in the past few few years around how we actually build these voice bots and I'm going to
+[00:00:59.860 --> 00:01:05.000]   kind of walk you through that evolution as well. If you're not familiar with Deepgram, we're a
+[00:01:05.000 --> 00:01:12.760]   foundational AI company. That means we build our own models, we label our own data and basically train
+[00:01:12.760 --> 00:01:22.760]   deploy at scale. We have a lot of models. We have over a thousand models running in production. So we run a lot of custom models for different use cases, right?
+[00:01:22.760 --> 00:01:23.760]   So you can think of meeting use cases, drive-through use cases, phone call use cases. The vast majority of audio today is generated in a call center. And call center data is probably the worst audio you've ever heard, right? It's, you know, 8K,
+[00:01:23.760 --> 00:01:41.760]   moolah or linear 16. And it's just very hard to actually understand for an AI model. So by us building and training models specifically targeted to that low quality audio, we're able to have a much better performance. And we're research led. So you know, a lot of times we have a lot of
+[00:01:41.760 --> 00:02:02.760]   We're research led, so you know, that 70% of the company is research and engineering. And that means that we really focus on, you know, building that foundational, scalable and cost effective AI solutions. And you know, building a model is easy, rolling it out into production at a low price point is hard.
+[00:02:02.760 --> 00:02:29.760]   Yeah, so what are we going to learn today? We're going to build a voice to voice AI agent. That means you're literally just going to send audio data in and you're going to get audio data back, right? So you don't, you don't need to hook in, you know, the LLM, the speech to text and the text to speech, you're going to be able to basically do audio in, audio out.
+[00:02:29.760 --> 00:02:42.760]   And we're going to build a simple backend API for the AI agent. And that's going to enable us to, you know, build a frontend that shows what's happening and also allow the LLM to do function calling.
+[00:02:42.760 --> 00:02:48.760]   And then we're going to talk a little bit about how you could scale, you know, these AI agent swarms.
+[00:02:48.760 --> 00:02:56.760]   Yeah, a couple of prerequisites. I'm going to get into those first, just so that people have time to kind of install any tooling that they need.
+[00:02:56.760 --> 00:03:05.760]   And I'll help you understand, you know, the kind of evolution of AI voice bots, right? So how they were previously, how they're moving today.
+[00:03:05.760 --> 00:03:13.760]   I'll help you get set up and we'll go over a little bit of application architecture, how it works, and then we'll touch on scaling it as well.
+[00:03:13.760 --> 00:03:22.760]   Yeah, so you're going to want to go to deepgram.com, sign up for an account. It's a free account, you'll get $200 in credit.
+[00:03:22.760 --> 00:03:29.760]   That's about 750 hours of transcription for free. And you'll need Node.js installed on your machine.
+[00:03:29.760 --> 00:03:38.760]   That will allow you to run a little HTTP server, and if you want to modify the backend and run your own backend, you can also do that.
+[00:03:38.760 --> 00:03:43.760]   We recommend Chrome browser. I haven't tested on other browsers, so if you have Chrome, great.
+[00:03:43.760 --> 00:03:48.760]   It should work in other browsers, but you just never know with browsers these days.
+[00:03:48.760 --> 00:04:04.760]   You're going to need a microphone and a speaker or headphones. You're going to be talking to this AI agent, so it should work fine on a laptop with a speaker on, but just keep the volume down a little bit so it's not communicating with other people's agents.
+[00:04:04.760 --> 00:04:16.760]   I've set it up today that you're not going to need an LLM API key or a deepgram API key, just to keep it simple.
+[00:04:16.760 --> 00:04:23.760]   But after this, you'll have the opportunity to sign up to the wait list where you will need that API key.
+[00:04:23.760 --> 00:04:25.760]   Awesome.
+[00:04:25.760 --> 00:04:33.760]   Yeah, so the current approach, and I've been building these sorts of voice bots at scale for quite some time.
+[00:04:33.760 --> 00:04:37.760]   And typically, they revolve around three key pieces, right?
+[00:04:37.760 --> 00:04:43.760]   So you've got your speech-to-text, that's going to take your audio, give you back a transcript.
+[00:04:43.760 --> 00:04:52.760]   And then you've got an LLM that's going to take that text that you've detected, process it, and then generate a text reply.
+[00:04:52.760 --> 00:04:56.760]   And then you're going to use text-to-speech to actually speak that back.
+[00:04:56.760 --> 00:05:01.760]   This has been around for a while, right? It's gotten better and better, and lower and lower latency.
+[00:05:01.760 --> 00:05:09.760]   We can really bring down the latency on both the speech-to-text and the text-to-speech, especially if you run it self-hosted.
+[00:05:09.760 --> 00:05:16.760]   And so one of the things I help a lot of customers with is, you know, co-locating all of these pieces together to bring the latency down.
+[00:05:16.760 --> 00:05:22.760]   The challenge with that is it becomes an infrastructure challenge rather than a software challenge.
+[00:05:22.760 --> 00:05:29.760]   So what we've tried to do with our new voice agent API is actually offer all of that as a single API, right?
+[00:05:29.760 --> 00:05:37.760]   So you can send us audio, we'll co-locate all of those services together, and then we'll be able to send you back the response.
+[00:05:37.760 --> 00:05:45.760]   We also handle a lot of the complexity of, you know, end-pointing, when is the user finished speaking.
+[00:05:45.760 --> 00:05:47.760]   And those can be challenging.
+[00:05:47.760 --> 00:05:55.760]   So being able to have all of that in a single API really just makes it easy for the developer to build the application that they want to actually achieve.
+[00:05:55.760 --> 00:06:06.760]   One of the things you'll notice here as well is function calling, so depending on the LLM you use, right, you may want to shift your entire infrastructure to a different provider, right?
+[00:06:06.760 --> 00:06:12.760]   So if you're using Cloud, you'll probably go with something like AWS, if you're using OpenAI, you might go with Azure.
+[00:06:12.760 --> 00:06:17.760]   You want the LLM and the other pieces of the puzzle to be co-located.
+[00:06:17.760 --> 00:06:26.760]   And if you're running your own local LLM, right, so LamaTree, PHY, things like that, you can just put them really anywhere you want.
+[00:06:26.760 --> 00:06:29.760]   And you can see here as well the time difference, right?
+[00:06:29.760 --> 00:06:37.760]   So going from 500 milliseconds for the speech-to-text to 700 milliseconds for the LLM and TTS.
+[00:06:37.760 --> 00:06:40.760]   And you can really bring that all down, right?
+[00:06:40.760 --> 00:06:46.760]   So as you bring those latencies down, you actually start to respond too fast.
+[00:06:46.760 --> 00:06:53.760]   All right, and that's when we start adding in delays and things like that to make sure that you're not, you know, being rude.
+[00:06:53.760 --> 00:06:55.760]   Yeah?
+[00:06:55.760 --> 00:07:06.760]   I don't have them uploaded, but after the event, I can talk to the organizers and get them shared.
+[00:07:06.760 --> 00:07:15.760]   All righty, so yeah, let's see if the demo gods are with me today and the audio works.
+[00:07:15.760 --> 00:07:16.760]   Hello?
+[00:07:16.760 --> 00:07:17.760]   Hello?
+[00:07:17.760 --> 00:07:18.760]   Nope.
+[00:07:18.760 --> 00:07:19.760]   I'm going to allow my mic.
+[00:07:19.760 --> 00:07:20.760]   Let's try that one more time.
+[00:07:20.760 --> 00:07:21.760]   Hello?
+[00:07:21.760 --> 00:07:22.760]   Hi there.
+[00:07:22.760 --> 00:07:23.760]   Welcome to the Krusty Krab drive-through.
+[00:07:23.760 --> 00:07:24.760]   What can I get started for you today?
+[00:07:24.760 --> 00:07:25.760]   Yeah, could I get a Krabby Paddy, please?
+[00:07:25.760 --> 00:07:25.760]   Sure thing.
+[00:07:25.760 --> 00:07:25.760]   I think it might be picking itself up.
+[00:07:25.760 --> 00:07:26.760]   Would you like to, would you like to go ahead and add anything else to your order?
+[00:07:26.760 --> 00:07:27.760]   Would you like to go ahead and add anything else to your order?
+[00:07:27.760 --> 00:07:27.760]   No, no.
+[00:07:27.760 --> 00:07:28.760]   No, no.
+[00:07:28.760 --> 00:07:29.760]   No.
+[00:07:29.760 --> 00:07:30.760]   No, no.
+[00:07:30.760 --> 00:07:31.760]   No, no.
+[00:07:31.760 --> 00:07:32.760]   I'm going to allow my mic.
+[00:07:32.760 --> 00:07:33.760]   Let's try that one more time.
+[00:07:33.760 --> 00:07:34.760]   No, no.
+[00:07:34.760 --> 00:07:35.760]   No, no.
+[00:07:35.760 --> 00:07:36.760]   No, no.
+[00:07:36.760 --> 00:07:37.760]   Hi there.
+[00:07:37.760 --> 00:07:38.760]   Welcome to the Krusty Krab drive-through.
+[00:07:38.760 --> 00:07:41.760]   What can I get started for you today?
+[00:07:41.760 --> 00:07:42.760]   Yeah.
+[00:07:42.760 --> 00:07:44.760]   Could I get a Krabby Paddy, please?
+[00:07:44.760 --> 00:07:45.760]   Sure thing.
+[00:07:45.760 --> 00:07:50.760]   I think it might be picking itself up.
+[00:07:50.760 --> 00:07:55.760]   Would you like to, would you like to go ahead and add anything else to your order?
+[00:07:55.760 --> 00:07:56.760]   Yeah.
+[00:07:56.760 --> 00:07:59.760]   Can I get a kelp shake as well, please?
+[00:07:59.760 --> 00:08:07.760]   I've added a Krabby Paddy and a kelp shake to your order.
+[00:08:07.760 --> 00:08:08.760]   Anything else?
+[00:08:08.760 --> 00:08:12.760]   Yeah, could I get a Krusty combo as well?
+[00:08:12.760 --> 00:08:16.760]   We don't have a Krusty combo on the menu.
+[00:08:16.760 --> 00:08:18.760]   Would you like a Krusty combo instead?
+[00:08:18.760 --> 00:08:19.760]   Yeah.
+[00:08:19.760 --> 00:08:24.760]   I've added the Krusty combo.
+[00:08:24.760 --> 00:08:28.760]   Let me just refresh this so it's not picking me up.
+[00:08:28.760 --> 00:08:33.760]   So you can see, right, we've basically just sent audio to the service.
+[00:08:33.760 --> 00:08:37.760]   It's gone off and figured out what to do function calling wise.
+[00:08:37.760 --> 00:08:40.760]   So the LLM is actually making the order.
+[00:08:40.760 --> 00:08:44.760]   I'm not doing any sort of order making within the app.
+[00:08:44.760 --> 00:08:46.760]   I'm not parsing the LLM in response.
+[00:08:46.760 --> 00:08:49.760]   Everything has just happened automatically.
+[00:08:49.760 --> 00:08:50.760]   Cool.
+[00:08:50.760 --> 00:08:55.760]   So let's jump back into the slides.
+[00:08:55.760 --> 00:08:56.760]   Right.
+[00:08:56.760 --> 00:09:05.760]   So if you have Node.js installed, I have two repositories for you, which is located here.
+[00:09:05.760 --> 00:09:14.760]   So github.com/DamienDeepgram/DeepgramWorkshopClient and DeepgramWorkshopServer.
+[00:09:14.760 --> 00:09:20.760]   The server itself, I'm actually running it on glitch.me.
+[00:09:20.760 --> 00:09:25.760]   If you want to make changes to the server, you're going to need it publicly accessible.
+[00:09:25.760 --> 00:09:31.760]   So in order for the LLM to be able to reach out to it, you'll need that publicly accessible.
+[00:09:31.760 --> 00:09:32.760]   That's really a stretch goal.
+[00:09:32.760 --> 00:09:34.760]   You don't need to modify the back end.
+[00:09:34.760 --> 00:09:38.760]   The back end I have running should be able to handle everything.
+[00:09:38.760 --> 00:09:42.760]   If you do want to make modifications, and we'll go through that a little bit later, you can basically
+[00:09:42.760 --> 00:09:49.760]   spin it up yourself, point the LLM to that new API, and it will be able to then call those
+[00:09:49.760 --> 00:09:52.760]   functions.
+[00:09:52.760 --> 00:09:53.760]   Hands up.
+[00:09:53.760 --> 00:09:56.760]   Anybody already got Node.js installed?
+[00:09:56.760 --> 00:09:57.760]   Okay.
+[00:09:57.760 --> 00:09:59.760]   We've got a good few.
+[00:09:59.760 --> 00:10:02.760]   Anybody having trouble?
+[00:10:02.760 --> 00:10:03.760]   All good?
+[00:10:03.760 --> 00:10:04.760]   Cool.
+[00:10:04.760 --> 00:10:05.760]   Yeah.
+[00:10:05.760 --> 00:10:10.760]   So once you have that set up, you can simply run the workshop client.
+[00:10:10.760 --> 00:10:13.760]   So the workshop client is vanilla.js.
+[00:10:13.760 --> 00:10:16.760]   I tried to keep it as simple as possible.
+[00:10:16.760 --> 00:10:26.760]   Simple HTML page, and then the main.js is where we open that WebSocket connection.
+[00:10:26.760 --> 00:10:29.760]   We capture the audio, and then we send it.
+[00:10:29.760 --> 00:10:33.760]   So this can send audio at a pretty fast rate.
+[00:10:33.760 --> 00:10:39.760]   If you were running this with a telephone system, you could probably send audio at 20 millisecond
+[00:10:39.760 --> 00:10:40.760]   chunks.
+[00:10:40.760 --> 00:10:42.760]   That's going to give you the lowest latency.
+[00:10:42.760 --> 00:10:45.760]   The browser tends to send larger chunks.
+[00:10:45.760 --> 00:10:50.760]   So you can definitely bring the latency down when you increase that chunk rate.
+[00:10:50.760 --> 00:10:55.760]   We can't process audio faster than you send it to us, unfortunately.
+[00:10:55.760 --> 00:11:02.760]   Within the config, and this is really where you're telling the API what it's actually going
+[00:11:02.760 --> 00:11:04.760]   to do, who it is, how it's going to work.
+[00:11:04.760 --> 00:11:06.760]   You can see we have a base URL.
+[00:11:06.760 --> 00:11:13.760]   So that base URL is just pointing to my WebSocket server, or sorry, my API server.
+[00:11:13.760 --> 00:11:16.760]   And we have some input parameters, right?
+[00:11:16.760 --> 00:11:19.760]   So we're sending linear 16 audio.
+[00:11:19.760 --> 00:11:26.760]   And down here at the drive-through speech-to-speech config, this is telling, you know, the system,
+[00:11:26.760 --> 00:11:30.760]   okay, I want to use OpenAI, I want to use GPT-40.
+[00:11:30.760 --> 00:11:32.760]   These are the instructions, right?
+[00:11:32.760 --> 00:11:35.760]   So, you know, simple system prompt.
+[00:11:35.760 --> 00:11:37.760]   And we have a function call here as well.
+[00:11:37.760 --> 00:11:39.760]   Let me just bring this down a bit.
+[00:11:39.760 --> 00:11:45.760]   Yeah, so this function call is telling the system, hey, if you want to add an item to the order,
+[00:11:45.760 --> 00:11:48.760]   this is the API you're going to call, right?
+[00:11:48.760 --> 00:11:53.760]   There's going to be a call ID, so, you know, when the system starts up, it, you know, generates
+[00:11:53.760 --> 00:11:58.760]   a unique call ID so that all of your order items can go into your particular order.
+[00:11:58.760 --> 00:12:00.760]   And, yeah, it's pretty straightforward.
+[00:12:00.760 --> 00:12:04.760]   And later on, we'll actually look at how we can add more of these.
+[00:12:04.760 --> 00:12:07.760]   And I'll just go back to the slides here.
+[00:12:07.760 --> 00:12:10.760]   Oh, yeah, so it was just going to talk at a high level.
+[00:12:10.760 --> 00:12:13.760]   I probably should have done this before jumping into the code.
+[00:12:13.760 --> 00:12:16.760]   But we have a user, we have a browser.
+[00:12:16.760 --> 00:12:19.760]   The browser is generating microphone data.
+[00:12:19.760 --> 00:12:23.760]   And we're sending that microphone data to the service.
+[00:12:23.760 --> 00:12:26.760]   So the voice agent API wraps all three pieces together.
+[00:12:26.760 --> 00:12:31.760]   DLLM can do the function calling, and so can the client browser.
+[00:12:31.760 --> 00:12:34.760]   So DLLM adds the items automatically.
+[00:12:34.760 --> 00:12:42.760]   And then the browser is just displaying what items are actually in that order.
+[00:12:42.760 --> 00:12:43.760]   Okay.
+[00:12:43.760 --> 00:12:45.760]   Any questions on that before I move on?
+[00:12:45.760 --> 00:12:46.760]   Like GitHub repo?
+[00:12:46.760 --> 00:12:47.760]   Oh, yes.
+[00:12:47.760 --> 00:12:48.760]   You need that again?
+[00:12:48.760 --> 00:12:49.760]   There you go.
+[00:12:49.760 --> 00:13:03.760]   Was everybody able to find the GitHub repos?
+[00:13:03.760 --> 00:13:04.760]   All good.
+[00:13:04.760 --> 00:13:05.760]   Okay.
+[00:13:05.760 --> 00:13:06.760]   Nice.
+[00:13:06.760 --> 00:13:07.760]   You missed it on the slide.
+[00:13:07.760 --> 00:13:08.760]   Thank you.
+[00:13:08.760 --> 00:13:09.760]   Awesome.
+[00:13:09.760 --> 00:13:22.760]   Yeah, so this is the agent configuration I was showing you earlier.
+[00:13:22.760 --> 00:13:24.760]   Right now, the app is pretty basic.
+[00:13:24.760 --> 00:13:26.760]   It only has an add item.
+[00:13:26.760 --> 00:13:27.760]   Right?
+[00:13:27.760 --> 00:13:28.760]   So you can't take items away.
+[00:13:28.760 --> 00:13:30.760]   You can't modify items.
+[00:13:30.760 --> 00:13:35.760]   And the reason we've limited it to that is, you know, that's a challenge for you.
+[00:13:35.760 --> 00:13:37.760]   Can you add order modification?
+[00:13:37.760 --> 00:13:44.760]   We've already got the API there, so we have a remove item API, and a few orders.
+[00:13:44.760 --> 00:13:45.760]   Let me grab.
+[00:13:45.760 --> 00:13:46.760]   Yeah.
+[00:13:46.760 --> 00:13:47.760]   So there's...
+[00:13:47.760 --> 00:13:48.760]   Yeah.
+[00:13:48.760 --> 00:13:51.760]   These are all the APIs that are in the server code.
+[00:13:51.760 --> 00:13:58.760]   So if you want to add that order modification, you're going to need to look at, you know,
+[00:13:58.760 --> 00:14:02.760]   basically removing an item from the order.
+[00:14:02.760 --> 00:14:05.760]   I believe this one here.
+[00:14:05.760 --> 00:14:07.760]   Delete call ID order items.
+[00:14:07.760 --> 00:14:10.760]   So we've already hooked up the add item.
+[00:14:10.760 --> 00:14:15.760]   But in order to remove items, your LLM is going to understand what's already in the order.
+[00:14:15.760 --> 00:14:18.760]   And you'll need to use the get order call.
+[00:14:18.760 --> 00:14:22.760]   But we'll get into that a little bit later.
+[00:14:22.760 --> 00:14:23.760]   Okay.
+[00:14:23.760 --> 00:14:25.760]   So we support multiple LLMs.
+[00:14:25.760 --> 00:14:32.760]   And so within the API today, you can call, you know, Claude, Lametree, Mixtrel, supported
+[00:14:32.760 --> 00:14:35.760]   with OpenAI and Tropic and Grok.
+[00:14:35.760 --> 00:14:39.760]   We will be adding to that as well over time, but those are the kind of initial ones.
+[00:14:39.760 --> 00:14:46.760]   And this API is pre-release as well, so you're basically getting a sneak peek to it.
+[00:14:46.760 --> 00:14:49.760]   Yeah, so we have the menu here.
+[00:14:49.760 --> 00:14:53.760]   So the menu is coming from the menu items API.
+[00:14:53.760 --> 00:14:59.760]   And when I want to create a new call, so on loading of the web page, we basically grab
+[00:14:59.760 --> 00:15:00.760]   a unique call ID.
+[00:15:00.760 --> 00:15:02.760]   And we get the menu.
+[00:15:02.760 --> 00:15:09.760]   And the menu itself right now is baked in to the LLM system prompt.
+[00:15:09.760 --> 00:15:13.760]   And stretch goal would be let's turn that into a function call as well.
+[00:15:13.760 --> 00:15:16.760]   Let's allow items to go out of stock, right?
+[00:15:16.760 --> 00:15:20.760]   And the LLM will need to know when you're out of chicken wings and things like that.
+[00:15:20.760 --> 00:15:24.760]   And then we have the get order for the call API as well.
+[00:15:24.760 --> 00:15:27.760]   Yeah, so the WebSocket client itself.
+[00:15:27.760 --> 00:15:31.760]   If you are familiar with the Chrome Dev Tools.
+[00:15:31.760 --> 00:15:33.760]   Let me see if I can grab it here.
+[00:15:33.760 --> 00:15:43.760]   Yeah, so in the network tab of the Chrome Dev Tools, there's a cool little WebSocket inspector.
+[00:15:43.760 --> 00:15:49.760]   So if I start a conversation, you'll be able to see the messages as they happen.
+[00:15:49.760 --> 00:15:52.760]   So you can see here I'm streaming audio at a pretty rapid rate.
+[00:15:52.760 --> 00:15:59.760]   And, you know, when the API responds, it's going to send us back messages as well.
+[00:15:59.760 --> 00:16:03.760]   So there's just quite a few life cycle messages that we'll send you to.
+[00:16:03.760 --> 00:16:06.760]   And I can bring those up now as well.
+[00:16:06.760 --> 00:16:12.760]   Yeah, so the sentence configuration.
+[00:16:12.760 --> 00:16:14.760]   That's one that we send.
+[00:16:14.760 --> 00:16:15.760]   So we tell it.
+[00:16:15.760 --> 00:16:17.760]   And this is being truncated as well.
+[00:16:17.760 --> 00:16:21.760]   There's a lot of, like, system stuff and function calling as well in it.
+[00:16:21.760 --> 00:16:25.760]   But we're basically telling the system what we want to actually send it.
+[00:16:25.760 --> 00:16:26.760]   What we want it to be.
+[00:16:26.760 --> 00:16:27.760]   How we want it to work.
+[00:16:27.760 --> 00:16:29.760]   What functions we want it to call.
+[00:16:29.760 --> 00:16:32.760]   And it's going to send us back this session ID.
+[00:16:32.760 --> 00:16:34.760]   And then the conversation text.
+[00:16:34.760 --> 00:16:38.760]   So that's going to give us a transcript of what the user is saying.
+[00:16:38.760 --> 00:16:44.760]   That can be useful if you want to display, you know, text on screen while the person is speaking.
+[00:16:44.760 --> 00:16:49.760]   Sometimes that feedback is really useful so people know it's hearing you as you talk.
+[00:16:49.760 --> 00:16:51.760]   And then, yeah, the function calling.
+[00:16:51.760 --> 00:16:55.760]   So right now this is only doing add item.
+[00:16:55.760 --> 00:16:58.760]   And you can see the argument here is basically the Krabby Patty.
+[00:16:58.760 --> 00:17:04.760]   Yeah, so the tool will respond whether it was a success or failure.
+[00:17:04.760 --> 00:17:07.760]   So, you know, if it can't add the item, you'll know about it.
+[00:17:07.760 --> 00:17:13.760]   And then you'll also get the assistance response back in text.
+[00:17:13.760 --> 00:17:18.760]   It can be useful to know what the AI is saying if you want to do content moderation.
+[00:17:18.760 --> 00:17:22.760]   So you don't want it offering free Krabby Patties for instance.
+[00:17:22.760 --> 00:17:26.760]   You might have a mechanism to detect, you know, various things.
+[00:17:26.760 --> 00:17:29.760]   And you can apply that to a lot of different use cases as well.
+[00:17:29.760 --> 00:17:33.760]   Yeah, so the backend API.
+[00:17:33.760 --> 00:17:36.760]   This is the main one that we're going to be using today.
+[00:17:36.760 --> 00:17:41.760]   But, yeah, I do recommend trying to add a few more.
+[00:17:41.760 --> 00:17:44.760]   And, yeah, on the server logs.
+[00:17:44.760 --> 00:17:49.760]   So, you know, in the server where it's running this API, you're going to see things like this.
+[00:17:49.760 --> 00:17:50.760]   Right?
+[00:17:50.760 --> 00:17:51.760]   So there's a new call coming in.
+[00:17:51.760 --> 00:17:53.760]   You've got that order ID.
+[00:17:53.760 --> 00:17:56.760]   You're adding an item to that order.
+[00:17:56.760 --> 00:18:00.760]   And then you're getting the updated order here as well.
+[00:18:00.760 --> 00:18:05.760]   And this is essentially what, you know, we're consuming in the frontend to display the items
+[00:18:05.760 --> 00:18:06.760]   as they're ordered.
+[00:18:06.760 --> 00:18:11.760]   So walking through the client code, there's five files.
+[00:18:11.760 --> 00:18:14.760]   I tried to split them out logically as best I could.
+[00:18:14.760 --> 00:18:19.760]   So let's go through each of those and just kind of explain what each of them does.
+[00:18:19.760 --> 00:18:24.760]   The main.js, this is going to be, you know, all the kind of frontend hookup code.
+[00:18:24.760 --> 00:18:31.760]   Config.js, that's going to be how we tell the LLM and the agent API what to do.
+[00:18:31.760 --> 00:18:38.760]   The services.js, that's just like a, you know, crud kind of interface to the backend API.
+[00:18:38.760 --> 00:18:45.760]   And audio.js does some kind of interesting stuff around, you know, audio manipulation and
+[00:18:45.760 --> 00:18:46.760]   down sampling.
+[00:18:46.760 --> 00:18:52.760]   The browser itself actually sends higher sample rate audio.
+[00:18:52.760 --> 00:18:55.760]   But we don't need 48 kilohertz audio at that rate.
+[00:18:55.760 --> 00:18:58.760]   That's going to be a huge bandwidth usage.
+[00:18:58.760 --> 00:19:04.760]   So we drop that down to 16 kilohertz, which is, you know, essentially what the API can handle.
+[00:19:04.760 --> 00:19:05.760]   Pretty fast, anyways.
+[00:19:05.760 --> 00:19:10.760]   And then animations.js is really just animating that little bubble that, you know, kind of responds
+[00:19:10.760 --> 00:19:12.760]   to speech.
+[00:19:12.760 --> 00:19:16.760]   And then the server code, super simple express.js API.
+[00:19:16.760 --> 00:19:21.760]   If you're familiar with express.js, you know, it doesn't really get much more simple than
+[00:19:21.760 --> 00:19:22.760]   that.
+[00:19:22.760 --> 00:19:23.760]   Okay.
+[00:19:23.760 --> 00:19:25.760]   So let's take a look at the code.
+[00:19:25.760 --> 00:19:26.760]   Yeah.
+[00:19:26.760 --> 00:19:33.760]   So this is the index.js within the server code.
+[00:19:33.760 --> 00:19:38.760]   And it's just got a few very simple function calls here.
+[00:19:38.760 --> 00:19:43.760]   So I'm not sure how much I should go into this.
+[00:19:43.760 --> 00:19:45.760]   But, yeah, it's pretty straightforward.
+[00:19:45.760 --> 00:19:50.760]   It's just updating the app state and handling some of the crud operations.
+[00:19:50.760 --> 00:19:54.760]   So let's go through these top to bottom.
+[00:19:54.760 --> 00:19:57.760]   The animation stuff, it's just a simple canvas.
+[00:19:57.760 --> 00:20:00.760]   It's going to modify the bubble.
+[00:20:00.760 --> 00:20:04.760]   And I'll show you the bubble again if you forget what it looks like.
+[00:20:04.760 --> 00:20:05.760]   Yeah.
+[00:20:05.760 --> 00:20:08.760]   So this bubble here is going to respond to speech.
+[00:20:08.760 --> 00:20:11.760]   So you can see it kind of getting bigger, smaller.
+[00:20:11.760 --> 00:20:12.760]   Bigger, smaller.
+[00:20:12.760 --> 00:20:17.760]   And that's pretty much what that does.
+[00:20:17.760 --> 00:20:21.760]   Within audio.js, so we've got a couple of different functions in here.
+[00:20:21.760 --> 00:20:24.760]   We've got receive audio and capture audio.
+[00:20:24.760 --> 00:20:27.760]   And then clear scheduled audio and down sample.
+[00:20:27.760 --> 00:20:33.760]   And this little function is just a conversion function that the down sample uses.
+[00:20:33.760 --> 00:20:39.760]   And the reason we need a clear scheduled audio is because you can interrupt the LLM while you're
+[00:20:39.760 --> 00:20:42.760]   talking, right, or the agent.
+[00:20:42.760 --> 00:20:47.760]   And we may not know that on the server side because you're handling it on the client side.
+[00:20:47.760 --> 00:20:52.760]   So if you've got audio already playing, you're going to want to pause that audio as soon as
+[00:20:52.760 --> 00:20:53.760]   you can.
+[00:20:53.760 --> 00:20:57.760]   You could even add a client side voice activity detector.
+[00:20:57.760 --> 00:21:01.760]   Solero VAD is a really good one that I've used before.
+[00:21:01.760 --> 00:21:03.760]   And that just allows you to do that barge in.
+[00:21:03.760 --> 00:21:07.760]   So when you do start speaking, you know, it knows to stop.
+[00:21:07.760 --> 00:21:14.760]   And more advanced systems will help the LLM actually understand whereabouts in its speech did it get
+[00:21:14.760 --> 00:21:15.760]   interrupted, right?
+[00:21:15.760 --> 00:21:21.760]   Because then it may not know you didn't hear at the end of its prior response.
+[00:21:21.760 --> 00:21:23.760]   And then, yeah, receiving audio.
+[00:21:23.760 --> 00:21:29.760]   So this is basically grabbing the audio from the WebSocket and just sticking it into a buffer.
+[00:21:29.760 --> 00:21:34.760]   And then the capture audio, this is just grabbing it from the media devices on the browser.
+[00:21:34.760 --> 00:21:38.760]   And then once we get that, we call the callback.
+[00:21:38.760 --> 00:21:43.760]   And that callback is what we saw here, which is the WebSocket send data.
+[00:21:43.760 --> 00:21:53.760]   So walking down through this, on load, we're going to prepare the agents config and send that over.
+[00:21:53.760 --> 00:21:55.760]   That will give us the order ID.
+[00:21:55.760 --> 00:22:04.760]   And then when I click start conversation on the UI, that's going to call this code here, opens the WebSocket, and begins sending audio data.
+[00:22:04.760 --> 00:22:08.760]   The errors, any WebSocket errors will be handled there.
+[00:22:08.760 --> 00:22:16.760]   And then this is essentially where we're getting back text-based status messages.
+[00:22:16.760 --> 00:22:24.760]   So users started speaking, like what the AI said, and then here we're actually receiving the audio.
+[00:22:24.760 --> 00:22:30.760]   So receiving the audio is what we looked at in the audio.js file.
+[00:22:30.760 --> 00:22:33.760]   And then we also have the ability to update voices.
+[00:22:33.760 --> 00:22:37.760]   So I don't think I showed that actually in the prior example.
+[00:22:37.760 --> 00:22:40.760]   I have a version running here.
+[00:22:40.760 --> 00:22:42.760]   Let me just kick it off.
+[00:22:42.760 --> 00:22:55.760]   Hello.
+[00:22:55.760 --> 00:22:58.760]   Hi there.
+[00:22:58.760 --> 00:23:01.760]   Welcome to the Krusty Krab drive-through.
+[00:23:01.760 --> 00:23:03.760]   What can I get for you today?
+[00:23:03.760 --> 00:23:04.760]   Yeah.
+[00:23:04.760 --> 00:23:07.760]   Can I get a Krabby Patty, please?
+[00:23:07.760 --> 00:23:11.760]   Got us a Krabby Patty.
+[00:23:11.760 --> 00:23:13.760]   Anything else for you today?
+[00:23:13.760 --> 00:23:14.760]   Yeah.
+[00:23:14.760 --> 00:23:16.760]   Can I get a Krabby meal as well?
+[00:23:16.760 --> 00:23:19.760]   Sure.
+[00:23:19.760 --> 00:23:20.760]   A Krabby meal.
+[00:23:20.760 --> 00:23:23.760]   Actually, can I change that to two Krabby Patties?
+[00:23:23.760 --> 00:23:29.760]   I've added an additional Krabby Patty to your order.
+[00:23:29.760 --> 00:23:30.760]   Anything else you'd like?
+[00:23:30.760 --> 00:23:33.760]   Yeah, so we have 12 different voices.
+[00:23:33.760 --> 00:23:37.760]   That voice, that second voice I used there is actually my own voice.
+[00:23:37.760 --> 00:23:40.760]   Which is pretty handy.
+[00:23:40.760 --> 00:23:44.760]   Yeah, I had to tell my parents when I trained the voices, like,
+[00:23:44.760 --> 00:23:47.760]   "Have you ever get a phone call from me looking for money?"
+[00:23:47.760 --> 00:23:51.760]   Yeah.
+[00:23:51.760 --> 00:23:54.760]   Cool.
+[00:23:54.760 --> 00:23:55.760]   Excuse me.
+[00:23:55.760 --> 00:23:57.760]   I'm still talking to it, am I?
+[00:23:57.760 --> 00:23:59.760]   I have a question.
+[00:23:59.760 --> 00:24:00.760]   Oh yeah, sorry.
+[00:24:00.760 --> 00:24:01.760]   Go ahead.
+[00:24:01.760 --> 00:24:04.760]   Where in the stack do you categorize the type of function call?
+[00:24:04.760 --> 00:24:10.760]   So whether that's add item or remove item or...
+[00:24:10.760 --> 00:24:11.760]   Mm-hmm.
+[00:24:11.760 --> 00:24:12.760]   Yeah.
+[00:24:12.760 --> 00:24:14.760]   Yeah, that's in the config.js.
+[00:24:14.760 --> 00:24:21.760]   So you can see here we tell it what to call and we give it a base URL.
+[00:24:23.760 --> 00:24:27.760]   So it's not dynamic based on the prompt?
+[00:24:27.760 --> 00:24:32.760]   The LLM will dynamically decide what to use.
+[00:24:32.760 --> 00:24:33.760]   Okay.
+[00:24:33.760 --> 00:24:34.760]   Mm-hmm.
+[00:24:34.760 --> 00:24:38.760]   Yeah, so there's no, like, direct calling of it.
+[00:24:38.760 --> 00:24:41.760]   The LLM is kind of like, you know, ChatGP plugins, right?
+[00:24:41.760 --> 00:24:43.760]   You don't really know if it's going to use it or not.
+[00:24:43.760 --> 00:24:47.760]   But, yeah, they've gotten pretty good, especially GPT 4.0
+[00:24:47.760 --> 00:24:52.760]   and I think Mistral as well is pretty good at calling it.
+[00:24:52.760 --> 00:24:56.760]   You'll probably have problems with GPT 3.5 and function calling.
+[00:24:56.760 --> 00:25:00.760]   It's just not really up to the level to do it.
+[00:25:01.760 --> 00:25:05.760]   The LLMs are getting better, so they're able to do it now.
+[00:25:05.760 --> 00:25:07.760]   Thanks.
+[00:25:07.760 --> 00:25:14.760]   Actually, oh, I'm sorry.
+[00:25:14.760 --> 00:25:18.760]   Putting on top of what you just said, I don't know if anybody can hear me.
+[00:25:18.760 --> 00:25:20.760]   Sorry, whatever.
+[00:25:20.760 --> 00:25:24.760]   What I've realized is you have a good system prompt
+[00:25:24.760 --> 00:25:27.760]   along with a good function definition.
+[00:25:27.760 --> 00:25:30.760]   That really works with most newer models.
+[00:25:30.760 --> 00:25:31.760]   Mm-hmm.
+[00:25:31.760 --> 00:25:33.760]   To consistently get it to use the tool
+[00:25:33.760 --> 00:25:36.760]   or request the actual tool instead of just coming up with it.
+[00:25:36.760 --> 00:25:38.760]   Yeah, yeah, definitely.
+[00:25:38.760 --> 00:25:41.760]   And, like, it really is only those newer models, right?
+[00:25:41.760 --> 00:25:43.760]   So the latest Claude.
+[00:25:43.760 --> 00:25:47.760]   I don't know if Haiku is going to work super great with function calling,
+[00:25:47.760 --> 00:25:51.760]   but definitely, like, Sonnet and Opus work a lot better.
+[00:25:52.760 --> 00:26:01.760]   And then on Grok, they host Llama, LlamaTree 70 billion, I believe, and Mixtrel.
+[00:26:01.760 --> 00:26:04.760]   You kind of -- your mileage may vary with those open source LLMs.
+[00:26:04.760 --> 00:26:07.760]   I don't think they've caught up to the function calling level just yet.
+[00:26:07.760 --> 00:26:10.760]   But, yeah, like, you know, shoot for where the puck is going to be,
+[00:26:10.760 --> 00:26:13.760]   and I think a lot of those will catch up pretty soon.
+[00:26:13.760 --> 00:26:14.760]   Yeah?
+[00:26:14.760 --> 00:26:24.760]   So I'm curious about your take on the UX of the voice.
+[00:26:24.760 --> 00:26:29.760]   what do you have in terms of recommendation specifically for filter upability?
+[00:26:29.760 --> 00:26:34.760]   Like, for these models, for these kinds of interactions,
+[00:26:34.760 --> 00:26:39.760]   I think one place where people get hooked up is, well, this is cute,
+[00:26:39.760 --> 00:26:43.760]   but oftentimes people think while they are saying something.
+[00:26:43.760 --> 00:26:47.760]   So oftentimes there are, like, these awkward silences in between
+[00:26:47.760 --> 00:26:49.760]   where the sentence is not very obvious,
+[00:26:49.760 --> 00:26:52.760]   and midway the thought changes and stuff like that.
+[00:26:52.760 --> 00:27:08.760]   So I've got two questions.
+[00:27:08.760 --> 00:27:10.760]   Yeah, yeah, so for anybody who didn't hear,
+[00:27:10.760 --> 00:27:15.760]   the question is about interruptability and how to handle things like long pauses.
+[00:27:15.760 --> 00:27:21.760]   And that really comes down to end-pointing and contextual kind of semantic end-pointing,
+[00:27:21.760 --> 00:27:22.760]   is what we call it.
+[00:27:22.760 --> 00:27:26.760]   So that's something we're going to build into this voice agent API.
+[00:27:26.760 --> 00:27:30.760]   So, you know, you can imagine a scenario where the user says, hang on a minute,
+[00:27:30.760 --> 00:27:31.760]   let me get that for you, right?
+[00:27:31.760 --> 00:27:34.760]   You know, say they're going to get their account number or whatever it is.
+[00:27:34.760 --> 00:27:39.760]   And that doesn't necessarily require the LLM to go off on another kind of monologue.
+[00:27:39.760 --> 00:27:43.760]   And the LLM might say, sure, you know, let me wait for you to get that, right?
+[00:27:43.760 --> 00:27:46.760]   And that's kind of semantic end-pointing.
+[00:27:46.760 --> 00:27:50.760]   The other type of end-pointing, which is kind of, you know, traditionally what people used,
+[00:27:50.760 --> 00:27:55.760]   was, you know, a span of silence is used to determine when somebody's finished speaking.
+[00:27:55.760 --> 00:28:01.760]   But, yeah, like if people are calling out credit card numbers, it's pretty common for them to do back-channeling.
+[00:28:01.760 --> 00:28:06.760]   So when you do back-channeling, you're essentially waiting for, like, a noise from the other person.
+[00:28:06.760 --> 00:28:07.760]   Like a, mm-hmm.
+[00:28:07.760 --> 00:28:08.760]   You know?
+[00:28:08.760 --> 00:28:10.760]   So if I do, like, you know, one, two, three, four.
+[00:28:10.760 --> 00:28:11.760]   Mm-hmm.
+[00:28:11.760 --> 00:28:12.760]   Five, six, seven, eight.
+[00:28:12.760 --> 00:28:13.760]   Mm-hmm.
+[00:28:13.760 --> 00:28:19.760]   And that just kind of gives you that, like, I've captured what you said so that you don't go too fast
+[00:28:19.760 --> 00:28:22.760]   and then the person, like, falls behind.
+[00:28:22.760 --> 00:28:28.760]   And a lot of the time with these voice agents, what I recommend to customers is, you know, what would a human do, right?
+[00:28:28.760 --> 00:28:36.760]   And there seems to be this really high expectation that the AI should be able to understand pretty much anything, right?
+[00:28:36.760 --> 00:28:42.760]   But the reality is, is that, like, nobody can understand my email address over the phone.
+[00:28:42.760 --> 00:28:47.760]   And I have to call it out, like, you know, D for Damien, you know, A for Apple.
+[00:28:47.760 --> 00:28:48.760]   And this is with a human.
+[00:28:48.760 --> 00:28:53.760]   But, you know, with an AI, you need to build in that kind of understanding logic.
+[00:28:53.760 --> 00:28:58.760]   And I'll go into it a little bit later about, you know, how you can make that composability with these agents.
+[00:28:58.760 --> 00:29:03.760]   Because you don't want to create an agent that does everything, you know, for your entire business, right?
+[00:29:03.760 --> 00:29:10.760]   You want to create an agent that's capable at a particular task and then build them together, right?
+[00:29:10.760 --> 00:29:16.760]   So having that kind of multi-agent system where you can offload parts of the conversation to, you know,
+[00:29:16.760 --> 00:29:21.760]   a slightly different AI agent that's able to collect credit card numbers very accurately
+[00:29:21.760 --> 00:29:28.760]   and handle all of the edge cases or, you know, verify account information, you know, versus, you know, taking an order.
+[00:29:28.760 --> 00:29:30.760]   And they're all very different use cases.
+[00:29:30.760 --> 00:29:37.760]   But, yeah, from what I've seen in the market, people tend to want to make it do all the things in one system prompt.
+[00:29:37.760 --> 00:29:39.760]   And it's just not there yet.
+[00:29:39.760 --> 00:29:45.760]   You know, even with these large context windows, I don't think it's really good to try to get it to do everything
+[00:29:45.760 --> 00:29:48.760]   and have, you know, a massive system prompt.
+[00:29:48.760 --> 00:29:54.760]   Like, as you increase the system prompt length, you also increase your time to first token.
+[00:29:54.760 --> 00:30:00.760]   Time to first token is really the key metric for an LLM to respond.
+[00:30:00.760 --> 00:30:05.760]   So you can start responding as soon as you get, you know, let's say five tokens or ten tokens.
+[00:30:05.760 --> 00:30:08.760]   You can start the TTS playback at that point.
+[00:30:08.760 --> 00:30:14.760]   And if you wait until, like, you know, the 250th token, the latency is going to be much higher, right?
+[00:30:14.760 --> 00:30:17.760]   Maybe if you're using Grok, you could wait that long because it's so fast.
+[00:30:17.760 --> 00:30:22.760]   But, yeah, most LLMs are outputting, you know, maybe 30 tokens per second.
+[00:30:22.760 --> 00:30:24.760]   And it's highly variable, right?
+[00:30:24.760 --> 00:30:31.760]   Like, even GPT 4.0 can give you, like, 900 millisecond latency on first token.
+[00:30:31.760 --> 00:30:34.760]   And, you know, that's something that's going to improve over time.
+[00:30:34.760 --> 00:30:39.760]   But, yeah, it's definitely something you have to be aware of when you're building these voicebots.
+[00:30:39.760 --> 00:30:40.760]   Yeah?
+[00:30:40.760 --> 00:30:49.760]   So I suppose that, you know, I've got this use case and I'm looking at either using HTTP or plugins
+[00:30:49.760 --> 00:30:55.760]   where I can also give it a capability to prompting, give it a capability to calling APIs
+[00:30:55.760 --> 00:30:59.760]   versus I'd like to use, you know, more of a spoken solution.
+[00:30:59.760 --> 00:31:02.760]   In your experience, what are some of the things to consider?
+[00:31:02.760 --> 00:31:05.760]   You know, do I want to put a dirty thing?
+[00:31:05.760 --> 00:31:08.760]   And also, like, what are the ones that want?
+[00:31:08.760 --> 00:31:15.760]   Maybe ways to cater to specific use cases like you were mentioning.
+[00:31:15.760 --> 00:31:23.760]   And just to clarify, so is the question about using this approach versus which other approach?
+[00:31:23.760 --> 00:31:24.760]   Sorry?
+[00:31:24.760 --> 00:31:28.760]   Yeah, like a .
+[00:31:28.760 --> 00:31:39.760]   Yeah, so I'm not sure I fully understand the question, but let me kind of paraphrase this.
+[00:31:39.760 --> 00:31:45.760]   So using a ChatGBT today doesn't have ears or a mouth, right?
+[00:31:45.760 --> 00:31:48.760]   So you just have an LLM text in, text out.
+[00:31:48.760 --> 00:31:51.760]   So you still have to add the ears and the mouth.
+[00:31:51.760 --> 00:31:55.760]   And what we're doing here is real-time, low-latency streaming.
+[00:31:55.760 --> 00:31:59.760]   So the audio is being streamed, like, you know, straight into the system.
+[00:31:59.760 --> 00:32:02.760]   And then audio is being streamed straight out of the system.
+[00:32:02.760 --> 00:32:08.760]   You know, obviously, GPD 4.0 had that big fanfare announcement the day before Google's announcement.
+[00:32:08.760 --> 00:32:11.760]   But neither of them have released anything yet.
+[00:32:11.760 --> 00:32:15.760]   And the reason that they haven't released anything yet is that it's hard, right?
+[00:32:15.760 --> 00:32:19.760]   We've had real-time voice agents, you know, for years.
+[00:32:19.760 --> 00:32:22.760]   And they've just gotten better and better and better.
+[00:32:22.760 --> 00:32:28.760]   And one of the key things there is the latency from, you know, end of speech to transcript.
+[00:32:28.760 --> 00:32:33.760]   And once you go self-hosted with DeepGram, you can get that down to, like, 50 milliseconds.
+[00:32:33.760 --> 00:32:36.760]   In our hosted API, you're going to get closer to half a second.
+[00:32:36.760 --> 00:32:40.760]   And that's just because we don't, like, crank up the compute.
+[00:32:40.760 --> 00:32:46.760]   And so as you increase the compute, like, say, to 5x, you can get down to that 50 milliseconds.
+[00:32:46.760 --> 00:32:51.760]   So a lot of these, you know, companies that you see showing real-time voice bots,
+[00:32:51.760 --> 00:32:53.760]   they're using DeepGram under the hood.
+[00:32:53.760 --> 00:32:59.760]   And, you know, today, I think we're the only option for low-latency real-time speech recognition.
+[00:32:59.760 --> 00:33:01.760]   And that may change in the future.
+[00:33:01.760 --> 00:33:04.760]   But, yeah, today, this is kind of state-of-the-art, I think.
+[00:33:04.760 --> 00:33:07.760]   Does that answer your question?
+[00:33:07.760 --> 00:33:12.760]   Yeah, I'm wondering, like, what are your thoughts on, you know, with, like, chat GPT, right?
+[00:33:12.760 --> 00:33:17.760]   You can create all plugins and enable these plugins to make API calls.
+[00:33:17.760 --> 00:33:23.760]   Would you say, like, that is kind of similar to a part of the world flow that you've shown here?
+[00:33:23.760 --> 00:33:24.760]   Yes.
+[00:33:24.760 --> 00:33:25.760]   So we're LLM agnostic.
+[00:33:25.760 --> 00:33:30.760]   So you can use function calling with a lot of LLMs.
+[00:33:30.760 --> 00:33:35.760]   Like, building a GPT assistant kind of follows a very similar API format.
+[00:33:35.760 --> 00:33:39.760]   It's a pretty standard open AI kind of interface.
+[00:33:39.760 --> 00:33:42.760]   And most LLMs have actually adopted that same interface.
+[00:33:42.760 --> 00:33:48.760]   So, you know, you can use that same function calling and system prompt with another LLM.
+[00:33:48.760 --> 00:33:52.760]   So, yeah, I think that's definitely interchangeable.
+[00:33:52.760 --> 00:33:57.760]   But there's no real difference between a GPT agent and what we're doing here.
+[00:33:57.760 --> 00:33:58.760]   Yeah?
+[00:33:58.760 --> 00:34:05.760]   Suppose the function call that you're making is, like, going to be long running.
+[00:34:05.760 --> 00:34:06.760]   Is that blocking to the voice agent?
+[00:34:06.760 --> 00:34:11.760]   And, like, I guess what are some ways around it if the function call that you want to make
+[00:34:11.760 --> 00:34:13.760]   is something that's long running?
+[00:34:13.760 --> 00:34:17.760]   Yeah, so the question was about long running function calling.
+[00:34:17.760 --> 00:34:19.760]   And that's definitely a concern.
+[00:34:19.760 --> 00:34:24.760]   I don't know if you want to do long running function calling with a real time voice bot.
+[00:34:24.760 --> 00:34:28.760]   You might hand that off to, you know, a secondary system.
+[00:34:28.760 --> 00:34:31.760]   So you say, hey, okay, you know, I'm checking on that for you.
+[00:34:31.760 --> 00:34:33.760]   Is there anything else I can help you with?
+[00:34:33.760 --> 00:34:37.760]   And then when it comes back, your agent can then offer up the information.
+[00:34:37.760 --> 00:34:58.760]   Is this, like, are the voice agent function calls, like, full of only so, like, in the
+[00:34:58.760 --> 00:35:00.760]   context of this demo, there's, like, a get order function.
+[00:35:00.760 --> 00:35:03.760]   So, like, it first adds things to the order and then, like, looks at the order.
+[00:35:03.760 --> 00:35:04.760]   But is there a way to proactively push things to the conversation window as part of the CPI?
+[00:35:04.760 --> 00:35:05.760]   Yeah, yeah.
+[00:35:05.760 --> 00:35:10.760]   We're making the call to the add item to order API.
+[00:35:10.760 --> 00:35:11.760]   So it's doing the pushing, right?
+[00:35:11.760 --> 00:35:13.760]   I'm not pushing anything client-side.
+[00:35:13.760 --> 00:35:15.760]   I'm only reading client-side.
+[00:35:15.760 --> 00:35:17.760]   So client-side, I'm just polling the order.
+[00:35:17.760 --> 00:35:20.760]   And it's like, you know, give me the order, give me the order, give me the order.
+[00:35:20.760 --> 00:35:23.760]   And that's able to allow me to display the order.
+[00:35:23.760 --> 00:35:26.760]   But the actual pushing, it's happening all from the LLM.
+[00:35:26.760 --> 00:35:27.760]   I see.
+[00:35:27.760 --> 00:35:33.760]   So with respect to, like, if we need to add the information about the order to the LLM,
+[00:35:33.760 --> 00:35:38.760]   that is, in and of itself, a function called on the part of the LLM to pull from the API.
+[00:35:38.760 --> 00:35:39.760]   Is that correct?
+[00:35:39.760 --> 00:35:42.760]   Yeah, so what you would want to do is you would want to give it a new function.
+[00:35:42.760 --> 00:35:45.760]   And we've already created the functions to give it.
+[00:35:45.760 --> 00:35:48.760]   And that's kind of the next step in this.
+[00:35:48.760 --> 00:35:53.760]   So you would want to add a new function here for get order, right?
+[00:35:53.760 --> 00:35:57.760]   So this would be like your get order function.
+[00:35:57.760 --> 00:36:01.760]   And then you can point that to the API to get the order.
+[00:36:01.760 --> 00:36:04.760]   Another one you'll probably want to do is get menu, right?
+[00:36:04.760 --> 00:36:08.760]   So, you know, is there an item that's no longer available, right?
+[00:36:08.760 --> 00:36:12.760]   Because we're pulling from the, you know, the menu ordering system to see if something's
+[00:36:12.760 --> 00:36:15.760]   out of stock because we know all the orders that have gone through.
+[00:36:15.760 --> 00:36:18.760]   And then another one you'll want is actually a remove item.
+[00:36:18.760 --> 00:36:23.760]   So with remove item, you have the ability to modify the existing order.
+[00:36:23.760 --> 00:36:27.760]   And I didn't implement these in the function calls because I thought that would be a good
+[00:36:27.760 --> 00:36:29.760]   kind of learning exercise for people here.
+[00:36:29.760 --> 00:36:34.760]   But, yeah, you could definitely add those and understand a little bit more how to work.
+[00:36:34.760 --> 00:36:35.760]   Got it.
+[00:36:35.760 --> 00:36:43.760]   And if we did want to have a long-running function that ran, it would be a non-blocking function
+[00:36:43.760 --> 00:36:45.760]   called it triggers the job.
+[00:36:45.760 --> 00:36:50.760]   And then at some later point, the assistant attempts to fetch that information.
+[00:36:50.760 --> 00:36:54.760]   Is there a way for clients to actually push data into the conversation blog?
+[00:36:54.760 --> 00:36:57.760]   Like with this API, is that a possibility?
+[00:36:57.760 --> 00:36:58.760]   Yeah.
+[00:36:58.760 --> 00:36:59.760]   Yeah.
+[00:36:59.760 --> 00:37:00.760]   Absolutely.
+[00:37:00.760 --> 00:37:05.760]   So as a part of the, you know, the information that the LLM has access to.
+[00:37:05.760 --> 00:37:07.760]   I don't know if you can see it here.
+[00:37:07.760 --> 00:37:08.760]   It might be off screen.
+[00:37:08.760 --> 00:37:10.760]   You can see here the menu, right?
+[00:37:10.760 --> 00:37:14.760]   So the menu there is a part of its system prompt.
+[00:37:14.760 --> 00:37:19.760]   But you could remove that menu from there and add it as a function call.
+[00:37:19.760 --> 00:37:24.760]   So now anything that, like you could have a separate service modifying the menu.
+[00:37:24.760 --> 00:37:26.760]   And it could be a separate LLM, right?
+[00:37:26.760 --> 00:37:32.760]   And when that menu is modified and it pulls the menu, it's now updated its system context.
+[00:37:32.760 --> 00:37:33.760]   I understand.
+[00:37:33.760 --> 00:37:34.760]   Cool.
+[00:37:34.760 --> 00:37:35.760]   Yeah?
+[00:37:35.760 --> 00:37:38.760]   Can I ask you a follow-up just to that?
+[00:37:38.760 --> 00:37:39.760]   Yeah, sure.
+[00:37:39.760 --> 00:37:40.760]   Yeah.
+[00:37:40.760 --> 00:37:46.760]   I haven't tried it myself, but I'd probably imagine you'd want some sort of webhook callback.
+[00:37:46.760 --> 00:38:09.760]   So when the function call is complete, it would instantly return, but then have a separate
+[00:38:09.760 --> 00:38:12.760]   handler that would know that it's completed.
+[00:38:12.760 --> 00:38:18.760]   And then you can prompt the LLM from that webhook handler to say, hey, you know, this thing you
+[00:38:18.760 --> 00:38:19.760]   asked for earlier.
+[00:38:19.760 --> 00:38:23.760]   And it would kind of act like a user input as well.
+[00:38:23.760 --> 00:38:33.760]   The webhook handler would probably run on the back end, not in the LLM itself.
+[00:38:33.760 --> 00:38:39.760]   So the LLM would just say, hey, go do this long-running task, instantly return and say,
+[00:38:39.760 --> 00:38:41.760]   okay, I've kicked off that long-running task.
+[00:38:41.760 --> 00:38:46.760]   And then when the webhook handler gets fired by the long-running task, it would then tell
+[00:38:46.760 --> 00:38:49.760]   the LLM, hey, you know, this long-running task is completed.
+[00:38:49.760 --> 00:38:52.760]   I think you had a question as well, yeah?
+[00:38:52.760 --> 00:39:01.760]   On the internal handling side, how do you differentiate between a noise versus an action speech?
+[00:39:01.760 --> 00:39:04.760]   Yeah, so we have voice activity detectors.
+[00:39:04.760 --> 00:39:10.760]   And the voice activity detector will only trigger on audio that's generated by the vocal cords.
+[00:39:10.760 --> 00:39:14.760]   It will trigger on coughs and humming and things like that.
+[00:39:14.760 --> 00:39:17.760]   But you may want that to happen as well.
+[00:39:17.760 --> 00:39:22.760]   So you can put in things in place to detect, okay, did I actually transcribe a word?
+[00:39:22.760 --> 00:39:24.760]   You know, should I respond to this?
+[00:39:24.760 --> 00:39:27.760]   So those are things you can implement as well.
+[00:39:27.760 --> 00:39:31.760]   So on that, will it add a latency when I'm speaking on the phone?
+[00:39:31.760 --> 00:39:33.760]   And if I interrupt?
+[00:39:33.760 --> 00:39:34.760]   Mm-hmm.
+[00:39:34.760 --> 00:39:39.760]   While you have an audio going on, you'll have to wait for the rest of the phone?
+[00:39:39.760 --> 00:39:46.760]   Yeah, so we'll send you a very quick user-started speaking event using the server-side VAD.
+[00:39:46.760 --> 00:39:50.760]   So the voice activity detector is going to tell you as soon as you get it.
+[00:39:50.760 --> 00:39:55.760]   And we actually have code in there as well to clear, I believe.
+[00:39:55.760 --> 00:39:56.760]   Let me see.
+[00:39:56.760 --> 00:39:57.760]   Let me see.
+[00:39:57.760 --> 00:39:58.760]   Where is it?
+[00:39:58.760 --> 00:39:59.760]   In here.
+[00:39:59.760 --> 00:40:06.760]   Yeah, so you see if user-started speaking happens, we basically stop the audio playback.
+[00:40:06.760 --> 00:40:07.760]   Okay.
+[00:40:07.760 --> 00:40:10.760]   What's the latency on that?
+[00:40:10.760 --> 00:40:11.760]   It can vary.
+[00:40:11.760 --> 00:40:14.760]   I think it should be in the order of, like, less than 100 milliseconds.
+[00:40:14.760 --> 00:40:15.760]   Mm-hmm.
+[00:40:15.760 --> 00:40:16.760]   Yeah?
+[00:40:16.760 --> 00:40:20.760]   Is memory being handled at all, or is that just something separate?
+[00:40:20.760 --> 00:40:24.760]   Yes, memory would be kind of, like, a separate challenge.
+[00:40:24.760 --> 00:40:26.760]   You can obviously build up the system context.
+[00:40:26.760 --> 00:40:31.760]   You know, depending on your use case, like, if you want to handle hour-long calls, you probably
+[00:40:31.760 --> 00:40:34.760]   don't want to keep building up the system context.
+[00:40:34.760 --> 00:40:37.760]   You'll want to use some sort of memory system.
+[00:40:37.760 --> 00:40:42.760]   Autogen have a pretty good teachable agent, if you're familiar with it.
+[00:40:42.760 --> 00:40:48.760]   It has the ability to run a secondary LLM to ask, is there anything new or updated, you
+[00:40:48.760 --> 00:40:50.760]   know, in this new content?
+[00:40:50.760 --> 00:40:52.760]   Update, you know, the existing memory.
+[00:40:52.760 --> 00:40:56.760]   A good example of that might be, like, oh, I live at 123 Street.
+[00:40:56.760 --> 00:40:59.760]   And then it comes down later on, and it's like, oh, actually, I live at 456 Street.
+[00:40:59.760 --> 00:41:00.760]   Right?
+[00:41:00.760 --> 00:41:03.760]   And you don't want both conflicting in your system prompt.
+[00:41:03.760 --> 00:41:06.760]   You want to update the prior memory of it.
+[00:41:06.760 --> 00:41:07.760]   Yeah?
+[00:41:07.760 --> 00:41:16.760]   How do you protect against the prompt injection or road contact into the system?
+[00:41:16.760 --> 00:41:23.760]   Yeah, and that's really the reason that we have -- let me see this one here.
+[00:41:23.760 --> 00:41:25.760]   This is why we have the conversation text.
+[00:41:25.760 --> 00:41:32.760]   So, you know, you'll hear stories of people getting, you know, Chevrolet cars for $0 by,
+[00:41:32.760 --> 00:41:34.760]   you know, modifying the system.
+[00:41:34.760 --> 00:41:39.760]   But what you can do is you can actually have a process on the text that, you know, tries
+[00:41:39.760 --> 00:41:41.760]   to block certain things, right?
+[00:41:41.760 --> 00:41:45.760]   And that content moderation is very important to prevent things like that.
+[00:41:45.760 --> 00:41:50.760]   I don't think you're ever going to be able to prevent, like, prompt modification, right?
+[00:41:50.760 --> 00:41:57.760]   Because, you know, if you ask an AI bot five times or even three times to, like, break its rules,
+[00:41:57.760 --> 00:41:58.760]   it probably will, right?
+[00:41:58.760 --> 00:42:00.760]   Like, the first time, it's like, no, no, I can't do that.
+[00:42:00.760 --> 00:42:02.760]   And then the second time, it's like, no, definitely can't do that.
+[00:42:02.760 --> 00:42:04.760]   Third time, it's like, sure, I'll do that for you.
+[00:42:04.760 --> 00:42:06.760]   And that's just an inherent problem with LLM.
+[00:42:06.760 --> 00:42:09.760]   So, you know, you're not going to be able to stop it on the way in.
+[00:42:09.760 --> 00:42:14.760]   But on the way out, you could be like, hey, you know, you've offered something that we've
+[00:42:14.760 --> 00:42:16.760]   detected is invalid.
+[00:42:16.760 --> 00:42:18.760]   But, yeah, it's a hard problem.
+[00:42:18.760 --> 00:42:21.760]   I don't think anybody's really solved that.
+[00:42:21.760 --> 00:42:24.760]   I don't think we understand LLMs enough to solve it.
+[00:42:24.760 --> 00:42:25.760]   Yeah?
+[00:42:25.760 --> 00:42:30.760]   I'm curious about the TDS and STD side of the world.
+[00:42:30.760 --> 00:42:34.760]   What kind of language support is there?
+[00:42:34.760 --> 00:42:36.760]   What kind of complex support is there?
+[00:42:36.760 --> 00:42:37.760]   Mm-hmm.
+[00:42:37.760 --> 00:42:56.760]   Yeah, so the question was about the language support on text-to-speech and speech-to-text.
+[00:42:56.760 --> 00:43:03.760]   Let me just log in here quickly.
+[00:43:03.760 --> 00:43:10.760]   Yeah, so if I jump over to the text-to-speech, these are the different voices we have.
+[00:43:10.760 --> 00:43:11.760]   So we have 12 voices.
+[00:43:11.760 --> 00:43:16.760]   Today we've got all of our English voices publicly available.
+[00:43:16.760 --> 00:43:21.760]   And they're super low latency and very low cost, right?
+[00:43:21.760 --> 00:43:24.760]   About 20X cheaper than 11Labs.
+[00:43:24.760 --> 00:43:31.760]   And so we're kind of competing at the, you know, the Google, AWS, Azure voice pricing.
+[00:43:31.760 --> 00:43:35.760]   But with the quality that's pretty close to 11Labs.
+[00:43:35.760 --> 00:43:38.760]   We're working today on promptable TTS.
+[00:43:38.760 --> 00:43:42.760]   So that's going to give you the ability to say, hey, you know, say this in an empathic voice.
+[00:43:42.760 --> 00:43:44.760]   Or say it in a pirate's voice, right?
+[00:43:44.760 --> 00:43:46.760]   Like, the ability to prompt it.
+[00:43:46.760 --> 00:43:52.760]   And once we've completed that research, we're then going to roll out other languages.
+[00:43:52.760 --> 00:43:59.760]   The challenge with building them now would be that we'd have to go back and retrain all of the models once the promptable TTS is out.
+[00:43:59.760 --> 00:44:03.760]   I believe our TTS launched about four months ago.
+[00:44:03.760 --> 00:44:05.760]   So, yeah, it's pretty new to the market.
+[00:44:05.760 --> 00:44:08.760]   But you can play all of them here as well, which is pretty handy.
+[00:44:08.760 --> 00:44:11.760]   DeepRam is great for real-time conversations.
+[00:44:11.760 --> 00:44:14.760]   And also, you can build apps for things.
+[00:44:14.760 --> 00:44:17.760]   DeepRam is great for real-time conversations.
+[00:44:17.760 --> 00:44:20.760]   DeepRam is great for real-time.
+[00:44:20.760 --> 00:44:21.760]   DeepRam is great for real-time.
+[00:44:21.760 --> 00:44:26.760]   Yeah, and what I've found with customers is the vast majority of customers want female voices.
+[00:44:26.760 --> 00:44:32.760]   I don't know what it is, but I guess nobody wants it to be mansplained.
+[00:44:32.760 --> 00:44:41.760]   Yeah, and then on the language side, we have 36 languages supported today on our Nova 2 model.
+[00:44:41.760 --> 00:44:44.760]   We have a few more supported as well on our older models.
+[00:44:44.760 --> 00:44:48.760]   But we're adding languages every month there as well.
+[00:44:48.760 --> 00:44:51.760]   We've actually got an auto-training pipeline set up.
+[00:44:51.760 --> 00:45:02.760]   Probably the first in the world, I think, where we have the ability to detect low-confidence words and then retrain based on low performance.
+[00:45:02.760 --> 00:45:05.760]   We've also got a ton of other intelligence APIs.
+[00:45:05.760 --> 00:45:13.760]   So if you want to do summarization, topic detection, intent recognition, sentiment analysis, you can send all of those off as well.
+[00:45:13.760 --> 00:45:16.760]   I think I have a customer service one here.
+[00:45:16.760 --> 00:45:28.760]   And those can be pretty useful because detecting topics in an actual audio file and where they happen is super useful.
+[00:45:28.760 --> 00:45:39.760]   So if you're in a call center and you want to understand at a high level how many of my millions of calls touched on these different things and which ones to automate.
+[00:45:39.760 --> 00:45:46.760]   And we usually say to people that are automating the call center is step one is analyze all your existing calls.
+[00:45:46.760 --> 00:45:54.760]   Figure out what you've got and if you've got 40% phone issue, look at automating the phone issue first.
+[00:45:54.760 --> 00:46:00.760]   And a lot of them do agent assist, which is like bubbling up knowledge based articles to real people.
+[00:46:00.760 --> 00:46:05.760]   And then once they have that built, it's very easy to then just use an AI.
+[00:46:05.760 --> 00:46:09.760]   We don't necessarily want to replace people in call centers.
+[00:46:09.760 --> 00:46:12.760]   We just want to take away the work that can be automated.
+[00:46:12.760 --> 00:46:22.760]   So like what we're seeing now in call centers is that like one call center agent using a cloned AI voice can hand off a call to the agent.
+[00:46:22.760 --> 00:46:25.760]   So let's say it's collecting credit card information.
+[00:46:25.760 --> 00:46:31.760]   They can just press a button, let the AI collect credit card information, and they can do five calls simultaneously.
+[00:46:31.760 --> 00:46:36.760]   And then when a call needs their help, they can jump over to the call that needs their help.
+[00:46:36.760 --> 00:46:40.760]   So you're kind of 5Xing productivity with that approach.
+[00:46:40.760 --> 00:46:41.760]   Okay.
+[00:46:41.760 --> 00:46:43.760]   Question at the back there.
+[00:46:43.760 --> 00:46:44.760]   How do you go about monitoring?
+[00:46:44.760 --> 00:46:53.760]   Like if you want to monitor where the border goes wrong, where someone tried to jailbreak it, or all of those things.
+[00:46:53.760 --> 00:46:54.760]   Mm-hmm.
+[00:46:54.760 --> 00:46:57.760]   Yeah, so there's multiple places you can do that.
+[00:46:57.760 --> 00:47:00.760]   You're probably going to have the agent actually running on a server.
+[00:47:00.760 --> 00:47:03.760]   You know, for this workshop, we just put it in a browser.
+[00:47:03.760 --> 00:47:11.760]   But, you know, the vast majority of people will have this agent running directly like on a Twilio, you know, phone line.
+[00:47:11.760 --> 00:47:16.760]   So when that agent is doing the work, you would handle that in your server code, right?
+[00:47:16.760 --> 00:47:24.760]   You might have some moderation code that, you know, detects something out of allowedment, and then, you know, blocks it.
+[00:47:24.760 --> 00:47:34.760]   You can definitely add it to the system prompt, but it's only going to get you so far.
+[00:47:34.760 --> 00:47:51.760]   Yeah, so the question is about, like, how to monitor and track metrics.
+[00:47:51.760 --> 00:48:01.760]   Yeah, so there's a lot of open source projects out there at the moment for kind of doing agent ops.
+[00:48:01.760 --> 00:48:04.760]   One of them is called agent ops, which is pretty good.
+[00:48:04.760 --> 00:48:07.760]   That can give you, you know, temporal debugging.
+[00:48:07.760 --> 00:48:11.760]   So you can actually debug what was happening throughout the LLM flow.
+[00:48:11.760 --> 00:48:14.760]   So there's a lot of stuff in that space that's happening right now.
+[00:48:14.760 --> 00:48:19.760]   But yeah, a lot of your typical monitoring tools will work there as well.
+[00:48:19.760 --> 00:48:20.760]   Yeah?
+[00:48:20.760 --> 00:48:29.760]   Well, I know, of course, that's basically a big part of your company secrets, so to speak.
+[00:48:29.760 --> 00:48:36.760]   Now, I would be interested in a general technique you use to reach that number by spoiling speed up,
+[00:48:36.760 --> 00:48:45.760]   compared to just the traditional building your own, just as you told in the beginning, spoiling tech,
+[00:48:45.760 --> 00:48:52.760]   the LLM and then have it, then talk, then speak it to the agents.
+[00:48:52.760 --> 00:48:53.760]   Mm-hmm.
+[00:48:53.760 --> 00:48:55.760]   Yeah, so a lot of our customers do that today, right?
+[00:48:55.760 --> 00:48:57.760]   They host all the different pieces.
+[00:48:57.760 --> 00:49:01.760]   And it becomes like a large infrastructure challenge, right?
+[00:49:01.760 --> 00:49:06.760]   And we'll touch on that a little bit later as well as a part of the agent swarm stuff.
+[00:49:06.760 --> 00:49:11.760]   But it's like, how do you make sure that you have low latency in different regions, right?
+[00:49:11.760 --> 00:49:15.760]   So people in the EU don't want to be hitting a server in the US, right?
+[00:49:15.760 --> 00:49:19.760]   Not just for GDPR reasons, but the latency is going to be higher.
+[00:49:19.760 --> 00:49:20.760]   Same with APAC.
+[00:49:20.760 --> 00:49:28.760]   So now you have to build and scale each of your clusters in multiple regions, and you have to be able to autoscale as well.
+[00:49:28.760 --> 00:49:35.760]   One of the major use cases for AI agents is peak traffic.
+[00:49:35.760 --> 00:49:45.760]   So you might only need ten customer service agents five days a week, but if there is an outage in PG&E, suddenly they need a million agents for one hour.
+[00:49:45.760 --> 00:49:55.760]   So the ability to actually scale up, same with 911 services, they can't take all the calls when there's a large disaster or something happens.
+[00:49:55.760 --> 00:49:59.760]   So a lot of people actually just get a busy tone.
+[00:49:59.760 --> 00:50:06.760]   So the ability to do that spike up and scale in multiple regions, that's a huge challenge for a lot of startups.
+[00:50:06.760 --> 00:50:11.760]   So having somebody that offers that as a service I think is pretty useful.
+[00:50:11.760 --> 00:50:24.760]   Yeah, sorry, what I actually meant the question was more like if you theoretically have all running locally, so we completely forget about actual hardware, all scaling, et cetera.
+[00:50:24.760 --> 00:50:33.760]   What kind of techniques do you use there to improve the current time, the time between the different ones, et cetera?
+[00:50:33.760 --> 00:50:38.760]   Yeah, so when you run in our hosted API, you're running at a one second interval, right?
+[00:50:38.760 --> 00:50:43.760]   So every second you're getting what was spoken, kind of like a metronome.
+[00:50:43.760 --> 00:50:49.760]   Once you run it yourself, you can crank that up and you can say, you know what, I'm going to run it five times a second.
+[00:50:49.760 --> 00:50:56.760]   So you're inferencing like an ever-growing context window at a much faster pace.
+[00:50:56.760 --> 00:51:03.760]   Most words are about half a second long, so you're basically inferencing words partially as well.
+[00:51:03.760 --> 00:51:07.760]   So the word something might be so, some, something.
+[00:51:07.760 --> 00:51:11.760]   So you're getting this increasing context window.
+[00:51:11.760 --> 00:51:20.760]   We run with like a three to five second context window in a real time streaming, which allows us to solidify, you know, every three to five seconds what was spoken.
+[00:51:20.760 --> 00:51:26.760]   And then as soon as we detect that end of speech, we'll basically, you know, say we're not going to get any more words.
+[00:51:26.760 --> 00:51:29.760]   Let's, you know, finalize what we have so far.
+[00:51:29.760 --> 00:51:32.760]   And that's really how you can achieve those low latencies.
+[00:51:32.760 --> 00:51:34.760]   But it is a lot of compute.
+[00:51:34.760 --> 00:51:38.760]   Yeah, but with our system, it's very fast, very light on compute.
+[00:51:38.760 --> 00:51:44.760]   So you can actually run a lot of streams like on a Tesla T4.
+[00:51:44.760 --> 00:51:45.760]   Awesome.
+[00:51:45.760 --> 00:51:47.760]   Oh, one more question.
+[00:51:47.760 --> 00:51:54.760]   Yeah, so we offer self-hosting.
+[00:51:54.760 --> 00:52:00.760]   So you can basically, you know, grab our Docker images, models, run it on a GPU.
+[00:52:00.760 --> 00:52:09.760]   Like if you can get, like, three GPUs on a single motor board, that's going to give you, you know, lightning fast end to end.
+[00:52:09.760 --> 00:52:28.760]   So speed, quality, and price.
+[00:52:28.760 --> 00:52:32.760]   So, yeah, all three.
+[00:52:32.760 --> 00:52:37.760]   It's easy to sell DeepGram.
+[00:52:37.760 --> 00:52:45.760]   Okay, I'm going to jump back into slides because I think some of the other stuff might be of interest as well.
+[00:52:45.760 --> 00:52:50.760]   So, yeah, so some more advanced features that you could play around with.
+[00:52:50.760 --> 00:52:52.760]   Make a whole new back end, right?
+[00:52:52.760 --> 00:52:55.760]   Maybe it's, you know, a table booking API.
+[00:52:55.760 --> 00:52:59.760]   You know, a lot of businesses have to answer the phone.
+[00:52:59.760 --> 00:53:01.760]   I don't think they want to, right?
+[00:53:01.760 --> 00:53:02.760]   They're already busy.
+[00:53:02.760 --> 00:53:04.760]   Handle multi-agent flows.
+[00:53:04.760 --> 00:53:07.760]   So have a routing agent with two sub-agents.
+[00:53:07.760 --> 00:53:10.760]   So you could have a booking agent and a cancellation agent.
+[00:53:10.760 --> 00:53:13.760]   And that can be the same voice on the same phone line.
+[00:53:13.760 --> 00:53:19.760]   So, you know, if I say, hey, I want to make a booking, route it to the booking agent.
+[00:53:19.760 --> 00:53:21.760]   I want to cancel a booking, route it to the cancellation agent.
+[00:53:21.760 --> 00:53:28.760]   And those are essentially how you would build out these more complex systems.
+[00:53:28.760 --> 00:53:30.760]   Use cases, call center, AI agents.
+[00:53:30.760 --> 00:53:32.760]   I think this is already here.
+[00:53:32.760 --> 00:53:34.760]   We're seeing this right now.
+[00:53:34.760 --> 00:53:42.760]   Like, you know, you have companies that have replaced, you know, a large proportion of their call volume with AI.
+[00:53:42.760 --> 00:53:53.760]   And, you know, they still employ call center agents because, you know, they always need to hand off difficult calls that they haven't covered yet with the AI agent, you know, to somebody that wants to handle it.
+[00:53:53.760 --> 00:54:00.760]   IOT AI devices, right, so wearables, toys, things like that.
+[00:54:00.760 --> 00:54:02.760]   There's a lot of them out there.
+[00:54:02.760 --> 00:54:05.760]   And then, yeah, AI worker agents.
+[00:54:05.760 --> 00:54:08.760]   So, you know, working in a drive-through, taking those orders.
+[00:54:08.760 --> 00:54:15.760]   And, you know, the workers that are actually doing that are also, you know, busy preparing food and doing other things.
+[00:54:15.760 --> 00:54:19.760]   So, yeah, so multi-agent swarms.
+[00:54:19.760 --> 00:54:21.760]   So, reduced complexity.
+[00:54:21.760 --> 00:54:22.760]   Keep it simple, right?
+[00:54:22.760 --> 00:54:27.760]   Get something that works really well, really robust, and kind of, like, box it off, right?
+[00:54:27.760 --> 00:54:28.760]   Like single responsibility.
+[00:54:28.760 --> 00:54:30.760]   And reduce the cost.
+[00:54:30.760 --> 00:54:34.760]   Use the smallest, cheapest model you can to achieve the use case.
+[00:54:34.760 --> 00:54:37.760]   Like, right now, it's probably going to be those bigger models.
+[00:54:37.760 --> 00:54:43.760]   But I think in time, you know, the price point of those is going to come down and the new generation will kind of take its place.
+[00:54:43.760 --> 00:54:47.760]   So, you know, every six months we're seeing, like, 10x drop in cost.
+[00:54:47.760 --> 00:54:49.760]   And then composability.
+[00:54:49.760 --> 00:54:54.760]   So, you can reuse, you know, a sub-agent in multiple different flows.
+[00:54:54.760 --> 00:54:59.760]   So, this is kind of a pretty basic kind of layout.
+[00:54:59.760 --> 00:55:04.760]   So, you have your root and agent that's able to figure out, you know, which agent to use.
+[00:55:04.760 --> 00:55:08.760]   You have a support agent and a booking agent in this example.
+[00:55:08.760 --> 00:55:11.760]   And maybe you have a technical support agent and an account support agent, right?
+[00:55:11.760 --> 00:55:17.760]   Two different types of agent, but they can each kind of help depending on the need.
+[00:55:17.760 --> 00:55:21.760]   Your tech support agent is probably going to be hooked up to some sort of rag system.
+[00:55:21.760 --> 00:55:31.760]   Account support and existing booking agent is probably going to need to verify that this person, you know, owns the account that they're calling about.
+[00:55:31.760 --> 00:55:35.760]   So, a new booking agent might leverage, like, a credit card payment agent.
+[00:55:35.760 --> 00:55:38.760]   So, scaling it, right?
+[00:55:38.760 --> 00:55:40.760]   We talked a little bit about the latency.
+[00:55:40.760 --> 00:55:43.760]   So, distance kills latency, right?
+[00:55:43.760 --> 00:55:53.760]   Like, if you call a server in the U.S. from Asia, you're going to see, like, you know, a second extra, at least, latency.
+[00:55:53.760 --> 00:55:55.760]   If you want to do regional scaling, right?
+[00:55:55.760 --> 00:56:03.760]   You're going to need to have the ability to horizontally scale, you know, within U.S. East, within U.S. West, within EMEA, right?
+[00:56:03.760 --> 00:56:05.760]   You're going to want to have redundancy as well.
+[00:56:05.760 --> 00:56:11.760]   As you add redundancy, you increase cost as well.
+[00:56:11.760 --> 00:56:19.760]   But, you know, if you want high availability and your agent to always be on, you're going to need that redundancy to do it.
+[00:56:19.760 --> 00:56:28.760]   And then horizontal scaling within your, you know, your regional clusters, we support Kubernetes, and we'll give you all the auto scaling, Helm charts and everything.
+[00:56:28.760 --> 00:56:30.760]   So, that can be pretty powerful.
+[00:56:30.760 --> 00:56:39.760]   But you can imagine, like, if you wanted to, you know, build an agent, do you really want to worry about all that infrastructure, right?
+[00:56:39.760 --> 00:56:46.760]   Or do you want to just build the agent, achieve the, you know, the value, the business value, and roll it out on a large scale?
+[00:56:46.760 --> 00:56:49.760]   So, yeah, sorry, go on.
+[00:56:49.760 --> 00:56:55.760]   So, based on this, I was wondering what the outlook is on the embedded models.
+[00:56:55.760 --> 00:57:01.760]   Like, do you think that at some point, like, the embedded speed to fix, and fix each one?
+[00:57:01.760 --> 00:57:10.760]   So, on the right, do you think it would be good enough that you can have them on there and not worry about what they do?
+[00:57:10.760 --> 00:57:13.760]   Yeah, I think it's possible.
+[00:57:13.760 --> 00:57:15.760]   You still have to distribute the models, right?
+[00:57:15.760 --> 00:57:17.760]   The models tend to be quite large.
+[00:57:17.760 --> 00:57:20.760]   I think Gemma is like, you know, two gigs.
+[00:57:20.760 --> 00:57:23.760]   You can put it in the browser, but it's going to take you a while to download.
+[00:57:23.760 --> 00:57:27.760]   You know, as you move to mobile devices, you know, it's going to be pretty hard to do it as well.
+[00:57:27.760 --> 00:57:33.760]   Like, I do believe that there's a lot of use cases where on-device makes sense.
+[00:57:33.760 --> 00:57:36.760]   But those are, like, single stream, right?
+[00:57:36.760 --> 00:57:42.760]   So, you have a single stream, you're sending a single request to an LLM, you're getting a single response.
+[00:57:42.760 --> 00:57:48.760]   And what we're building here is, like, you know, a million simultaneous calls, right, can come in.
+[00:57:48.760 --> 00:57:54.760]   And that's never really going to work on-device, just from a distribution perspective, I guess.
+[00:57:54.760 --> 00:57:56.760]   But there's definitely use cases for it.
+[00:57:56.760 --> 00:58:01.760]   So, like, for the wearable use case, there's an open source project called Friend.
+[00:58:01.760 --> 00:58:06.760]   I helped them integrate DeepGram's real-time speech recognition into that.
+[00:58:06.760 --> 00:58:11.760]   And so, you know, running it on-device doesn't necessarily mean the model has to be on-device.
+[00:58:11.760 --> 00:58:12.760]   Yeah.
+[00:58:12.760 --> 00:58:34.760]   It's something we're looking at.
+[00:58:34.760 --> 00:58:39.760]   You can run our current model on a Raspberry Pi.
+[00:58:39.760 --> 00:58:43.760]   It's not going to be super fast, and it's not going to handle multiple concurrent requests.
+[00:58:43.760 --> 00:58:45.760]   But it will run.
+[00:58:45.760 --> 00:58:48.760]   So it can run on CPU, not just GPU.
+[00:58:48.760 --> 00:58:51.760]   I have a question.
+[00:58:51.760 --> 00:58:55.760]   What service do you recommend for the telephony part?
+[00:58:55.760 --> 00:59:00.760]   Do you use Twilio for various things, but are there other options for Twilio?
+[00:59:00.760 --> 00:59:03.760]   Yeah, there's a few Telephony providers out there.
+[00:59:03.760 --> 00:59:04.760]   Twilio, Vinage.
+[00:59:04.760 --> 00:59:07.760]   We're kind of, you know, Telephony agnostic.
+[00:59:07.760 --> 00:59:10.760]   As long as you can get us the audio stream.
+[00:59:10.760 --> 00:59:14.760]   Usually that's achieved either through, like, you know, hooking into their API or just doing
+[00:59:14.760 --> 00:59:15.760]   a SIP trunk.
+[00:59:15.760 --> 00:59:20.760]   So SIP trunk basically just hands off the processing of the call to a different server.
+[00:59:20.760 --> 00:59:21.760]   Yeah?
+[00:59:21.760 --> 00:59:34.760]   When GPT-4O eventually releases their audio-to-audio model, is DeepCram kind of like anything around
+[00:59:34.760 --> 00:59:35.760]   that, still applications around that?
+[00:59:35.760 --> 00:59:40.760]   I don't think we would necessarily use it in that regard.
+[00:59:40.760 --> 00:59:45.760]   So I think it's great for the space that, you know, they're releasing this.
+[00:59:45.760 --> 00:59:51.760]   And I think maybe in the future this type of multimodal model will make sense.
+[00:59:51.760 --> 00:59:55.760]   But it's yet to be seen what the price point is going to be and what the latency will be.
+[00:59:55.760 --> 01:00:00.760]   Like, even their chat completion API for 4.0 is taking, like, up to a second.
+[01:00:00.760 --> 01:00:04.760]   So if you add audio into that as well, that's additional processing.
+[01:00:04.760 --> 01:00:06.760]   Like, it was a really cool demo.
+[01:00:06.760 --> 01:00:12.760]   And I loved, like, how the, like, a single model could have, you know, infinite voices.
+[01:00:12.760 --> 01:00:16.760]   And I think that's where we'll see a lot of changes in the future.
+[01:00:16.760 --> 01:00:23.760]   At DeepCram, our main focus is, like, scalable, low-cost, efficient inferencing.
+[01:00:23.760 --> 01:00:29.760]   So, you know, the ability to run at these price points, you know, is probably going to be a barrier
+[01:00:29.760 --> 01:00:30.760]   to entry.
+[01:00:30.760 --> 01:00:34.760]   But, yeah, I'm looking forward to see what they release and when.
+[01:00:34.760 --> 01:00:35.760]   Yeah.
+[01:00:35.760 --> 01:00:50.760]   So, for model fine-tuning, the question is how long does it take?
+[01:00:50.760 --> 01:00:56.760]   So, we require between, like, 20 and 50 hours of audio to fine-tune the speech-to-text.
+[01:00:56.760 --> 01:00:59.760]   And then we actually human-label that.
+[01:00:59.760 --> 01:01:01.760]   So, we have our own team of human labelers.
+[01:01:01.760 --> 01:01:04.760]   And what they'll do is they'll actually do three passes.
+[01:01:04.760 --> 01:01:08.760]   So, the first pass usually works out at about, like, 12% word error rate.
+[01:01:08.760 --> 01:01:13.760]   So, if you give somebody a piece of audio and you ask them to write down exactly what was said,
+[01:01:13.760 --> 01:01:15.760]   they'll have errors in it as well.
+[01:01:15.760 --> 01:01:18.760]   So, then we run it through a second pass, they fix the prior errors.
+[01:01:18.760 --> 01:01:21.760]   And then the third pass is -- and they're all different people as well.
+[01:01:21.760 --> 01:01:26.760]   So, the third pass goes in and basically gets us to, like, 99% label accuracy.
+[01:01:26.760 --> 01:01:27.760]   And then we train the model.
+[01:01:27.760 --> 01:01:29.760]   Training the model is pretty quick, right?
+[01:01:29.760 --> 01:01:31.760]   We could probably do it in under a day.
+[01:01:31.760 --> 01:01:36.760]   But, yeah, getting all that audio and then labeled and then we kick off the training cycle.
+[01:01:36.760 --> 01:01:40.760]   And for the text-to-speech side, we don't offer cloning, voice cloning today.
+[01:01:40.760 --> 01:01:45.760]   I think there's a lot of concerns around, you know, what happens when you clone people's voices.
+[01:01:45.760 --> 01:01:48.760]   And we do do cloning for certain customers.
+[01:01:48.760 --> 01:01:52.760]   And so, if a customer comes to us and says, hey, you know, we want to use you,
+[01:01:52.760 --> 01:01:56.760]   but we need our own voice for our brand, we can do that training.
+[01:01:56.760 --> 01:02:03.760]   But that would be a business engagement.
+[01:02:03.760 --> 01:02:04.760]   Yeah.
+[01:02:04.760 --> 01:02:09.760]   Question over there.
+[01:02:09.760 --> 01:02:10.760]   Yeah.
+[01:02:10.760 --> 01:02:14.760]   So, right now, everything is just on the Sandbox API.
+[01:02:14.760 --> 01:02:17.760]   And this API will probably go away after the workshop.
+[01:02:17.760 --> 01:02:22.760]   But we'll have a way to actually sign up for the API waitlist.
+[01:02:22.760 --> 01:02:27.760]   So, if you do want to get access to this, and then it will require an API key.
+[01:02:27.760 --> 01:02:34.760]   And all of the services will be wrapped under a single kind of usage fee.
+[01:02:34.760 --> 01:02:40.760]   So, your speech-to-text, your LLM, and your text-to-speech will all be under a single cost.
+[01:02:40.760 --> 01:02:45.760]   Awesome.
+[01:02:45.760 --> 01:02:47.760]   Any more questions?
+[01:02:47.760 --> 01:02:49.760]   Yeah, there you go.
+[01:02:49.760 --> 01:02:50.760]   Yeah.
+[01:02:50.760 --> 01:02:54.760]   I was just wondering, are there any plans to allow kind of multiple speaker input within
+[01:02:54.760 --> 01:02:55.760]   this new API?
+[01:02:55.760 --> 01:02:56.760]   Mm-hmm.
+[01:02:56.760 --> 01:02:59.760]   Being able to recognize speaker one, speaker two, speaker three.
+[01:02:59.760 --> 01:03:00.760]   Yeah.
+[01:03:00.760 --> 01:03:02.760]   So, we have diarization.
+[01:03:02.760 --> 01:03:09.760]   So, if you send multiple speakers on the same channel, we'll be able to determine, you know,
+[01:03:09.760 --> 01:03:10.760]   speaker A, speaker B.
+[01:03:10.760 --> 01:03:16.760]   And if you're sending us multi-channel audio, that will allow us to inference them separately.
+[01:03:16.760 --> 01:03:17.760]   Yeah.
+[01:03:17.760 --> 01:03:19.760]   So, I was specifically doing more on the single channel.
+[01:03:19.760 --> 01:03:20.760]   Mm-hmm.
+[01:03:20.760 --> 01:03:21.760]   And I played around a little bit.
+[01:03:21.760 --> 01:03:22.760]   It's not perfect today.
+[01:03:22.760 --> 01:03:26.760]   I'm just wondering, are there plans to kind of enhance that?
+[01:03:26.760 --> 01:03:27.760]   Mm-hmm.
+[01:03:27.760 --> 01:03:29.760]   Yeah, we're always improving diarization.
+[01:03:29.760 --> 01:03:36.760]   It's definitely a challenge, because to understand how diarization works is you're building up
+[01:03:36.760 --> 01:03:38.760]   embeddings of what people say.
+[01:03:38.760 --> 01:03:43.760]   And so, like our conversation so far, you've had maybe three or four sentences, you know,
+[01:03:43.760 --> 01:03:45.760]   maybe 20 seconds of audio.
+[01:03:45.760 --> 01:03:50.760]   And that may not be enough for the model to say, okay, this is a unique speaker, right?
+[01:03:50.760 --> 01:03:54.760]   And it's building out these embeddings in like 512 dimensional space.
+[01:03:54.760 --> 01:04:00.760]   So, you know, as more data comes in, and we typically recommend 30 seconds per speaker
+[01:04:00.760 --> 01:04:03.760]   to actually generate a solid embedding.
+[01:04:03.760 --> 01:04:09.760]   If we were to lower that requirement, we might start like mislabeling people from the same person.
+[01:04:09.760 --> 01:04:13.760]   But it is a challenge, and I don't think it's ever going to be perfect.
+[01:04:13.760 --> 01:04:24.760]   You know, one of the hardest parts of diarization is actually when people actually say, like, yeah, or mm.
+[01:04:24.760 --> 01:04:28.760]   So, like, if you're on a call and somebody, while you're speaking, says, yeah.
+[01:04:28.760 --> 01:04:36.760]   It's very hard for the AI with that tiny little, you know, segment of audio to know that it's somebody else speaking.
+[01:04:36.760 --> 01:04:43.760]   But, yeah, we've seen a lot of cases where, you know, if it's a longer call, it works very well.
+[01:04:43.760 --> 01:04:48.760]   But those first 60 seconds, it's probably not going to determine who's who.
+[01:04:48.760 --> 01:04:49.760]   Sure.
+[01:04:49.760 --> 01:04:50.760]   Yeah, that makes sense.
+[01:04:50.760 --> 01:04:53.760]   And I imagine behind the scenes there's maybe some accuracy percentage, right?
+[01:04:53.760 --> 01:04:54.760]   Mm-hmm.
+[01:04:54.760 --> 01:04:55.760]   Like, similarity score.
+[01:04:55.760 --> 01:04:57.760]   Like, is that something that might ever get exposed?
+[01:04:57.760 --> 01:04:59.760]   Or is that a close to that?
+[01:04:59.760 --> 01:05:01.760]   So we can kind of make a decision ourselves, right?
+[01:05:01.760 --> 01:05:03.760]   Where we get something back.
+[01:05:03.760 --> 01:05:07.760]   There's probably a 5% chance that this guy's speaking.
+[01:05:07.760 --> 01:05:08.760]   Mm-hmm.
+[01:05:08.760 --> 01:05:09.760]   That would be really helpful.
+[01:05:09.760 --> 01:05:16.760]   Yeah, and one of the things a lot of people ask for is the ability to, you know, get speaker identification, right?
+[01:05:16.760 --> 01:05:19.760]   So, like, a unique identifier for a speaker.
+[01:05:19.760 --> 01:05:29.760]   So, like, if you have a call center agent and you know who they are on every call, you know, could you pass that to us and we'll tell you, you know, were they the first speaker or the second speaker?
+[01:05:29.760 --> 01:05:31.760]   And it's not something we expose today.
+[01:05:31.760 --> 01:05:36.760]   Obviously, there's, you know, legal challenges around fingerprinting voices and stuff.
+[01:05:36.760 --> 01:05:46.760]   But, yeah, it's something we're thinking about, the ability to at least, like, identify a speaker and just say, like, you know, this speaker is this person.
+[01:05:46.760 --> 01:05:47.760]   Yeah.
+[01:05:47.760 --> 01:05:48.760]   You're welcome.
+[01:05:48.760 --> 01:05:49.760]   Thank you.
+[01:05:49.760 --> 01:05:50.760]   You're welcome.
+[01:05:50.760 --> 01:05:51.760]   Awesome.
+[01:05:51.760 --> 01:05:55.760]   So, I think that's everything I had.
+[01:05:55.760 --> 01:06:04.760]   I'm interested, though, have anybody achieved order update with the remove item?
+[01:06:04.760 --> 01:06:08.760]   Anybody get any additional APIs up and running?
+[01:06:08.760 --> 01:06:13.760]   No?
+[01:06:13.760 --> 01:06:14.760]   You got the demo?
+[01:06:14.760 --> 01:06:15.760]   A little bit too loud in here.
+[01:06:15.760 --> 01:06:16.760]   Yeah.
+[01:06:16.760 --> 01:06:17.760]   It works up to you a lot.
+[01:06:17.760 --> 01:06:18.760]   Right, right, yeah.
+[01:06:18.760 --> 01:06:19.760]   It works.
+[01:06:19.760 --> 01:06:20.760]   And it's fast.
+[01:06:20.760 --> 01:06:21.760]   Yeah.
+[01:06:21.760 --> 01:06:23.760]   I told you to add lots of that perspective actually I did.
+[01:06:23.760 --> 01:06:24.760]   Nice.
+[01:06:24.760 --> 01:06:27.760]   Yeah, and this is, again, running on our hosted API.
+[01:06:27.760 --> 01:06:31.760]   So, we haven't even optimized this for low latency yet.
+[01:06:31.760 --> 01:06:38.760]   But you can see how quick it is even with those hosted APIs that it can respond that time.
+[01:06:38.760 --> 01:06:44.760]   Like, we did run a kind of a sandbox environment where, you know, we cranked up that compute.
+[01:06:44.760 --> 01:06:52.760]   And it was just so fast that, like, it was just, like, kind of, like, interrupting you, like, the moment you stop speaking.
+[01:06:52.760 --> 01:06:55.760]   Which is a pretty funny challenge.
+[01:06:55.760 --> 01:06:57.760]   But, yeah.
+[01:06:57.760 --> 01:06:59.760]   Thanks, everybody, for coming.
+[01:06:59.760 --> 01:07:04.760]   Feel free to hit me up or chat with me after the workshop.
+[01:07:04.760 --> 01:07:05.760]   But, yeah.
+[01:07:05.760 --> 01:07:06.760]   Hope you all enjoyed it.
+[01:07:06.760 --> 01:07:07.760]   Thank you.
+[01:07:07.760 --> 01:07:08.760]   Thank you.
+[01:07:08.760 --> 01:07:09.760]   Thank you.
+[01:07:09.760 --> 01:07:10.760]   Thank you.
+[01:07:10.760 --> 01:07:11.760]   Thank you.
+[01:07:11.760 --> 01:07:12.760]   Thank you.
+[01:07:12.760 --> 01:07:13.760]   Thank you.
+[01:07:13.760 --> 01:07:13.760]   Thank you.
+[01:07:13.760 --> 01:07:14.760]   Thank you.
+[01:07:14.760 --> 01:07:14.760]   Thank you.
+[01:07:14.760 --> 01:07:15.760]   Thank you.
+[01:07:15.760 --> 01:07:16.760]   Thank you.
+[01:07:16.760 --> 01:07:17.760]   Thank you.
+[01:07:17.760 --> 01:07:19.820]   you
+[01:07:19.820 --> 01:07:21.880]   you
+

@@ -1,0 +1,181 @@
+
+[00:00:00.000 --> 00:00:18.800]   Hello, everyone. So today I'm going to talk about how to fix bugs in open source models.
+[00:00:18.800 --> 00:00:24.880]   Thanks for coming again. We had a talk yesterday, the three-hour workshop, and thanks for coming
+[00:00:24.880 --> 00:00:33.280]   again. So we have slides. It's at tinyurl.com/unsloth2. For the workshop slides, which we did yesterday,
+[00:00:33.280 --> 00:00:41.060]   you can also access that now. Tinyurl.com/unsloth as well. So you might know me from, like, the
+[00:00:41.060 --> 00:00:44.920]   Gemma bug fixes that we did. So Gemma was an open source model by Google, and there was
+[00:00:44.920 --> 00:00:51.060]   a few bugs in there, and we fixed a few of them. And we just did some tweets about this,
+[00:00:51.060 --> 00:00:54.460]   and, you know, like, there's many bugs in there, like, you know, the activation function
+[00:00:54.460 --> 00:01:00.620]   had to be approximate JLU, not exact JLU, and there are some other issues that we talked about
+[00:01:00.620 --> 00:01:05.440]   for Gemma. We also have, like, some -- a few stickers, which you can, you know, get them
+[00:01:05.440 --> 00:01:10.160]   from, like, when we're outside. But this is -- yeah, we won't be handing them during the
+[00:01:10.160 --> 00:01:15.520]   talk. But, yeah, they're very cool and cute. And also there's, like, tokenization problems
+[00:01:15.520 --> 00:01:20.860]   as well in language models, which we also help to fix. Today I'm just going to be talking
+[00:01:20.860 --> 00:01:25.860]   about LLAMA 3 bugs. So yesterday I talked about Gemma and V3, and today we're just sharing
+[00:01:25.860 --> 00:01:31.160]   all the stuff that we found with LLAMA 3. For Gemma, you can access, like, all the bug fixes
+[00:01:31.160 --> 00:01:36.520]   that we did in our blog post, and we have a collab notebook for all of the Gemma bug fixes as
+[00:01:36.520 --> 00:01:44.200]   well. For V3, for example, we talked about this yesterday, and I just pasted some slides
+[00:01:44.200 --> 00:01:48.320]   again if you want to, like, review this in your own time. For example, like, the sliding
+[00:01:48.320 --> 00:01:56.820]   window should be 2048, not 2047. You can also, like, you should unfuse all of the QKV matrices,
+[00:01:56.820 --> 00:02:03.360]   otherwise lower fine tuning will not work that well. But we'll be talking mainly about LLAMA 3.
+[00:02:03.360 --> 00:02:07.640]   So there's actually eight bugs in LLAMA 3. Some of them are not announced yet. We will
+[00:02:07.640 --> 00:02:12.920]   be announcing these later. So this is, like, a pre-release. And we'll be going through each
+[00:02:12.920 --> 00:02:19.880]   of them separately. The first one is you must not use double BOS tokens. So this is actually
+[00:02:19.880 --> 00:02:24.240]   a very common theme in fine tuning LLAMA 3. Some people don't actually know that you're adding
+[00:02:24.240 --> 00:02:28.980]   two beginning of sentence tokens to the fine tune. And this will actually ruin your fine tune
+[00:02:28.980 --> 00:02:34.260]   by making the accuracy of your inference time lower. So please, like, check before you fine tune if you're
+[00:02:34.260 --> 00:02:39.740]   using double BOS tokens. In Unsloft, we do this-- we check this automatically and we'll remove the
+[00:02:39.740 --> 00:02:45.260]   extra BOS token automatically for you. So this will actually cause your model to lose accuracy because
+[00:02:45.260 --> 00:02:50.700]   if you trained on two BOS tokens and you do inference on one, then your model template will be incorrect.
+[00:02:50.700 --> 00:02:55.980]   So please check this. It's not just a LLAMA 3 problem. Other models like Mistral
+[00:02:55.980 --> 00:03:01.100]   and Gemma also have problems like this. So just be careful of this issue.
+[00:03:01.100 --> 00:03:06.380]   So a very easy way to check if you have double BOS tokens, if you use the apply chat template
+[00:03:06.380 --> 00:03:12.380]   from Hugging Face, if you do the first one, your chat template must have a BOS token. Otherwise,
+[00:03:12.380 --> 00:03:18.620]   it won't add it. LLAMA 3 does require a BOS token. If you do the second one, you're actually having
+[00:03:18.620 --> 00:03:22.700]   two BOS tokens if you do this. So please do not add a BOS token to the chat template.
+[00:03:24.380 --> 00:03:31.660]   The second issue we found was you must not use the LLAMA 3 base model if you're using the LLAMA 3 template.
+[00:03:31.660 --> 00:03:38.460]   There are some untrained tokens in LLAMA 3 base. The Instruct version actually has these tokens trained.
+[00:03:38.460 --> 00:03:43.340]   So please be careful when you want to use the LLAMA 3 base model when you want to do your fine tuning
+[00:03:43.340 --> 00:03:47.580]   because some of these tokens will cause NANDs for your gradients. These tokens include the reserve
+[00:03:47.580 --> 00:03:55.020]   special tokens from zero to 250, the end of turn token, the start header, and the end of header.
+[00:03:55.020 --> 00:04:01.100]   And the graph I showed shows you the mean of the embeddings versus the other tokens. And some of
+[00:04:01.100 --> 00:04:06.940]   them actually are zero. So the LLAMA 3 team made some of these tokens go to zero purposefully because
+[00:04:06.940 --> 00:04:12.540]   these tokens are not actually used for the model. So just please don't use some of these tokens when
+[00:04:12.540 --> 00:04:17.420]   you do fine tuning as well. If you want to fix them, set them to the mean of the entire
+[00:04:17.420 --> 00:04:23.500]   tokens. And in Onsloft, we do this automatically as well for you. So we showed some code where you
+[00:04:23.500 --> 00:04:29.740]   can take the mean of the trained tokens and set them for the untrained tokens. Just be careful,
+[00:04:29.740 --> 00:04:34.700]   don't do this like incorrectly as well. If you want to take the average of all the tokens, don't just
+[00:04:34.700 --> 00:04:39.340]   take the average. You must remove the untrained tokens from the average. If you do not do that,
+[00:04:39.340 --> 00:04:43.980]   you might actually have an incorrect average, right? If there's like 10,000 tokens which are untrained,
+[00:04:43.980 --> 00:04:50.220]   if you divide it by 10,000 plus the number of trained tokens, your average will be incorrect. So you
+[00:04:50.220 --> 00:04:55.260]   have to do this more complicated method of masking out the untrained tokens and then take the average.
+[00:04:55.260 --> 00:05:02.940]   Also, reminder, because of this issue, the LLAMA 3 chat template will not work for the base model. I have
+[00:05:02.940 --> 00:05:08.940]   known that many fine tuning people have used LLAMA 3 Instruct chat template for the base model and your
+[00:05:08.940 --> 00:05:13.740]   fine tune will actually be incorrect. You will get NANs in your gradients and your whole fine tune will be
+[00:05:13.740 --> 00:05:19.820]   broken. So please do not use the LLAMA 3 Instruct chat template for the LLAMA 3 base model. Only use this
+[00:05:19.820 --> 00:05:25.340]   for the Instruct model itself. Another way to fix this is to actually train the LM head and the embed tokens,
+[00:05:25.340 --> 00:05:33.180]   which will actually learn and remove the NANs in your models. Another interesting fact, and not just a LLAMA 3
+[00:05:33.180 --> 00:05:40.300]   problem, but for other models, is the pad token and the EOS token must not be the same. If you do this the
+[00:05:40.300 --> 00:05:46.460]   same, your model will have infinite generations. The reason is because the pad token gets masked out
+[00:05:46.460 --> 00:05:52.540]   during the error, during the cross entropy loss, and if you use the same pad token as the EOS token,
+[00:05:52.540 --> 00:05:57.500]   then your EOS token, the end of sentence token, will be masked out. So just be very, very careful when
+[00:05:57.500 --> 00:06:03.020]   you do fine tuning to check what is the pad token ID and the EOS token ID. For example, if you look at
+[00:06:03.020 --> 00:06:10.460]   V3, they're the same. So technically, V3, when you do fine tuning, it will be infinite generations. So just be
+[00:06:10.460 --> 00:06:15.340]   careful and look, you know, before you do the fine tune, check what is the EOS token and what is the pad
+[00:06:15.340 --> 00:06:23.340]   token? It must be different. For unsloft, we also do this automatically. We fix this for you. And we
+[00:06:23.340 --> 00:06:30.140]   essentially check if there is any unreserved tokens, and we just select one which is untrained. If there
+[00:06:30.140 --> 00:06:35.900]   is no untrained tokens, then we will add an extra pad token ourselves. Be careful, do not add a pad
+[00:06:35.900 --> 00:06:41.820]   token which has the same, like, vocabulary as your current vocabulary. So what we do is we actually check
+[00:06:41.820 --> 00:06:47.580]   the tokens inside the vocabulary and add, like, extra hashes to see, you know, to make a new pad token.
+[00:06:47.580 --> 00:06:54.380]   Another issue we found for fine tuning people is, like, when you finish your fine tune,
+[00:06:54.380 --> 00:06:59.340]   you don't actually know how to export it to Olama. And that is because the chat template for Olama must
+[00:06:59.340 --> 00:07:04.940]   be exactly the same as your fine tune. And this was actually very complicated to do before. And now we
+[00:07:04.940 --> 00:07:09.740]   can actually automatically generate the model file for you during the fine tune. So we have, like,
+[00:07:09.740 --> 00:07:15.660]   two collab notebooks for you to use for Olama. One of them is the alpaca dataset. And one of them is a -- you
+[00:07:15.660 --> 00:07:23.500]   can upload a CSV file to make Olama work after you finish fine tuning. Now, there are some community
+[00:07:23.500 --> 00:07:30.300]   contributions for Olama 3 bugs. There is, like, three of them. The first one is someone noticed that you can
+[00:07:30.300 --> 00:07:36.780]   only use CPU conversion and not GPU conversion when you convert to GGOF or Lama CPP. So be -- you know,
+[00:07:36.780 --> 00:07:42.300]   be careful when you convert to Lama CPP that you must use the CPU version. I think the main reason is
+[00:07:42.300 --> 00:07:48.860]   because the precision is different in a GPU than a CPU. The CPU, when you do float 16, it's different from
+[00:07:48.860 --> 00:07:52.060]   when the GPU does float 16 conversion. So just be careful on that as well.
+[00:07:54.060 --> 00:07:59.020]   Another issue is, remember, we talked about the WBOS tokens. Through our community contribution,
+[00:07:59.020 --> 00:08:06.300]   Lama CPP now has a warning for you to tell you that you're using WBOS tokens. So please, you know,
+[00:08:06.300 --> 00:08:11.420]   take heed of the warning and do not add WBOS tokens to your chat template. And when you do inference.
+[00:08:11.420 --> 00:08:19.580]   Another point someone found was adding a system prompt could make fine tuning much better. And so,
+[00:08:19.580 --> 00:08:24.540]   like, sometimes when you do inference on Lama 3 instruct, if you add an actual system prompt,
+[00:08:24.540 --> 00:08:29.260]   this could make your whole fine tuning better. I think for some people, when they add the system
+[00:08:29.260 --> 00:08:33.340]   prompt, you actually miss the system prompt. Like, you don't actually add one. So maybe try your fine
+[00:08:33.340 --> 00:08:40.460]   tune with the system prompt. And you never know, this could work. So we have, like, a GitHub package,
+[00:08:40.460 --> 00:08:45.340]   which is open source. And you can click the button "Start Free Fine Tune" to start your first free
+[00:08:45.340 --> 00:08:50.380]   fine tune using Unsloth. We already pushed all the Lama 3 bug fixes to our GitHub repo. And so,
+[00:08:50.380 --> 00:08:55.340]   the Start Free Fine Tune button will redirect you to a fixed collab notebook for all of these issues.
+[00:08:55.340 --> 00:09:00.860]   Feel free to star us as well. We also, like, have a Discord channel. So if you have any questions,
+[00:09:00.860 --> 00:09:05.500]   you can ask, you know, any questions that you like about our, you know, how to do fine tuning,
+[00:09:06.140 --> 00:09:12.700]   talk about AI, and talk about our bugs as well. We also have, like, a blog post. So blog posts about
+[00:09:12.700 --> 00:09:19.740]   all our fixes, about Gemma, Lama 3, Fee 3, and more. For example, we talked about continued pre-training.
+[00:09:19.740 --> 00:09:25.340]   You can do continued pre-training using Unsloth now. You can train on the LM head and the embed tokens.
+[00:09:25.340 --> 00:09:30.220]   And we show that instead of just training like that, you need to reduce the learning rate of the LM head
+[00:09:30.220 --> 00:09:35.500]   and the embed tokens by 10. Or, you know, maybe 5 to 10. And this will make your training much better.
+[00:09:35.500 --> 00:09:42.860]   We also support four times longer contacts using Unsloth. And this also does not increase the time of
+[00:09:42.860 --> 00:09:48.940]   completion. So we make it 1 to 2 percent slower. But you get four times longer contacts using Unsloth.
+[00:09:49.740 --> 00:09:54.540]   And this was because, like, we used something called offloading gradient checkpointing, where
+[00:09:54.540 --> 00:09:59.580]   we offload the gradients to system RAM. There are some other systems which offload the gradients to
+[00:09:59.580 --> 00:10:04.300]   the disk. Please do not do that. If you offload to disk, then your time of completion of your fine
+[00:10:04.300 --> 00:10:09.420]   tune will be extremely slow. So try to offload to system RAM first, and then offload to disk.
+[00:10:09.420 --> 00:10:14.460]   Although if you don't -- if you offload incorrectly, you might actually make this slower as well.
+[00:10:14.460 --> 00:10:19.260]   So your offloading must be non-blocking calls. And do not do blocking calls to the system RAM.
+[00:10:19.260 --> 00:10:31.500]   Yeah. So I will show you -- okay. Let's see if I can open up -- let me go to --
+[00:10:31.500 --> 00:10:42.860]   Okay. I'm going to open up a Colab Notebook for the Olama one.
+[00:10:48.700 --> 00:10:55.500]   Okay. So for the Olama Colab Notebook, you can simply just install Unsloth over here. This is
+[00:10:55.500 --> 00:11:00.460]   already for free for everyone to use. And essentially, you don't forget when you do the Colab Notebook,
+[00:11:00.460 --> 00:11:05.820]   you have to select a max sequence length. This determines how long your model wants to do
+[00:11:05.820 --> 00:11:09.980]   long contacts fine tuning. You can set this to any number that you like. But remember,
+[00:11:09.980 --> 00:11:14.380]   your data set must match the max sequence length. So for example, if you have -- if you want to set the
+[00:11:14.380 --> 00:11:18.940]   max sequence length to be like 10 million or one million, but your data set is only like one million
+[00:11:18.940 --> 00:11:23.660]   tokens or like less, try to like not set that max sequence length to be that large. Otherwise,
+[00:11:23.660 --> 00:11:29.740]   your model cannot do fine tuning a long sequence. Load in 4-bit does 4-bit training. So this actually
+[00:11:29.740 --> 00:11:35.500]   reduces memory usage by four times. If you do -- if you do it to false, your memory usage will explode.
+[00:11:35.500 --> 00:11:42.700]   So please do not try false. Especially on a free Colab Tesla T4. If you do false, your memory usage
+[00:11:42.700 --> 00:11:49.260]   might skyrocket to 16 GB. So do not do that. You only should do this if you use more stronger GPUs.
+[00:11:49.260 --> 00:11:55.980]   We support -- like Unsloth supports fine tuning or models including like Lama, Mistral, Gemma, V3,
+[00:11:55.980 --> 00:12:01.980]   and more. So this area, like the model name over here, you can actually try to select any model name
+[00:12:01.980 --> 00:12:06.460]   that you like. I don't think that people know that Unsloth can support other models other than the ones
+[00:12:06.460 --> 00:12:11.900]   we listed. So please try to put any model, like a hugging face model name in there. And it should work.
+[00:12:11.900 --> 00:12:18.620]   So for the get peft model, this is where you add the peft LoRa adapters.
+[00:12:18.620 --> 00:12:24.780]   The R is the rank. So we set it to be 16. But you can select any number that you like for fine tuning.
+[00:12:25.500 --> 00:12:29.580]   So we suggest you normally to use powers of two. But you can use any number, like one, two, three,
+[00:12:29.580 --> 00:12:34.780]   like any number that you like. The larger the rank you select, you can make the model learn more about
+[00:12:34.780 --> 00:12:39.180]   your data set. So -- but if you add too large of a rank, you might actually overfit your data set.
+[00:12:39.180 --> 00:12:44.220]   And also your memory usage might skyrocket again. So we normally suggest people to select 16, 32, 64,
+[00:12:44.220 --> 00:12:50.300]   or 128. Try not to select too large ranks. The maximum rank you should select is the size of the
+[00:12:50.300 --> 00:12:55.020]   dimension of the model itself. So if it's 4096, set this to be 4096.
+[00:12:55.020 --> 00:13:03.100]   For the target modules, be careful. You must do fine tuning on all linear layers, right? So Q,
+[00:13:03.100 --> 00:13:09.260]   K, V, O, down, up, and gate. Some people have done fine tuning without doing some of these layers.
+[00:13:09.260 --> 00:13:12.700]   Please do not do that. Because this will cause your fine tune to be not optimal.
+[00:13:12.700 --> 00:13:18.540]   And the LoRa alpha, there is actually a trick for this. Normally speaking, select the alpha to be the
+[00:13:18.540 --> 00:13:24.700]   same as the same as the rank or larger. We found that if you do 16 times 2, so the rank times 2, this can
+[00:13:24.700 --> 00:13:30.780]   make your fine tuning much better. You can also use use RS LoRa to be true to set the rank automatically
+[00:13:30.780 --> 00:13:35.580]   for you -- to set the alpha automatically for you. For the gradient checkpointing, unsloft is the method
+[00:13:35.580 --> 00:13:41.420]   which we showed that you can do long context fine tuning. You can also set this to be true, but your memory usage will
+[00:13:41.420 --> 00:13:48.060]   increase again. We also show you how to do data preparation in an Olama Colab notebook. So this
+[00:13:48.060 --> 00:13:53.660]   one is we upload a Titanic CSV. So the Titanic data set, the goal was, can you predict if someone died or
+[00:13:53.660 --> 00:14:00.860]   survived if you're on the Titanic? And you get details about the person. For example, their age, their, like,
+[00:14:00.860 --> 00:14:07.260]   fair, where did they embark from, and so on. With our new Colab notebooks, you have to be very careful
+[00:14:07.260 --> 00:14:12.460]   when you do Olama chat templates. Because when you do fine tuning, you can only have two columns,
+[00:14:12.460 --> 00:14:16.940]   the instruction and the output. But what happens if your CSV has more than one -- like, more than two
+[00:14:16.940 --> 00:14:21.980]   columns, the instruction and output? What we can do is you can merge the columns into one column. And
+[00:14:21.980 --> 00:14:24.940]   with unsloft now, you can actually do that. You can merge the columns into one.
+[00:14:29.260 --> 00:14:33.740]   And also, we show you that you can do customizable chat templates now. So previously, if you want to
+[00:14:33.740 --> 00:14:38.220]   do an Alpaca-style fine tune, you have to use instruction, input, and response for the Alpaca-style
+[00:14:38.220 --> 00:14:44.140]   fine tuning. But remember, the problem is, if you want to output to Olama or GGWeb, you can only have
+[00:14:44.140 --> 00:14:48.940]   two columns, the instruction and output. Right? If you do ChatTBT, you have to type something and then
+[00:14:48.940 --> 00:14:54.540]   the output comes along. You can't have, like, three inputs, right? So what we do is you can actually
+[00:14:55.260 --> 00:15:00.380]   customize your chat template. And you must include the input and the output. And you must do this
+[00:15:00.380 --> 00:15:05.420]   repetition twice. Some people have asked me, like, why do you have to do two repetitions of this chat
+[00:15:05.420 --> 00:15:10.940]   template? It's because there is dangling new lines. And we found this -- we found a solution to this is
+[00:15:10.940 --> 00:15:17.500]   you have to specify two iterations of your chat template. We also show examples of how to do the
+[00:15:17.500 --> 00:15:23.020]   Lama 3 chat template using our methodology. So you can see there is two iterations of the chat template.
+[00:15:23.020 --> 00:15:27.420]   Reminder, if you don't use the two iterations, you actually -- it will error out.
+[00:15:27.420 --> 00:15:33.500]   And this is the training methodologies. We normally suggest people to use a batch size of two,
+[00:15:33.500 --> 00:15:39.340]   gradient accumulation of four. Remember, the memory usage is only relevant to the batch size. So try not to
+[00:15:39.340 --> 00:15:43.740]   set the batch size to be very large, otherwise your memory usage will explode. Instead, set your gradient
+[00:15:43.740 --> 00:15:49.340]   accumulation steps to be larger. So the formula for the effective batch size is batch size times the
+[00:15:49.340 --> 00:15:53.820]   gradient accumulation. So in this case, it's two times four, which is eight. Set your learning rate to
+[00:15:53.820 --> 00:16:02.460]   be 2e minus four or smaller, maybe 2e minus five. And after that, you can also do inference on the model.
+[00:16:03.180 --> 00:16:07.660]   So now you have to use the apply chat template. Remember, be careful of double BOS tokens. But we
+[00:16:07.660 --> 00:16:15.260]   in Unslaw fixed this. And finally, you have to save this to Ollama. And, you know, you have to install
+[00:16:15.260 --> 00:16:20.940]   Ollama first. Saving now -- we now support saving multiple ggware files. So you don't actually have
+[00:16:20.940 --> 00:16:24.780]   to save it to one ggware file. You can save it to multiple. And we actually allow you to do this now.
+[00:16:24.780 --> 00:16:30.140]   Before, if you want to save to multiple ggware files, you have to wait 10 minutes extra. You can now do
+[00:16:30.140 --> 00:16:33.340]   this automatically by, you know, specifying more than one format.
+[00:16:33.340 --> 00:16:39.180]   We also can show you the model file which we created. So you can actually copy-paste the model
+[00:16:39.180 --> 00:16:45.100]   file and put this to custom -- like a custom Ollama as well. So the model file was the complicated part
+[00:16:45.100 --> 00:16:49.100]   when we had to automatically generate this. So we have, like, internal code to generate the model file
+[00:16:49.100 --> 00:16:56.380]   automatically. And finally, when you want to do inference, you can do Ollama to do inference. And, you
+[00:16:56.380 --> 00:17:02.940]   know, it works in general. So try that out. The Ollama chat template notebook is in the slide.
+[00:17:02.940 --> 00:17:07.820]   So tinyurl.com/unsloth2. And remember, the workshop slides, which we did yesterday,
+[00:17:07.820 --> 00:17:14.380]   is tinyurl.com/unsloth. And don't forget to join our Discord channel. If you have any
+[00:17:14.380 --> 00:17:18.940]   questions, I'm outside. You can ask questions and stuff like that. And, yes, like, thanks for
+[00:17:18.940 --> 00:17:28.940]   thanks for coming. I much appreciate it. Thanks a lot.
+[00:17:28.940 --> 00:17:41.100]   I'll see you next time.
+

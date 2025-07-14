@@ -1,0 +1,407 @@
+
+[00:00:00.120 --> 00:00:16.200]   So I'm Brigante, the founder of Grit.
+[00:00:16.200 --> 00:00:21.000]   I'm going to talk about code generation and maintenance at scale, or CPUs still matter,
+[00:00:21.000 --> 00:00:24.680]   and what it takes to actually make one of these agentic workflows work in production.
+[00:00:24.680 --> 00:00:27.640]   Quinn was talking about how most people have not merged them.
+[00:00:27.640 --> 00:00:29.520]   That's 100% true.
+[00:00:29.520 --> 00:00:32.260]   It has probably merged more PRs than any other company
+[00:00:32.260 --> 00:00:35.100]   in the world at this point because we've focused very narrowly
+[00:00:35.100 --> 00:00:37.380]   and have done a lot of work above the model layer.
+[00:00:37.380 --> 00:00:40.140]   And we're going to talk about how we did that.
+[00:00:40.140 --> 00:00:42.020]   It's helpful to know why I started Grit.
+[00:00:42.020 --> 00:00:43.680]   My background is all developer tools.
+[00:00:43.680 --> 00:00:46.560]   I've been working at Google Cloud for five years
+[00:00:46.560 --> 00:00:49.560]   and built a lot of stuff on the DevOps layer, right?
+[00:00:49.560 --> 00:00:52.080]   Thinking about Kubernetes and how do you orchestrate very large scale
+[00:00:52.080 --> 00:00:57.300]   systems, working on tools like Customize or Terraform templates.
+[00:00:57.300 --> 00:00:59.520]   And one of the biggest things I learned from this
+[00:00:59.520 --> 00:01:03.880]   was how rare it was for a customer to come to us and ask for a brand new application.
+[00:01:03.880 --> 00:01:04.380]   Right?
+[00:01:04.380 --> 00:01:07.320]   People didn't come and say, I want to build a new app on Google Cloud.
+[00:01:07.320 --> 00:01:08.100]   It sounds cool.
+[00:01:08.100 --> 00:01:12.040]   90% of the time customers came and said, I have this line of business application
+[00:01:12.040 --> 00:01:14.980]   that is doing $100 million in revenue.
+[00:01:14.980 --> 00:01:16.740]   How do I run that on Kubernetes, right?
+[00:01:16.740 --> 00:01:18.200]   And that's what all of our templates did.
+[00:01:18.200 --> 00:01:22.480]   That's what everything we built in the sort of pre-AI era of automation
+[00:01:22.480 --> 00:01:25.000]   was on how you ran existing applications.
+[00:01:25.000 --> 00:01:28.140]   And that's why we started Grit, because every demo that you usually
+[00:01:28.140 --> 00:01:30.160]   see that's hyped, one of these ones on Twitter,
+[00:01:30.160 --> 00:01:33.580]   it's usually type a prompt, get a new application from scratch, right?
+[00:01:33.580 --> 00:01:34.740]   Build something brand new.
+[00:01:34.740 --> 00:01:35.560]   It's exciting.
+[00:01:35.560 --> 00:01:36.980]   It goes really well on Twitter.
+[00:01:36.980 --> 00:01:39.080]   That's not what devs do day in and day out.
+[00:01:39.080 --> 00:01:43.200]   Developers spend most of their time modifying huge applications so that flights run
+[00:01:43.200 --> 00:01:45.360]   on time.
+[00:01:45.360 --> 00:01:48.200]   And this goes into three sort of categories of developer tools.
+[00:01:48.200 --> 00:01:48.700]   Right?
+[00:01:48.700 --> 00:01:49.660]   There's ID developer assistance.
+[00:01:49.660 --> 00:01:51.840]   This clearly has the most product market fit today.
+[00:01:51.840 --> 00:01:52.700]   It's really easy, right?
+[00:01:52.700 --> 00:01:55.060]   Like I was saying, you just do auto-complete, right?
+[00:01:55.060 --> 00:01:56.820]   That's a very simple thing.
+[00:01:56.820 --> 00:01:59.100]   Then there's AI agents that are focused on lowering the floor.
+[00:01:59.100 --> 00:02:02.380]   They're allowing people to do tasks that they otherwise don't have the skills
+[00:02:02.380 --> 00:02:02.880]   for, right?
+[00:02:02.880 --> 00:02:07.620]   Allowing a product manager or other non-technical user to build an application
+[00:02:07.620 --> 00:02:09.220]   that they don't have the skill set for.
+[00:02:09.220 --> 00:02:12.200]   This is powerful, but I actually am pretty skeptical that that's
+[00:02:12.200 --> 00:02:14.040]   how most software's going to be built in the future.
+[00:02:14.040 --> 00:02:17.200]   It requires a real thinking of how do you actually spec things out?
+[00:02:17.200 --> 00:02:18.660]   How do you think about edge cases?
+[00:02:18.660 --> 00:02:22.360]   Basically, how we train as engineers that's required to build great software,
+[00:02:22.360 --> 00:02:27.160]   which is why with Grit, we focus on raising the ceiling of what great engineers can do,
+[00:02:27.160 --> 00:02:27.660]   right?
+[00:02:27.660 --> 00:02:30.500]   Principal engineers, the most high-level engineers that you work with,
+[00:02:30.500 --> 00:02:32.540]   they're primarily limited by time, right?
+[00:02:32.540 --> 00:02:34.580]   They can't be in 10 places at once.
+[00:02:34.580 --> 00:02:38.360]   But AI agents can be in 10 places at once if there's the right engineer controlling them.
+[00:02:38.360 --> 00:02:43.360]   And that's what we focus on is supercharging the productivity of the top 1% of engineers.
+[00:02:43.360 --> 00:02:47.360]   It also helpfully gets around the problem of 95% of engineers not using AI.
+[00:02:47.360 --> 00:02:52.360]   The great thing about Grit is 95% of our customers, 95% of our engineers don't touch it, right?
+[00:02:52.360 --> 00:02:54.360]   There will be 100 engineers on the team.
+[00:02:54.360 --> 00:02:55.360]   They're not using Grit.
+[00:02:55.360 --> 00:03:03.360]   There's one engineer who is deeply embedded with Grit and is generating hundreds of PRs with their agents.
+[00:03:03.360 --> 00:03:06.360]   But to do this, tools need to change, right?
+[00:03:06.360 --> 00:03:08.360]   The IDE that you have today, it's a scalpel, right?
+[00:03:08.360 --> 00:03:10.360]   It's focused on editing individual lines of code.
+[00:03:10.360 --> 00:03:11.360]   And it's great for that.
+[00:03:11.360 --> 00:03:14.360]   But it's not focused on editing hundreds of repos at once.
+[00:03:14.360 --> 00:03:18.360]   It's not focused on how do you open 1,000 files and make those changes in them.
+[00:03:18.360 --> 00:03:19.360]   And that's why we built Grit.
+[00:03:19.360 --> 00:03:21.360]   So we want to have bulldozers for code, right?
+[00:03:21.360 --> 00:03:23.360]   So we're generating huge quantities of code.
+[00:03:23.360 --> 00:03:27.360]   How do you push that around in an effective way when you're not editing individual lines
+[00:03:27.360 --> 00:03:30.360]   when you're working on a higher level of abstraction?
+[00:03:30.360 --> 00:03:31.360]   And this is super necessary, right?
+[00:03:31.360 --> 00:03:34.360]   We've seen an explosion in how much code is being generated.
+[00:03:34.360 --> 00:03:39.360]   A lot of our customers are seeing 20% to 30% more code that's coming out of their teams now
+[00:03:39.360 --> 00:03:43.360]   just because there's more PRs, there's more CI, there's everything that's running because you have code gen.
+[00:03:43.360 --> 00:03:44.360]   And this is just an accelerate, right?
+[00:03:44.360 --> 00:03:49.360]   Once we go from 5% to maybe 50% of people actually using AI, there's way, way more code in the world.
+[00:03:49.360 --> 00:03:54.360]   And we need better tools for managing that code once it's in production.
+[00:03:54.360 --> 00:03:57.360]   So just to give an example of what this looks like in practice.
+[00:03:57.360 --> 00:03:59.360]   This is a real customer that we had.
+[00:03:59.360 --> 00:04:00.360]   They have been around.
+[00:04:00.360 --> 00:04:02.360]   They've got thousands of repos.
+[00:04:02.360 --> 00:04:04.360]   They've got thousands of developers.
+[00:04:04.360 --> 00:04:07.360]   And they wanted to use OpenTelemetry instead of logging, right?
+[00:04:07.360 --> 00:04:09.360]   This is traditionally a massive effort, right?
+[00:04:09.360 --> 00:04:13.360]   You have to coordinate across hundreds of teams to get them to understand OpenTelemetry,
+[00:04:13.360 --> 00:04:14.360]   to understand how to instrument their code.
+[00:04:14.360 --> 00:04:18.360]   You have to get them to do actual code changes to swap out their logging library.
+[00:04:18.360 --> 00:04:20.360]   You have to do a bunch of education efforts.
+[00:04:20.360 --> 00:04:23.360]   And it's actually very much a people in process problem usually, right?
+[00:04:23.360 --> 00:04:27.360]   Something where you have a program manager who has a massive Excel spreadsheet.
+[00:04:27.360 --> 00:04:31.360]   That's what I say like grit we compete with is actually Excel, not any other AI dev tool.
+[00:04:31.360 --> 00:04:35.360]   It's that you have these spreadsheets where you can manage these changes, right?
+[00:04:35.360 --> 00:04:38.360]   And tens of thousands of developers go into a change like that.
+[00:04:38.360 --> 00:04:40.360]   So a lot of companies just say, you know what?
+[00:04:40.360 --> 00:04:41.360]   That's not worth it, right?
+[00:04:41.360 --> 00:04:43.360]   I'm not going to migrate to OpenTelemetry.
+[00:04:43.360 --> 00:04:44.360]   I'm not going to go into the cloud.
+[00:04:44.360 --> 00:04:45.360]   I'm going to stay in my older ways.
+[00:04:45.360 --> 00:04:50.360]   You know, people still have millions of lines of COBOL because it's just so much work to do this kind of coordinated change.
+[00:04:50.360 --> 00:04:53.360]   With grit, you don't have to do that coordination effort, right?
+[00:04:53.360 --> 00:05:00.360]   Because you can have one engineer who is actually coordinating that change, is driving individual AI developer agents to do the changes.
+[00:05:00.360 --> 00:05:05.360]   You don't have to have a bunch of meetings because it's just one person telling their little agents what to do, right?
+[00:05:05.360 --> 00:05:09.360]   And you can do it with under 100 developer hours because they're just doing high-level orchestration.
+[00:05:09.360 --> 00:05:14.360]   And then thousands of compute hours that the AI is doing is that's healing these changes.
+[00:05:14.360 --> 00:05:20.360]   And we've seen this is literally a project that they had postponed for years because it just was not feasible.
+[00:05:20.360 --> 00:05:22.360]   They couldn't get enough on the roadmaps.
+[00:05:22.360 --> 00:05:24.360]   They got it done with grit in a week, right?
+[00:05:24.360 --> 00:05:32.360]   It just opened up 1,000 PRs across all the repos, fixed them, iterate on the changes, merged, and migrated over.
+[00:05:32.360 --> 00:05:34.360]   So how do we actually do a change like that?
+[00:05:34.360 --> 00:05:36.360]   It's sort of a three-level process.
+[00:05:36.360 --> 00:05:37.360]   Planning is a big part of it, right?
+[00:05:37.360 --> 00:05:39.360]   So we index the entire code base.
+[00:05:39.360 --> 00:05:44.360]   We do both semantic indexing, so understanding embeddings and understanding the intent of each file.
+[00:05:44.360 --> 00:05:47.360]   But we also do a lot of traditional, more static analysis indexing.
+[00:05:47.360 --> 00:05:52.360]   So we understand what's the structure of the code, what's being imported from where, what's the dependency graph, right?
+[00:05:52.360 --> 00:05:56.360]   This is all the sort of thing you need to know to actually do really high-quality agentic flows.
+[00:05:56.360 --> 00:06:00.360]   Then once we have the plan of how we're going to make changes, we execute the plan, right?
+[00:06:00.360 --> 00:06:05.360]   So we use large language models that are going to take that change, delegate it to a sub-agent.
+[00:06:05.360 --> 00:06:08.360]   The sub-agent is going to make a modification in one file.
+[00:06:08.360 --> 00:06:12.360]   It uses something called grit QL, as well as diff generation from language models.
+[00:06:12.360 --> 00:06:17.360]   Grit QL is our custom query engine that's able to actually index millions of lines of code
+[00:06:17.360 --> 00:06:21.360]   and find the right places to modify things, and then finally push it up for PR review.
+[00:06:21.360 --> 00:06:25.360]   And be able to both have developers who are the director of it, right?
+[00:06:25.360 --> 00:06:29.360]   So a typical scenario is that there will be the principal engineer who's driving the change.
+[00:06:29.360 --> 00:06:30.360]   They'll review the PRs.
+[00:06:30.360 --> 00:06:34.360]   But then into the developers, their primary interaction with grit is just seeing a PR land in their repo.
+[00:06:34.360 --> 00:06:37.360]   And then leave like one-line comment that grit will learn from.
+[00:06:37.360 --> 00:06:41.360]   But they don't actually open up the grit UI ever because they're just responding to the changes that come from grit.
+[00:06:41.360 --> 00:06:42.360]   Cool.
+[00:06:42.360 --> 00:06:46.360]   So a little bit more about how we find code, right?
+[00:06:46.360 --> 00:06:51.360]   So our goal here is to find all the error logs in the code base because we want to migrate those over to OpenTelemetry.
+[00:06:51.360 --> 00:06:56.360]   The naive approach that if you go to many of the workshops yesterday would be, all right, just chunk it, put it into a rag.
+[00:06:56.360 --> 00:07:02.360]   You have a bunch of embeddings and, you know, that theoretically could work for maybe some document use cases.
+[00:07:02.360 --> 00:07:05.360]   I'll tell you that absolutely will not work for this problem, right?
+[00:07:05.360 --> 00:07:11.360]   If you just go to try to find stuff that looks like a logging error, it's going to find a lot of irrelevant context, right?
+[00:07:11.360 --> 00:07:13.360]   It's going to find anything that looks like log-like.
+[00:07:13.360 --> 00:07:22.360]   And LLM has a hard time differentiating between a user-facing log, like an alert in a UI, and an actual log that you want to be putting into OpenTelemetry, right?
+[00:07:22.360 --> 00:07:24.360]   There's also unpredictable thresholds, right?
+[00:07:24.360 --> 00:07:25.360]   You don't actually know how much code you're looking for.
+[00:07:25.360 --> 00:07:29.360]   You can't do, you know, retrieve the top 10 closest matches.
+[00:07:29.360 --> 00:07:31.360]   In some cases, you want to retrieve 10,000.
+[00:07:31.360 --> 00:07:37.360]   In a lot of cases, developers don't even actually know how big of a change it is until grit starts to propose it for them, right?
+[00:07:37.360 --> 00:07:39.360]   So that's where we built the grit QL query engine.
+[00:07:39.360 --> 00:07:45.360]   It's our own question query system that combines the best of static analysis with the best of AI.
+[00:07:45.360 --> 00:07:50.360]   So we've got this query here that's looking for logger with some set of args, right?
+[00:07:50.360 --> 00:07:52.360]   So we're just going to look for a function call, basically.
+[00:07:52.360 --> 00:07:53.360]   And that's a syntactic query.
+[00:07:53.360 --> 00:07:57.360]   So we're just looking for all of our function calls across our entire code base.
+[00:07:57.360 --> 00:08:01.360]   And then we're going to say that our args should be like an error occurred, right?
+[00:08:01.360 --> 00:08:05.360]   And that's just we're giving an example of, like, what's an error message that we might be trying to look like?
+[00:08:05.360 --> 00:08:08.360]   Like there is a magical word that converts it into a semantic representation.
+[00:08:08.360 --> 00:08:14.360]   So we want to say, what's some code that embedding search to cosign similarity is sufficiently above a threshold?
+[00:08:14.360 --> 00:08:21.360]   That this is an actual log message versus some other function call that we wouldn't be wanting to modify.
+[00:08:21.360 --> 00:08:23.360]   And then we can finally do an imported from.
+[00:08:23.360 --> 00:08:26.360]   We've got a built-in library to be able to understand the whole dependency graph.
+[00:08:26.360 --> 00:08:29.360]   So we can do things like make sure this is actually imported from log4j.
+[00:08:29.360 --> 00:08:33.360]   In this example, we wanted to make sure that we're only substituting our log4j logs.
+[00:08:33.360 --> 00:08:38.360]   And that would go and traverse the import graph earlier in the program.
+[00:08:38.360 --> 00:08:41.360]   So that brings us to finding the code that we want to change.
+[00:08:41.360 --> 00:08:46.360]   But once we've actually found the code, how do we make reliable changes?
+[00:08:46.360 --> 00:08:51.360]   And unfortunately, really smart models still have a hard time doing this completely autonomously.
+[00:08:51.360 --> 00:08:55.360]   Just to give an example, I just used Claude Sonnet today.
+[00:08:55.360 --> 00:08:56.360]   3.5.
+[00:08:56.360 --> 00:08:57.360]   It's a really good model.
+[00:08:57.360 --> 00:09:03.360]   And it uses -- we put the entire files -- so a bunch of context into the context window.
+[00:09:03.360 --> 00:09:08.360]   100,000 tokens from Grit's VS Code extension and some of our linter outputs.
+[00:09:08.360 --> 00:09:13.360]   And we wanted to just write a function that's going to convert from our linter JSON output
+[00:09:13.360 --> 00:09:16.360]   and puts it into diagnostics for the Grit VS Code extension.
+[00:09:16.360 --> 00:09:17.360]   Right?
+[00:09:17.360 --> 00:09:18.360]   Pretty simple task.
+[00:09:18.360 --> 00:09:20.360]   I promise that everything that's required was in the context window.
+[00:09:20.360 --> 00:09:21.360]   Right?
+[00:09:21.360 --> 00:09:23.360]   It's not something where it had to go retrieve additional information.
+[00:09:23.360 --> 00:09:25.360]   It was all there.
+[00:09:25.360 --> 00:09:28.360]   Came back with a pretty reasonable completion.
+[00:09:28.360 --> 00:09:31.360]   Converts ESLint to LSP diagnostics.
+[00:09:31.360 --> 00:09:33.360]   This looks reasonable to me.
+[00:09:33.360 --> 00:09:36.360]   Like, I imagine if you look at this code, you wouldn't be able to tell anything that's wrong
+[00:09:36.360 --> 00:09:37.360]   with it.
+[00:09:37.360 --> 00:09:40.360]   I certainly couldn't tell anything that's wrong with it from eyeballing it.
+[00:09:40.360 --> 00:09:41.360]   Right?
+[00:09:41.360 --> 00:09:42.360]   But this is wrong.
+[00:09:42.360 --> 00:09:43.360]   Right?
+[00:09:43.360 --> 00:09:46.360]   And this is one of the main things to understand is that humans also can't look at this code
+[00:09:46.360 --> 00:09:47.360]   and understand what's wrong with it.
+[00:09:47.360 --> 00:09:48.360]   Right?
+[00:09:48.360 --> 00:09:51.360]   This is why we have systems that allow us to type check, lint things.
+[00:09:51.360 --> 00:09:52.360]   Right?
+[00:09:52.360 --> 00:09:56.360]   That allows us to understand code that even looks kind of correct is, in fact, incorrect
+[00:09:56.360 --> 00:09:58.360]   and will fail in production.
+[00:09:58.360 --> 00:10:02.360]   But I went back and just asked Claude to fix the code for me.
+[00:10:02.360 --> 00:10:03.360]   I said, this broke in production.
+[00:10:03.360 --> 00:10:04.360]   I tried to put it in my VS Code extension.
+[00:10:04.360 --> 00:10:05.360]   It broke.
+[00:10:05.360 --> 00:10:06.360]   And I just asked it why.
+[00:10:06.360 --> 00:10:10.360]   As you can kind of imagine, it doesn't do any better than I do of just looking and eyeballing
+[00:10:10.360 --> 00:10:11.360]   the code and understanding why it's wrong.
+[00:10:11.360 --> 00:10:12.360]   Right?
+[00:10:12.360 --> 00:10:16.360]   So it just comes back and says some totally irrelevant answer on how to fix it.
+[00:10:16.360 --> 00:10:19.360]   Because, again, it's not grounded in what the actual errors are.
+[00:10:19.360 --> 00:10:20.360]   It doesn't do any better.
+[00:10:20.360 --> 00:10:21.360]   Right?
+[00:10:21.360 --> 00:10:22.360]   That's a good question.
+[00:10:22.360 --> 00:10:22.360]   Yeah?
+[00:10:22.360 --> 00:10:23.360]   That's a good question.
+[00:10:23.360 --> 00:10:23.360]   Yeah?
+[00:10:23.360 --> 00:10:24.360]   That's a good question.
+[00:10:24.360 --> 00:10:24.360]   Okay.
+[00:10:24.360 --> 00:10:25.360]   That's a good question.
+[00:10:25.360 --> 00:10:26.360]   Yeah?
+[00:10:26.360 --> 00:10:27.360]   That's a good question.
+[00:10:27.360 --> 00:10:28.360]   Yeah?
+[00:10:28.360 --> 00:10:29.360]   That's a good question.
+[00:10:29.360 --> 00:10:30.360]   Yeah?
+[00:10:30.360 --> 00:10:31.360]   Yeah?
+[00:10:31.360 --> 00:10:36.340]   And this is why compilers are great, is we can actually get that information really close
+[00:10:36.340 --> 00:10:37.760]   in the dev loop.
+[00:10:37.760 --> 00:10:41.960]   With this information fed back into an LLM, it's able to correct that mistake no problem.
+[00:10:41.960 --> 00:10:43.920]   That's a pretty easy change.
+[00:10:43.920 --> 00:10:48.120]   It uses the convert LSP range to grit range, which, by the way, was in the context window.
+[00:10:48.120 --> 00:10:49.620]   It could have used that before.
+[00:10:49.620 --> 00:10:53.380]   It just didn't realize that it needed to use that until it had the compiler error forcing
+[00:10:53.380 --> 00:10:55.000]   it to.
+[00:10:55.000 --> 00:10:59.780]   So this is already how I think it's important to see that IDs are already making us superhuman,
+[00:10:59.780 --> 00:11:03.520]   and we need to make sure that all of our AI agents have access to the same tools that
+[00:11:03.520 --> 00:11:07.940]   make them super AI.
+[00:11:07.940 --> 00:11:08.860]   So compilers rock, right?
+[00:11:08.860 --> 00:11:14.680]   This basic flow of prompt, get some code, build it, type check it, and then fix that output
+[00:11:14.680 --> 00:11:15.940]   based on the LLM.
+[00:11:15.940 --> 00:11:17.360]   This is actually really powerful.
+[00:11:17.360 --> 00:11:20.740]   This is probably half of what you need to do to build a really good agent, is make sure
+[00:11:20.740 --> 00:11:24.060]   you have this flow working reliably.
+[00:11:24.060 --> 00:11:27.200]   But they're really slow when you're talking about enterprise code basis.
+[00:11:27.200 --> 00:11:30.320]   So this is real numbers from one of our customers.
+[00:11:30.320 --> 00:11:33.500]   It takes them 10 minutes to build their application from scratch.
+[00:11:33.500 --> 00:11:34.540]   And that's just for type checking.
+[00:11:34.540 --> 00:11:36.360]   It's not even pushing a production build.
+[00:11:36.360 --> 00:11:40.680]   And this is actually pretty typical if you look at very large scale enterprise code bases.
+[00:11:40.680 --> 00:11:44.280]   That's why large companies have had to build a lot of caching, because it's hard to build
+[00:11:44.280 --> 00:11:47.980]   a large code base from scratch, which this is completely different than what people usually
+[00:11:47.980 --> 00:11:49.360]   expect for AI.
+[00:11:49.360 --> 00:11:51.480]   People usually think inference takes a long time, right?
+[00:11:51.480 --> 00:11:52.740]   You're waiting for the AI.
+[00:11:52.740 --> 00:11:54.740]   And this is actually a pretty long prompt, 30 seconds, right?
+[00:11:54.740 --> 00:11:57.980]   We're using a huge model to generate this code, takes 30 seconds.
+[00:11:57.980 --> 00:12:01.120]   But that's dwarfed by the 10 minutes to build the application, right?
+[00:12:01.120 --> 00:12:05.780]   This basically destroys our entire agentic flow if we're waiting 10 minutes for every single
+[00:12:05.780 --> 00:12:08.280]   change to validate if it's correct.
+[00:12:08.280 --> 00:12:11.740]   But this is even more compounded if we're trying to do that in a loop, right?
+[00:12:11.740 --> 00:12:15.980]   If we're trying to do a single change, it might take a day if you're just doing this naively.
+[00:12:15.980 --> 00:12:20.400]   There are some agent projects that, in fact, do take a day to make very basic changes because
+[00:12:20.400 --> 00:12:22.200]   you haven't done this at an optimization level.
+[00:12:22.200 --> 00:12:27.140]   But they might ask, like, how are you able to make changes in your IDE at a fast rate?
+[00:12:27.140 --> 00:12:31.020]   You're not waiting 10 minutes every time you make a single keystroke to get a compiler error.
+[00:12:31.020 --> 00:12:32.020]   It's much faster than that.
+[00:12:32.020 --> 00:12:36.460]   It's because there's been a lot of work with language servers to solve this so that you
+[00:12:36.460 --> 00:12:40.620]   can do a bunch of upfront prep so you can build the index in memory, have that in-memory
+[00:12:40.620 --> 00:12:45.220]   queryable index, and then only rewrite the parts or only recheck the parts that you've modified.
+[00:12:45.220 --> 00:12:51.380]   On every keystroke, most tools, like TS server, for example, in TypeScript, is doing live reconcilation
+[00:12:51.380 --> 00:12:53.440]   of figuring out that specific file, right?
+[00:12:53.440 --> 00:12:54.440]   This is much, much faster.
+[00:12:54.440 --> 00:12:59.100]   You can do the 30-second prompt, then one second recompute from the TS server, then 30 seconds
+[00:12:59.100 --> 00:13:01.780]   is to fix it, and this is a much more reasonable flow, right?
+[00:13:01.780 --> 00:13:05.560]   So you obviously want to be using the same kind of language server tools that you'd be using
+[00:13:05.560 --> 00:13:10.920]   as a human, not CLI-based tools, which often don't have the same heuristics in place to be
+[00:13:10.920 --> 00:13:13.540]   able to optimize.
+[00:13:13.540 --> 00:13:17.340]   And then ideally, you do this in a nice loop, eventually get to the point where you can commit
+[00:13:17.340 --> 00:13:21.420]   and get a fresh PR to do that migration to open telemetry.
+[00:13:21.420 --> 00:13:23.540]   This is what it looks like in theory.
+[00:13:23.540 --> 00:13:28.340]   In practice, at some point, it hits an error that it can't fix, right?
+[00:13:28.340 --> 00:13:32.020]   It hits an error that gets into a loop, and it's continuously trying to fix the same error.
+[00:13:32.020 --> 00:13:35.340]   It uses five different techniques, then goes back, and your context window is completely
+[00:13:35.340 --> 00:13:37.520]   polluted with the wrong errors, right?
+[00:13:37.520 --> 00:13:40.100]   Everyone often says, like, agents don't work.
+[00:13:40.100 --> 00:13:43.220]   This is probably half of the reason that agents don't work, is that you just have compounding
+[00:13:43.220 --> 00:13:44.220]   failures, right?
+[00:13:44.220 --> 00:13:48.260]   We found any time we actually have more than 10 prompts in a row, our chance of having
+[00:13:48.260 --> 00:13:51.420]   successful PR is dramatically lower, right?
+[00:13:51.420 --> 00:13:58.420]   So the way we work around that is instead of trying to repeatedly fix an error, we should
+[00:13:58.420 --> 00:14:03.700]   actually just save our original state, revert back to that, and then continue to edit from
+[00:14:03.700 --> 00:14:04.700]   there, right?
+[00:14:04.700 --> 00:14:08.100]   So if we went down a path that's just a bad path that got stuck in a row, we want to go
+[00:14:08.100 --> 00:14:11.100]   back to a known good checkpoint and then build from there.
+[00:14:11.100 --> 00:14:12.420]   This is actually how we're able to do this quickly.
+[00:14:12.420 --> 00:14:15.060]   We don't want to spend 10 minutes recomputing each time.
+[00:14:15.060 --> 00:14:19.420]   We want to actually build our in-memory graph that we're talking about with TS server.
+[00:14:19.420 --> 00:14:20.420]   We want to save that.
+[00:14:20.420 --> 00:14:22.220]   We want to take a snapshot of memory.
+[00:14:22.220 --> 00:14:23.220]   So we use Firecracker.
+[00:14:23.220 --> 00:14:27.440]   It's a VM manager that's used for AWS Lambda, but we can actually use it for dev environments
+[00:14:27.440 --> 00:14:28.440]   too.
+[00:14:28.440 --> 00:14:33.660]   And we can actually take the in-memory state, snapshot that, and then fork it into 10 different
+[00:14:33.660 --> 00:14:36.580]   isolated environments that all have everything pre-computed.
+[00:14:36.580 --> 00:14:40.540]   You can try 10 different changes in them and then figure out the correct change that is most
+[00:14:40.540 --> 00:14:42.800]   likely to yield good results from there.
+[00:14:42.800 --> 00:14:45.400]   In fact, this becomes massively parallel.
+[00:14:45.400 --> 00:14:49.760]   You can end up with an AI system that looks more like a distributed database than it does
+[00:14:49.760 --> 00:14:52.260]   a traditional agent or something that you're running on your laptop, right?
+[00:14:52.260 --> 00:14:58.160]   We actually have flows where we often have six up to 10 different agents working in parallel,
+[00:14:58.160 --> 00:14:59.700]   all working from a known good state.
+[00:14:59.700 --> 00:15:02.260]   They're supposed to report back once they're done.
+[00:15:02.260 --> 00:15:04.440]   And then we'll actually look at the different evaluations.
+[00:15:04.440 --> 00:15:08.580]   We look at both some LM-based evals, but also heuristics like how many errors are there
+[00:15:08.580 --> 00:15:12.680]   currently in the code base, how many unit tests are currently passing, and then actually
+[00:15:12.680 --> 00:15:15.300]   compute what of these, which is the quorum, right?
+[00:15:15.300 --> 00:15:19.180]   It's actually similar to, again, a database system where you would have a voting of what's
+[00:15:19.180 --> 00:15:20.180]   the new master.
+[00:15:20.180 --> 00:15:22.840]   Here, it's like, what's the new good state that we want to fork from?
+[00:15:22.840 --> 00:15:29.380]   There's four here that have similar states that we want to use that as our known good state,
+[00:15:29.380 --> 00:15:31.800]   save that as our known good state, and then fork from there going forward.
+[00:15:31.800 --> 00:15:37.020]   And this ends up being much, much of a rival because we can have an entire PR that, yes,
+[00:15:37.020 --> 00:15:42.900]   we've done 30 or 40 different generations on it, but in the final chain, there was only
+[00:15:42.900 --> 00:15:44.280]   four different generations, right?
+[00:15:44.280 --> 00:15:48.320]   Because we had one that went back to known good state, and then the second one is all operating
+[00:15:48.320 --> 00:15:52.780]   from that quorum at each checkpoint.
+[00:15:52.780 --> 00:15:54.300]   But these edits get pretty expensive, right?
+[00:15:54.300 --> 00:15:59.500]   If you're doing 40 different edits to make a single PR across very large files, that's
+[00:15:59.500 --> 00:16:02.020]   a lot of money that you're spending on inference.
+[00:16:02.020 --> 00:16:04.100]   This is a common problem with making good edits.
+[00:16:04.100 --> 00:16:06.640]   Everyone naively just asks for, generate the whole file again, right?
+[00:16:06.640 --> 00:16:07.640]   It's the simplest approach.
+[00:16:07.640 --> 00:16:10.880]   You definitely should start with that if you're building your own AI tool.
+[00:16:10.880 --> 00:16:12.880]   But then you run into the classic problem of laziness.
+[00:16:12.880 --> 00:16:15.160]   So this is actually still from Sonnet.
+[00:16:15.160 --> 00:16:17.740]   It still said, you know, the start of the function remains the same.
+[00:16:17.740 --> 00:16:19.780]   It left this comment in because it didn't want to output that code.
+[00:16:19.780 --> 00:16:22.220]   And it's just because output tokens are fundamentally more expensive.
+[00:16:22.220 --> 00:16:27.940]   And if you look at GPT-40, it's a $5 to $15 ratio of input tokens to output tokens.
+[00:16:27.940 --> 00:16:30.480]   Cloud 3.5 Sonnet is 3 to 15.
+[00:16:30.480 --> 00:16:32.820]   This is pretty consistent across the board.
+[00:16:32.820 --> 00:16:36.300]   And then response limits are not growing at the same level of context size, right?
+[00:16:36.300 --> 00:16:41.000]   We've got models out there that have 1.5 million tokens, 2 million tokens in their context
+[00:16:41.000 --> 00:16:44.780]   window, and still only, if outputting, 4,000 tokens at a time, right?
+[00:16:44.780 --> 00:16:47.060]   Because it's auto-aggressive, it gets a bunch more expensive.
+[00:16:47.060 --> 00:16:50.320]   So you really don't want to output entire large files as you're making edits.
+[00:16:50.320 --> 00:16:52.660]   You want to find a good edit format.
+[00:16:52.660 --> 00:16:55.420]   So the whole edit format works well.
+[00:16:55.420 --> 00:16:57.220]   It's very expensive, though.
+[00:16:57.220 --> 00:16:58.220]   You can do diffs, right?
+[00:16:58.220 --> 00:17:00.240]   You can say, like, generate a unified diff for this.
+[00:17:00.240 --> 00:17:01.240]   Try to apply that.
+[00:17:01.240 --> 00:17:02.600]   There's some problems with this.
+[00:17:02.600 --> 00:17:03.600]   One is, like, line numbers.
+[00:17:03.600 --> 00:17:06.960]   LMs are still not very good at knowing what the right line number is, even if you give it
+[00:17:06.960 --> 00:17:07.960]   them.
+[00:17:07.960 --> 00:17:09.120]   It's not that good at the math part.
+[00:17:09.120 --> 00:17:10.940]   And it's also off-distribution, right?
+[00:17:10.940 --> 00:17:13.900]   Real-world code that it's trained on is largely not trained on diffs, right?
+[00:17:13.900 --> 00:17:16.500]   It's trained on actual full files.
+[00:17:16.500 --> 00:17:19.220]   You can do simple search and replace with function calls.
+[00:17:19.220 --> 00:17:23.440]   The problem with this is function calls are underneath, for the most part, JSON.
+[00:17:23.440 --> 00:17:25.520]   Escaping code in JSON format is terrible.
+[00:17:25.520 --> 00:17:29.560]   You end up using a lot of tokens just for escape characters, right?
+[00:17:29.560 --> 00:17:31.180]   It's just not a very good format to use.
+[00:17:31.180 --> 00:17:34.800]   So that's why we actually developed a grit QL loose search and replace.
+[00:17:34.800 --> 00:17:38.140]   So we could actually do something that's similar to what you would have on the model of being
+[00:17:38.140 --> 00:17:39.140]   just a before snippet.
+[00:17:39.140 --> 00:17:42.020]   And this is something you might have, like, in a tutorial, which is, like, replace this
+[00:17:42.020 --> 00:17:43.020]   with that, right?
+[00:17:43.020 --> 00:17:46.500]   This is what we-- and this is actually the exact same output that comes from the LM.
+[00:17:46.500 --> 00:17:47.500]   We'll do a match.
+[00:17:47.500 --> 00:17:51.460]   We'll do a loose match to try to find what's the code that looks like that and replace it
+[00:17:51.460 --> 00:17:53.580]   with the code that looks most similar to that afterwards, right?
+[00:17:53.580 --> 00:17:55.020]   And this works really, really well.
+[00:17:55.020 --> 00:17:58.100]   Because we don't have to-- we're going to lie to irrelevant details, like what's currently
+[00:17:58.100 --> 00:18:02.160]   inside the make match function, and just give enough detail to make the replacement.
+[00:18:02.160 --> 00:18:03.160]   Cool.
+[00:18:03.160 --> 00:18:05.840]   And just want to leave you with where we're going next.
+[00:18:05.840 --> 00:18:07.340]   This is our current UI.
+[00:18:07.340 --> 00:18:08.520]   It still is very traditional, right?
+[00:18:08.520 --> 00:18:11.780]   It still is building, you know, what's an AI workflow.
+[00:18:11.780 --> 00:18:15.620]   It looks kind of like your CI, even though it's thousands of agents executing.
+[00:18:15.620 --> 00:18:19.420]   I'm really excited about where we go next with this, figuring out what does it look like
+[00:18:19.420 --> 00:18:21.480]   to manage an entire code base.
+[00:18:21.480 --> 00:18:25.960]   I think of like SimCity is like the ultimate, where you can zoom in and out, and understand
+[00:18:25.960 --> 00:18:28.920]   at different levels of granularity and edit things there.
+[00:18:28.920 --> 00:18:29.920]   Cool.
+[00:18:29.920 --> 00:18:30.920]   Thanks so much.
+[00:18:30.920 --> 00:18:34.480]   And we are hiring, so scan the QR code.
+[00:18:34.480 --> 00:18:35.480]   We'll see you next time in the next one.
+[00:18:35.480 --> 00:18:35.480]   Bye.
+[00:18:35.480 --> 00:18:35.480]   Bye.
+[00:18:35.480 --> 00:18:36.480]   Bye.
+[00:18:36.480 --> 00:18:37.480]   Bye.
+[00:18:37.480 --> 00:18:38.480]   Bye.
+[00:18:38.480 --> 00:18:38.480]   Bye.
+[00:18:38.480 --> 00:18:39.480]   Bye.
+[00:18:39.480 --> 00:18:40.480]   Bye.
+[00:18:40.480 --> 00:18:41.480]   Bye.
+[00:18:41.480 --> 00:18:42.480]   Bye.
+[00:18:42.480 --> 00:18:42.480]   Bye.
+[00:18:42.480 --> 00:18:43.480]   Bye.
+[00:18:43.480 --> 00:18:44.480]   Bye.
+[00:18:44.480 --> 00:18:44.480]   Bye.
+[00:18:44.480 --> 00:18:45.480]   Bye.
+[00:18:45.480 --> 00:18:46.480]   Bye.
+[00:18:46.480 --> 00:18:47.480]   Bye.
+[00:18:47.480 --> 00:18:48.480]   Bye.
+[00:18:48.480 --> 00:18:49.480]   Bye.
+[00:18:49.480 --> 00:18:53.400]   We'll see you next time.
+

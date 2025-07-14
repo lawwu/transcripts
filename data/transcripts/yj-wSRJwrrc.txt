@@ -1,0 +1,324 @@
+
+[00:00:00.000 --> 00:00:14.000]   .
+[00:00:14.000 --> 00:00:15.000]   Hey, guys.
+[00:00:15.000 --> 00:00:18.000]   So I didn't know I was going to be one of the keynote speakers,
+[00:00:18.000 --> 00:00:22.000]   so this is probably going to be the most reduced-scope talk of today.
+[00:00:22.000 --> 00:00:25.000]   I'm talking about type hints.
+[00:00:25.000 --> 00:00:28.000]   And in particular, I'm talking about how Pydantic might be all you need
+[00:00:28.000 --> 00:00:30.000]   to build with language models.
+[00:00:30.000 --> 00:00:32.000]   In particular, I want to talk about structured prompting,
+[00:00:32.000 --> 00:00:35.000]   which is the idea that we can use objects to define what we want back out
+[00:00:35.000 --> 00:00:39.000]   rather than kind of praying to the LLM gods that the comma is in the right place
+[00:00:39.000 --> 00:00:41.000]   and the bracket was closed.
+[00:00:41.000 --> 00:00:45.000]   So everyone here basically kind of knows or at least agrees
+[00:00:45.000 --> 00:00:48.000]   that large language models are kind of eating software.
+[00:00:48.000 --> 00:00:52.000]   But what this really means in production is 90% of the applications you build
+[00:00:52.000 --> 00:00:55.000]   are just ones where you're asking the language model to output JSON
+[00:00:55.000 --> 00:00:59.000]   or some structured output that you're parsing with a regular expression.
+[00:00:59.000 --> 00:01:01.000]   And that experience is pretty terrible.
+[00:01:01.000 --> 00:01:04.000]   And the reason this is the case is because we really want language models
+[00:01:04.000 --> 00:01:08.000]   to be backwards compatible with the existing software that we have.
+[00:01:08.000 --> 00:01:11.000]   You know, code gen works, but a lot of the systems we have today
+[00:01:11.000 --> 00:01:13.000]   are systems that we can't change.
+[00:01:13.000 --> 00:01:17.000]   And so, yeah, the idea is that although language models were introduced to us
+[00:01:17.000 --> 00:01:21.000]   through ChatCpt, most of us are actually building systems and not chatbots.
+[00:01:21.000 --> 00:01:26.000]   We want to process input data and integrate with existing systems via APIs or schemas
+[00:01:26.000 --> 00:01:28.000]   that we might not have control over.
+[00:01:28.000 --> 00:01:32.000]   And so the goal for today is effectively to introduce OpenAI function calling,
+[00:01:32.000 --> 00:01:37.000]   introduce Pydantic, then introduce Instructor and Marvin as a library
+[00:01:37.000 --> 00:01:40.000]   to make using Pydantic to prompt language models much easier.
+[00:01:40.000 --> 00:01:46.000]   And what this gets us is, you know, better validation, makes your code a little bit cleaner,
+[00:01:46.000 --> 00:01:50.000]   and then afterwards I'll talk over some design patterns that I've uncovered
+[00:01:50.000 --> 00:01:54.000]   and some of the applications that we have.
+[00:01:54.000 --> 00:01:57.000]   This is basically almost everyone's experience here, right?
+[00:01:57.000 --> 00:02:01.000]   Like, you know, Riley Goodside had a tweet about asking to get JSON out of Bard
+[00:02:01.000 --> 00:02:04.000]   and the only way you could do it was to threaten to take a human life.
+[00:02:04.000 --> 00:02:07.000]   And that's not code I really want to commit into my repos.
+[00:02:07.000 --> 00:02:10.000]   And then when you do ask for JSON, you know, maybe it works today,
+[00:02:10.000 --> 00:02:13.000]   but maybe tomorrow instead of getting JSON, you're going to get, like,
+[00:02:13.000 --> 00:02:15.000]   okay, here you go, here's some JSON.
+[00:02:15.000 --> 00:02:18.000]   And then again, you kind of pray that the JSON's parsed correctly.
+[00:02:18.000 --> 00:02:22.000]   And I don't know if you noticed, but here, user is a key for one query
+[00:02:22.000 --> 00:02:25.000]   and username is a key for another, and you would not really notice this
+[00:02:25.000 --> 00:02:27.000]   unless you had, like, good logging in place.
+[00:02:27.000 --> 00:02:29.000]   But really this should not happen to begin with, right?
+[00:02:29.000 --> 00:02:32.000]   Like, you shouldn't have to, like, read the logs to figure out
+[00:02:32.000 --> 00:02:36.000]   that the passwords didn't match when you're signing up for an account.
+[00:02:36.000 --> 00:02:38.000]   And so what this means is our prompts and our schemas
+[00:02:38.000 --> 00:02:40.000]   and our outputs are all strings.
+[00:02:40.000 --> 00:02:43.000]   We're kind of writing code and text edit rather than an IDE
+[00:02:43.000 --> 00:02:50.000]   where you could, you know, get linting or type checking or syntax highlighting.
+[00:02:50.000 --> 00:02:54.000]   And so OpenAI function calls somewhat fix this, right?
+[00:02:54.000 --> 00:02:57.000]   We get to define a JSON schema of the output that we want,
+[00:02:57.000 --> 00:03:01.000]   and OpenAI will do a better job in placing the JSON somewhere
+[00:03:01.000 --> 00:03:03.000]   that you can reliably parse out.
+[00:03:03.000 --> 00:03:07.000]   So instead of going from string to string to string,
+[00:03:07.000 --> 00:03:09.000]   you get string to dict to string.
+[00:03:09.000 --> 00:03:11.000]   And then you still have to call JSON loads.
+[00:03:11.000 --> 00:03:13.000]   And again, you're kind of praying that everything is in there.
+[00:03:13.000 --> 00:03:16.000]   And a lot of this is kind of praying to the LLM gods.
+[00:03:16.000 --> 00:03:21.000]   On top of that, like, if this code was committed to any repo I was managing,
+[00:03:21.000 --> 00:03:23.000]   like, I would be pissed, right?
+[00:03:23.000 --> 00:03:26.000]   Complex data structures are already difficult to define.
+[00:03:26.000 --> 00:03:30.000]   And now you're working with the dictionary of JSON loads.
+[00:03:30.000 --> 00:03:34.000]   And that also feels very unsafe because you get missing keys,
+[00:03:34.000 --> 00:03:36.000]   missing values, and you get hallucinations,
+[00:03:36.000 --> 00:03:38.000]   and maybe the keys are spelled wrong, and you're missing an underscore,
+[00:03:38.000 --> 00:03:40.000]   and you get all these issues.
+[00:03:40.000 --> 00:03:42.000]   And then you end up writing code like this.
+[00:03:42.000 --> 00:03:45.000]   And this works for, like, name and age and email.
+[00:03:45.000 --> 00:03:48.000]   And then you're checking if something is a bool by parsing a string.
+[00:03:48.000 --> 00:03:50.000]   It gets really messy.
+[00:03:50.000 --> 00:03:54.000]   And what Python has done to solve this is use Pydantic.
+[00:03:54.000 --> 00:03:58.000]   Pydantic is a library that do data model validation very similar to data classes.
+[00:03:58.000 --> 00:04:00.000]   It is powered by type hints.
+[00:04:00.000 --> 00:04:04.000]   It has really great model and field validation.
+[00:04:04.000 --> 00:04:12.000]   It has 70 million downloads a month, which means it's a library that everyone can trust and use and know that it's going to be maintained for a long period of time.
+[00:04:12.000 --> 00:04:16.000]   And more importantly, it outputs JSON schema, which is how you communicate with open AI function calling.
+[00:04:16.000 --> 00:04:20.000]   And so the general idea is that we can define an object like delivery.
+[00:04:20.000 --> 00:04:24.000]   Say that the timestamp is a date time and the dimensions is a tuple of ints.
+[00:04:24.000 --> 00:04:31.000]   And even if you pass in a string as a timestamp and a list of strings as tuples, everything is parsed out correctly.
+[00:04:31.000 --> 00:04:33.000]   This is all the code we don't want to write.
+[00:04:33.000 --> 00:04:35.000]   This is why there's 70 million downloads.
+[00:04:35.000 --> 00:04:39.000]   More interestingly, timestamp and dimensions are now things that your IDE is aware of.
+[00:04:39.000 --> 00:04:41.000]   They know the type of that.
+[00:04:41.000 --> 00:04:43.000]   You get autocomplete and spell checking.
+[00:04:43.000 --> 00:04:45.000]   Again, just more bug-free code.
+[00:04:45.000 --> 00:04:49.000]   And so this really brings me to the idea of structured prompting.
+[00:04:49.000 --> 00:04:54.000]   Because now your prompt isn't a triple quoted string.
+[00:04:54.000 --> 00:04:58.000]   Your prompt is actual code that you can look at, you can review.
+[00:04:58.000 --> 00:05:02.000]   And everyone has written a function that returns a data structure.
+[00:05:02.000 --> 00:05:04.000]   Everyone knows how to manage code like this.
+[00:05:04.000 --> 00:05:10.000]   Instead of doing the migration of JSON schemas in the one-shot examples, you know, I've done database migrations.
+[00:05:10.000 --> 00:05:12.000]   I know how some of these things work.
+[00:05:12.000 --> 00:05:14.000]   And more importantly, we can program this way.
+[00:05:14.000 --> 00:05:17.000]   And so that's why I built a library called instructor a while ago.
+[00:05:17.000 --> 00:05:21.000]   And the idea here is just to make open AI function calling super useful.
+[00:05:21.000 --> 00:05:23.000]   So the idea is you import instructor.
+[00:05:23.000 --> 00:05:26.000]   You patch the completion API.
+[00:05:26.000 --> 00:05:28.000]   Debatable if this is the best idea.
+[00:05:28.000 --> 00:05:31.000]   But ultimately, you define your pydantic object.
+[00:05:31.000 --> 00:05:33.000]   You set that as the response model of that create call.
+[00:05:33.000 --> 00:05:40.000]   And now you're guaranteed that that response model is the type of the entity that you extract.
+[00:05:40.000 --> 00:05:42.000]   So again, you get nice autocomplete.
+[00:05:42.000 --> 00:05:43.000]   You get type safety.
+[00:05:43.000 --> 00:05:44.000]   Really great.
+[00:05:44.000 --> 00:05:49.000]   I would also want to mention that this only works for open AI function calling.
+[00:05:49.000 --> 00:05:54.000]   If you want to use a more comprehensive framework to do some of this pydantic work, I think Marvin
+[00:05:54.000 --> 00:05:56.000]   is a really great library to try out.
+[00:05:56.000 --> 00:06:04.000]   They give you access to more language models and more capabilities above this response.
+[00:06:04.000 --> 00:06:08.000]   But the general idea here isn't that this is going to make your JSON come out better.
+[00:06:08.000 --> 00:06:11.000]   The idea is that when you define objects, you can find nested references.
+[00:06:11.000 --> 00:06:14.000]   You can define methods of the behavior of that object.
+[00:06:14.000 --> 00:06:17.000]   You can return instances of that object instead of dictionaries.
+[00:06:17.000 --> 00:06:22.000]   And you're going to write cleaner code and code that's going to be easier to maintain as they're
+[00:06:22.000 --> 00:06:25.000]   passed through different systems.
+[00:06:25.000 --> 00:06:29.000]   And so here you have, for example, a base model, but you can add a method if you want
+[00:06:29.000 --> 00:06:30.000]   to.
+[00:06:30.000 --> 00:06:32.000]   You can define the same class but with an address key.
+[00:06:32.000 --> 00:06:36.000]   You can then define new classes like best friend and friends, which is a list of user
+[00:06:36.000 --> 00:06:37.000]   details.
+[00:06:37.000 --> 00:06:42.000]   If I was to write this in JSON schema to make a post request, it would be very unmanageable.
+[00:06:42.000 --> 00:06:43.000]   But this makes it a lot easier.
+[00:06:43.000 --> 00:06:48.000]   When you have doc strings, the doc strings are now a part of that JSON schema that is
+[00:06:48.000 --> 00:06:50.000]   sent to open AI.
+[00:06:50.000 --> 00:06:55.000]   And this is because the model now represents both the prompt, the data, and the behavior
+[00:06:55.000 --> 00:06:56.000]   all in one.
+[00:06:56.000 --> 00:06:57.000]   Right?
+[00:06:57.000 --> 00:06:58.000]   You want good doc strings.
+[00:06:58.000 --> 00:07:00.000]   You want good field descriptors.
+[00:07:00.000 --> 00:07:03.000]   And it's all part of the JSON schema that you send.
+[00:07:03.000 --> 00:07:07.000]   And now your code quality, your prompt quality, your data quality are all in sync.
+[00:07:07.000 --> 00:07:10.000]   There's this one thing you want to manage and one thing you want to review.
+[00:07:10.000 --> 00:07:14.000]   And what that really means is that you need to have good variable names, good descriptions,
+[00:07:14.000 --> 00:07:15.000]   and good documentation.
+[00:07:15.000 --> 00:07:18.000]   And this is something we should have anyways.
+[00:07:18.000 --> 00:07:23.000]   You can also do some really cool things with Pydantic without language models.
+[00:07:23.000 --> 00:07:25.000]   For example, you can define a validator.
+[00:07:25.000 --> 00:07:27.000]   Here I define a function that takes in a value.
+[00:07:27.000 --> 00:07:29.000]   I check that there is a string in that value.
+[00:07:29.000 --> 00:07:32.000]   And if it's not, I return a lowercase version of that.
+[00:07:32.000 --> 00:07:35.000]   Because that just might be how I want to parse my data.
+[00:07:35.000 --> 00:07:37.000]   And when you construct this object, you get an error back out.
+[00:07:37.000 --> 00:07:38.000]   Right?
+[00:07:38.000 --> 00:07:40.000]   We're not going to fix it, but we get a validation error.
+[00:07:40.000 --> 00:07:43.000]   Something that we can catch reliably and understand.
+[00:07:43.000 --> 00:07:47.000]   But then if you introduce language models, you can just import the LLM validator.
+[00:07:47.000 --> 00:07:50.000]   And now you can have something that says, like, don't say mean things.
+[00:07:50.000 --> 00:07:54.000]   And then when you construct an object that has something that says that the meaning of life
+[00:07:54.000 --> 00:07:59.000]   is the evil and steal things, you're going to get a validation error and an error message.
+[00:07:59.000 --> 00:08:04.000]   And this error message, the statement is objectable, is actually coming out of a language model API call.
+[00:08:04.000 --> 00:08:07.000]   It's using Instructor under the hood to define that.
+[00:08:07.000 --> 00:08:10.000]   But, you know, it's not enough to actually just point out these errors.
+[00:08:10.000 --> 00:08:11.000]   You also want to fix that.
+[00:08:11.000 --> 00:08:16.000]   And so the easy way of doing that in Instructor is to just add max retries.
+[00:08:16.000 --> 00:08:17.000]   Right?
+[00:08:17.000 --> 00:08:20.000]   Now what we do is we'll append the message that you had before.
+[00:08:20.000 --> 00:08:24.000]   But then we can also capture all the validations in one shot.
+[00:08:24.000 --> 00:08:26.000]   Send it back to the language model and try again.
+[00:08:26.000 --> 00:08:27.000]   Right?
+[00:08:27.000 --> 00:08:30.000]   But the idea here that this isn't like prompt change.
+[00:08:30.000 --> 00:08:32.000]   This isn't constitutional AI.
+[00:08:32.000 --> 00:08:36.000]   Here we just have validation, error handling, and then re-asking.
+[00:08:36.000 --> 00:08:39.000]   And these are just separate systems in code that we can manage.
+[00:08:39.000 --> 00:08:43.000]   If you want something to be less than 10 characters, there's a character count validator.
+[00:08:43.000 --> 00:08:47.000]   If you want to make sure that a name is in a database, you can just add a post request if you want to.
+[00:08:47.000 --> 00:08:49.000]   But this is just classical code again.
+[00:08:49.000 --> 00:08:52.000]   This is the backwards compatibility of language models.
+[00:08:52.000 --> 00:08:54.000]   But we can also do a lot more.
+[00:08:54.000 --> 00:08:55.000]   Right?
+[00:08:55.000 --> 00:08:56.000]   Structured prompts.
+[00:08:56.000 --> 00:08:57.000]   Get you structured outputs.
+[00:08:57.000 --> 00:09:00.000]   But ideally, the structure actually helps you structure your thoughts.
+[00:09:00.000 --> 00:09:02.000]   So here's another example.
+[00:09:02.000 --> 00:09:06.000]   It's really important for us to give language models the ability to have an escape hatch and
+[00:09:06.000 --> 00:09:09.000]   say that it doesn't know something or can't find something.
+[00:09:09.000 --> 00:09:14.000]   And right now, most people will say something like, return I don't know in all caps.
+[00:09:14.000 --> 00:09:17.000]   Check if I don't know all caps in string.
+[00:09:17.000 --> 00:09:18.000]   Right?
+[00:09:18.000 --> 00:09:20.000]   Sometimes it doesn't say that.
+[00:09:20.000 --> 00:09:21.000]   It's very difficult to manage.
+[00:09:21.000 --> 00:09:25.000]   But here, you see that I've defined user details with an optional role.
+[00:09:25.000 --> 00:09:26.000]   That could be none.
+[00:09:26.000 --> 00:09:29.000]   But the entity I want to extract is just maybe a user.
+[00:09:29.000 --> 00:09:31.000]   It has a result that's maybe a user.
+[00:09:31.000 --> 00:09:34.000]   And then an error and an error message.
+[00:09:34.000 --> 00:09:36.000]   And so I can write code that looks like this.
+[00:09:36.000 --> 00:09:38.000]   I get this object back out.
+[00:09:38.000 --> 00:09:39.000]   It's a little bit more complicated.
+[00:09:39.000 --> 00:09:44.000]   But now I can kind of program with language models in a way that feels more like programming
+[00:09:44.000 --> 00:09:49.000]   and less like chaining, for example.
+[00:09:49.000 --> 00:09:50.000]   Right?
+[00:09:50.000 --> 00:09:52.000]   We can also define reusable components.
+[00:09:52.000 --> 00:09:56.000]   Here, I've defined a work time and a leisure time as both a time range.
+[00:09:56.000 --> 00:09:59.000]   And the time range has a start time and an end time.
+[00:09:59.000 --> 00:10:04.000]   If I find that this is not being parsed correctly, what I could do is actually add chain of thought
+[00:10:04.000 --> 00:10:07.000]   directly in the time range component.
+[00:10:07.000 --> 00:10:12.000]   And now I have modularity in some of these features.
+[00:10:12.000 --> 00:10:17.000]   And you can imagine having a system where, in production, you disable that chain of thought
+[00:10:17.000 --> 00:10:18.000]   field.
+[00:10:18.000 --> 00:10:22.000]   And then in testing, you add that to figure out what's the latency or performance tradeoffs.
+[00:10:22.000 --> 00:10:26.000]   You could also extract arbitrary values.
+[00:10:26.000 --> 00:10:28.000]   Here, I define a property called key and value.
+[00:10:28.000 --> 00:10:30.000]   And then I want to extract a list of properties.
+[00:10:30.000 --> 00:10:31.000]   Right?
+[00:10:31.000 --> 00:10:34.000]   You might want to add a prompt that says make sure the keys are consistent over those properties.
+[00:10:34.000 --> 00:10:37.000]   We can also add validators to make sure that's the case.
+[00:10:37.000 --> 00:10:39.000]   And then re-ask when that's not the case.
+[00:10:39.000 --> 00:10:44.000]   If I want only five properties, I could add an index to the property key and just say, well,
+[00:10:44.000 --> 00:10:45.000]   now count them out.
+[00:10:45.000 --> 00:10:47.000]   And when you count to five, stop.
+[00:10:47.000 --> 00:10:49.000]   And you're going to get much more reliable outputs.
+[00:10:49.000 --> 00:10:54.000]   Some of the things that I find really interesting with this kind of method is prompting data structures.
+[00:10:54.000 --> 00:10:56.000]   Here, I have user details.
+[00:10:56.000 --> 00:10:57.000]   Age name as before.
+[00:10:57.000 --> 00:11:01.000]   But now I define an ID and a friends array, which is a list of IDs.
+[00:11:01.000 --> 00:11:07.000]   And if you prompt that well enough, you can basically extract a network out of your data.
+[00:11:07.000 --> 00:11:12.000]   So, you know, we've seen that structured prompting kind of gives you really useful components that
+[00:11:12.000 --> 00:11:14.000]   you can reuse and make modular.
+[00:11:14.000 --> 00:11:19.000]   And the idea, again, here is that we want to model both the prompt, the data, and the behavior.
+[00:11:19.000 --> 00:11:23.000]   Here, I haven't mentioned too many methods that you could act on this object.
+[00:11:23.000 --> 00:11:28.000]   But the idea is almost like, you know, when we go from C to C++, the thing we get is object-oriented programming.
+[00:11:28.000 --> 00:11:29.000]   And that makes a lot of things easier.
+[00:11:29.000 --> 00:11:32.000]   And we've learned our lessons with object-oriented programming.
+[00:11:32.000 --> 00:11:37.000]   And so if we do the right track, I think we're going to get a lot more productive development out of these language models.
+[00:11:37.000 --> 00:11:41.000]   And the second thing is that these language models now can output data structures, right?
+[00:11:41.000 --> 00:11:44.000]   That you can, like, pull up your old, like, Leet code textbooks or whatever,
+[00:11:44.000 --> 00:11:48.000]   and actually figure out how to traverse these graphs, for example, process this data in a useful way.
+[00:11:48.000 --> 00:11:57.000]   And so now they can represent, you know, knowledge, workflows, and even plans that you can just dispatch to a classical computer system.
+[00:11:57.000 --> 00:11:58.000]   Right?
+[00:11:58.000 --> 00:12:03.000]   You can create the data that you want to send to Airflow rather than doing this for loop hoping it terminates.
+[00:12:03.000 --> 00:12:08.000]   And so now I think about six minutes, so I'll go over some advanced applications.
+[00:12:08.000 --> 00:12:09.000]   These are actually fairly simple.
+[00:12:09.000 --> 00:12:12.000]   I have some more documentation if you want to see that later on.
+[00:12:12.000 --> 00:12:14.000]   But let's go over some of these examples.
+[00:12:14.000 --> 00:12:15.000]   So the first one is RAG.
+[00:12:15.000 --> 00:12:21.000]   I think when we first started out, a lot of these systems end up being systems where we embed the user query,
+[00:12:21.000 --> 00:12:25.000]   make a vector database search, return the results, and then hope that those are good enough.
+[00:12:25.000 --> 00:12:28.000]   But in practice, you might have multiple backends to search from.
+[00:12:28.000 --> 00:12:30.000]   Maybe you want to rewrite the user query.
+[00:12:30.000 --> 00:12:32.000]   Maybe you want to decompose that user query.
+[00:12:32.000 --> 00:12:33.000]   Right?
+[00:12:33.000 --> 00:12:37.000]   If you want to ask something like what was something that was recent, you need to have time filters.
+[00:12:37.000 --> 00:12:40.000]   And so you could define that as a data structure.
+[00:12:40.000 --> 00:12:41.000]   Right?
+[00:12:41.000 --> 00:12:43.000]   The search type is email or video.
+[00:12:43.000 --> 00:12:46.000]   Search has a title, a query, a before date, and a type.
+[00:12:46.000 --> 00:12:51.000]   And then you can just implement the execute method that says, you know, if type is video, do this.
+[00:12:51.000 --> 00:12:52.000]   If email, do that.
+[00:12:52.000 --> 00:12:53.000]   Really simple.
+[00:12:53.000 --> 00:12:56.000]   And then what you want to extract back out is multiple searches.
+[00:12:56.000 --> 00:12:58.000]   Give me a list of search queries.
+[00:12:58.000 --> 00:13:02.000]   And then you can write some async I/O to map across these things.
+[00:13:02.000 --> 00:13:08.000]   And now, because all that prompting is embedded in the data structure, your prompt that you send to open AI is very simple.
+[00:13:08.000 --> 00:13:11.000]   Your helpful assistant, segment the search queries.
+[00:13:11.000 --> 00:13:19.000]   And then what you get back out is this ability to just have an object that you can program with in a way that you've managed sort of like all your life.
+[00:13:19.000 --> 00:13:20.000]   Right?
+[00:13:20.000 --> 00:13:21.000]   Something very straightforward.
+[00:13:21.000 --> 00:13:23.000]   But you can also do something more interesting.
+[00:13:23.000 --> 00:13:24.000]   You can then plan.
+[00:13:24.000 --> 00:13:25.000]   Right?
+[00:13:25.000 --> 00:13:27.000]   Before, we talked about like extracting a social network.
+[00:13:27.000 --> 00:13:30.000]   But you can actually just produce the entire DAG.
+[00:13:30.000 --> 00:13:32.000]   Here, I had the same graph structure.
+[00:13:32.000 --> 00:13:33.000]   Right?
+[00:13:33.000 --> 00:13:38.000]   It's an ID, a question, and a list of dependencies where I have a lot of information in the description here.
+[00:13:38.000 --> 00:13:40.000]   And that's basically the prompt.
+[00:13:40.000 --> 00:13:43.000]   And what I want back out is a query plan.
+[00:13:43.000 --> 00:13:52.000]   So now, if you send it to a query planner that says, like, you're a helpful query planner, like, build out this query, you can ask something like, what is the difference in populations of Canada and this home country?
+[00:13:52.000 --> 00:13:59.000]   And then what you can see is, you know what, like, if I'm good at elite code, I could query the first two in parallel because there are no dependencies.
+[00:13:59.000 --> 00:14:05.000]   And then wait for dependency three to merge and then wait for four to merge those two.
+[00:14:05.000 --> 00:14:07.000]   But this requires one language model call.
+[00:14:07.000 --> 00:14:09.000]   And now it's just traditional RAG.
+[00:14:09.000 --> 00:14:13.000]   And if you have an IR system, you get to skip this for loop of agent queries.
+[00:14:13.000 --> 00:14:19.000]   You know, an example that was really popular on Twitter recently was extracting knowledge graphs.
+[00:14:19.000 --> 00:14:20.000]   You know, same thing here.
+[00:14:20.000 --> 00:14:28.000]   Here, what I've done is I've made sure that the data structure I model is as close as possible to the GraphVis visualization API.
+[00:14:28.000 --> 00:14:36.000]   What that gets me is really, really simple code that does basically the creation and visualization of a graph.
+[00:14:36.000 --> 00:14:47.000]   I've defined things one-to-one to the API, and now what I can do is if I ask for something that's very simple, like, you know, give me the description of quantum mechanics, you can get a graph out.
+[00:14:47.000 --> 00:14:55.000]   That's basically in, like, 40 lines of code because what you've done is you've modeled the data structure GraphVis needs to make the visualization.
+[00:14:55.000 --> 00:14:59.000]   And we're kind of trying to couple that a lot more.
+[00:14:59.000 --> 00:15:02.000]   This is a more advanced example, so don't feel bad if you can't follow this one.
+[00:15:02.000 --> 00:15:09.000]   But here what I've done is I've done a question answer is a question and an answer, and the answer is a list of facts.
+[00:15:09.000 --> 00:15:14.000]   And what a fact is is it's a fact as a statement and a substring quote from the original text.
+[00:15:14.000 --> 00:15:18.000]   I want multiple quotes as a substring of the original text.
+[00:15:18.000 --> 00:15:26.000]   And then what my validators do is it says, you know what, for every quote you give me, validate that it exists in the text chunk.
+[00:15:26.000 --> 00:15:28.000]   If it's not there, throw out the fact.
+[00:15:28.000 --> 00:15:35.000]   And then the validator for question and answer says, only show me facts that have at least one substring quote from the original document.
+[00:15:35.000 --> 00:15:49.000]   So now I'm trying to encapsulate some of the business logic of not hallucinating, not by asking it to not hallucinate, but actually trying to figure out what is the paraphrasing detection algorithms to identify what the quotes were.
+[00:15:49.000 --> 00:15:57.000]   And what this means is instead of being able to say that the answer was in page seven, you can say the answer was this sentence, that sentence, and something else.
+[00:15:57.000 --> 00:16:01.000]   And I know they exist in the text chunks.
+[00:16:01.000 --> 00:16:13.000]   And so I think what we end up finding is that as language models get more interesting and more capable, we're only going to be limited in the creativity that we can have to actually prompt these things.
+[00:16:13.000 --> 00:16:17.000]   Like you can have instructions per object.
+[00:16:17.000 --> 00:16:19.000]   You can have recursive structures.
+[00:16:19.000 --> 00:16:24.000]   It goes into domain modeling more than it goes to prompt engineering.
+[00:16:24.000 --> 00:16:27.000]   And again, now we can use the code that we've always used.
+[00:16:27.000 --> 00:16:33.000]   If you want more examples, I have a bunch of examples here on different kinds of applications that I've had with some of my consulting clients.
+[00:16:33.000 --> 00:16:36.000]   Yeah, I think these are some really useful ones.
+[00:16:36.000 --> 00:16:42.000]   And I'll go to the next slide, which is -- this doesn't have the QR code.
+[00:16:42.000 --> 00:16:44.000]   That's fine.
+[00:16:44.000 --> 00:16:51.000]   The updated slide has a QR code, but instead you can just visit jxnl.github.io/instructor.
+[00:16:51.000 --> 00:16:57.000]   I also want to call out that we're also experimenting with a lot of different UIs to do this structured evaluation, right?
+[00:16:57.000 --> 00:17:08.000]   Where you might want to figure out whether or not one response was mean, but you also want to figure out what the distribution of floats was for a different attribute and be able to write evals against that.
+[00:17:08.000 --> 00:17:11.000]   And I think there's a lot of really interesting open work to be done.
+[00:17:11.000 --> 00:17:15.000]   Right now we're doing very simple things around extracting graphs out of documents.
+[00:17:15.000 --> 00:17:21.000]   You can imagine a world where we have multimodal, in which case you could be extracting bounding boxes, right?
+[00:17:21.000 --> 00:17:30.000]   Like one application I'm really excited about is being able to say, give an image, draw the bounding box for every image, and the search query I would need to go on Amazon to buy this product.
+[00:17:30.000 --> 00:17:36.000]   And then you can really instantly build a UI that just says, you know, for every bounding box, render a modal, right?
+[00:17:36.000 --> 00:17:39.000]   You can have like generative UI over images, over audio.
+[00:17:39.000 --> 00:17:43.000]   I think in general it's going to be a very exciting space to play more with structured outputs.
+[00:17:43.000 --> 00:17:44.000]   Thank you.
+[00:17:44.000 --> 00:17:45.000]   Thank you.
+[00:17:45.000 --> 00:17:45.000]   Thank you.
+[00:17:45.000 --> 00:17:45.000]   Thank you.
+[00:17:45.000 --> 00:17:45.000]   Thank you.
+[00:17:45.000 --> 00:17:45.000]   Thank you.
+[00:17:45.000 --> 00:17:46.000]   Thank you.
+[00:17:46.000 --> 00:17:47.000]   Thank you.
+[00:17:47.000 --> 00:17:48.000]   Thank you.
+[00:17:48.000 --> 00:17:48.000]   Thank you.
+[00:17:48.000 --> 00:17:49.000]   Thank you.
+[00:17:49.000 --> 00:17:49.000]   Thank you.
+[00:17:49.000 --> 00:17:50.000]   Thank you.
+[00:17:50.000 --> 00:17:54.740]   We'll see you next time.
+

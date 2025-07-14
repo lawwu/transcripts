@@ -1,0 +1,199 @@
+
+[00:00:00.000 --> 00:00:22.120]   Welcome, folks, to the building protected MCP servers session. I'm Dan Delamarski. I'm a product
+[00:00:22.120 --> 00:00:27.800]   engineer at Microsoft and member of the MCP steering committee. And I'm Julia. I work in
+[00:00:27.800 --> 00:00:33.580]   Azure API Management at Microsoft. And the both of us are part of an MCP squad at Microsoft. So I
+[00:00:33.580 --> 00:00:41.220]   guess that's why we are here. Yeah. So we're again talking about protected MCP servers. And why is
+[00:00:41.220 --> 00:00:46.140]   this even important? Why is this even a topic? Well, the thing is, when we talk about MCP servers
+[00:00:46.140 --> 00:00:50.360]   and MCP servers that folks connect to their whatever clients, whether it's cloud desktop,
+[00:00:50.360 --> 00:00:56.140]   VS Code, VS, not every server should be open because there's a bunch of different APIs that
+[00:00:56.140 --> 00:01:00.760]   might require authorization. They're protected. So naturally, your MCP server needs to be able to
+[00:01:00.760 --> 00:01:06.660]   do the same. It is super important for remote MCP servers because anybody can access them. And
+[00:01:06.660 --> 00:01:11.480]   especially if the servers are open to the broad internet and not behind a VPN. But it's not really
+[00:01:11.480 --> 00:01:17.180]   relevant for local servers. And mainly because locally, you can do a bunch of stuff already
+[00:01:17.180 --> 00:01:22.760]   because it's just a binary. And we'll get to that in a second. Now, if you're building MCP servers and
+[00:01:22.760 --> 00:01:28.080]   remote MCP servers specifically, one of the things that you're connecting to are likely third-party
+[00:01:28.080 --> 00:01:34.420]   APIs, whether it's your own or somebody else's. And that API requires user context. That API needs to
+[00:01:34.420 --> 00:01:38.860]   know who's invoking it because different customers have different permissions. You might have different
+[00:01:38.860 --> 00:01:46.680]   admin policies. So while your API does control through the help of an identity provider as to who actually
+[00:01:46.680 --> 00:01:54.160]   has access, this needs to be somehow exposed to the MCP layer. And, of course, your API will act
+[00:01:54.160 --> 00:01:59.140]   differently depending on the credentials that you give it. If I'm an admin, I get access to a certain set of
+[00:01:59.140 --> 00:02:05.620]   tools. If I'm somebody that's just a contributor, I get access to a bunch of different tools. Now, all these things
+[00:02:05.620 --> 00:02:10.940]   considered, one of the questions I get asked a lot is like, "Well, okay, this is all great for remote, but why not local?
+[00:02:10.940 --> 00:02:18.900]   What's the story for authorization for local servers?" And the answer is kind of simple. Local servers are
+[00:02:18.900 --> 00:02:24.940]   binaries on the box. They're binaries that run within the context of whatever machine you have. That means that
+[00:02:24.940 --> 00:02:30.260]   that they can do auth in any way you can possibly have. Like, it doesn't need to be auth. You can have
+[00:02:30.260 --> 00:02:35.260]   credentials that are secrets. You can have certificates. You can have pass keys that are bound to whatever
+[00:02:35.260 --> 00:02:41.260]   credential you have on the box. Like, it's just like you don't have any constraints whatsoever. That means that
+[00:02:41.260 --> 00:02:47.260]   any APIs you connect to can also be done in any way with any of the off-the-shelf libraries. There is, of course,
+[00:02:47.260 --> 00:02:52.580]   special cases here if you do things like remote desktop and all sorts of kind of multi-user scenarios
+[00:02:52.580 --> 00:02:58.420]   on VMs. But that's kind of out of scope for MCP. That's something that we left to implementers. Now,
+[00:02:58.420 --> 00:03:04.580]   remote servers. Let's get back to that. So, one of the things that if you've browsed kind of the MCP specs,
+[00:03:04.580 --> 00:03:11.060]   you might know that we have two different specifications. There's one that is stable, that is March 26th,
+[00:03:11.060 --> 00:03:16.180]   and there's one that is draft, that we worked very closely with a bunch of security experts to refine.
+[00:03:16.180 --> 00:03:22.740]   So, for the previous specification, the one that is currently marked as stable, MCP required people
+[00:03:22.740 --> 00:03:28.900]   that are building MCP servers to essentially spin up their own authorization server. That means you are
+[00:03:28.900 --> 00:03:35.700]   building your own token factory. So, if you want to issue tokens to an MCP client to authorize users,
+[00:03:35.700 --> 00:03:40.980]   you're the one that has to craft those tokens and manage them and refresh them and assign them.
+[00:03:40.980 --> 00:03:46.980]   Very complicated. It required people to actually be OAuth experts. Like, if you want to build an MCP
+[00:03:46.980 --> 00:03:52.500]   server that does OAuth, you need to understand how OAuth works end-to-end, including to the point of
+[00:03:52.500 --> 00:03:58.580]   minting those tokens, which is very complicated. So, the draft spec that we worked with Anthropic and a
+[00:03:58.580 --> 00:04:05.060]   bunch of security experts to refine actually does this clean separation between the server, the MCP server,
+[00:04:05.060 --> 00:04:08.580]   which we call the resource server, and the authorization server. So, things like token
+[00:04:08.580 --> 00:04:14.740]   minting and managing token lifetime actually is not done by the MCP server anymore. It's done by whatever
+[00:04:14.740 --> 00:04:19.860]   authorization server you're using. So, if you're using Okta, Auth0, EntryID, it doesn't really matter.
+[00:04:19.860 --> 00:04:25.140]   You can just plug it into your MCP server and it's going to work with the clients that those servers can
+[00:04:25.140 --> 00:04:30.340]   connect to. And the spec, by the way, is going to be stable very soon. Now, I want to hand it off to
+[00:04:30.340 --> 00:04:35.860]   Juliet to talk about the fact that... Not every developer wants to be a security expert,
+[00:04:35.860 --> 00:04:41.860]   right? Like, we've seen the current draft, now the new one that's about to go live into production,
+[00:04:41.860 --> 00:04:47.540]   but not everyone, we have some exceptions here, who do want to become security experts. You actually want
+[00:04:47.540 --> 00:04:54.820]   to focus on building the remote MCP server, right? You want to solve a real problem. So, this is why the new
+[00:04:54.820 --> 00:05:01.300]   authorization spec, and that's why Dan, why a bunch of people at Microsoft, we partnered with
+[00:05:01.300 --> 00:05:09.380]   Anthropic in a security committee to get this new auth spec out there. So, let's see if I paid attention.
+[00:05:09.380 --> 00:05:15.540]   What are some of the core things that's going to change now moving forward? First of all, no need to
+[00:05:15.540 --> 00:05:23.140]   implement the authorization servers anymore. So, that means we can now just rather than implementing it from
+[00:05:23.140 --> 00:05:30.260]   scratch, we can actually attend it or append it to our server overall. We can use the standard ways we
+[00:05:30.260 --> 00:05:36.660]   only need to reference metadata that are going to point to our authorization servers. And there, that's
+[00:05:36.660 --> 00:05:40.660]   where we're going to get the token. And then on server side, you're going to have the token, that
+[00:05:40.660 --> 00:05:46.580]   information here. And all of this are still going to continue standard OAuth 2.0. So, we can actually,
+[00:05:46.580 --> 00:05:51.300]   as developers, we can rely on all of the libraries that are already out there, all of the services. So, it's going to
+[00:05:51.300 --> 00:05:57.460]   make our lives a lot, a lot easier. What does this also include on client side? So, on client side,
+[00:05:57.460 --> 00:06:03.220]   they are now, in a way, responsible for the end-to-end token dance. So, this means if the authorization
+[00:06:03.220 --> 00:06:09.700]   code comes in, we can validate it or the client validates, first of all, is the token, has it been
+[00:06:09.700 --> 00:06:15.860]   acquired successfully? And then on server, it's going to pass it through to the server. And on server side,
+[00:06:15.860 --> 00:06:20.820]   which is still very important, you're going to have to make sure if it's been validated correctly.
+[00:06:20.820 --> 00:06:26.260]   And also, of course, on server side, we have to implement the metadata, which I previously just
+[00:06:26.260 --> 00:06:33.140]   talked about. So, again, a lot of enhancements now moving forward with the new spec.
+[00:06:33.140 --> 00:06:38.500]   Saving effort. Saving keystrokes. As developers, they don't need to write a lot of security code
+[00:06:38.500 --> 00:06:42.500]   because, again, the risk is higher. Exactly. If you're not a security expert and you start
+[00:06:42.500 --> 00:06:46.420]   implementing security code, what are the chances that you're going to get it right on the first shot?
+[00:06:46.420 --> 00:06:51.780]   A hundred percent. And you can start relying on these off-shelf identity providers like Microsoft,
+[00:06:51.780 --> 00:06:57.060]   Entra, Okta. So, all of these things. And you, it's just going to be less work for the developer. But,
+[00:06:57.060 --> 00:07:01.300]   yeah. How does it work in practice? Yeah. So, let's talk about, we talked about the new spec. And for
+[00:07:01.300 --> 00:07:05.060]   folks that might be a little confused, like what the heck is the new spec and how exactly it works?
+[00:07:05.060 --> 00:07:12.980]   So, in a new spec, there's a very clear separation of interaction between the MCP client, MCP server,
+[00:07:12.980 --> 00:07:17.860]   and the authorization server. So, in this case, what happens is your MCP client, like, let's say,
+[00:07:17.860 --> 00:07:22.900]   Claude Desktop, is going to request data from the MCP server. The MCP server, at that point,
+[00:07:22.900 --> 00:07:27.540]   because the MCP client doesn't have any user context yet, is going to respond back with a standard
+[00:07:27.540 --> 00:07:34.020]   HTTP 401 saying, "I have no idea who you are, and my server is protected." But, here's a pointer to
+[00:07:34.020 --> 00:07:39.220]   something that we call the PRM, the Protected Resource Metadata Document, that's embedded in one of the
+[00:07:39.220 --> 00:07:43.620]   headers, in dot and dot authenticate, that's going to say, "But, you can go here and learn more about
+[00:07:43.620 --> 00:07:51.380]   how to authorize against me, the MCP server." So, the MCP client, again, Claude Desktop, or VS Code, or any other
+[00:07:51.380 --> 00:07:59.300]   variation, will then talk to the, take the PRM, extract from that PRM information about what
+[00:07:59.300 --> 00:08:04.740]   authorization server it's using, whether it's Okta, Auth0, Entra, Keycloak, it doesn't really matter,
+[00:08:04.740 --> 00:08:09.780]   and is going to then, again, I abstracted this out in a very simplistic way, step four, complete flow,
+[00:08:09.780 --> 00:08:15.620]   but basically, the client is going to do the whole OAuth discovery, step by step, go through the dance,
+[00:08:15.620 --> 00:08:20.660]   get the token, and then, it's going to request data with a token from the server, and the server's
+[00:08:20.660 --> 00:08:25.540]   going to return it back. The client is responsible for completing this entire OAuth dance, where the
+[00:08:25.540 --> 00:08:30.100]   server now doesn't actually need to manage tokens, you only need to make sure that you're validating them.
+[00:08:30.100 --> 00:08:36.420]   I call out this thing called the PRM, and the PRM is something hosted by the MCP server, that is
+[00:08:36.420 --> 00:08:42.900]   essentially a JSON document, there's variation, it could be a JSON web token, but for the purpose of this
+[00:08:42.900 --> 00:08:49.060]   conversation, it's basically a JSON document that says, hey, I am this resource, I am this server,
+[00:08:49.060 --> 00:08:53.380]   and by the way, my authorization servers are the following, and you can give a list of servers,
+[00:08:53.380 --> 00:08:59.780]   again, specify things like bare method supported, as well as scopes, so the client, when it gets this
+[00:08:59.780 --> 00:09:05.540]   document, knows exactly how to bootstrap the end-to-end authorization flow with OAuth, again,
+[00:09:05.540 --> 00:09:08.660]   standard OAuth, you can use, again, off-the-shelf libraries for doing this.
+[00:09:10.660 --> 00:09:14.500]   Let's eat an action in C#, and because we're Microsoft, of course, it's going to be C#,
+[00:09:14.500 --> 00:09:24.260]   you know, so, this is currently in a, in a pull request for the C#, for the official MCP C# SDK,
+[00:09:24.260 --> 00:09:30.900]   by the way, to show you just how easy it is to set up an MCP server that is protected by an OAuth
+[00:09:30.900 --> 00:09:37.380]   provider, by an identity provider, I have essentially an ASP.NET Core application, it could work for any other
+[00:09:37.380 --> 00:09:42.900]   application, but what I'm doing is, all I'm configuring is add authentication, to make sure that
+[00:09:42.900 --> 00:09:48.980]   I'm actually adding auth to my server, I'm saying that it's using the MCP auth scheme, I'm adding some
+[00:09:48.980 --> 00:09:58.260]   validation logic that, again, is built into the framework, oh, no, I see, I see what the problem is,
+[00:09:58.260 --> 00:10:06.340]   I see, great call out, yeah, see, it's a fantastic demo, I'm going to duplicate my screen, that's,
+[00:10:06.340 --> 00:10:12.580]   that's, I think, what it's going to do, there we go, all right, so, say it again, uh, I'm adding
+[00:10:12.580 --> 00:10:18.420]   authentication, I'm adding MCP authentication defaults here, because it's all baked into the framework,
+[00:10:18.420 --> 00:10:23.780]   I'm adding some logic to validate the JOT, the token, and this is, again, standard embedded into
+[00:10:23.780 --> 00:10:29.300]   the framework components, uh, I have some metadata events that are relevant here, and then I'm saying
+[00:10:29.300 --> 00:10:36.020]   add MCP, and within that MCP, I'm saying that I'm adding some PRM metadata that I just talked about,
+[00:10:36.020 --> 00:10:42.660]   which is my server supporting header auth, and because I'm using EntraID, it can be, again, Okta, Auth0,
+[00:10:42.660 --> 00:10:47.860]   I'll specify the metadata, and that's it, and then I'll say use authentication, use authorization,
+[00:10:47.860 --> 00:10:52.980]   there's a lot of boilerplate code here, because it's an MCP server that uses, again, the stock SDK,
+[00:10:52.980 --> 00:10:57.380]   but the auth, that's the complexity, that's all, I needed to add this metadata, and that's kind of it,
+[00:10:57.380 --> 00:11:05.620]   when I start the server, so it's going to run locally, let's take this on, and what I'm going to do
+[00:11:05.620 --> 00:11:10.820]   now is I'm going to go to the browser here, I'm going to refresh this, and you'll notice that this is
+[00:11:11.860 --> 00:11:17.620]   the PRM that I talked about, I have a local host server, it says my authorization server is
+[00:11:17.620 --> 00:11:22.740]   login to microsoftonline.com, because I'm using EntraID, again, it could be any of them, I define
+[00:11:22.740 --> 00:11:27.940]   the scopes, and I say that it's using headers, that's it, that's what the server says to the client
+[00:11:27.940 --> 00:11:33.380]   in terms of auth, now, I have another instance here, that is the client, and the client definition
+[00:11:33.380 --> 00:11:39.940]   with the C# SDK, again, it's super, super simplistic, what I have here is, I'm essentially on the client side,
+[00:11:39.940 --> 00:11:44.900]   saying that I'm using a generic auth provider, there's nothing Microsoft specific here, it's
+[00:11:44.900 --> 00:11:52.260]   generic auth, I'm specifying the client ID for my MCP client, some scopes, and that's kind of it,
+[00:11:52.260 --> 00:11:56.740]   the rest is standard boilerplate for transport setup, as you would with any other client,
+[00:11:56.740 --> 00:12:02.980]   this client is already set up to connect to my test server, my local server, so if I run this,
+[00:12:04.500 --> 00:12:10.500]   let's see, is it going to connect, it's going to go ahead and discover the metadata document,
+[00:12:10.500 --> 00:12:16.180]   it actually went really fast, because I'm already authorized here, perfect demo, but behind the scenes
+[00:12:16.180 --> 00:12:22.420]   that actually what it did is, it did request the token from EntraID, it verified, it sent the token
+[00:12:22.420 --> 00:12:27.700]   to the server, the server verified it, and then invoked a tool that I had on the MCP server, and said that
+[00:12:27.700 --> 00:12:33.300]   there's no alerts, it's a simple weather example, it's nothing too complex here, but the end-to-end
+[00:12:33.300 --> 00:12:37.940]   developer experience here is extremely simple, like we worked very, very hard to not expose any of the
+[00:12:37.940 --> 00:12:45.540]   security intricacies to developers, that's all you do, so C# SDK, it's there, it's in a PR, it's going to be
+[00:12:45.540 --> 00:12:51.700]   in production very, very soon, so Julia, do you want to talk about VS Code and API management?
+[00:12:51.700 --> 00:12:56.340]   Yeah, totally, so okay, we saw this working locally now, we've used the libraries, so what
+[00:12:56.340 --> 00:13:01.220]   if you now want to take it to production? I might be biased because I'm part of the Azure API management
+[00:13:01.220 --> 00:13:06.740]   team, but I always recommend putting a gateway in between to make it more secure, and actually use
+[00:13:06.740 --> 00:13:12.820]   it to protect and secure your remote MCP servers, and so what I'm going to show you today is,
+[00:13:14.260 --> 00:13:19.060]   for this, we have a public available GitHub repository out there, and it's going to help
+[00:13:19.060 --> 00:13:24.900]   you, and it's going to spin up an example, and in our example, let's scroll down and go to the overview
+[00:13:24.900 --> 00:13:32.020]   here, and we're going to use Azure API management in the middle to do and help with authentication,
+[00:13:32.020 --> 00:13:39.060]   and the beauty about this example is, it only uses an ACD app, so we wanted to give developers,
+[00:13:39.060 --> 00:13:43.860]   especially, we've heard a lot of complaints about sometimes it takes some time, so we wanted to go
+[00:13:43.860 --> 00:13:48.980]   super fast, so with an ACD app, it will spin up all of the resources. So while I'm doing this,
+[00:13:48.980 --> 00:13:54.340]   and everything is going to be deploying here, let's talk a little bit about what is going to be set up
+[00:13:54.340 --> 00:14:01.460]   under the hood, and what's going to help make our remote MCP server more secure. So as I've mentioned,
+[00:14:01.460 --> 00:14:09.060]   Azure API management as your remote MCP proxy, and we are hosting it, our remote MCP server on Azure,
+[00:14:09.060 --> 00:14:13.700]   where we have three tools implemented. We want to make sure the connection here is secured,
+[00:14:13.700 --> 00:14:18.820]   and that's where we're going to use the gateway in between to help us do the dance,
+[00:14:18.820 --> 00:14:24.980]   and for this, we have an OAuth API that's going to help the play between our identity provider. In our
+[00:14:24.980 --> 00:14:31.220]   case, it's Microsoft EnterID. That's going to help essentially with the login and also the content flow
+[00:14:31.220 --> 00:14:38.580]   here to truly make sure that the connection here is secured to our backend, to our remote MCP server,
+[00:14:38.580 --> 00:14:46.820]   right? All right. So let's see how the deployment of my resources are looking. I told you it truly only
+[00:14:46.820 --> 00:14:54.180]   takes maybe five minutes max. It does spin a bunch of other things like an app service plan, log analytics,
+[00:14:54.180 --> 00:15:01.860]   to make sure that this is truly production ready, and it gives you a way to monitor and also analyze and log it.
+[00:15:01.860 --> 00:15:06.980]   So I'm going to copy my endpoint here. Before I'm going to do something with it, let's just check on Azure API
+[00:15:06.980 --> 00:15:12.020]   management side if all of the things have been implemented correctly, because what we should see
+[00:15:12.020 --> 00:15:20.900]   now in my APIs tab is we should see the endpoint to my remote MCP server, which is the MCP API, and also the
+[00:15:20.900 --> 00:15:27.540]   endpoint that's going to help us handle OAuth. And of course, while the spec evolves, we are also going to evolve the
+[00:15:27.540 --> 00:15:33.060]   samples and all of it that comes with it. So let's test it. I'm going to start MCP inspector here.
+[00:15:33.060 --> 00:15:42.820]   And let's open MCP inspector and provide the URL endpoint. So once I connect, now what I should see
+[00:15:42.820 --> 00:15:50.020]   is if I click the connect button here, this is going to pop up my content page, right? So it's going to
+[00:15:50.020 --> 00:15:54.900]   show the application name. It's going to make sure that I'm providing the right content. I'm going to allow
+[00:15:54.900 --> 00:16:00.980]   access to it. The first time I'm doing it, I also have to provide the right permissions. So I'm going
+[00:16:00.980 --> 00:16:07.540]   to accept this here. And once I'm back, now you can see I'm actually connected. And now I'm going to list
+[00:16:07.540 --> 00:16:14.180]   the tools. And as we talked about it, I currently just have three tools implemented here. All right.
+[00:16:14.180 --> 00:16:20.580]   VS Code. How does it work actually now in VS Code, for example? VS Code has MCP support as well. I'm just going to
+[00:16:20.580 --> 00:16:28.340]   provide the end point. And I'm going to find a name for my MCP remote server here, which let's call it AI
+[00:16:28.340 --> 00:16:34.500]   engineer. And it's going to add it to my user settings. And immediately it's going to start running it. And you
+[00:16:34.500 --> 00:16:41.060]   can see now in VS Code, because they now also support OAuth, they're going to pop up the window. They're going to
+[00:16:41.060 --> 00:16:46.820]   show a notification about, hey, let's authenticate towards it. I'm going to open it. And we're going to see the same
+[00:16:46.820 --> 00:16:52.820]   content page, right? This time with VS Code, different application name here, where we are again,
+[00:16:52.820 --> 00:16:58.900]   we're going to provide our M content, we're going to allow it. And now back, I'm authorized, I'm allowed
+[00:16:58.900 --> 00:17:06.260]   to use it in VS Code Insider. So once that's done, you saw now I have access to the three tools here in
+[00:17:06.260 --> 00:17:14.980]   VS Code. So let's test this, what it's going to do in Copilot Studio, GitHub Copilot. And so first,
+[00:17:14.980 --> 00:17:22.580]   I'm going to select and see, perfect, it was able to select my tools, and it's able to detect these.
+[00:17:22.580 --> 00:17:29.140]   And now once I start interacting, I have my text prompt here, and just kind of do the hello worlds,
+[00:17:29.140 --> 00:17:35.860]   and very simple example, and GitHub Copilot is now going to run it, it's going to detect the tool,
+[00:17:35.860 --> 00:17:42.740]   because I've been authenticated, it's going to run it, and hopefully successfully, perfect. And now we can
+[00:17:42.740 --> 00:17:48.340]   also double check. So if I open the tool calling here, I can see that the output of Hello, I'm an MCP
+[00:17:48.340 --> 00:17:57.540]   tool has been successfully provided. And something new, and I know the world is spinning very, very fast. So
+[00:17:57.540 --> 00:18:04.100]   as being part of Azure API management, we want to make it easier as well. So we know the similarities
+[00:18:04.100 --> 00:18:10.020]   between MCP servers and APIs. So one of the latest announcements that we have done is, you can now
+[00:18:10.020 --> 00:18:18.260]   also start transforming your REST APIs into remote MCP servers using our tools, using our platform here. And
+[00:18:18.260 --> 00:18:25.700]   you can configure your already existing endpoint, REST endpoints, into tools that you want to expose
+[00:18:25.700 --> 00:18:32.260]   to get like the VS code. And we're going to do this all with our platform, because we want to make it
+[00:18:32.260 --> 00:18:38.020]   easier for enterprise customers, but also developers to get started with this. So here in my use case,
+[00:18:38.020 --> 00:18:44.660]   I just copied the endpoint that was provided by me by API management, I'm going to hit start and running.
+[00:18:44.660 --> 00:18:52.180]   And of course, always make sure to implement auth. And that's the beauty about our platform. You can use it
+[00:18:52.180 --> 00:18:58.420]   for securing it, but also for hosting in this case. And now I'm able to also just immediately call it.
+[00:18:58.420 --> 00:19:05.620]   And let's just check if GitHub Copilot was able to detect the MCP server here. Perfect. You can see it
+[00:19:05.620 --> 00:19:12.660]   right under my service AI engineering one. I'm seeing the three tools that is all based on my REST API
+[00:19:12.660 --> 00:19:20.820]   in VS code. And now I'm ready to go and interact with it in VS code right here. With this being said,
+[00:19:20.820 --> 00:19:28.340]   lots of things are changing in this space. Any good words for the people out there who want to
+[00:19:28.340 --> 00:19:33.620]   get started with remote MCP server then? Yeah. So there's links on the screen that you can go to.
+[00:19:33.620 --> 00:19:38.740]   These are the specification documents that you can learn more about how MCP auth works. We also have
+[00:19:38.740 --> 00:19:43.060]   a document that we partnered with Anthropic on. It's called security best practices that outline
+[00:19:43.060 --> 00:19:47.380]   what are the best practices you should be adopting in your MCP service. You want to make sure that you're
+[00:19:47.380 --> 00:19:53.140]   not pawned. Very, very important. And then I'll also mention that starting with VS code insiders,
+[00:19:53.140 --> 00:19:57.540]   we do support the new authorization spec. So you should check it out, download it, install it, give us your
+[00:19:57.540 --> 00:20:03.060]   feedback. And if anything doesn't work, we have Harold at this conference who can help you debug it.
+[00:20:03.060 --> 00:20:12.020]   So thank you, folks. It's great. Stop by at the booth.
+
