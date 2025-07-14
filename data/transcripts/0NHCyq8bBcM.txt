@@ -1,0 +1,149 @@
+
+[00:00:00.000 --> 00:00:23.460]   awesome thanks so much for coming I wanted to give a bit of a talk on implementing MCP clients
+[00:00:23.460 --> 00:00:30.420]   and talking about MCP at scale within a large organization like Anthropic I wanted to give
+[00:00:30.420 --> 00:00:35.820]   first a little introduction for me my name is John I've spent 20 years building large-scale systems
+[00:00:35.820 --> 00:00:42.540]   and dealing with problems that that causes and so I've made a lot of mistakes and I'm excited to
+[00:00:42.540 --> 00:00:47.520]   give maybe some thoughts on avoiding some of those mistakes I'm currently a member of technical staff
+[00:00:47.520 --> 00:00:53.520]   here at Anthropic and I've spent the past few months focusing on tool calling and integration and
+[00:00:53.520 --> 00:01:00.180]   implementing MCP support for all of our internal like external integrations within the org and so
+[00:01:00.180 --> 00:01:07.200]   looking at tool integration with models we've kind of hit this timeline where models only really got
+[00:01:07.200 --> 00:01:16.740]   good at calling tools like kind of late mid last year and suddenly everyone got very excited because
+[00:01:16.740 --> 00:01:21.240]   like your model could go and call your Google Drive and then it could call your maps and then it could
+[00:01:21.240 --> 00:01:26.160]   send a text message to people and so there's a huge explosion with like very little effort you can make
+[00:01:26.160 --> 00:01:32.280]   very cool things and so teams are all trying to move fast everyone's moving very fast in AI custom endpoints
+[00:01:32.280 --> 00:01:36.840]   and then start proliferating for every use case there's a lot of like services popping up with like
+[00:01:36.840 --> 00:01:43.920]   slash call tool and slash like get context and then people start to realize the digital needs of
+[00:01:43.920 --> 00:01:49.380]   some authentication there's a bunch of stuff there and this kind of led to some integration chaos where
+[00:01:49.380 --> 00:01:55.800]   you're duplicating a bunch of functionality around your org nothing really works the same you have an
+[00:01:55.800 --> 00:02:01.020]   integration that works really well in service a but then you want to use it in service b but it you can't
+[00:02:01.020 --> 00:02:05.660]   because it's going to take you three weeks to rewrite it to talk to the new interface and so we're in this kind of
+[00:02:05.660 --> 00:02:08.040]   spot and
+[00:02:08.040 --> 00:02:15.020]   the place that we came to at anthropic is realizing that over time all of these endpoints started to look a lot like mcp
+[00:02:15.020 --> 00:02:19.520]   you you end up with some get tools some get resources some
+[00:02:19.520 --> 00:02:22.880]   elicitation of details
+[00:02:22.880 --> 00:02:25.140]   and
+[00:02:25.140 --> 00:02:30.200]   even if you're not using the entire feature space of mcp as a whole immediately like
+[00:02:30.200 --> 00:02:34.840]   like you're probably going to go extend into something that kind of looks like it over time and
+[00:02:35.480 --> 00:02:56.760]   when i'm talking about mcp here there's kind of two sides to mcp that in my mind feel a bit unrelated there's this json rpc specification which is really valuable as engineers it's like a standard way of sending messages and communicating back and forth between providers of context for your models and the code that's interacting with the models and
+[00:02:56.760 --> 00:03:02.040]   uh getting those messages right and getting those messages right is the topic of huge debate on like the mcp
+[00:03:02.040 --> 00:03:02.760]   mcp
+[00:03:02.760 --> 00:03:14.520]   uh repos if you're involved with any standardization process ever you know how those conversations end up going and then on the other side there's this global transport standard which is the stuff around streamable hdp
+[00:03:14.520 --> 00:03:16.520]   oh 2.1 session
+[00:03:16.520 --> 00:03:18.520]   management and
+[00:03:19.320 --> 00:03:23.400]   global transport standard is hard because you're trying to get everyone to speak the same language and so
+[00:03:23.400 --> 00:03:26.120]   it's really nitty but there's not a lot of like
+[00:03:26.120 --> 00:03:30.520]   most of the juice of mcp is in this the message specification in the way that the
+[00:03:30.520 --> 00:03:33.320]   servers are interacting
+[00:03:33.320 --> 00:03:39.240]   um and so we started asking ourselves like can we just mcp for everything and we said yes with the
+[00:03:39.240 --> 00:03:47.320]   caveat that yes is for everything involved in presenting model context to models um we have this format where
+[00:03:47.320 --> 00:03:54.280]   your client is sending these messages something's responding with these messages um where that stream is
+[00:03:54.280 --> 00:04:00.760]   going it really doesn't matter it can be on the same process it can be another data center it can be through a
+[00:04:00.760 --> 00:04:08.200]   giant pile of uh enterprise networking stuff um it doesn't really care at the point that your
+[00:04:08.200 --> 00:04:13.640]   code is interacting with it you're just calling a connect to mcp and you have a a set of a set of
+[00:04:13.640 --> 00:04:22.760]   tools and methods that you can call so uh standardizing on that seemed useful um standard why standardize anything
+[00:04:22.760 --> 00:04:30.040]   internally um being boring on stuff like this is good it's not a competitive advantage to be really
+[00:04:30.600 --> 00:04:36.280]   good at making google drive talk to your app it's just a thing that you need to do it's not your
+[00:04:36.280 --> 00:04:43.640]   differentiator uh having a single approach to learn as engineers makes things faster you can spend
+[00:04:43.640 --> 00:04:49.080]   your cycles working on interesting problems instead of trying to figure out how to plumb uh integration
+[00:04:49.080 --> 00:04:53.000]   and uh if you're using the same thing everywhere then like each new integration might clean up the
+[00:04:53.000 --> 00:04:59.000]   field a bit for the next person who comes along uh it's it's overall a good thing in cases like this
+[00:04:59.000 --> 00:05:03.800]   where we're we're not really doing interesting we're plumbing context between integrations and things
+[00:05:03.800 --> 00:05:11.400]   that are consuming the integrations uh why standardize on mcp internally um i and this is where i might
+[00:05:11.400 --> 00:05:16.280]   make an argument to everyone that there's already ecosystem demand you have to implement mcp because
+[00:05:16.280 --> 00:05:23.400]   everyone's implementing mcp so why do two things um it's becoming an industry standard there's a large
+[00:05:23.400 --> 00:05:28.680]   coalition of engineers and organizations that are all involved in building out the standard uh all of
+[00:05:28.680 --> 00:05:35.240]   the major ai labs are represented in that so you you know that as new model capabilities start to be
+[00:05:35.240 --> 00:05:41.480]   developed those patterns will be added to the protocol because all the labs want you to use their features
+[00:05:41.480 --> 00:05:47.560]   so i think the standardizing on mcp internally for this type of context is a it's a good bet and one of the
+[00:05:47.560 --> 00:05:53.240]   things you get with mcp is that it solves problems that you haven't actually run into yet like there's a bunch of stuff in the protocol
+[00:05:53.240 --> 00:05:59.640]   that exists because there's a problem and a need and having those solutions at hand when you run into
+[00:05:59.640 --> 00:06:03.320]   them is really important so sampling an example of where this might be valuable in your company
+[00:06:03.320 --> 00:06:09.000]   you might have four products that have four different billing models uh for reasons because you're building
+[00:06:09.000 --> 00:06:13.400]   fast um you might have a bunch of different token limits you might have different ways of tracking
+[00:06:13.400 --> 00:06:20.280]   usage this is really painful because you want to write one integration service to connect your slides and
+[00:06:21.080 --> 00:06:27.720]   how do you go and like hook the billing and the tokens up correctly and mcp has uh already has sampling
+[00:06:27.720 --> 00:06:32.680]   primitives so you can build your integration you can just be like okay your integration sends a sampling
+[00:06:32.680 --> 00:06:37.400]   request over the stream uh the other end of the pipe fulfills that request you can go and hook it in
+[00:06:37.400 --> 00:06:43.480]   everything works great and so this is a thing that uh a shape problem that might take you a bunch of effort
+[00:06:43.480 --> 00:06:48.600]   internally without this but you already have the answer kind of gift wrap for you in the protocol
+[00:06:49.880 --> 00:06:53.720]   and so at anthropic we're running into some requirements converging we're starting to see
+[00:06:53.720 --> 00:06:59.720]   external remote mcp services popping up like mcpu.asana.com which is really cool we wanted to be able
+[00:06:59.720 --> 00:07:05.240]   to talk to those talking to those is complex because you need external network connectivity you need
+[00:07:05.240 --> 00:07:11.560]   authentication uh there's a proliferation of internal agents people have started building
+[00:07:13.160 --> 00:07:19.880]   pr review bots and like slack management things and just lots of people have lots of ideas no one's really
+[00:07:19.880 --> 00:07:25.240]   sure what's going to hit so we're having a huge explosion of llm backed services internally uh with
+[00:07:25.240 --> 00:07:32.680]   that explosion there's a bunch of security concerns where uh you don't really want all of those services to be
+[00:07:32.680 --> 00:07:39.560]   going and accessing user credentials uh because that ends up being and being kind of a nightmare you don't want
+[00:07:39.560 --> 00:07:45.640]   uh outbound external network connectivity to be everywhere um auditing becomes really complex uh
+[00:07:45.640 --> 00:07:51.720]   and so we are looking at this problem we wanted to be able to build our integrations once and use
+[00:07:51.720 --> 00:07:59.480]   them anywhere and so a model i was introduced to by a mentor of mine and a while ago is the pit of success
+[00:07:59.480 --> 00:08:09.160]   which is the idea that um if you make the right thing to do the easiest thing to do then everyone
+[00:08:09.160 --> 00:08:15.880]   in your org kind of falls into it and so uh we designed a service which is just a piece of shared
+[00:08:15.880 --> 00:08:20.680]   infrastructure called the mcp gateway that provides a single point of entry and provided engineers just
+[00:08:20.680 --> 00:08:27.160]   with a connect to mcp call that returns a mcp sdk client session on the end and we're trying to make
+[00:08:27.160 --> 00:08:35.000]   that as simple as possible uh because that way people will use it if it's the easiest thing to do
+[00:08:35.000 --> 00:08:39.720]   um we use url based routing to route to external servers internal servers it doesn't matter it's all
+[00:08:39.720 --> 00:08:44.200]   the same call uh we handle all the credential management automatically because you don't want to be
+[00:08:44.200 --> 00:08:49.880]   implementing oauth five times in your company uh it gives you a centralized place for rate limiting and
+[00:08:49.880 --> 00:08:55.960]   observability uh i have an obligatory diagram here of a bunch of lines going in and out but uh
+[00:08:55.960 --> 00:09:00.760]   uh here's a gateway in the middle this is kind of the thing just one more box will solve all our
+[00:09:00.760 --> 00:09:13.320]   problems uh can i go next uh where is my yeah uh so the uh the code that we have here we just made
+[00:09:13.320 --> 00:09:20.200]   some client libraries we just mcp gateway connect to mcp uh we pass in a url an org id account id this is
+[00:09:20.200 --> 00:09:24.200]   like a bit simplified we actually pass a signed token to authenticate because it's accessing
+[00:09:24.200 --> 00:09:31.480]   credentials but this is the basic idea and then importantly this call returns an mcp sdk object
+[00:09:31.480 --> 00:09:36.360]   which means that when you feature get added to the protocol you just update your mcp packages
+[00:09:36.360 --> 00:09:41.160]   internally you get those features across the board everything works great the same code seamlessly
+[00:09:41.160 --> 00:09:48.200]   connects to internal external integrations when it comes to transports uh and this is a bit high level on
+[00:09:48.200 --> 00:09:53.800]   hand wave because everyone's setup is different um internally within your network it really doesn't
+[00:09:53.800 --> 00:09:57.720]   matter you can do anything you want we've got the standardized transport for connecting to external
+[00:09:57.720 --> 00:10:04.600]   mcp servers um but really just picking the best thing for your org so we went and picked
+[00:10:04.600 --> 00:10:13.640]   websockets for our internal transport and here's just a quick code example it's nothing special we just
+[00:10:13.640 --> 00:10:18.680]   have a web socket uh that's being opened we are sending these json rpc blobs back and forth over
+[00:10:18.680 --> 00:10:29.000]   the web socket and then if i can make this scroll down at the end we just pipe those uh read streams
+[00:10:29.000 --> 00:10:35.560]   and write streams into an mcp sdk client session and we're good to go we've got mcp going um you might
+[00:10:35.560 --> 00:10:39.880]   want to do this with grpc because you want to wrap these in some multiplexed transport so you don't have to
+[00:10:39.880 --> 00:10:45.800]   open one rub socket per connection that's pretty simple also uh we have read stream right stream at
+[00:10:45.800 --> 00:10:51.000]   the end uh starting to see a pattern here you can do like unix socket transport if you want you can just
+[00:10:51.000 --> 00:10:56.920]   have uh messages be passed that way read stream right stream at the end mcp works great um i threw in an
+[00:10:56.920 --> 00:11:03.240]   enterprise grade email transport implementation over imap um which is pretty much the same thing you just go
+[00:11:03.240 --> 00:11:09.800]   through here is our server we're sending emails back and forth uh dear server i hope this finds you
+[00:11:09.800 --> 00:11:15.720]   well uh mcp request start and then we pipe those into a client session at the end and so it truly
+[00:11:15.720 --> 00:11:21.800]   doesn't matter like whatever it takes inside your organization is great we set up this unified
+[00:11:21.800 --> 00:11:28.600]   authentication model where we're handling oauth at the gateway which means that consumers don't have to
+[00:11:28.600 --> 00:11:36.840]   worry about all that uh all that complexity in their apps we added a get oauth authorization url function
+[00:11:36.840 --> 00:11:42.120]   and a complete oauth flow because you might have different endpoints at anthropic we have api.anthropic.com
+[00:11:42.120 --> 00:11:45.640]   and we have claw.ai and we might want those redirects to go back to different places
+[00:11:45.640 --> 00:11:51.880]   but uh this is tied on the gateway it's really easy to start a new authentication a real advantage of having
+[00:11:51.880 --> 00:11:57.480]   this put on your gateway is that the credentials are portable if you have a batch job that you're kicking
+[00:11:57.480 --> 00:12:02.600]   off um your users don't have to re-authenticate to that you're just calling the same mcp with your
+[00:12:02.600 --> 00:12:07.240]   internal user id and they get everything added correctly you're also internal servers don't have
+[00:12:07.240 --> 00:12:14.600]   to worry about your tokens um so your request comes in internally for us we're hitting a websocket
+[00:12:14.600 --> 00:12:21.400]   connection to mcp gateway uh with the auth token provided as headers to that uh that gateway receives
+[00:12:21.400 --> 00:12:28.360]   your stored credentials you create an authenticated sdk client you just pass in the bearer token to the
+[00:12:28.360 --> 00:12:35.320]   auth header uh and then you're good to go the mcp client receives a read stream and a write stream and so
+[00:12:35.320 --> 00:12:39.800]   you just plumb those reach from the right stream into your internal transport and you're and you're you're
+[00:12:39.800 --> 00:12:46.040]   good to go uh one of the things that this gives for your org that's not immediately obvious but is
+[00:12:46.040 --> 00:12:53.160]   really valuable is a central place for all of your context that your models are asking for and all the
+[00:12:53.160 --> 00:13:01.000]   context is flowing into your models for your org there's some papers written on mcp prompt injection
+[00:13:01.000 --> 00:13:07.960]   attacks there is a general risk of uh models going and having access to google drive and deleting
+[00:13:07.960 --> 00:13:13.720]   everything in google drive there's some need of uh enforcing policy you might want to be able to
+[00:13:13.720 --> 00:13:21.560]   like ban malicious servers um do some content classification on the request see what's coming
+[00:13:21.560 --> 00:13:26.680]   in kind of given audit and the really nice thing about this is that because it's mcp all of your
+[00:13:26.680 --> 00:13:30.760]   messages are in a standardized format so it's really easy to hook into that stream and be like okay
+[00:13:30.760 --> 00:13:36.360]   here is my tool execution message processor here is my tool definition thing or here's my resource
+[00:13:36.360 --> 00:13:43.400]   management and so the payoff that you get from this is um adding mcp support to new services is as
+[00:13:43.400 --> 00:13:49.000]   simple as possible you just go and import a package it doesn't matter what language you're in we've got
+[00:13:49.000 --> 00:13:53.880]   multiple languages internally they all have their own kind of packages engineers can focus on building
+[00:13:53.880 --> 00:13:59.400]   features and not plumbing uh you have the operational simplicity of having a single point of ingress egress
+[00:13:59.400 --> 00:14:05.080]   and standardized message formats and you get future features for free as the protocol involves you get
+[00:14:05.080 --> 00:14:14.680]   all of that work uh naturally and so i just wanted to go through some takeaways from this that i want to
+[00:14:14.680 --> 00:14:19.880]   put to put to you is that mcp is really just json streams and how you pipe those streams around your
+[00:14:19.880 --> 00:14:24.520]   infrastructure is a small implementation detail it's a couple lines of code hook the stream into the
+[00:14:24.520 --> 00:14:33.480]   client sdk that makes the messages uh the you should standardize on something anything i think mcp is a good
+[00:14:33.480 --> 00:14:37.640]   idea if you don't think it's a good idea like just pick something um your future self will thank you
+[00:14:37.640 --> 00:14:43.480]   build some pits of success you really want to make the right way to do a thing the easiest way to do a
+[00:14:43.480 --> 00:14:48.440]   thing and then everyone just falls into doing the right thing naturally and also centralizing at the
+[00:14:48.440 --> 00:14:54.120]   correct layer so solving some shared problems off and external connectivity once allows you to spend
+[00:14:54.120 --> 00:14:59.320]   your time working on uh more interesting problems that are more valuable to you and your your business
+[00:14:59.320 --> 00:15:11.720]   your business um thanks that's all i got for you uh thank you so much for coming out
+

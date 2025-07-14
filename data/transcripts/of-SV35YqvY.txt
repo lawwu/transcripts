@@ -1,0 +1,147 @@
+
+[00:00:00.000 --> 00:00:21.040]   Hi, everyone. I'm Leo. I'm the Chief Scientist at Gradient. And today, I'll be talking about how
+[00:00:21.040 --> 00:00:27.920]   we trained large language models to be finance experts. Yeah, let's go ahead and dive right into
+[00:00:27.920 --> 00:00:34.640]   it. So before I start getting into the details here, I wanted to make a couple of observations.
+[00:00:34.640 --> 00:00:41.280]   And the first one is that foundational models have been growing at an exponential rate,
+[00:00:41.280 --> 00:00:48.480]   right? So not only do you kind of bespoke AI companies each have their own foundational models,
+[00:00:48.480 --> 00:00:55.680]   but data companies, general tech companies, they all have their own flavor of the language model,
+[00:00:55.680 --> 00:01:02.480]   each with its own features, and use cases. And another observation, which is pretty related,
+[00:01:02.480 --> 00:01:09.120]   is that the context length, right, the number of tokens that you can fit into a prompt has increased
+[00:01:09.120 --> 00:01:15.120]   quite a bit over the past year. The largest context length models about a year ago were something like
+[00:01:15.120 --> 00:01:23.200]   100K. And in the past year, they've grown to about 40 times that, just in models released in the past few
+[00:01:23.200 --> 00:01:32.080]   months, including one released by Gradient. And both of these observations are evidence to kind of one
+[00:01:32.080 --> 00:01:38.480]   point, and that's the large language models are not one size fits all. Especially when you get to kind of more
+[00:01:38.480 --> 00:01:45.840]   complicated use cases, taking a generalist language model, or a base language model kind of off the
+[00:01:45.840 --> 00:01:52.320]   shelf isn't really going to get you too far. And I realize I'm talking at the open models track of a
+[00:01:52.320 --> 00:01:58.560]   conference, I probably don't need to convince you guys too much of this statement. But it is pretty
+[00:01:58.560 --> 00:02:05.360]   important for us at Gradient, and it's actually our foundational pieces for what we built, which is an AI
+[00:02:05.360 --> 00:02:13.280]   Foundry. And for us, what an AI Foundry is, is it's a collection of custom language models, as well as a
+[00:02:13.280 --> 00:02:18.240]   number of workflow primitives. And what we do is we take all these pieces and components together
+[00:02:18.960 --> 00:02:24.640]   to create solutions that are a custom fit for our customers. And today, I'm going to talk about
+[00:02:24.640 --> 00:02:32.080]   specifically, our solutions for the finance domain, right, building financial experts. And for those
+[00:02:32.080 --> 00:02:38.960]   solutions, really, two components have been incredibly useful. One should be fairly, fairly
+[00:02:38.960 --> 00:02:45.840]   straightforward is our domain specific finance language model. And the other one is a context length
+[00:02:45.840 --> 00:02:52.480]   extension that we've worked on. And so why are these important specifically for finance? Well,
+[00:02:52.480 --> 00:02:58.160]   a little while ago, we got together and wrote down kind of six requirements for finance applications
+[00:02:58.160 --> 00:03:02.960]   of language models that generalist models tend to lack or fall a little bit short on.
+[00:03:02.960 --> 00:03:09.520]   You know, if you look at these requirements, they're fairly general, they kind of apply across
+[00:03:09.520 --> 00:03:12.400]   industries, but in particular for finance, they seem pretty important.
+[00:03:13.600 --> 00:03:21.440]   And today, I'm just going to talk about two of them that happen to be paired with the two solutions
+[00:03:21.440 --> 00:03:25.680]   that I also want to talk about the finance language model and the extended context length.
+[00:03:25.680 --> 00:03:35.040]   So jumping, jumping right into it, the first one is the finance language model.
+[00:03:35.040 --> 00:03:41.680]   You know, you might be wondering, why, why even have a domain specific language model?
+[00:03:42.240 --> 00:03:48.400]   Why is domain knowledge important? The reason is, is that your general purpose language models,
+[00:03:48.400 --> 00:03:57.520]   like the GPTs of the world, they are trained on a very broad set of data, kind of broad and not deep,
+[00:03:57.520 --> 00:04:01.920]   especially in kind of like more technical situations, like technical financial information.
+[00:04:01.920 --> 00:04:10.080]   And as kind of like an illustrative example on why this is important, here's a chart from a recent research paper,
+[00:04:10.080 --> 00:04:17.680]   where it shows that even for very large models, right, the red line at the top there is for 176 billion parameter model.
+[00:04:17.680 --> 00:04:23.600]   You need something on the order of thousands of relevant documents in the models pre-training.
+[00:04:23.600 --> 00:04:31.120]   In order for the model to get decent, I mean, here, it's even above 50% accuracy on answering a related question.
+[00:04:31.120 --> 00:04:41.120]   Right. And so kind of what this implies is that if you ask a language model questions about data that's kind of like in the tails of its training data,
+[00:04:41.120 --> 00:04:44.960]   then it's going to do a poor job at answering those questions.
+[00:04:44.960 --> 00:04:53.200]   Right. And so, you know, the natural way to fix this is the case is to say, OK, base model doesn't know a lot about finance.
+[00:04:54.000 --> 00:05:01.680]   Let's train it some finance. An issue there, and here I'm going to talk about kind of how we trained
+[00:05:01.680 --> 00:05:08.800]   our finance-specific language model is -- so an issue there is that there's a whole lot of financial data out there, right?
+[00:05:08.800 --> 00:05:16.960]   Like way more than you could possibly review or look at manually. And so that requires creating an automated data pipeline.
+[00:05:18.480 --> 00:05:26.800]   And that's what we did. We created one. Probably the most compelling or interesting part of this data pipeline is the automated data curation,
+[00:05:26.800 --> 00:05:38.160]   where we borrowed ideas from the membership inference literature. And so what we do is we amass a whole large corpus of training data.
+[00:05:38.160 --> 00:05:48.000]   And then we use techniques to try to see if a particular document, if there's a high chance that it was already in the model's training data, right?
+[00:05:48.000 --> 00:05:56.320]   So maybe you have like a Lama-based model, you have a document, and you can run some of these techniques to get a probability of whether or not the model's already seen that data in training.
+[00:05:56.320 --> 00:06:02.480]   So you filter out all the data that the model hasn't seen before. What you're left with is a much smaller set of data.
+[00:06:02.480 --> 00:06:11.120]   Now that's manageable to look at through human review. And then finally pass through to synthetic data augmentation, right?
+[00:06:11.120 --> 00:06:17.440]   Both to upsample data and to handle some variations in data representation and formatting.
+[00:06:17.440 --> 00:06:29.280]   And kind of like the last part of the recipe for how to train domain-specific language models
+[00:06:29.280 --> 00:06:34.560]   is to take that data set that you created and to pass it through a training pipeline.
+[00:06:34.560 --> 00:06:42.560]   I think by now a training pipeline like this is fairly standard. There's two main parts.
+[00:06:42.560 --> 00:06:48.400]   One is the continuous pre-training. So you take that data set that you created on the previous slide
+[00:06:49.120 --> 00:06:55.520]   and you do kind of next token prediction on it off of a base existing model, right? So again,
+[00:06:55.520 --> 00:07:01.440]   we're taking a base foundational model like a Lama model to start with. And then the second part
+[00:07:02.240 --> 00:07:10.480]   is you run alignment on the model here, you've re-ran both supervised fine tuning and preference optimization.
+[00:07:10.480 --> 00:07:18.240]   And kind of the way I like to think about the division between these two tasks is pre-training is
+[00:07:18.240 --> 00:07:23.520]   something like if you had a bunch of textbooks and you wanted a model to read all those textbooks and
+[00:07:23.520 --> 00:07:29.200]   understand all that information or retain all that information. And alignment is kind of like
+[00:07:30.080 --> 00:07:34.640]   then instructing the model on how to use that information or best practices and what to do with
+[00:07:34.640 --> 00:07:40.640]   that. And so if pre-training is like reading textbooks, alignment is like maybe like taking an exam
+[00:07:40.640 --> 00:07:48.160]   on a class or working on a project. Right. And that's really all I wanted to say about the domain-specific
+[00:07:48.160 --> 00:07:54.640]   language model. Now I want to talk about the, see how much time I have, great, about the other part,
+[00:07:54.640 --> 00:08:01.920]   which is the extended context and how extended context or long context language models help us
+[00:08:01.920 --> 00:08:07.600]   address hallucinations. Right. To give a quick refresher, what are hallucinations? Well, it's a
+[00:08:07.600 --> 00:08:15.280]   pretty broad term and it's used quite frequently nowadays. It's whenever you run inference on a model,
+[00:08:15.280 --> 00:08:20.240]   when you give it a query and it generates content that is irrelevant or made up or inconsistent with the
+[00:08:20.240 --> 00:08:27.600]   input data. There's been a fair amount of research as to the cause of hallucinations. A lot of that
+[00:08:27.600 --> 00:08:34.720]   research points to deficiencies in the underlying training data. Right. So some, some causes might be
+[00:08:34.720 --> 00:08:39.760]   just the training data is outdated. Right. You're asking the model a question on information that is
+[00:08:39.760 --> 00:08:48.000]   now updated since the training data. Another one is a lot of the training data practices require automated data
+[00:08:48.000 --> 00:08:54.640]   data collection. And if there's ever inconsistencies or bugs in that data collection, um, you can get
+[00:08:54.640 --> 00:08:58.640]   source reference divergence, right? So the model is just trained on data that doesn't quite make sense.
+[00:08:58.640 --> 00:09:05.360]   Uh, and, and there's a few other reasons. All of these, uh, can, uh, encode information in the model's
+[00:09:05.360 --> 00:09:10.160]   memory banks that there isn't quite accurate, uh, and, and that'll cause the model to hallucinate.
+[00:09:10.160 --> 00:09:18.240]   And while, uh, alignment or, or, uh, continued training of the model can alleviate hallucinations,
+[00:09:18.240 --> 00:09:25.440]   um, at gradient, we find that actually in context learning. So, uh, working directly on the prompt
+[00:09:25.440 --> 00:09:30.880]   during the execution pipeline, uh, is the most direct and, and sample efficient way to reduce
+[00:09:30.880 --> 00:09:36.320]   hallucinations. Right. Because, uh, what you can do is you can put in a relatively small amount of
+[00:09:36.320 --> 00:09:42.800]   information directly into the prompt, uh, kind of at inference time, uh, and sort of, uh, plaster over
+[00:09:42.800 --> 00:09:48.640]   or bandaid over, uh, issues, uh, with, with the model's training data. Um, and so that's great.
+[00:09:48.640 --> 00:09:54.640]   In context learning works really well. Um, the issue is it works so well that when you start doing it,
+[00:09:54.640 --> 00:09:59.600]   you want to do more and more of it. And, and then kind of, you run into the, one of the biggest pain
+[00:09:59.600 --> 00:10:04.800]   points, uh, uh, with this practice, uh, or one of the biggest bottlenecks, uh, which is the context
+[00:10:04.800 --> 00:10:10.640]   length. Um, and I'm guessing that this is an issue that, that many of you in this room have, have come
+[00:10:10.640 --> 00:10:17.120]   across yourselves. Um, and that's, uh, you, you just run out of prompt, uh, in, in terms of, for in context
+[00:10:17.120 --> 00:10:24.000]   learning. Um, a few examples, uh, for why that can be an issue. Uh, if you're trying to put in a few
+[00:10:24.000 --> 00:10:28.320]   shot examples into the prompt, you're running out of prompt space before you run out of examples.
+[00:10:28.320 --> 00:10:32.640]   So now you have to spend a lot of time in choosing the particular example or, or working
+[00:10:32.640 --> 00:10:38.560]   on some kind of like lossy summarization technique, um, for more complex product problems that may
+[00:10:38.560 --> 00:10:45.120]   require some brittle, uh, pre-processing pipelines, each can have errors. Um, and also if you do some
+[00:10:45.120 --> 00:10:51.440]   kind of external memory management, such as RAG, uh, those systems tend to have poor performance
+[00:10:51.440 --> 00:10:57.440]   when the chunks that get pulled, uh, require them to be interrelated, right? So if you pull one
+[00:10:57.440 --> 00:11:02.880]   chunk and another chunk that you need to pull, uh, has to reference a previous chunk to, to know if
+[00:11:02.880 --> 00:11:08.000]   it needs to get, uh, queried, right? And RAG does, uh, typically does a pretty poor job with that.
+[00:11:08.000 --> 00:11:15.440]   Um, right. So context length, uh, is the bottleneck for this. So the most natural thing to do is just
+[00:11:15.440 --> 00:11:21.680]   extend the context length. Um, and, and so that's, that's what we did with, with some of our models.
+[00:11:21.680 --> 00:11:28.000]   Uh, and here really, I just wanted to talk about a couple of examples of what suddenly becomes
+[00:11:28.000 --> 00:11:34.160]   possible, uh, when you have a context length that, that's sort of in the realm of, of a million tokens
+[00:11:34.160 --> 00:11:40.880]   long. Um, here on, on the left-hand side, uh, is an example showing that you can now actually put
+[00:11:40.880 --> 00:11:46.160]   thousands of examples directly into the prompt. Uh, and that kind of gets you back into this kind of like
+[00:11:46.160 --> 00:11:52.000]   domain learning regime that I talked about earlier. Uh, it's just now it is, uh, on the fly and at
+[00:11:52.000 --> 00:11:57.760]   inference time, right? So it can be very adaptive to the problem. Um, and, uh, you, you do find that,
+[00:11:57.760 --> 00:12:04.400]   uh, for a lot of tasks out there, this like thousands of examples mark is actually necessary, uh, to get
+[00:12:04.400 --> 00:12:10.560]   kind of production grade accuracy or, or dangerous levels of accuracy for a model. Um, and, and the
+[00:12:10.560 --> 00:12:18.000]   other example is, uh, with the long context length, um, you can leverage what transformer models are, are
+[00:12:18.000 --> 00:12:24.000]   natively really good at, which is being able to attend to every single token in the prompt. Um, and by
+[00:12:24.000 --> 00:12:29.520]   doing that, you can actually have the model perform, uh, fairly complicated reasoning, uh, implicitly,
+[00:12:29.520 --> 00:12:35.440]   just, just in through, through going through its, uh, layers and attention layers. Um, and an example
+[00:12:35.440 --> 00:12:43.920]   that, um, that we kind of, uh, cooked up, uh, in house, uh, was we took, uh, books that were written
+[00:12:43.920 --> 00:12:49.280]   by Mark Twain, the author, uh, and first we scrubbed the books of any kind of identifying information,
+[00:12:49.280 --> 00:12:53.520]   right? So, so no mention of the author or anything like that. Uh, and then we gave that into the model,
+[00:12:54.160 --> 00:12:59.120]   uh, into its prompt, into its context and asked the model to generate, uh, new stories in the same
+[00:12:59.120 --> 00:13:05.040]   style. Uh, and after kind of five books of, of reference prompts, the model was, uh, able to
+[00:13:05.040 --> 00:13:11.680]   generate stories, um, that convinced, uh, a separate critic model, uh, that those short stories could have
+[00:13:11.680 --> 00:13:17.440]   been actually written, uh, by that same author, right? Uh, and, and in pretty actually like deep and
+[00:13:17.440 --> 00:13:23.360]   intricate ways, not just kind of like stylistic similarity or language, uh, but down to theme and
+[00:13:23.360 --> 00:13:28.720]   characters and setting and things like that. So, uh, kind of the punchline is, is that long context
+[00:13:28.720 --> 00:13:34.080]   language models give you more, uh, grounded and robust systems and there's fewer moving parts,
+[00:13:34.080 --> 00:13:38.080]   much more is contained in the language model, which, which is the thing that we all care about.
+[00:13:38.640 --> 00:13:41.040]   Um, and, and that in turn reduces hallucinations.
+[00:13:41.040 --> 00:13:52.560]   Right. So, um, you know, those are basically the, the two components, um, two solutions of our
+[00:13:52.560 --> 00:13:58.160]   platform that I wanted to, to describe to you all today. Um, one of the things that, that we believe
+[00:13:58.160 --> 00:14:04.800]   in pretty strongly at Gradient is to have transparent and verifiable benchmarks. Uh, and also we're pretty
+[00:14:04.800 --> 00:14:09.120]   passionate and giving back to the open source community because a lot of what we've, uh, built
+[00:14:09.120 --> 00:14:15.280]   our work on are, are open source, uh, models and techniques themselves. Uh, and so for both of those
+[00:14:15.280 --> 00:14:21.600]   solutions, we've open source models, uh, on our, um, company page at Hugging Face. Um, one of them
+[00:14:21.600 --> 00:14:27.440]   is the, the, the, the alpha trust model. So that's the result of applying our, uh, finance domain
+[00:14:27.440 --> 00:14:33.520]   training on a llama two base model. Um, and here the, the benchmarks show that after doing that,
+[00:14:33.520 --> 00:14:39.440]   uh, uh, it ends up being competitive, uh, and actually better, uh, competitive at kind of open
+[00:14:39.440 --> 00:14:46.000]   LLM general, uh, benchmarks and better at finance specific benchmarks, uh, to models in the same class
+[00:14:46.000 --> 00:14:54.000]   to its peers. And the other model is, um, a 1 million context length extension of, uh, a llama three
+[00:14:54.000 --> 00:15:00.480]   base model that we released pretty recently. Um, and with it, uh, we were able to get, uh, a hundred
+[00:15:00.480 --> 00:15:06.560]   percent needle in a haystack scores actually, uh, above 1 million context lengths. That's the first
+[00:15:06.560 --> 00:15:13.120]   image. Uh, and also had a pretty substantial performance improvement, uh, over the base model
+[00:15:13.120 --> 00:15:19.920]   on a ruler long context length benchmark. That's a benchmark put out by Nvidia. Um, and that brings this
+[00:15:19.920 --> 00:15:28.560]   model kind of in the realm of, uh, flagship long context models, uh, like Gemini 1.5 pro GPT 4 and,
+[00:15:28.560 --> 00:15:34.960]   and command R plus. Right. And so the, these models are open source publicly available and invite you
+[00:15:34.960 --> 00:15:44.880]   all to go and check them out. Um, and about a, about a minute left. So, uh, I'll finish off, uh, here. Uh,
+[00:15:44.880 --> 00:15:50.160]   Uh, there's of course, lots more to building, uh, an AI financial expert. These are just two pieces
+[00:15:50.160 --> 00:15:54.480]   of the puzzle, even though they're two important ones. Uh, and if you guys are interested in finding
+[00:15:54.480 --> 00:16:04.320]   out more, uh, feel free to check us out on our, on our website or reach out and contact us. Cool. Thank you.
+[00:16:04.320 --> 00:16:19.600]   Thank you.
+

@@ -1,0 +1,145 @@
+
+[00:00:00.000 --> 00:00:06.680]   Hey, everyone. My name is Aparna. I'm one of the founders of Arise, and today we're going to talk
+[00:00:06.680 --> 00:00:12.520]   about agent evaluation. At Arise, we build development tools to help teams build agents
+[00:00:12.520 --> 00:00:18.360]   and take them all the way to production. We focus on everything from evaluation to
+[00:00:18.360 --> 00:00:24.240]   observability, monitoring, and tracing your application so you can see every single step
+[00:00:24.240 --> 00:00:29.140]   that your application took. Let me tell you a little bit about why we got into this, and then
+[00:00:29.140 --> 00:00:35.640]   I'll jump into some concrete tips about how we think about evaluating agents. First, building
+[00:00:35.640 --> 00:00:40.580]   agents is incredibly hard. There is a lot of iteration that goes on at the prompt level, at
+[00:00:40.580 --> 00:00:47.460]   the model level, at iterating on the different tool call definitions. For a lot of teams, this is what
+[00:00:47.460 --> 00:00:52.980]   their experience looks like. They're in an Excel sheet. They're swapping out different prompts.
+[00:00:52.980 --> 00:00:58.280]   They're trying to figure out, did one prompt give them a better output
+[00:00:58.280 --> 00:01:04.120]   than another prompt. Often, a lot of this is just based off of how it felt on a couple different
+[00:01:04.120 --> 00:01:10.600]   examples, and then they go live into production with that prompt. Part of this is that it's
+[00:01:10.600 --> 00:01:17.900]   pretty difficult to actually systematically track where is this new prompt doing better than your
+[00:01:17.900 --> 00:01:23.320]   previous prompts? Where is this model doing better? And it's hard to actually include other people,
+[00:01:23.320 --> 00:01:28.580]   people, especially if you have your product managers or your SMEs, actually a part of this iterative
+[00:01:28.580 --> 00:01:34.760]   evaluation-driven process to how you actually want to think about improving your application.
+[00:01:34.760 --> 00:01:42.840]   And so it's hard to consistently figure out what makes your agent better. And it doesn't get easier
+[00:01:42.840 --> 00:01:47.880]   once you actually deploy into production. It's pretty hard to understand, well, where's the bottlenecks in my
+[00:01:47.880 --> 00:01:56.680]   application? Is there a specific sub-agent or tool call that is kind of consistently creating
+[00:01:56.680 --> 00:02:02.120]   poor responses? How do I want to actually identify those bottlenecks? And then what do I actually need
+[00:02:02.120 --> 00:02:07.800]   to do to go fix it? And so today, I'm going to be diving into a little bit of the different components
+[00:02:07.800 --> 00:02:12.760]   of how I think about agent evaluations. We're going to talk about some of the most common components,
+[00:02:12.760 --> 00:02:19.000]   which is evaluating at the tool call level, taking that one step further, going all the way to the
+[00:02:19.000 --> 00:02:26.600]   trajectory and looking at, did it actually maybe across an entire trace or did it actually call,
+[00:02:26.600 --> 00:02:31.080]   for example, all the tool calls in the right order? We're going to then not only look across the single
+[00:02:31.080 --> 00:02:37.800]   trace, but then across multi-turn conversations. Because these interactions are no longer just kind of a
+[00:02:37.800 --> 00:02:42.280]   a single-turn experience. They're often multi-turn, keeping track of what happened in the previous
+[00:02:42.280 --> 00:02:49.320]   interaction and keeping that in mind as context for the next turn of the conversation. So we're
+[00:02:49.320 --> 00:02:54.120]   going to talk a little bit about that. And then I'm going to jump into kind of a, you know, approach
+[00:02:54.120 --> 00:02:58.600]   that we've been really excited about, which is how do we get these agents to self-improve? And that
+[00:02:58.600 --> 00:03:03.800]   starts with not just thinking about the agent improving, but also your evals consistently improving.
+[00:03:04.680 --> 00:03:07.960]   So with that, let's jump in. I'm going to do a little bit of slides and then I'm going to
+[00:03:07.960 --> 00:03:13.720]   jump into actually a real example. So you guys can actually see it in, in practice. So first,
+[00:03:13.720 --> 00:03:18.760]   we're going to talk a little bit about tool calling evals. Anyone who's building agents is probably
+[00:03:18.760 --> 00:03:24.440]   writing a lot of different tools and making sure that your agent has access to call all these different
+[00:03:24.440 --> 00:03:30.920]   tools depending on the action it needs to take. And pretty consistently, it's your, your agent needs to
+[00:03:30.920 --> 00:03:35.880]   probably make the decision of what's the right tool call to call in this specific scenario.
+[00:03:35.880 --> 00:03:40.760]   I have, you know, potentially contacts from previous part of a conversation or previous actions it's
+[00:03:40.760 --> 00:03:47.320]   taken. And what do I actually need to call in order to kind of next continue whatever's happening in that,
+[00:03:47.320 --> 00:03:52.120]   in that interaction? So not only do you have to pick the right tool call, but you also have to figure out
+[00:03:53.000 --> 00:03:58.600]   from that conversation or context what's the right arguments to pass into that tool call.
+[00:03:58.600 --> 00:04:05.720]   And so it's pretty important to actually evaluate, did it call the right tool and did it pass the right
+[00:04:05.720 --> 00:04:10.600]   arguments into that tool call itself? And I'm going to go into a little bit of depth this and show you
+[00:04:10.600 --> 00:04:17.480]   how we think about evals actually from a product perspective. This is the Arise product. You can see
+[00:04:17.480 --> 00:04:24.120]   here, I'm actually tracing and looking at the traces of our own actually co-pilot here. So this is our own
+[00:04:24.120 --> 00:04:33.000]   co-pilot and our own agent that actually think about it almost like an insights, a tool where teams can come
+[00:04:33.000 --> 00:04:37.640]   in and ask all sorts of different questions about where their application is doing well or not doing well,
+[00:04:37.640 --> 00:04:45.480]   and use this to actually troubleshoot their application and suggest improvements. And like any great product,
+[00:04:45.480 --> 00:04:50.520]   we actually dog food our own tooling. And so these are actually the traces of different questions that users
+[00:04:50.520 --> 00:04:57.320]   have asked us. And we actually evaluate these interactions so we can understand where our co-pilot's doing really
+[00:04:57.320 --> 00:05:05.720]   well and where it's actually not doing well. One thing that we actually like to look a lot at is not just kind of the
+[00:05:05.720 --> 00:05:11.320]   individual traces, but actually starting at a little bit more of a higher level view where we can look
+[00:05:11.320 --> 00:05:17.560]   across all the different paths that, you know, all the different trajectories that our agent actually
+[00:05:17.560 --> 00:05:24.360]   can go down. So in our case, this is actually the architecture of our agent. You can see here,
+[00:05:24.360 --> 00:05:30.600]   we follow a little bit of an orchestration worker type pattern, where there's at the very high level,
+[00:05:30.600 --> 00:05:37.240]   a planner that decides based off of the information what to go down, and there's all sorts of different
+[00:05:37.240 --> 00:05:42.200]   tools that it can then call. And sometimes, depending on the output of those tools, it might need to call
+[00:05:42.200 --> 00:05:49.720]   even another router or orchestrator to figure out, you know, what next tool call to actually call.
+[00:05:49.720 --> 00:05:55.320]   And so there's kind of multiple levels to this to actually make sure that ultimately we respond to the
+[00:05:55.320 --> 00:06:04.920]   user in kind of a good way. With this specific agent of ours, you can see here that, you know, for me,
+[00:06:04.920 --> 00:06:11.960]   what I really think of a lot about is, well, at the planner level, the very beginning, is, you know,
+[00:06:11.960 --> 00:06:17.320]   across all the different paths that this agent could go, where is it kind of doing really well? And are there any
+[00:06:17.320 --> 00:06:21.880]   any bottlenecks in performance? And as I can look through some of this, it's, you know, there's
+[00:06:21.880 --> 00:06:27.560]   evals around questions that are just related to, you know, generic questions of the users asking.
+[00:06:27.560 --> 00:06:33.480]   It looks like we're actually not doing so well on search. I can see here, we're almost pretty
+[00:06:33.480 --> 00:06:38.920]   consistently doing, you know, it's about half and half of times we're getting it correct as we're
+[00:06:38.920 --> 00:06:43.480]   getting it incorrect, which is not that great. So this is probably an area that I would dive into and
+[00:06:43.480 --> 00:06:48.520]   look at kind of the bottlenecks of, you know, where we're not doing so well when the user's
+[00:06:48.520 --> 00:06:53.480]   asking search questions. And it looks like there's other questions that we're actually doing, doing
+[00:06:53.480 --> 00:06:59.240]   pretty good on. So this type of high level view first is just giving me a view of all the different
+[00:06:59.240 --> 00:07:04.680]   paths that my agent can go down and really kind of pinpointing to me what I should go focus on
+[00:07:04.680 --> 00:07:10.200]   specifically. So now when I go look inside of my traces, I can actually start with something like
+[00:07:10.200 --> 00:07:19.640]   the Q&A correctness and look at something like, well, I should probably care about in this case,
+[00:07:19.640 --> 00:07:25.960]   it was specifically the search Q&A correctness. So what I should probably go look at is for search
+[00:07:25.960 --> 00:07:30.760]   Q&A correctness when it's incorrect. Let me go take a look at some of the examples of that and try
+[00:07:30.760 --> 00:07:36.520]   to understand where what I'm doing wrong here. And so in this case, when I'm looking at these, I can
+[00:07:36.520 --> 00:07:44.920]   actually now drill and go into specific traces. And at this level, I have evals across the entire trace.
+[00:07:44.920 --> 00:07:50.840]   I have evals on the individual tool calls. And at the tool call level, I also have,
+[00:07:52.200 --> 00:07:57.080]   you know, not only did it call the right tool call, it says the function call is correct.
+[00:07:57.080 --> 00:08:02.920]   But I also have evals on did it actually pass all the right arguments. In this case, it looks like
+[00:08:02.920 --> 00:08:07.400]   that's where it's going wrong. It says, therefore, the arguments do not align with the required parameters
+[00:08:07.400 --> 00:08:11.960]   leading to the conclusion that the arguments are incorrect. So I probably have an issue here where
+[00:08:11.960 --> 00:08:17.080]   even though I'm calling it looks like the right tool call out of all the different ones that I have,
+[00:08:17.080 --> 00:08:22.920]   it looks like maybe I'm not passing in the right arguments inside of my tool call based on the
+[00:08:22.920 --> 00:08:29.160]   context of the conversation. So that's something that I should go fix. So this is kind of the first
+[00:08:29.160 --> 00:08:35.400]   big one that we think a lot about. The next one that is pretty interesting is also, you know, for a lot of
+[00:08:35.400 --> 00:08:40.840]   of these, it's not just a single tool call that's made. It's many, actually. And you can kind of see
+[00:08:40.840 --> 00:08:45.960]   that when I'm showing you the way that our architecture is built. There's actually a lot of different,
+[00:08:45.960 --> 00:08:51.720]   even within the Q&A correctness, when we go down the search correctness path, there's actually a lot
+[00:08:51.720 --> 00:08:56.840]   of different sub tools that are even called here. So it's pretty important to not only get,
+[00:08:57.880 --> 00:09:03.080]   uh, you know, if it's individually calling a single tool correctly, but also is it getting the order of
+[00:09:03.080 --> 00:09:08.040]   the tools that it's supposed to call correctly? And that's really what, as we think about trajectory evals
+[00:09:08.040 --> 00:09:15.160]   starts to, uh, starts to, it starts to become about is really, is it calling tool calls in the right order?
+[00:09:15.160 --> 00:09:24.280]   Um, if across a series of steps as needed for an agent to complete a task, is it consistently calling
+[00:09:24.280 --> 00:09:30.440]   and executing them in the same set of steps or, and, and eventually converge on, you know,
+[00:09:30.440 --> 00:09:36.360]   X number of steps to complete the section, or does it sometimes veer off and call it in a different
+[00:09:36.360 --> 00:09:41.320]   order and therefore require me to, A, have to spend a lot of tokens in order to do the same
+[00:09:42.200 --> 00:09:48.280]   ask. Um, and then B, is it kind of messing up and providing wrong kind of outputs because of that?
+[00:09:48.280 --> 00:09:55.000]   And so we recommend teams to actually drill in and look at, you know, across, not just an individual
+[00:09:55.000 --> 00:10:01.320]   kind of a tool call, but actually looking across, um, an entire trace and looking at the order of the
+[00:10:01.320 --> 00:10:07.080]   tool calls to see if that's actually done well. And then evaluating kind of is overall, in this case,
+[00:10:07.080 --> 00:10:12.200]   I have it incorrect. And so in this case, is it actually consistently getting the tool calling
+[00:10:12.200 --> 00:10:19.080]   order correctness? Uh, uh, correct. Um, the next step here is, well, you can look across the single
+[00:10:19.080 --> 00:10:23.800]   individual trace or interaction, but a lot of these interactions we're seeing with agents actually ends
+[00:10:23.800 --> 00:10:29.800]   up being multi-turn. So in this case, I have like a three back and forth between a human and an agent.
+[00:10:29.800 --> 00:10:34.680]   And there's a lot of interesting questions you can actually ask at this stage. You can ask questions like,
+[00:10:34.680 --> 00:10:42.120]   is the agent consistent in tone? Um, is the agent maybe asking the same question and again and again?
+[00:10:42.120 --> 00:10:46.920]   Um, in which case it's not really learning anything from the previous interactions that it's had with
+[00:10:46.920 --> 00:10:53.160]   the human. Um, and, and part of that is really, does it keep track of context from the previous kind of
+[00:10:53.160 --> 00:11:00.120]   n minus one turns in order to be able to answer the nth, uh, turn of that conversation really well. And so these
+[00:11:00.120 --> 00:11:04.360]   are all the types of questions to think about when you have something that, that is multi-turn.
+[00:11:04.360 --> 00:11:11.240]   And I'll actually show you an example from another project here where I do have kind of some of that
+[00:11:11.240 --> 00:11:18.680]   multi-turn interaction. Um, this may be one where I've kind of this back and forth with, with an agent.
+[00:11:18.680 --> 00:11:24.680]   And what I care about here across this entire conversation is, did I actually correctly
+[00:11:25.400 --> 00:11:30.440]   answer all the questions? Did I actually make sure I kept context so that I wasn't kind of missing
+[00:11:30.440 --> 00:11:35.720]   context that was made earlier in the conversation? And so deeply recommend folks to actually think
+[00:11:35.720 --> 00:11:41.560]   about the session evaluations as part of their evaluating of agents. Um, and then lastly,
+[00:11:41.560 --> 00:11:48.760]   I'll kind of go through this and, um, I think this will be a good spot for us to, um, deep dive into,
+[00:11:48.760 --> 00:11:54.760]   which is we spend a lot of time, even just now on the tool calling trajectory session,
+[00:11:54.760 --> 00:12:01.800]   a lot talking about how to think about evaluating the agent or the application prompt. And this is
+[00:12:01.800 --> 00:12:08.200]   really important. I mean, I, we could spend a whole deep dive on this itself, but it's really important
+[00:12:08.200 --> 00:12:15.640]   to evaluate it correctly, identify where does it go wrong so that you can annotate or, you know,
+[00:12:15.640 --> 00:12:21.480]   refine those outputs and use those to actually improve your existing prompt. And I think a lot
+[00:12:21.480 --> 00:12:26.200]   of teams actually totally get this and are doing this all the time to improve the agent prompt.
+[00:12:26.200 --> 00:12:32.600]   Um, but what's really important is that the evals that you're actually using just kind of the crux of
+[00:12:32.600 --> 00:12:39.640]   how you identify those failure cases end up becoming crucial to calling out what you need to improve.
+[00:12:39.640 --> 00:12:46.680]   And you don't want those evals to remain static, the prompts for those evals for using LLM as a judge.
+[00:12:46.680 --> 00:12:53.640]   And so there really is kind of another loop going on here, which is about improving the evals and the
+[00:12:53.640 --> 00:13:01.560]   eval prompts. And part of this is you're collecting, um, consistently checking the, the eval outcomes as
+[00:13:01.560 --> 00:13:06.680]   well to make sure it's not just the application that got it wrong, but it could have been the eval that,
+[00:13:06.680 --> 00:13:14.760]   you know, miscorrectly labeled it as wrong. Um, and start to identify where the eval itself might need
+[00:13:14.760 --> 00:13:20.520]   some improvements. And similar to the process you did for the agent application, do a workflow where
+[00:13:20.520 --> 00:13:27.960]   you're iterating on the eval prompts, um, you know, building up a golden dataset, consistently refining it.
+[00:13:27.960 --> 00:13:34.120]   And there really are kind of two iterative loops kind of going on at the same time, one for the agent
+[00:13:34.120 --> 00:13:39.960]   evaluations, one for, um, your, your agent application prompts, and then one for your eval prompts.
+[00:13:39.960 --> 00:13:44.920]   And as you think about this, both of them kind of go hand in hand to actually create
+[00:13:44.920 --> 00:13:51.880]   a really good product experience, um, for teams. Um, there's a lot more in here that, you know, I, I think
+[00:13:51.880 --> 00:13:57.880]   we, we can dive into, but, um, hopefully this gives you a little bit of a primer about how to think about
+[00:13:57.880 --> 00:14:04.760]   agent evaluations and, uh, check out Arise Phoenix. It's a completely open source, um, product that you can
+[00:14:04.760 --> 00:14:09.560]   use to learn a lot about what we just went through and test it out in your own applications.
+[00:14:09.560 --> 00:14:16.600]   Um, you can check out Arise X if you want to, um, think about how to run a lot of these evaluations
+[00:14:16.600 --> 00:14:22.760]   on your own data. Um, so feel free to check it out and hopefully you guys got something out of this.
+[00:14:22.760 --> 00:14:24.360]   Thanks everyone for the time.
+

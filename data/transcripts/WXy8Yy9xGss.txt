@@ -1,0 +1,167 @@
+
+[00:00:00.000 --> 00:00:03.000]   .
+[00:00:03.000 --> 00:00:15.640]   NATHAN SOBO: Hey, everybody.
+[00:00:15.640 --> 00:00:18.760]   Thanks for coming to my talk.
+[00:00:18.760 --> 00:00:19.680]   I'm Nathan Sobo.
+[00:00:19.680 --> 00:00:21.680]   I'm the co-founder of Zedd.
+[00:00:21.680 --> 00:00:24.000]   We are an AI-enabled code editor.
+[00:00:24.000 --> 00:00:27.240]   And what sets us apart is we are not a fork of VS Code.
+[00:00:27.240 --> 00:00:34.840]   We are implemented from scratch in Rust.
+[00:00:34.840 --> 00:00:38.060]   We literally engineered the entire system like a video game
+[00:00:38.060 --> 00:00:41.540]   around about 1,200 lines of shader program that run on the GPU.
+[00:00:41.540 --> 00:00:44.540]   And the rest of the system is organized to deliver frames
+[00:00:44.540 --> 00:00:47.160]   at 120 frames per second really quickly.
+[00:00:47.160 --> 00:00:50.780]   And recently, I recorded a video because time is short.
+[00:00:50.780 --> 00:00:52.920]   And this is obviously sped up massively,
+[00:00:52.920 --> 00:00:55.360]   but we launched agentic editing in Zedd.
+[00:00:55.360 --> 00:00:57.180]   And I wanted to talk about the approach
+[00:00:57.180 --> 00:01:01.040]   that we took to test this and be empirical
+[00:01:01.040 --> 00:01:04.240]   and deliver a reliable product that does this effectively.
+[00:01:04.240 --> 00:01:06.340]   So here's what we're going to be talking about.
+[00:01:06.340 --> 00:01:08.840]   The rest of the talk is going to be looking at code
+[00:01:08.840 --> 00:01:12.080]   and just talking about our experience.
+[00:01:12.080 --> 00:01:17.840]   So testing, evaluation, what's the difference?
+[00:01:17.840 --> 00:01:19.460]   First, I just want to start by saying,
+[00:01:19.460 --> 00:01:25.140]   without an empirical approach to the software that we've been building since 2018, 2021,
+[00:01:25.140 --> 00:01:29.340]   depends on how long you measure it, Zedd would crash every eight seconds.
+[00:01:29.340 --> 00:01:34.040]   Like, we have probably tens of thousands of tests at this point.
+[00:01:34.040 --> 00:01:37.940]   And here's an example of the extreme to which we take empirical software development.
+[00:01:37.940 --> 00:01:43.620]   We literally are starting a server, creating two clients, and we have a simulated scheduler
+[00:01:43.620 --> 00:01:44.740]   that gets passed in here.
+[00:01:44.740 --> 00:01:49.060]   And we run 50 different iterations of this with every random interleaving of anything that
+[00:01:49.060 --> 00:01:51.760]   could possibly be concurrent.
+[00:01:51.760 --> 00:02:01.000]   So that if the 375,000, this is only 50, but iteration of this particular interleaving of network packets
+[00:02:01.000 --> 00:02:06.040]   goes wrong, we can replay that over and over again, freeze it, and have full control.
+[00:02:06.040 --> 00:02:10.000]   So we're very hardcore about testing and being empirical at Zedd.
+[00:02:10.000 --> 00:02:16.960]   But up until very recently, until shipping some of these AI related features, we've been able to be fully deterministic.
+[00:02:16.960 --> 00:02:24.140]   Even with sort of non-deterministic things, we've been able to really lock things down and never have flaky tests on CI.
+[00:02:24.140 --> 00:02:28.080]   But as soon as an LLM enters the picture, that's all out the window, right?
+[00:02:28.080 --> 00:02:37.140]   Because we could, assuming that we're using frontier models, but even if we were to use our own model
+[00:02:37.140 --> 00:02:43.960]   and to control the sampling off the logits, you change one token in the input and you're going to get a completely different output.
+[00:02:43.960 --> 00:02:48.820]   So it's just a fundamentally different problem where we have to embrace stochastic behavior.
+[00:02:48.820 --> 00:02:55.640]   And so as we built this system, our first eval that we really hammered on was something that if you've seen something
+[00:02:55.640 --> 00:02:57.520]   like Sweebench, probably looks pretty familiar.
+[00:02:57.520 --> 00:02:58.740]   It's very data-driven.
+[00:02:58.740 --> 00:03:04.820]   And it seems like in the machine learning world, this is what an eval is, input, output.
+[00:03:04.820 --> 00:03:11.820]   But in the programmatic software world, an eval is more like a test that passes or fails.
+[00:03:11.820 --> 00:03:15.620]   Like, we come from this very different perspective of automated testing.
+[00:03:15.620 --> 00:03:20.820]   And so right away, you know, we had this traditional data-driven eval and then backing that, you know,
+[00:03:20.820 --> 00:03:30.820]   in the same program that runs all these evals, basically compiles a headless copy of Zed, checks out a repo, runs the agent, tries to make it do things.
+[00:03:30.820 --> 00:03:35.680]   And we right away got into, like, making the eval more programmatic.
+[00:03:35.680 --> 00:03:38.680]   So you can see here the conversation is literally a function.
+[00:03:38.680 --> 00:03:49.680]   And then our ability to sort of come in here and write code that performs assertions about what the agent did, even, you know, getting quite a bit more granular.
+[00:03:49.680 --> 00:03:53.680]   So the problem is when that big eval fails, it's like, what do we do?
+[00:03:53.680 --> 00:03:55.820]   There's a million ways that that thing could go wrong.
+[00:03:55.820 --> 00:04:04.140]   And so when we wrote this eval, we were able to drive out one really simple failure mode, which is when we run the grep tool,
+[00:04:04.140 --> 00:04:07.940]   this is what our original, like, dumb implementation of the grep tool looked like.
+[00:04:07.940 --> 00:04:17.800]   So you can see in this case we're saying we want to add a window argument to this tool run trait method in this particular file name, right?
+[00:04:17.800 --> 00:04:21.740]   But if this is what the model sees, then we're in trouble, right?
+[00:04:21.740 --> 00:04:31.080]   And so what we ended up driving from this stochastic test here is a more deterministic test, right?
+[00:04:31.080 --> 00:04:39.100]   Where I'm going to go ahead and set up the project, perform this search for fn run, and then we use tree sitter,
+[00:04:39.100 --> 00:04:48.440]   which is Max's parsing-- parser generator framework to actually expand out the match to the syntactic boundaries.
+[00:04:48.440 --> 00:04:54.860]   And so that was able to, you know, drive a substantial improvement in the behavior of the agent.
+[00:04:54.860 --> 00:05:04.040]   So right there, like, that was an interesting discovery of just being empirical and driving out what was ultimately an algorithmic problem with a stochastic test.
+[00:05:04.040 --> 00:05:06.300]   But then we moved on to the editing.
+[00:05:06.300 --> 00:05:09.860]   And when we first implemented editing, it was just done with tool calls.
+[00:05:09.860 --> 00:05:14.400]   But the problem with tool calls, if anybody's worked with them, is they don't really stream very well.
+[00:05:14.400 --> 00:05:19.840]   Like, you get key, value, key, value, and it all comes back at once.
+[00:05:19.840 --> 00:05:26.540]   So what we ended up doing is deciding-- instead, we perform a small tool call that just describes the edits.
+[00:05:26.540 --> 00:05:32.960]   Then we loop back around for the moment to just the same model, because it has everything already loaded in its cache,
+[00:05:32.960 --> 00:05:37.520]   and ask it to omit these old text, new text blocks.
+[00:05:37.520 --> 00:05:38.920]   But there's some challenges there.
+[00:05:38.920 --> 00:05:45.520]   Like, now we have to parse that data is coming back, and all kinds of weird stuff that the model's going to be doing.
+[00:05:45.520 --> 00:05:49.520]   So I'll just dive in and show you some of the examples.
+[00:05:49.520 --> 00:05:54.080]   So here's like-- there were a bunch of different tests.
+[00:05:54.080 --> 00:05:57.160]   Like, these are part of our main regular old test suite.
+[00:05:57.160 --> 00:05:59.660]   And we just added this eval function.
+[00:05:59.660 --> 00:06:02.760]   And we say, I want to run this eval 200 times.
+[00:06:02.760 --> 00:06:06.080]   And in this particular case, didn't start this way.
+[00:06:06.080 --> 00:06:08.360]   But eventually, we got this way.
+[00:06:08.360 --> 00:06:14.420]   We want 100% of these 200 examples to pass, or this test should, like, literally fail the build.
+[00:06:14.420 --> 00:06:16.760]   And so we kind of set a watermark that way.
+[00:06:16.760 --> 00:06:22.640]   And then here, you can see I'm just, like, loading in a conversation with the LLM.
+[00:06:22.640 --> 00:06:27.140]   And then ultimately, in this case, I'm using eval as judge.
+[00:06:27.140 --> 00:06:30.140]   But there are some cases you saw earlier where we do things more programmatically.
+[00:06:30.140 --> 00:06:34.940]   In this case, we're just, like, verifying if this thing worked correctly.
+[00:06:34.940 --> 00:06:42.600]   And so we go from a test like this, a stochastic test, into the particular problems that drive this.
+[00:06:42.600 --> 00:06:48.480]   So, I mean, but it's funny, a lot of the things that went wrong here were really just, like, basic things, right?
+[00:06:48.480 --> 00:06:57.340]   Like, and so again, these are things that we can-- they're non-deterministic, but the non-determinism is sort of bounded.
+[00:06:57.340 --> 00:07:05.760]   So in this case, we're going to run 100 iterations of this very simple parsing test, where we're randomly chunking up the input
+[00:07:05.760 --> 00:07:15.780]   into arbitrary boundaries and just making sure that the parser for this data can handle arbitrary chunking of the text.
+[00:07:15.780 --> 00:07:18.600]   Similarly here, fuzzy matching algorithm.
+[00:07:18.600 --> 00:07:31.760]   That's a critical piece of, you know, if the model's fuzzy or generates something slightly wrong, being able to do this dynamic programming that gets us an approximate match
+[00:07:31.760 --> 00:07:34.640]   really saved a lot of the tool calling failures for us.
+[00:07:34.640 --> 00:07:38.180]   But again, something that could be deterministically tested.
+[00:07:38.180 --> 00:07:43.480]   And then finally, there's this idea of a streaming diff, that as the model is emitting new text,
+[00:07:43.480 --> 00:07:47.400]   we need to be comparing the new text it's emitting with the old text,
+[00:07:47.400 --> 00:07:54.380]   and then making a dynamic decision of, if I don't see some text that was present in the old text,
+[00:07:54.380 --> 00:07:58.740]   is that because it was deleted or it just hasn't been streamed out yet?
+[00:07:58.740 --> 00:08:06.480]   So that's another, you know, completely deterministic thing that still was critical to making the system work correctly.
+[00:08:06.480 --> 00:08:09.580]   So yet another, like, deterministic test.
+[00:08:09.580 --> 00:08:17.380]   But then we get into some of the fun stuff with the behavior of the model itself.
+[00:08:17.380 --> 00:08:24.920]   So one thing that we noticed right away was the model, when it was trying to insert at the top or the end of the document,
+[00:08:24.920 --> 00:08:31.920]   in some cases, would just have an empty old text tag, which, like, if you're doing old text, new text matching is not very useful.
+[00:08:31.920 --> 00:08:39.660]   And so we found that we were able to just add this, you know, simple thing to the prompt and improve the eval.
+[00:08:39.660 --> 00:08:44.720]   But again, it would still do it, you know, 1 or 2% of the time.
+[00:08:44.720 --> 00:08:52.660]   And so just being able to test that, you know, we can handle that case robustly, you know, ended up being really helpful.
+[00:08:52.660 --> 00:08:56.760]   And this is just like, again, I'm in this case simulating the output of the LLM.
+[00:08:56.760 --> 00:09:04.500]   Another case that we encountered a lot was that it would mismatch the XML tags.
+[00:09:04.500 --> 00:09:11.060]   And so we would have old text, and then it would end like this with new text.
+[00:09:11.060 --> 00:09:14.800]   And so, again, we were able to get a certain distance with the prompt.
+[00:09:14.800 --> 00:09:20.020]   We initially were sort of-- 40% of the time we were getting this mismatch and blowing up.
+[00:09:20.020 --> 00:09:29.460]   We were able to move that by saying, always close all tags properly to, like, 95%, but we still have that last, like, 5%.
+[00:09:29.460 --> 00:09:30.480]   What do we do with that?
+[00:09:30.480 --> 00:09:48.020]   And so, again, it's just like driving it into a deterministic test where we have old text, new text, you know, and we need to just assert that even though we got-- you know, we just need to be robust and accept crazy stuff from the LLM, like, in its output.
+[00:09:48.020 --> 00:09:53.160]   And another interesting case was indentation.
+[00:09:53.160 --> 00:10:00.260]   So here's an eval that we wrote, which was this idea of having an outer function, and then inside here there's an inner function.
+[00:10:00.260 --> 00:10:02.180]   And we have this to-do macro here.
+[00:10:02.180 --> 00:10:06.060]   And we want to say, replace this to-do with return 42.
+[00:10:06.060 --> 00:10:13.200]   And we would see the model doing things like this, right, where the indentation level was completely flattened out, right?
+[00:10:13.200 --> 00:10:20.200]   It says, "replace fn_inner," but fn_inner has, like, all this leading indentation on the front of it.
+[00:10:20.200 --> 00:10:22.200]   But otherwise, like, it's perfectly fine.
+[00:10:22.200 --> 00:10:28.340]   And so, in this case, what we did is the strategy of, like, detecting this indent delta.
+[00:10:28.340 --> 00:10:34.340]   So we figure out, basically, sort of renormalize the indent, if that makes sense.
+[00:10:34.340 --> 00:10:45.480]   So if the text in the buffer is indented by a certain amount, but we otherwise match, then we also detect the text that the LLM emitted and compute this delta.
+[00:10:45.480 --> 00:10:57.620]   And then, again, driving it back to a deterministic test of, here, we build a buffer with lorem ipsum doler sit with this very interesting indentation pattern.
+[00:10:57.620 --> 00:11:06.620]   And then you can see here, we want to replace ipsum doler sit with ipsum doler sit amet, where it's out-dented, right?
+[00:11:06.620 --> 00:11:14.840]   And you can see that when we actually do our indentation normalization, we're able to handle that correctly.
+[00:11:14.840 --> 00:11:33.040]   Another tricky thing that we ran into was this weird escaping behavior, where in these certain cases where we have weird constructs, like, this is a Rust, sort of a raw string, basically, that can include things like quotes inside of it, due to this interesting escaping syntax.
+[00:11:33.040 --> 00:11:39.700]   And doing something as simple as saying, just, like, tweak this, we would notice this is the behavior we want.
+[00:11:39.700 --> 00:11:50.700]   And we would notice, especially Gemini, doing all kinds of crazy stuff, like doing HTML escape codes, doing this sort of backslash escaping.
+[00:11:50.700 --> 00:11:58.700]   Yeah, with new lines and stuff, we would see, like, you know, crazy escaping that it would do, double escaping the new lines.
+[00:11:58.700 --> 00:12:10.700]   And so in this case, like, that was just a pure prompt fix and didn't really-- we didn't try yet, at least, to kind of detect any of this escaping any further.
+[00:12:10.700 --> 00:12:16.700]   Although, obviously, like, that's an opportunity, like, that's an opportunity to keep going even further.
+[00:12:16.700 --> 00:12:29.700]   So, yeah, I mean, from my perspective, like, the lessons we learned from this entire experience is that, like, rigorous testing is fundamental to building reliable software, period.
+[00:12:29.700 --> 00:12:37.700]   We have this new fancy parlance of, like, an eval, which comes, I think, out of the machine learning field of kind of input, output, and having lots of examples of that.
+[00:12:37.700 --> 00:12:44.700]   But I think a lot of the techniques of just traditional, good old-fashioned software engineering are still really applicable.
+[00:12:44.700 --> 00:12:53.700]   But we have to embrace this more statistical approach where we're running it 100 times, 200 times, and asserting a threshold of pass versus fail.
+[00:12:53.700 --> 00:13:03.700]   But I think-- I mean, this is a real-world example of just the stuff that we saw trying to implement streaming edits or an agent that can go search and edit.
+[00:13:03.700 --> 00:13:06.700]   A lot of those problems are not-- I don't know.
+[00:13:06.700 --> 00:13:09.700]   They're not advanced machine learning problems or anything.
+[00:13:09.700 --> 00:13:14.700]   It's just stupid things that the model will try to do that we need to account for.
+[00:13:14.700 --> 00:13:25.700]   And so I think this motion of sort of starting with the zoomed-out eval, then zooming into a sort of stochastic unit test that's still random and interacting with the model,
+[00:13:25.700 --> 00:13:28.700]   but is more focused in on a particular aspect of the experience.
+[00:13:28.700 --> 00:13:36.700]   And then, finally, driving that even further to an actual good old-fashioned test, that's been the process that we've discovered.
+[00:13:36.700 --> 00:13:45.700]   But we, so far, haven't needed to use, like, special external tools or eval frameworks or anything like that.
+[00:13:45.700 --> 00:13:53.700]   It's just in our test suite so far and kind of using the same underlying infrastructure that's used to do any other kind of software testing
+[00:13:53.700 --> 00:13:58.700]   and, honestly, using just a lot of those same skills.
+[00:13:58.700 --> 00:14:02.700]   So for us, it was, like, just be empirical, just like we've always been.
+[00:14:02.700 --> 00:14:08.700]   But it's this new X factor of the LLM doing all these crazy things.
+[00:14:08.700 --> 00:14:15.700]   Yeah, so that's a little story of how we-- and this is all open source, so you can check it out.
+[00:14:15.700 --> 00:14:17.700]   Zed is under the GPL license.
+[00:14:17.700 --> 00:14:20.700]   I'd love help improving it all, actually.
+[00:14:20.700 --> 00:14:22.700]   Maybe some of you are like, what are you doing?
+[00:14:22.700 --> 00:14:24.700]   You could do better in the following five ways.
+[00:14:24.700 --> 00:14:27.700]   I'd love contributions if that's interesting to folks.
+[00:14:27.700 --> 00:14:30.700]   And, yeah, it's working.
+[00:14:30.700 --> 00:14:37.700]   I'm-- with the Claude IV models, I'm finally able to write Rust agentically, really efficiently.
+[00:14:37.700 --> 00:14:39.700]   And I'm just loving it.
+[00:14:39.700 --> 00:14:41.700]   So that's how we got there.
+[00:14:41.700 --> 00:14:42.700]   I appreciate your attention.
+[00:14:42.700 --> 00:14:43.700]   Thank you.
+[00:14:43.700 --> 00:14:44.700]   Thank you.
+[00:14:44.700 --> 00:14:45.700]   Thank you.
+[00:14:45.700 --> 00:14:46.700]   Thank you.
+[00:14:46.700 --> 00:14:47.700]   Thank you.
+[00:14:47.700 --> 00:14:48.700]   I appreciate your attention.
+

@@ -1,0 +1,930 @@
+
+[00:00:00.000 --> 00:00:05.280]   Okay, I'm hearing that you guys can say this.
+[00:00:05.280 --> 00:00:09.560]   Okay, so today, I want to share about this thing that I wrote recently,
+[00:00:09.560 --> 00:00:14.280]   which is how to evaluate long context question and answer systems.
+[00:00:14.280 --> 00:00:17.760]   This is like two parts to it.
+[00:00:17.760 --> 00:00:21.580]   One is really an essential summary of how to do, of how to.
+[00:00:21.580 --> 00:00:23.720]   And after that, we have another six papers.
+[00:00:23.720 --> 00:00:28.480]   I did a literature review of a couple of papers,
+[00:00:28.480 --> 00:00:29.960]   and then we'll summarize six papers.
+[00:00:30.840 --> 00:00:34.620]   So I think one thing that I think long context Q&A
+[00:00:34.620 --> 00:00:36.720]   is slightly different from shorter Q&A
+[00:00:36.720 --> 00:00:41.860]   is that for longer context, you could actually retrieve
+[00:00:41.860 --> 00:00:45.220]   a lot of irrelevant details, which leads to information overload.
+[00:00:45.220 --> 00:00:49.240]   And then, of course, it actually leads to more occurrences of hallucinations.
+[00:00:49.240 --> 00:00:53.600]   And then for longer context, you might actually have bigger questions
+[00:00:53.600 --> 00:00:55.040]   that come across like,
+[00:00:55.040 --> 00:00:57.400]   hey, can you summarize everything that I've read so far?
+[00:00:57.940 --> 00:01:00.940]   Or what is the main theme of this person's thesis, etc.
+[00:01:00.940 --> 00:01:06.720]   And you may also have questions that require you to hop across multiple chapters.
+[00:01:08.720 --> 00:01:13.180]   What were the horcruxes that Dumbledore destroyed?
+[00:01:13.180 --> 00:01:17.060]   You know, and you have to hop across different areas of the book and Harry Potter,
+[00:01:17.060 --> 00:01:18.360]   or even across the entire series.
+[00:01:18.360 --> 00:01:20.840]   So that's why it's maybe a little bit more challenging.
+[00:01:20.840 --> 00:01:24.300]   So this is essentially, this is what we're going to discuss today.
+[00:01:24.680 --> 00:01:27.260]   We'll go through the dimensions of faithfulness and helpfulness.
+[00:01:27.260 --> 00:01:29.900]   And we'll also talk about how to build a Q&A dataset.
+[00:01:29.900 --> 00:01:32.220]   I don't think I'll go through the existing benchmarks.
+[00:01:32.220 --> 00:01:33.420]   You can read it on your own.
+[00:01:33.420 --> 00:01:37.380]   You can read my summary in the write-up on your own.
+[00:01:37.380 --> 00:01:38.560]   And then after that, we'll go through it.
+[00:01:38.560 --> 00:01:41.560]   So the key evaluation metrics, I think there are two.
+[00:01:41.560 --> 00:01:43.440]   There are actually definitely more than two.
+[00:01:43.440 --> 00:01:47.180]   But these are the two key ones that I think most people focus on for Q&A.
+[00:01:47.960 --> 00:01:53.280]   The first one is faithfulness, which is how strictly the answer relies on only a source document.
+[00:01:53.280 --> 00:01:54.920]   So I think this is important, right?
+[00:01:54.920 --> 00:02:00.700]   If you're asking a question on some, let's just say you're asking a question on Squid Games,
+[00:02:00.700 --> 00:02:02.440]   which is the new Squid Games came up.
+[00:02:02.440 --> 00:02:05.460]   I know it's like maybe an alternate reality, or maybe it is reality.
+[00:02:05.460 --> 00:02:08.060]   And you have a lot of, you're asking a lot of questions.
+[00:02:08.060 --> 00:02:12.740]   You want to make sure that it's answering questions solely based on the Squid Games show.
+[00:02:12.740 --> 00:02:17.120]   And it shouldn't be including things from outside of Squid Games, even in the real world.
+[00:02:17.120 --> 00:02:19.280]   That's what faithfulness is about.
+[00:02:19.280 --> 00:02:23.940]   And a big chunk of that is actually knowing when to say, I don't know.
+[00:02:23.940 --> 00:02:30.100]   So if you're asking a question, and that answer actually doesn't exist in your context,
+[00:02:30.100 --> 00:02:33.740]   the model should be smart enough to say something like,
+[00:02:33.740 --> 00:02:36.340]   I don't have the information in the provider text.
+[00:02:36.340 --> 00:02:41.340]   That is actually the right answer that we would expect, right?
+[00:02:41.340 --> 00:02:43.480]   We don't want the model to try to make up something.
+[00:02:44.400 --> 00:02:49.360]   And I think depending on what you want to do, we may not want the model to use its own knowledge.
+[00:02:49.360 --> 00:02:52.380]   And we actually may not also want the model to use web search.
+[00:02:52.380 --> 00:02:56.400]   Well, it depends on whether we have the web search toggle on or not.
+[00:02:56.400 --> 00:02:57.920]   But that's one thing.
+[00:02:57.920 --> 00:03:02.240]   So if you care about faithfulness, this is the main thing that you should be focused on.
+[00:03:02.240 --> 00:03:08.780]   So therefore, when we consider faithfulness, you can think of false positives and false negatives.
+[00:03:08.780 --> 00:03:12.240]   A false positive is that when the model makes up an answer that doesn't exist,
+[00:03:12.440 --> 00:03:14.340]   this is essentially a hallucination.
+[00:03:14.340 --> 00:03:23.460]   A false negative occurs when a model says that you know that the document has the information,
+[00:03:23.460 --> 00:03:25.380]   but the model says that it doesn't exist.
+[00:03:25.380 --> 00:03:28.380]   So this could be because you're doing retrieval badly,
+[00:03:28.380 --> 00:03:34.320]   or this could be because the model just can't pay attention to that large amount of text.
+[00:03:34.720 --> 00:03:37.860]   And we call this as, you know, the loss in the middle problem every now and then.
+[00:03:37.860 --> 00:03:41.580]   Oh, Sean, I had a fun hallucination today.
+[00:03:41.580 --> 00:03:46.540]   Gemini completely made up timestamps and summaries for our podcast only based on the title.
+[00:03:46.540 --> 00:03:49.400]   So that's one of those things, right?
+[00:03:49.400 --> 00:03:52.700]   Where you're asking the model to do, you're using a model in your ETL pipeline,
+[00:03:52.940 --> 00:03:56.900]   and it shouldn't be making things up because I guess we kind of expect it to work at ETL.
+[00:03:56.900 --> 00:04:01.600]   And also, I think there's a small distinguishing.
+[00:04:01.600 --> 00:04:04.960]   We want to distinguish faithfulness from correctness, right?
+[00:04:05.840 --> 00:04:12.220]   So again, imagine we had a historical fiction with alternate timelines,
+[00:04:12.220 --> 00:04:16.300]   where the outcome of World War II was a different outcome.
+[00:04:16.300 --> 00:04:19.560]   And if you're asking a question of that question,
+[00:04:19.560 --> 00:04:22.660]   you want to summarize what happened after that,
+[00:04:22.660 --> 00:04:28.400]   you should be getting what is faithful to that alternate history fiction,
+[00:04:28.400 --> 00:04:30.580]   the historical fiction with the alternate timeline,
+[00:04:30.800 --> 00:04:32.980]   instead of what actually happened in the real world.
+[00:04:32.980 --> 00:04:35.200]   Because I think that's what users would expect.
+[00:04:35.200 --> 00:04:38.860]   So that's the small difference.
+[00:04:38.860 --> 00:04:40.860]   In this case, I care about faithfulness,
+[00:04:40.860 --> 00:04:42.380]   but you may care more about correctness.
+[00:04:42.380 --> 00:04:44.620]   So, but essentially, you want to distinguish those two.
+[00:04:44.620 --> 00:04:49.960]   Now, the other thing is that a faithful answer isn't always a helpful answer.
+[00:04:49.960 --> 00:04:52.100]   So maybe you might be asking a question about,
+[00:04:52.100 --> 00:04:55.620]   hey, you know, what was the crime the person committed?
+[00:04:55.620 --> 00:05:00.120]   And the answer is maybe what is the crime the person committed?
+[00:05:00.260 --> 00:05:04.900]   But I said, they will say, oh, you can find a crime the person committed on page six or page nine.
+[00:05:04.900 --> 00:05:07.760]   That is actually not, it's a faithful answer.
+[00:05:07.760 --> 00:05:09.140]   It's actually not a helpful answer.
+[00:05:09.140 --> 00:05:11.960]   Or maybe the model could say something that's completely irrelevant,
+[00:05:11.960 --> 00:05:16.660]   which is that, oh, the law is about something, whatever law it is.
+[00:05:16.660 --> 00:05:19.280]   It doesn't actually answer the question on the crime that was committed,
+[00:05:19.280 --> 00:05:21.020]   but it is faithful to the text.
+[00:05:21.020 --> 00:05:24.560]   So in that case, those faithful answers are still not helpful.
+[00:05:24.560 --> 00:05:27.600]   So how do you think about helpfulness?
+[00:05:27.600 --> 00:05:30.640]   I think that there are a few dimensions to it.
+[00:05:30.640 --> 00:05:34.960]   I think it's three main dimensions, and some of these are intention.
+[00:05:34.960 --> 00:05:38.940]   So relevance means, does the model actually answer the question?
+[00:05:38.940 --> 00:05:43.860]   Comprehensiveness means, does it have sufficient enough details?
+[00:05:43.860 --> 00:05:47.260]   And you know, sufficient enough details is almost like a recall problem, right?
+[00:05:47.340 --> 00:05:50.640]   You can just spam all the details and be very comprehensive.
+[00:05:50.640 --> 00:05:57.480]   I think the balance here is with conciseness, whereby you are comprehensive, yet concise.
+[00:05:57.980 --> 00:06:01.000]   So that's the tension between both of these two.
+[00:06:01.000 --> 00:06:11.800]   And in this study, by Shi et al., they found that dominant experts preferred answers that were comprehensive and faithful, right?
+[00:06:11.800 --> 00:06:12.920]   Especially long-form questions.
+[00:06:12.920 --> 00:06:19.780]   In contrast, crowd workers like LMSIS, you know, they often maybe emphasize surface aspects such as conciseness or detail,
+[00:06:20.340 --> 00:06:23.320]   or emoji, or more flowery language.
+[00:06:23.320 --> 00:06:25.900]   So those are a few things you want to think about, right?
+[00:06:25.900 --> 00:06:28.820]   When you're building your Q&A system, is it for experts?
+[00:06:28.820 --> 00:06:31.880]   People that will know the content well, or maybe not.
+[00:06:31.880 --> 00:06:42.980]   So that is about the section on the kinds of, the two dimensions that we're considering about.
+[00:06:42.980 --> 00:06:46.580]   Any questions here, before I proceed?
+[00:06:46.580 --> 00:06:51.600]   I guess not.
+[00:06:51.600 --> 00:06:57.160]   Some of these, I mean, mostly requires a golden dataset, right?
+[00:06:57.160 --> 00:06:58.660]   Some ground-truth golden dataset.
+[00:06:58.660 --> 00:07:07.240]   I think, I think for a start, yes, we need some ground-truth golden dataset to calibrate our LN evaluator.
+[00:07:07.240 --> 00:07:10.100]   But then once we have it calibrated, we actually don't need it.
+[00:07:10.100 --> 00:07:12.160]   I think that's how I think about it long-term.
+[00:07:12.700 --> 00:07:14.020]   And I'll actually walk through that.
+[00:07:14.020 --> 00:07:16.520]   Oh, but Sean, Sean doesn't seem convinced.
+[00:07:16.520 --> 00:07:17.820]   No, no.
+[00:07:17.820 --> 00:07:19.280]   I mean, sure.
+[00:07:19.280 --> 00:07:22.540]   Like, that's the only way to extend it beyond golden dataset.
+[00:07:22.540 --> 00:07:27.060]   It's just not satisfying because it's so easy to get out of distribution.
+[00:07:27.060 --> 00:07:28.920]   Oh, that's correct.
+[00:07:28.920 --> 00:07:29.640]   That's true.
+[00:07:29.640 --> 00:07:35.280]   So when you're building a golden dataset, it does have to be representative-ish enough.
+[00:07:35.780 --> 00:07:46.800]   And I think the benefit of building with LN evaluators is that I'm not sure if distribution drift differs matters that much.
+[00:07:47.500 --> 00:07:51.420]   So for training data, you can imagine, let's say you're doing e-commerce recommendations.
+[00:07:51.420 --> 00:07:53.880]   You will always have new items coming out.
+[00:07:53.880 --> 00:07:56.460]   So distribution would go down, right?
+[00:07:56.740 --> 00:08:11.720]   Whereas for language or concepts, I think how you classify, how you do Q&A or financial documents or unless there are new laws coming out, which don't really, or maybe new concepts coming out that set precedents.
+[00:08:11.840 --> 00:08:13.380]   I don't think that happens as often.
+[00:08:13.380 --> 00:08:15.420]   You might need to refresh every now and then.
+[00:08:15.420 --> 00:08:22.840]   But I think the drift is a little bit easier to tackle than most other more conventional machine learning models.
+[00:08:22.840 --> 00:08:24.580]   Shulang has a question.
+[00:08:24.580 --> 00:08:32.820]   Based on experience, to implement the faithfulness and helpfulness metrics, would you recommend start with an eval framework or just write your vanilla L-levels judge?
+[00:08:32.820 --> 00:08:40.700]   Personally, and maybe this is a hot take, I actually don't use frameworks.
+[00:08:40.700 --> 00:08:44.940]   I really like to just use the raw thing on its own.
+[00:08:44.940 --> 00:08:52.360]   I find that a few times I've used a framework, eventually the framework really gets in the way of me trying to understand what's really happening.
+[00:08:52.360 --> 00:09:00.960]   And the opposite, it tries very much to do a lot of magic, whereby you can do rare little things, but you can write rare little code and get something working.
+[00:09:00.960 --> 00:09:03.340]   But personally, for me, that really gets in the way.
+[00:09:03.340 --> 00:09:07.640]   Maybe I just need to be more okay with vibe coding and vibe eval.
+[00:09:08.860 --> 00:09:11.140]   But that's my personal opinion.
+[00:09:11.140 --> 00:09:12.660]   Yeah, MCP solves everything.
+[00:09:12.660 --> 00:09:16.480]   I think MCP does go a long way in solving a lot of things.
+[00:09:16.480 --> 00:09:18.880]   I'm a little bit more MCP-pilled now.
+[00:09:18.880 --> 00:09:21.300]   But we can talk about that later if you want.
+[00:09:21.300 --> 00:09:25.280]   I have a bit of a question on this.
+[00:09:25.280 --> 00:09:41.560]   So in normal chatbots, outside of faithfulness, true or false, accuracy in your response, another metric that you also want to consider, like another axis to evaluate your system is, do you understand what the user is asking?
+[00:09:41.560 --> 00:09:44.560]   And is the user even asking the right question?
+[00:09:44.560 --> 00:09:49.280]   Like, are they asking the question that represents the answer that they want to know?
+[00:09:49.680 --> 00:09:59.880]   So when you tie that in with, like, a 2A benchmark, you might be answering what the user wants, but not directly answering the question because they're not answering the question, right?
+[00:09:59.880 --> 00:10:02.200]   Because, like, skill issue in asking questions, right?
+[00:10:02.760 --> 00:10:12.100]   Like, in Discord last week, someone was really trying to find a paper about what does AGI, like, what's this AI future in a few years?
+[00:10:12.100 --> 00:10:13.980]   And I'm like, oh, is it AI 2027?
+[00:10:13.980 --> 00:10:16.300]   People recommended, like, three, four others.
+[00:10:16.300 --> 00:10:23.120]   And, like, you know, basically there's an answer they're trying to get and there's a question they're asking that might not sync.
+[00:10:23.480 --> 00:10:27.860]   But, yeah, how do you deal with that, with these sort of QA systems?
+[00:10:27.860 --> 00:10:29.840]   It kind of overlaps.
+[00:10:29.840 --> 00:10:31.260]   That's a great point.
+[00:10:31.260 --> 00:10:34.060]   I wouldn't even be considering that right now.
+[00:10:34.060 --> 00:10:43.940]   I think it's really challenging to try to, the user asking a question, the question's maybe not quite aligned right, but yet we have to try to guess what's on the user's mind.
+[00:10:43.940 --> 00:10:50.860]   I think for search queries, so for things where we have a lot of organic data, like search, right?
+[00:10:50.860 --> 00:10:58.640]   Like, maybe the user's asking, the user just types iPhone, but you realize that they're not really looking for iPhone, they're looking for iPhone case.
+[00:10:58.640 --> 00:11:05.640]   With enough organic user feedback data on the things that actually click on and actually buy, we can actually do that.
+[00:11:05.640 --> 00:11:12.140]   For Q&A systems, I don't know how to think about that right now.
+[00:11:13.120 --> 00:11:22.400]   I guess with enough data, we get enough questions and then we would realize that, okay, the faithful answer is maybe not what they really want.
+[00:11:23.500 --> 00:11:28.280]   But then the follow-up answer, the actual answer is, I actually don't know how to fine-tune the model on that.
+[00:11:28.280 --> 00:11:35.180]   The few domains that you can think of are like, if you have customer service chatbots, right?
+[00:11:35.180 --> 00:11:44.460]   Like Intercom Fin, or if you have like a chatbot that's like for an insurance agency, you have like most frequently asked questions, right?
+[00:11:44.560 --> 00:11:51.880]   So a lot of questions fall into a few buckets, and most of the time, users are trying to get to the same conclusion, right?
+[00:11:51.880 --> 00:11:53.860]   So even though they're not asking the question, right?
+[00:11:53.860 --> 00:11:55.180]   What are they trying to get towards?
+[00:11:55.180 --> 00:11:56.160]   Does it fall through one of them?
+[00:11:56.160 --> 00:12:01.600]   It's just, you know, in that sense, the Q&A might have different sources.
+[00:12:01.600 --> 00:12:02.900]   So anyway, side tangent.
+[00:12:03.780 --> 00:12:14.420]   Yeah, I think that's a great point, whereby if you find that this is what your users want, you may want to pre-generate those questions for them eventually or put it into your prompt.
+[00:12:14.420 --> 00:12:25.140]   Yeah, it's just from the background of working on one of those, our QA metrics would always go down, but like end satisfaction would go up when we optimized for other stuff.
+[00:12:25.220 --> 00:12:30.640]   So even if the direct QA was wrong, yeah, just cleared the long list, Shannon.
+[00:12:30.640 --> 00:12:34.660]   Yeah, that's something to keep in mind.
+[00:12:34.660 --> 00:12:38.080]   Next thing is how to build an evaluation data set.
+[00:12:38.080 --> 00:12:40.680]   This is my take on it.
+[00:12:40.680 --> 00:12:44.140]   I'm not sure if this is the best way, but I found this to be fairly helpful.
+[00:12:44.140 --> 00:12:50.980]   I think the first thing is really building questions, synthetic questions, right?
+[00:12:51.160 --> 00:12:52.960]   And, you know, everyone's doing this right now.
+[00:12:52.960 --> 00:12:55.180]   You can just, there's nothing unusual.
+[00:12:55.180 --> 00:12:57.060]   Just prompt the LLM to come up with questions.
+[00:12:57.060 --> 00:12:59.300]   But how to prompt the LLM to come up with questions?
+[00:12:59.300 --> 00:13:04.000]   I've seen people do it in bad ways, and then I've seen people do it in better ways.
+[00:13:04.000 --> 00:13:09.600]   So, for example, imagine if you are prompting an LLM to generate questions about a book.
+[00:13:09.600 --> 00:13:11.540]   You can just say generate questions about this chapter.
+[00:13:11.540 --> 00:13:13.800]   Now, this is going to go all over the place.
+[00:13:13.800 --> 00:13:16.480]   It's really hard to constrain what you want.
+[00:13:16.480 --> 00:13:21.380]   And essentially, you probably come up with very effect-based questions.
+[00:13:21.380 --> 00:13:28.180]   But if you specifically want to test the LLM's ability to answer questions about characters,
+[00:13:28.180 --> 00:13:32.540]   one way to do this is, here's what I might do.
+[00:13:32.540 --> 00:13:37.400]   I might ask it to summarize the main characters in this chapter,
+[00:13:37.400 --> 00:13:40.220]   then generate one question about each character's backstory.
+[00:13:40.640 --> 00:13:44.040]   So, you can think of it, this is almost like a, the first sentence is like a chain of thought.
+[00:13:44.040 --> 00:13:48.400]   First, think through which are all the questions in this chapter, and what have they done.
+[00:13:48.400 --> 00:13:53.640]   Then, now, based on that summary of the main characters,
+[00:13:53.640 --> 00:13:56.120]   ask a question about their backstory.
+[00:13:56.120 --> 00:14:00.460]   So, this is how I steer the LLM towards questions on the backstory.
+[00:14:00.460 --> 00:14:03.900]   So, you can imagine, imagine if you're a narrative, okay, questions about backstory,
+[00:14:03.900 --> 00:14:08.680]   questions about setting, questions about plot, questions about climax, etc.
+[00:14:09.120 --> 00:14:10.720]   So, this is how you might want to do this.
+[00:14:10.720 --> 00:14:16.840]   And I was inspired by this, by two papers, which is covered in this post.
+[00:14:16.840 --> 00:14:19.800]   The first paper is narrative QA.
+[00:14:19.800 --> 00:14:22.000]   Oh, I realized I actually didn't even share this post.
+[00:14:22.000 --> 00:14:24.620]   Let me share this right now.
+[00:14:24.620 --> 00:14:28.860]   So, you don't have to be taking down notes.
+[00:14:29.580 --> 00:14:32.760]   We have the recording, but everything is available.
+[00:14:32.760 --> 00:14:35.940]   So, the first question, the first one is narrative QA.
+[00:14:35.940 --> 00:14:40.500]   They deliberately generate questions only based on summaries rather than full text.
+[00:14:40.500 --> 00:14:44.620]   So, these are encouraging questions that are more higher level, more narrative,
+[00:14:44.620 --> 00:14:49.780]   that maybe may require multi-hop reasoning rather than just shallow fact recall.
+[00:14:50.260 --> 00:14:54.080]   And Casper also did the same thing with abstracts on academic papers.
+[00:14:54.080 --> 00:14:59.300]   So, when you're generating questions, you also want to have a range of questions, right?
+[00:14:59.300 --> 00:15:03.700]   Here's an example of some ranges that I might have.
+[00:15:04.980 --> 00:15:06.920]   The simplest question, I think, is fact recall.
+[00:15:06.920 --> 00:15:08.140]   Who is the protagonist?
+[00:15:08.140 --> 00:15:09.300]   What's the treaty sign?
+[00:15:09.300 --> 00:15:13.440]   It's maybe a short phrase, and you can probably find that in a single sentence or maybe a paragraph.
+[00:15:13.440 --> 00:15:15.200]   The next one is the definition.
+[00:15:15.200 --> 00:15:16.740]   Okay, what's this acronym?
+[00:15:16.980 --> 00:15:19.440]   And then, maybe a user is reading a very dense paper.
+[00:15:19.440 --> 00:15:22.560]   What's this acronym based on everything that's in the paper so far?
+[00:15:22.560 --> 00:15:28.840]   So, now, this is the ability of the LLMs to like, again, it's sort of like a summary.
+[00:15:28.840 --> 00:15:31.280]   Summarize this acronym so far.
+[00:15:31.280 --> 00:15:32.860]   The next one is summarization.
+[00:15:32.860 --> 00:15:36.500]   Summarize the main findings of the paper or I'm in the middle of the book.
+[00:15:36.500 --> 00:15:39.060]   Recap what has happened in the book so far, etc.
+[00:15:40.120 --> 00:15:44.880]   And then, the next step goes, I think the first three, these are fairly standard.
+[00:15:44.880 --> 00:15:48.820]   That's probably a right answer that you can have a reference answer for.
+[00:15:48.820 --> 00:15:53.780]   The next three are maybe a little bit open-ended.
+[00:15:53.780 --> 00:15:57.780]   So, for example, here's a question.
+[00:15:57.780 --> 00:15:58.360]   I don't know.
+[00:15:58.360 --> 00:16:02.300]   Why did Snape choose to behave the way he behaved towards Harry Potter?
+[00:16:02.300 --> 00:16:06.520]   So, that is a bit of motivation.
+[00:16:06.520 --> 00:16:07.660]   It's a bit about interpretation.
+[00:16:08.360 --> 00:16:12.220]   And depending on which series, which book of the series you're asking a question on,
+[00:16:12.220 --> 00:16:16.600]   you may not have the true answer that Snape shares.
+[00:16:16.600 --> 00:16:18.640]   So, the LLM may have to infer.
+[00:16:18.640 --> 00:16:20.280]   So, that's a little bit difficult.
+[00:16:20.280 --> 00:16:25.180]   Or what can we infer about society from this loss?
+[00:16:25.180 --> 00:16:26.660]   Maybe in the three-body problem, right?
+[00:16:26.660 --> 00:16:29.140]   So, that's a bit trickier.
+[00:16:29.140 --> 00:16:33.220]   And then, there's also my favorite kind of question, which is the no-info question.
+[00:16:33.220 --> 00:16:36.120]   You know, anytime you have a book, anytime you have a Q&A,
+[00:16:36.120 --> 00:16:38.720]   people are going to ask, people are going to rate team it.
+[00:16:38.720 --> 00:16:41.740]   So, for example, what did Gandalf do in the final battle of Hogwarts?
+[00:16:41.740 --> 00:16:44.620]   Well, Gandalf wasn't in the final battle of Hogwarts.
+[00:16:44.620 --> 00:16:49.320]   The LLM should be able to know that, okay, yes, Gandalf and Dumbledore,
+[00:16:49.320 --> 00:16:54.820]   these were the wizards that carried the battle or carried the series.
+[00:16:55.180 --> 00:16:58.980]   But it should be smart enough to say, hey, Gandalf is not in the final battle of Hogwarts.
+[00:16:58.980 --> 00:17:01.300]   Are you referring to Dumbledore instead?
+[00:17:01.300 --> 00:17:07.240]   So, these are things that you want to make sure that LLM does not answer the question.
+[00:17:08.940 --> 00:17:14.340]   And the other thing that I think is useful is to create a question so that they are robust
+[00:17:14.340 --> 00:17:15.900]   to the position of evidence with a document.
+[00:17:15.900 --> 00:17:20.620]   What this means is that, let's say you have a document that's maybe 100 pages long.
+[00:17:20.620 --> 00:17:24.060]   You create a question based on the first 25 pages.
+[00:17:24.060 --> 00:17:29.660]   You create a question based on the first 50 pages and then the first 75 pages.
+[00:17:30.040 --> 00:17:34.700]   And then you try asking those questions given all 100 pages of the document.
+[00:17:34.700 --> 00:17:41.040]   So, the evidence is in the first quarter, the first half, and the third quarter of your document.
+[00:17:41.040 --> 00:17:44.480]   And then you ask questions like this to see where it starts to fail.
+[00:17:44.480 --> 00:17:49.260]   I think in the past, you might see this loss in the middle pattern.
+[00:17:49.260 --> 00:17:56.740]   In my own benchmarks and evaluations, I actually haven't seen this anymore.
+[00:17:58.140 --> 00:18:04.340]   It's definitely still something useful to test on, but this doesn't happen as far as I can tell.
+[00:18:04.340 --> 00:18:09.200]   Any questions here before we move on to our last section?
+[00:18:09.200 --> 00:18:12.020]   I have an interesting little thing.
+[00:18:12.020 --> 00:18:15.180]   So, I'm curious if you've tried this or if you think it would be useful.
+[00:18:15.180 --> 00:18:22.660]   But when you have a long context QA, this is kind of where a needle and a haystack kind of grew out of, right?
+[00:18:22.660 --> 00:18:25.700]   Have you considered with domain-specific stuff?
+[00:18:25.740 --> 00:18:33.060]   So, let's say like Harry Potter, if you inject in facts and you change facts, is this a good way to eval your QA system?
+[00:18:33.060 --> 00:18:35.560]   So, like with the Harry Potter thing, right?
+[00:18:35.560 --> 00:18:42.880]   If I add in a sentence, let's say I add in Gandalf from Lord of the Rings, and you make up a little scenario of who wins that battle.
+[00:18:43.380 --> 00:18:53.440]   Let's say instead of like needle and a haystack where you just add in like a sentence, if you modify the story itself, so the model doesn't just think it's like a little prompt injection.
+[00:18:53.440 --> 00:18:59.180]   Let's say you add like a paragraph or like a little section, does it still do good at those, right?
+[00:18:59.180 --> 00:19:06.140]   Because I feel like it's hard to distinguish models' internal uses versus RAG context.
+[00:19:06.140 --> 00:19:13.080]   And if you want to benchmark your QA and really see if it uses context, like are there any fun little things like that that work well?
+[00:19:13.760 --> 00:19:15.280]   Oh, no, that's a good point.
+[00:19:15.280 --> 00:19:25.240]   So, I think that's a good idea to inject it and see if the model can actually pay attention to this context that is out of distribution.
+[00:19:25.240 --> 00:19:32.240]   Really, in this case, Harry Potter is definitely in all the models because there's just so many reproductions of it online on the internet.
+[00:19:34.060 --> 00:19:35.340]   That's definitely something to test.
+[00:19:35.340 --> 00:19:42.480]   The other thing to test on is actually also to test on documents that you are certain that the model has not have access to.
+[00:19:42.480 --> 00:19:46.420]   And these are great documents to test on.
+[00:19:46.420 --> 00:19:55.120]   So, it could be maybe newly published, your team's own confluence or wikis or documentations that you know the model doesn't have,
+[00:19:55.120 --> 00:19:58.180]   but you are very familiar with, you can generate questions and answers on.
+[00:19:58.180 --> 00:20:02.660]   Or newly published books or movie transcripts.
+[00:20:03.040 --> 00:20:05.720]   So, those could be good things to test as well.
+[00:20:05.720 --> 00:20:16.800]   I haven't tested the one whereby you inserted red herring content into the long context documents itself and then ask questions about that.
+[00:20:16.800 --> 00:20:19.820]   I haven't seen any examples of those myself.
+[00:20:19.820 --> 00:20:21.660]   I think it will work very well.
+[00:20:21.660 --> 00:20:32.120]   My broader interest in inserting these sort of red herrings is actually not to see if the model can get off of its internal context.
+[00:20:32.120 --> 00:20:34.680]   It's more so for multi-hop QA, right?
+[00:20:34.680 --> 00:20:42.080]   So, if you can inject in clauses, like let's say I have an insurance policy and I randomly inject a clause saying, you know,
+[00:20:42.080 --> 00:20:48.260]   if this happened in the month of May, now the model now has to infer, was it May?
+[00:20:48.260 --> 00:20:48.920]   Is it today?
+[00:20:49.380 --> 00:20:51.620]   Can it effectively QA, right?
+[00:20:51.620 --> 00:20:54.220]   Because can it deduce step by step?
+[00:20:54.220 --> 00:20:55.540]   Can it find the first thing?
+[00:20:55.540 --> 00:20:58.500]   And like, are you even, this is a good benchmark for your retrieval, right?
+[00:20:58.500 --> 00:20:59.660]   Are you retrieving the right stuff?
+[00:20:59.660 --> 00:21:00.840]   Are you even retrieving clauses?
+[00:21:01.560 --> 00:21:06.400]   So, yeah, that's just where I come from in long QA.
+[00:21:06.400 --> 00:21:13.180]   Because now, and then what happens when you add n degrees of complexity with this stuff?
+[00:21:13.180 --> 00:21:17.320]   Because in the real world, like this is still simple, right?
+[00:21:17.320 --> 00:21:21.360]   If you have document or documents that have clauses, that's cool.
+[00:21:21.780 --> 00:21:28.680]   But if we have like agentic systems that now need multiple tool calls to look up these, like you have to find the clauses, right?
+[00:21:28.680 --> 00:21:31.340]   So, step zero is really just you give it clauses.
+[00:21:31.340 --> 00:21:33.740]   You give it documents with clauses and they're fake.
+[00:21:33.740 --> 00:21:35.020]   So, they're not like super real.
+[00:21:35.520 --> 00:21:41.200]   But then, you know, when you take it to the real world, you need to, they have to also find out, are there any clauses, right?
+[00:21:41.200 --> 00:21:47.100]   My like very basic example is you go to San Francisco, you try to park somewhere.
+[00:21:47.100 --> 00:21:53.340]   You try to park downtown and you have like seven signs telling you no parking on Thursdays, no this time, no that time.
+[00:21:53.340 --> 00:21:53.780]   Yeah.
+[00:21:53.780 --> 00:21:56.200]   And like, you know, now you have context.
+[00:21:56.200 --> 00:21:58.480]   You don't even have the retrieval problem and you're still struggling.
+[00:21:58.480 --> 00:22:01.940]   But that's where I try to like, you know, push it.
+[00:22:01.940 --> 00:22:09.680]   So, if you have to, at one level, have like, you know, web search the, what are the clauses?
+[00:22:09.680 --> 00:22:13.580]   And then also in QA, if you just add them in, can it, can it do the multi-hop, please?
+[00:22:13.580 --> 00:22:22.300]   Yeah, this, this kind of, this kind of scenario occurs naturally in some of the long context like QA I work on.
+[00:22:22.300 --> 00:22:28.960]   So, for example, assuming you work on movies, there's always a lot of plot twists or there's always a lot of hidden narrator.
+[00:22:29.820 --> 00:22:37.600]   I guess the one example is like the sixth sense, you know, before and after you realize that the guy is actually dead and a ghost, the answer will be different.
+[00:22:37.600 --> 00:22:42.460]   So, the question that Vibu has, I actually don't know.
+[00:22:42.460 --> 00:22:44.080]   I actually never tried that.
+[00:22:44.080 --> 00:22:45.060]   Oh, wow.
+[00:22:45.060 --> 00:22:46.640]   Corey is actually brilliant.
+[00:22:46.640 --> 00:22:49.640]   That is one of the biggest headaches I've written about.
+[00:22:50.100 --> 00:22:58.180]   I think a lot about and I work a lot about, but I just haven't written about it here because I don't, I don't think anyone else would be interested in it.
+[00:22:58.180 --> 00:23:05.700]   But there's a lot of that, there's a lot in that goes into Q&A for movies and books to make sure there's no spoilers.
+[00:23:06.760 --> 00:23:15.200]   And you'll be surprised how often the model is going to try to be very helpful and actually just spoil the book for you or the movie for you.
+[00:23:15.200 --> 00:23:15.920]   So, that's hard.
+[00:23:15.920 --> 00:23:18.100]   Lewis has a question.
+[00:23:18.540 --> 00:23:24.840]   Why don't we have multiple levels of no-info questions as we have multiple levels of available information comprehension?
+[00:23:24.840 --> 00:23:27.560]   Totally, partially, slightly wrong info.
+[00:23:27.560 --> 00:23:32.100]   Maybe it will be something like an error analysis or it just doesn't work that way.
+[00:23:32.100 --> 00:23:36.320]   Well, I think that you could have multiple levels of no-info questions, right?
+[00:23:36.320 --> 00:23:46.260]   And I think as you start to get into labeling the no-info responses, you probably need to get into that nuance.
+[00:23:46.260 --> 00:23:54.200]   Personally, I think that it's just easier at the start to try to separate it as binary.
+[00:23:55.800 --> 00:24:07.860]   And because I'm generating these questions, okay, so I think maybe Lewis is thinking of you're asking questions whereby there is completely no-info
+[00:24:07.860 --> 00:24:13.000]   or you're asking maybe a two-part question and you have info for the first part but maybe not the second part.
+[00:24:13.000 --> 00:24:16.280]   I think that's a good idea.
+[00:24:16.280 --> 00:24:17.340]   I haven't considered doing that.
+[00:24:17.340 --> 00:24:18.740]   I haven't tried doing that.
+[00:24:18.740 --> 00:24:20.300]   For me, it's really just very standard.
+[00:24:20.300 --> 00:24:24.560]   Asking questions that I'm certain is not in the info of the document.
+[00:24:24.560 --> 00:24:28.020]   And I expect the model to say, I don't have the information for that.
+[00:24:28.020 --> 00:24:30.820]   And it's just easier for us to evaluate.
+[00:24:30.820 --> 00:24:38.680]   I think it's a good idea as we start getting, as our evals on these no-info questions start to saturate,
+[00:24:38.680 --> 00:24:44.120]   we might want to make it a little bit trickier to try to suggest questions with partially no-info, et cetera.
+[00:24:44.120 --> 00:24:46.140]   But I haven't thought about that yet.
+[00:24:46.140 --> 00:24:51.400]   So if you mentioned this earlier,
+[00:24:52.100 --> 00:25:01.980]   so the focus here is not really on evaluation of questions that are inherently ambiguous or require a follow-up.
+[00:25:01.980 --> 00:25:09.860]   So the example you mentioned earlier about Gandalf and Hogwarts and you're like, well, maybe you're referring to Lord of the Rings instead.
+[00:25:09.860 --> 00:25:11.200]   Yeah.
+[00:25:11.360 --> 00:25:15.780]   So that's an example of something that would require a follow-up.
+[00:25:15.780 --> 00:25:17.120]   Yes.
+[00:25:19.240 --> 00:25:25.120]   But there's other cases, like in the case of customer service, like what's being mentioned earlier.
+[00:25:25.120 --> 00:25:32.700]   Maybe the customer has a question you realize in order to answer that question, you have to do maybe distinguish between two situations.
+[00:25:32.700 --> 00:25:37.660]   Because in one situation, the answer should be X.
+[00:25:37.660 --> 00:25:42.300]   In the other circumstance, the correct answer is actually Y.
+[00:25:42.300 --> 00:25:53.000]   And if the answer does not include that context, you need to ask, wait a second, the answer depends on whatever the Z context is.
+[00:25:54.440 --> 00:25:54.920]   Yes.
+[00:25:54.920 --> 00:25:57.680]   That's not captured in this framework, correct?
+[00:25:57.680 --> 00:25:58.880]   You're right.
+[00:25:58.880 --> 00:25:59.720]   It does not.
+[00:25:59.720 --> 00:26:00.440]   Okay.
+[00:26:00.440 --> 00:26:06.100]   So what I'm talking about here is really very, very basic, the high level.
+[00:26:06.260 --> 00:26:20.300]   And you will have to tweak this to the nuances of your use case, whereby you want to suggest, to make sure that you're suggesting follow-up questions that are useful to either, to either make sure that you're not answering until you ask a follow-up question to get good context.
+[00:26:20.300 --> 00:26:24.540]   Just like how deep research will ask these questions before it kicks off deep research.
+[00:26:24.540 --> 00:26:27.200]   Or you might want to say that, okay, I don't have the answer.
+[00:26:27.200 --> 00:26:34.280]   And you might want to evaluate the helpfulness of follow-up questions as well that help you try to get to the answer.
+[00:26:34.280 --> 00:26:35.000]   Yeah.
+[00:26:35.460 --> 00:26:36.040]   Thank you.
+[00:26:36.040 --> 00:26:37.140]   You're welcome.
+[00:26:37.140 --> 00:26:41.820]   Have you looked at deep research benchmark, by the way?
+[00:26:41.820 --> 00:26:43.080]   I have not.
+[00:26:43.080 --> 00:26:44.460]   Have you looked at the QA system?
+[00:26:44.460 --> 00:26:47.400]   Of browser bench?
+[00:26:47.400 --> 00:26:48.220]   Is it like him?
+[00:26:48.220 --> 00:26:48.900]   Browser bench?
+[00:26:48.900 --> 00:26:49.460]   Browser comp?
+[00:26:49.460 --> 00:26:50.120]   Browser comp.
+[00:26:50.120 --> 00:26:50.840]   Browser comp.
+[00:26:50.840 --> 00:26:51.080]   Yeah.
+[00:26:51.080 --> 00:26:52.280]   Browser comp.
+[00:26:52.280 --> 00:26:58.160]   Sean spent some time rerunning deep search on the thump.
+[00:26:58.160 --> 00:27:04.020]   He only has not the greatest things to say about deep research anymore.
+[00:27:04.660 --> 00:27:10.520]   It's just not really related to the tasks of deep research.
+[00:27:10.520 --> 00:27:15.300]   But, I mean, it's still a challenging benchmark.
+[00:27:15.300 --> 00:27:23.460]   It's just very, very good retrieval on the open web rather than the specific tasks of generating a deep research report.
+[00:27:25.200 --> 00:27:25.460]   Yeah.
+[00:27:25.460 --> 00:27:26.320]   So, I have a hot take.
+[00:27:26.320 --> 00:27:33.000]   I think that for long documents, if it's a single document, you may not need to do retrieval.
+[00:27:33.940 --> 00:27:39.460]   For multiple documents, depending on the size of the book, I think it's just really easier not to do retrieval.
+[00:27:39.460 --> 00:27:41.600]   Evaluating retrieval is actually really hard.
+[00:27:41.600 --> 00:27:45.300]   Trying to do good retrieval is actually, I think, also really challenging.
+[00:27:45.700 --> 00:27:54.100]   Especially, you need to think about how to have it asynchronously or like multiple steps, providing the user feedback, dealing with all that latency.
+[00:27:54.100 --> 00:27:55.940]   I think it's challenging.
+[00:27:56.060 --> 00:27:58.680]   I think you can do it with a lot of that and simplify it a lot.
+[00:27:58.680 --> 00:28:00.460]   But that's just me.
+[00:28:01.920 --> 00:28:11.200]   And I think the other challenging thing about deep research that is different from long context information, long context Q&A, is that for long context Q&A, the search space is bounded.
+[00:28:11.200 --> 00:28:16.280]   You're only limited to the document or the library of documents.
+[00:28:16.280 --> 00:28:17.880]   And it's relatively bounded.
+[00:28:17.880 --> 00:28:27.300]   For deep research, the entire World Wide Web, okay, maybe it's sort of bounded, but it's so large that it's effectively unbounded.
+[00:28:27.300 --> 00:28:30.680]   You could always find something, you could always get more information that's really valuable.
+[00:28:30.680 --> 00:28:34.200]   And therefore, it's hard to know when to stop the deep research.
+[00:28:34.200 --> 00:28:40.400]   Okay, finally, we'll go into the methods to assess the Q&A performance.
+[00:28:40.400 --> 00:28:43.980]   So we talk about two dimensions, faithfulness and helpfulness.
+[00:28:43.980 --> 00:28:46.520]   And we talk about how to create questions for them.
+[00:28:46.520 --> 00:28:51.020]   Next, now look at how to evaluate for them.
+[00:28:51.020 --> 00:28:56.360]   I think the first one is really for faithfulness.
+[00:28:56.360 --> 00:29:01.020]   I would just really default to simple binary labels, whether it's faithful or unfaithful.
+[00:29:01.020 --> 00:29:05.860]   Now, I know I say this, simple binary labels, faithful or unfaithful.
+[00:29:05.860 --> 00:29:11.480]   But later, as we start to get into the LLM evaluation piece of it, it may not be that straightforward.
+[00:29:11.480 --> 00:29:13.640]   We'll get to that later.
+[00:29:13.640 --> 00:29:16.160]   And also related to faithfulness, there's no info.
+[00:29:16.160 --> 00:29:19.080]   So for no info, there's actually three kinds of labels.
+[00:29:20.800 --> 00:29:22.700]   One is the model tries to make shit up.
+[00:29:22.700 --> 00:29:24.540]   This is clearly a hallucination.
+[00:29:24.540 --> 00:29:30.540]   Two is the model knows that it doesn't have the info and therefore declines the answer.
+[00:29:30.540 --> 00:29:31.060]   That's great.
+[00:29:31.060 --> 00:29:34.520]   And the three is that the answer is clearly in the document.
+[00:29:34.520 --> 00:29:37.080]   And the model says that the answer isn't there.
+[00:29:37.080 --> 00:29:41.000]   Now, this could be because the model can't pay attention to the long context.
+[00:29:41.040 --> 00:29:42.860]   So it could be because of its retrieval error.
+[00:29:42.860 --> 00:29:48.140]   So then, therefore, you need to figure out and look at the retrieved chunks to make sure
+[00:29:48.140 --> 00:29:49.660]   that it actually has the answer.
+[00:29:49.660 --> 00:29:54.680]   And try to understand recall of retrieval is actually, I don't think you can actually
+[00:29:54.680 --> 00:29:59.100]   measure recall, complete recall of retrieval.
+[00:29:59.440 --> 00:30:02.540]   I think you can measure precision, but I'm not sure if you can measure complete recall.
+[00:30:02.540 --> 00:30:08.820]   But if anyone wants to talk about that, we can chat about this after the next session
+[00:30:08.820 --> 00:30:10.560]   about why I think recall is really hard.
+[00:30:10.560 --> 00:30:13.040]   Then the next thing is helpfulness.
+[00:30:13.040 --> 00:30:19.240]   I really think that helpfulness, the right way to do this, is really doing an A-B test.
+[00:30:19.240 --> 00:30:21.180]   And I don't mean an online A-B test.
+[00:30:21.180 --> 00:30:26.800]   I think that it's essentially taking what you have now and this is your control and then
+[00:30:26.800 --> 00:30:30.800]   updating your prompt, updating your retrieval or updating your document set, etc.
+[00:30:30.800 --> 00:30:34.440]   And then gerenting another set of answers.
+[00:30:34.440 --> 00:30:37.720]   And then you just ask people to prefer, ask them which one they prefer, left or right.
+[00:30:37.720 --> 00:30:39.560]   This is really just pairwise comparison.
+[00:30:39.560 --> 00:30:44.540]   And I won't go into the details of this, but since Lama 2 and Lama 3, I mean, they share
+[00:30:44.540 --> 00:30:45.320]   it all in their papers.
+[00:30:45.320 --> 00:30:50.280]   It's really easier to get people to decide which one they prefer over asking people to give
+[00:30:50.280 --> 00:30:51.840]   them to give scores, right?
+[00:30:51.840 --> 00:30:52.860]   1 to 5 or 1 to 10.
+[00:30:52.860 --> 00:30:57.540]   Those scores are extremely subjective and different people have different scores.
+[00:30:57.540 --> 00:30:58.840]   It's impossible to calibrate them.
+[00:30:58.840 --> 00:31:05.140]   But I think different people will probably approximately prefer the same better answer based on the criteria
+[00:31:05.140 --> 00:31:05.680]   that you have.
+[00:31:05.680 --> 00:31:11.480]   And of course, the criteria I have, these are just the three criteria I mentioned for helpfulness,
+[00:31:11.480 --> 00:31:14.540]   which is relevance, comprehensiveness, and conciseness.
+[00:31:14.540 --> 00:31:19.260]   So that's how we do the human annotation.
+[00:31:19.260 --> 00:31:27.020]   So for human annotation, I think, so I said that it's traditionally considered gold standard.
+[00:31:27.020 --> 00:31:33.000]   I'm not sure if we would consider human annotation the gold standard now even.
+[00:31:33.820 --> 00:31:40.700]   I think that human annotation is necessary to get a small sample set to align your LLM evaluator
+[00:31:40.700 --> 00:31:41.560]   to calibrate it.
+[00:31:41.560 --> 00:31:46.300]   But inside, beyond that, it's actually, you find that human annotation is actually very noisy.
+[00:31:46.300 --> 00:31:49.580]   And we may not want to use it more than we actually need to.
+[00:31:50.580 --> 00:31:57.280]   On the hand, LLM evaluations, actually, they have consistent systematic bias.
+[00:31:57.280 --> 00:31:58.800]   But at least, you know, it's consistent.
+[00:31:58.800 --> 00:32:03.880]   And you can update the prompt or update whatever, update the model to actually remove that bias.
+[00:32:03.880 --> 00:32:05.460]   But for human annotation, it's very difficult.
+[00:32:07.140 --> 00:32:13.160]   And again, this is the usual spiel about if you're still using automated metrics like blue and rouge,
+[00:32:13.160 --> 00:32:16.120]   you probably should move off them.
+[00:32:16.120 --> 00:32:20.420]   I think they might work well for things where it's a one-to-one translation,
+[00:32:20.420 --> 00:32:23.820]   a sentence to a sentence or a paragraph to paragraph.
+[00:32:23.820 --> 00:32:25.540]   They work well for machine translation.
+[00:32:25.540 --> 00:32:28.960]   But I think for open-ended tasks, I think they're pretty poor.
+[00:32:29.140 --> 00:32:35.640]   And I highlight a few examples, not just LL, Eval, several other benchmarks at the bottom of this
+[00:32:35.640 --> 00:32:41.060]   that I go through at the end of this have highlighted this issue with these kind of automatic metrics as well.
+[00:32:41.060 --> 00:32:44.220]   So I'm not going to beat that dead horse again.
+[00:32:44.220 --> 00:32:45.820]   That's it.
+[00:32:45.820 --> 00:32:47.780]   That's my end.
+[00:32:47.780 --> 00:32:50.220]   That's all I'm saying about N-gram-based metrics.
+[00:32:50.220 --> 00:32:55.300]   So to evaluate faithfulness, I think there's a standard approach
+[00:32:55.300 --> 00:33:01.820]   that many, many, that we've seen in a few other papers,
+[00:33:01.820 --> 00:33:07.900]   which is given an answer, you break that answer down into individual claims,
+[00:33:07.900 --> 00:33:10.300]   then you evaluate each individual claim.
+[00:33:10.300 --> 00:33:14.780]   And this approach has been tried and many papers have been published about this.
+[00:33:14.780 --> 00:33:18.580]   It works empirically and they're just small tweets here and there.
+[00:33:18.580 --> 00:33:22.100]   So for example, imagine that this is the claim, this is the answer.
+[00:33:22.100 --> 00:33:25.060]   The tenant breached the lease, they missed three payments,
+[00:33:25.060 --> 00:33:28.640]   failed to maintain insurance coverage and sublet the apartment without permission.
+[00:33:28.640 --> 00:33:31.500]   So there are three claims here, right?
+[00:33:31.500 --> 00:33:36.580]   Ministry payments, failed to maintain insurance coverage and sublet the apartment.
+[00:33:36.580 --> 00:33:41.700]   So then now you can check each claim against the source document and get the answer.
+[00:33:41.700 --> 00:33:43.820]   Essentially, this is really just map reduce.
+[00:33:43.820 --> 00:33:47.060]   You break down a question into smaller pieces.
+[00:33:47.060 --> 00:33:51.120]   So the LL campaign, it can be a very specialized thing
+[00:33:51.120 --> 00:33:53.640]   that just focuses on each of these claims and then find the answer.
+[00:33:54.640 --> 00:34:01.560]   So this approach has been demonstrated in natural language inference-based summarization evals,
+[00:34:01.560 --> 00:34:03.040]   whereby they break it down into sentence.
+[00:34:03.040 --> 00:34:07.120]   Q&A-based summarization evals, again, where they break it down into multiple questions
+[00:34:07.120 --> 00:34:08.580]   and then try to answer for that.
+[00:34:08.580 --> 00:34:13.340]   And then claim generation and verification, which is this exact same technique here.
+[00:34:15.140 --> 00:34:16.720]   So that's all I'll say about that.
+[00:34:16.720 --> 00:34:21.040]   Then after that, to develop helpfulness, I think it requires a more nuanced approach
+[00:34:21.040 --> 00:34:23.400]   because there's no definitively helpful way.
+[00:34:23.400 --> 00:34:28.520]   What I would do is get maybe a couple hundred samples,
+[00:34:28.520 --> 00:34:32.560]   ask people who are trying to prefer left or right, one or zero.
+[00:34:33.120 --> 00:34:39.720]   And then I would try to align an LLM to do the same pairwise comparison
+[00:34:39.720 --> 00:34:42.900]   and evaluate it on Cohen's kappa.
+[00:34:42.900 --> 00:34:45.240]   Oh, this is actually what I say here.
+[00:34:45.240 --> 00:34:48.760]   Pairwise comparisons and evaluate it on Cohen's kappa.
+[00:34:48.760 --> 00:34:53.920]   If the Cohen's kappa aligns well enough with human annotation Cohen's kappa,
+[00:34:53.920 --> 00:34:58.960]   which, you know, honestly, 0.4, 0.6 is really, really good.
+[00:34:58.960 --> 00:35:00.540]   Cohen's kappa doesn't really work like,
+[00:35:00.540 --> 00:35:02.860]   it's not a zero to one thing.
+[00:35:02.980 --> 00:35:04.980]   It's actually very hard to score when Cohen's kappa.
+[00:35:04.980 --> 00:35:08.260]   You can read up more about, you can just ask at the beginning,
+[00:35:08.260 --> 00:35:09.800]   what's a good number for Cohen's kappa?
+[00:35:09.800 --> 00:35:12.220]   And I think 0.4 to 0.6 is pretty good.
+[00:35:12.220 --> 00:35:20.000]   So that's all I have to say about this write-up I have.
+[00:35:20.000 --> 00:35:24.300]   Then after that, I talk about six other papers.
+[00:35:24.300 --> 00:35:26.640]   I think these six other papers are all pretty good.
+[00:35:26.640 --> 00:35:29.200]   That's the reason why I chose to summarize them
+[00:35:29.200 --> 00:35:31.680]   because I highly encourage people to read these six papers
+[00:35:31.680 --> 00:35:35.660]   or at least read the summary to get a sense of what these are.
+[00:35:35.660 --> 00:35:41.040]   And I also went through another, you know, 12 papers.
+[00:35:41.040 --> 00:35:43.100]   Most of these are good,
+[00:35:43.100 --> 00:35:46.740]   but I think if you really wanted to use benchmarks,
+[00:35:46.740 --> 00:35:50.020]   the first six above are pretty good references to go to.
+[00:35:50.020 --> 00:35:53.120]   I think the rest, the rest, only if you have the time
+[00:35:53.120 --> 00:35:56.060]   or only if there's something that is very specific, like this one.
+[00:35:56.060 --> 00:35:59.980]   This bench is specifically for business and finance, right?
+[00:36:00.380 --> 00:36:04.620]   And then this one is for specifically for very difficult retrieval.
+[00:36:04.620 --> 00:36:09.220]   So that's all I had for this.
+[00:36:09.220 --> 00:36:11.720]   And here are some of the takeaways.
+[00:36:11.720 --> 00:36:14.700]   So I don't know if anyone else has any other questions.
+[00:36:21.360 --> 00:36:21.740]   Wow.
+[00:36:21.740 --> 00:36:22.440]   No other questions.
+[00:36:22.440 --> 00:36:23.520]   Maybe I lost everyone.
+[00:36:23.520 --> 00:36:24.380]   No, I'm kidding.
+[00:36:24.380 --> 00:36:29.400]   I think...
+[00:36:29.400 --> 00:36:29.700]   Okay.
+[00:36:29.700 --> 00:36:31.160]   No, go ahead.
+[00:36:31.160 --> 00:36:31.660]   Yeah.
+[00:36:31.660 --> 00:36:35.640]   I mean, I'm actually kind of curious about those last few papers.
+[00:36:35.640 --> 00:36:37.420]   These are super...
+[00:36:37.420 --> 00:36:39.320]   I feel like...
+[00:36:39.320 --> 00:36:40.940]   Just take the links, give it to Gemini.
+[00:36:40.940 --> 00:36:43.060]   Hey, Gemini, read all these papers and summarize it.
+[00:36:43.060 --> 00:36:43.540]   No, no, no, no.
+[00:36:43.540 --> 00:36:46.440]   Actually, I think reading is not as useful as code.
+[00:36:46.440 --> 00:36:52.140]   And, you know, my experience of using simple evals,
+[00:36:52.140 --> 00:36:54.780]   you know, I think like there should be a simple evals for this.
+[00:36:54.780 --> 00:36:59.960]   Basically, that is a library that is just a standardized way to run these.
+[00:37:01.300 --> 00:37:05.780]   I think that the last time that you did this,
+[00:37:05.780 --> 00:37:07.000]   maybe like a year ago,
+[00:37:07.000 --> 00:37:11.600]   there was some code that some...
+[00:37:11.600 --> 00:37:16.300]   One of your readers wrote that implemented some of the hallucination and...
+[00:37:16.300 --> 00:37:17.680]   The abstractive summarization one.
+[00:37:17.680 --> 00:37:17.960]   Yeah.
+[00:37:17.960 --> 00:37:19.960]   They did the NLS summarization.
+[00:37:19.960 --> 00:37:20.740]   Yeah.
+[00:37:20.740 --> 00:37:24.740]   So I think like that would actually be more useful.
+[00:37:24.740 --> 00:37:27.740]   And then obviously you can sort of just run that as a battery of tests.
+[00:37:27.740 --> 00:37:28.960]   These are all pretty cheap to run.
+[00:37:28.960 --> 00:37:30.180]   Yeah.
+[00:37:30.180 --> 00:37:34.740]   And, you know, figure it out when you need to double click on something.
+[00:37:34.740 --> 00:37:37.380]   Why don't we have a paper reading club
+[00:37:37.380 --> 00:37:39.460]   where we go through code slash lab exercises?
+[00:37:39.460 --> 00:37:40.740]   We do.
+[00:37:40.740 --> 00:37:42.020]   Friday.
+[00:37:42.020 --> 00:37:44.380]   Yeah.
+[00:37:44.380 --> 00:37:46.780]   Do we have the link for that?
+[00:37:46.780 --> 00:37:49.480]   Just go to Luma LS.
+[00:37:49.480 --> 00:37:51.300]   It always has a link.
+[00:37:51.300 --> 00:37:54.020]   L-U dot M-A slash L-S.
+[00:37:54.020 --> 00:37:58.400]   Yeah, but A-N-A-N actually usually does like coding related things.
+[00:37:58.660 --> 00:38:00.300]   But this would be relevant.
+[00:38:00.300 --> 00:38:04.060]   This would be very on target.
+[00:38:04.060 --> 00:38:06.480]   Okay.
+[00:38:06.480 --> 00:38:08.620]   I can present on Ernie.
+[00:38:08.620 --> 00:38:09.860]   If we have...
+[00:38:09.860 --> 00:38:10.480]   Yeah, go for it.
+[00:38:10.480 --> 00:38:11.540]   ...other questions.
+[00:38:12.360 --> 00:38:16.540]   I mean, I think this is a very big paper.
+[00:38:16.540 --> 00:38:20.400]   Let me just paste the slides.
+[00:38:20.400 --> 00:38:22.020]   Slides is here.
+[00:38:22.020 --> 00:38:23.980]   It's a very big paper.
+[00:38:23.980 --> 00:38:27.240]   I'm not sure how important it is.
+[00:38:27.240 --> 00:38:33.120]   But I think as much as the paper club is meant for learning,
+[00:38:33.120 --> 00:38:37.240]   learning is very good for learning, even though it's not a frontier model.
+[00:38:37.880 --> 00:38:40.300]   And I think that's one framing.
+[00:38:40.300 --> 00:38:49.120]   The second framing I would say on reading this is that it seems like a sequel,
+[00:38:49.120 --> 00:38:54.920]   effectively, to the DeepSeq V3R1 as well as Quinn III papers.
+[00:38:55.500 --> 00:39:08.240]   So basically, there's just a body of work coming out of the Chinese labs that is just a lot more open and, I guess, easy to read as compared to the U.S. labs,
+[00:39:08.240 --> 00:39:16.720]   all of whom basically don't share anything except for AI2 now, assuming that Lama, MetaLlama is dead.
+[00:39:16.900 --> 00:39:19.440]   So, yeah, there's basically nothing.
+[00:39:19.440 --> 00:39:22.420]   Even Misdrow is no longer publishing much details.
+[00:39:22.420 --> 00:39:30.680]   So I think basically Ernie is Baidu's internal language model.
+[00:39:30.680 --> 00:39:34.780]   They've always made a lot of hype about it, but they've never really released it until now.
+[00:39:34.780 --> 00:39:43.460]   So I think this is now both a very good paper as well as a publicly available open weights model that, according to Baidu, is being used all over China.
+[00:39:43.940 --> 00:39:48.240]   I obviously don't really know how big a deal that is in China.
+[00:39:48.240 --> 00:39:49.080]   It could be very big.
+[00:39:49.080 --> 00:39:49.860]   It might not be.
+[00:39:49.860 --> 00:39:50.800]   We just don't know.
+[00:39:50.800 --> 00:39:54.300]   But this is a very serious paper, so it's worth learning.
+[00:39:54.300 --> 00:40:00.360]   I also put all these into Gemini and OpenAI.
+[00:40:00.360 --> 00:40:02.420]   Let's see if you need those.
+[00:40:02.420 --> 00:40:05.880]   But I'll just kind of cover the main features that I thought was relevant.
+[00:40:05.880 --> 00:40:07.500]   Hey, wait, wait, wait.
+[00:40:07.500 --> 00:40:08.380]   Quick correction.
+[00:40:08.380 --> 00:40:11.100]   Mistral latest paper is pretty good.
+[00:40:11.520 --> 00:40:14.080]   Mistral, it came out June 12th.
+[00:40:14.080 --> 00:40:14.600]   June 12th.
+[00:40:14.600 --> 00:40:15.420]   Good reasoning paper.
+[00:40:15.420 --> 00:40:16.460]   Okay.
+[00:40:16.460 --> 00:40:24.780]   As much as they don't reason, recommendation from Nathan Lambert to, you know, good reasoning paper from Mistral earlier last month.
+[00:40:24.780 --> 00:40:25.620]   Okay.
+[00:40:25.620 --> 00:40:26.300]   I haven't read.
+[00:40:26.300 --> 00:40:27.540]   I haven't read Mistral.
+[00:40:28.400 --> 00:40:33.200]   I just know, like, Mistral small or Code Stral didn't have that much.
+[00:40:33.200 --> 00:40:35.280]   Okay.
+[00:40:35.280 --> 00:40:39.920]   So, I think it's important to always get a sense.
+[00:40:39.920 --> 00:40:41.740]   Like, this is how I wish papers were presented.
+[00:40:41.740 --> 00:40:45.000]   Like, I basically had to just go and rearrange a lot of things.
+[00:40:46.380 --> 00:40:48.800]   So, these are artifacts that have been released.
+[00:40:48.800 --> 00:40:54.040]   There are some MOEs, some non-MOEs, some multimodals, some not.
+[00:40:54.040 --> 00:41:04.100]   Always useful to have base models because I think you can do a lot more interesting things than just chat with models.
+[00:41:04.100 --> 00:41:06.760]   And I think that's very useful for research.
+[00:41:06.760 --> 00:41:18.080]   But, like, basically, they've tried to fill out the complete matrix of every possible thing with regards to multimodality and reasoning and sort of the sparsity.
+[00:41:19.440 --> 00:41:29.120]   Biggest claim, which, you know, nobody quite believes, but is that they're, you know, sort of GPT 4.5, but at, you know, 1% of the cost.
+[00:41:29.120 --> 00:41:38.440]   And, but, like, you know, I think there's several benchmarks at which they really did run against Quen and DeepSeek and O1.
+[00:41:38.440 --> 00:41:42.440]   And, you know, they're at least competitive, which is very cool.
+[00:41:42.440 --> 00:41:49.120]   Like, you know, I think those are basically the table stakes, you know, it's very, very high table stakes these days.
+[00:41:49.920 --> 00:41:55.140]   To meet when just releasing a model that at least warrants a bit of your interest.
+[00:41:55.140 --> 00:41:58.420]   And it's, so it's very, very hard to achieve there.
+[00:41:58.420 --> 00:42:03.360]   I think as far as learning goes, you know, you can talk about model performance all you want.
+[00:42:03.360 --> 00:42:09.780]   But really, like, these are the things that last in terms of the ideas, the contributions.
+[00:42:09.780 --> 00:42:13.060]   They have three that they call out.
+[00:42:13.060 --> 00:42:19.760]   I don't think these are super well organized because one and two kind of merge together and the three is the post-training one.
+[00:42:19.760 --> 00:42:25.220]   But I'll just kind of go through most of those in turn.
+[00:42:25.780 --> 00:42:35.900]   But I think, like, probably the clearest picture that you should get from this is that they really lean into this idea that you want to have independent vision experts.
+[00:42:35.900 --> 00:42:47.080]   And you want, you know, I think a lot of the normal classical sense of MOEs is that the way that MOE specialization works doesn't really work the way that human specialization does.
+[00:42:48.660 --> 00:42:54.580]   Because you want to token balance and they sort of learn token by token rather than by domain.
+[00:42:54.580 --> 00:43:02.700]   And you, like, the balancing objective actually tends to spread out expertise among experts as opposed to concentrate them.
+[00:43:02.700 --> 00:43:07.100]   So they have several different ways to do it.
+[00:43:07.100 --> 00:43:15.920]   I'll also put these text into GPT-4.0 to generate some slop, but it's just nice to look at.
+[00:43:15.920 --> 00:43:16.860]   It doesn't really do anything.
+[00:43:16.860 --> 00:43:21.820]   So pre-training.
+[00:43:21.820 --> 00:43:29.960]   I always like these kinds of tables because they are nice references for the key parameters that people should know.
+[00:43:30.480 --> 00:43:39.100]   I don't really see anything huge to call out except for the fact that they are starting.
+[00:43:39.100 --> 00:43:49.080]   I think this, like, shared experts thing is just something that they're trying to make a dent on as well as this idea of, like, dedicated vision experts.
+[00:43:50.360 --> 00:43:59.180]   So until now, I don't think I've seen any other people commenting about that or touting that as part of their pre-training.
+[00:43:59.180 --> 00:44:08.560]   I also, like, for researchers who are actually trying to replicate or reproduce, it's nice to see, like, magic parameters which they arrive at and, you know, just kind of use that.
+[00:44:08.560 --> 00:44:13.940]   But it's definitely more art than science, I would say, on all this stuff.
+[00:44:14.180 --> 00:44:16.540]   Did they share – well, can you go back a side?
+[00:44:16.540 --> 00:44:22.420]   Did they share why the small and big ones don't have shared experts?
+[00:44:22.420 --> 00:44:32.220]   Shared experts are, interestingly, only at the 21 and 28B kind of model, but not in the big ones, not the 300B and not the really small.
+[00:44:32.220 --> 00:44:36.700]   And also, interesting to note, I thought these sizes are very interesting.
+[00:44:36.700 --> 00:44:43.200]   Like, that 28B Mistral medium size is, like, a good sweet spot for consumer stuff.
+[00:44:43.200 --> 00:44:47.120]   It's no longer the 7, 13, and 70Bs.
+[00:44:47.120 --> 00:44:49.800]   24B-ish models are doing pretty good.
+[00:44:49.800 --> 00:44:53.140]   And then 0.3B just because they have to do one device.
+[00:44:53.140 --> 00:44:55.420]   And then, of course, a fat chunker.
+[00:44:55.420 --> 00:44:58.660]   But it's interesting that chunker doesn't have shared experts.
+[00:44:58.660 --> 00:45:01.240]   Yeah.
+[00:45:01.240 --> 00:45:05.740]   Honestly, I don't fully understand it enough to tell you.
+[00:45:05.740 --> 00:45:10.420]   I think that they've basically moved shared experts kind of into the routing layer.
+[00:45:10.420 --> 00:45:12.220]   They've done much more work on the routing side.
+[00:45:12.220 --> 00:45:31.320]   So they have a little diagram at the end where they did some rearrangements of MOEs where, like, basically, I would – the way I would characterize this is probably there's – the work that a shared expert would do is move to upper layer.
+[00:45:33.180 --> 00:45:34.180]   I don't know.
+[00:45:34.180 --> 00:45:34.540]   I don't know that for a fact.
+[00:45:34.540 --> 00:45:39.980]   I don't think – I wouldn't stand behind that as, like, that's a theory, not, like, something that's substantiated.
+[00:45:39.980 --> 00:45:41.740]   It might just be hallucinated by me.
+[00:45:45.380 --> 00:45:55.780]   Oh, another noticeable thing is that the way they named these models with the MOE models with the total params and the active params, this seems to be – I think it was started by Quinn or DeepSeq.
+[00:45:56.160 --> 00:46:03.220]   But this seems to be, like, the clearest way to communicate in the name as to if it's an MOE, what are the active params.
+[00:46:03.220 --> 00:46:10.740]   I think people are wisening out to the fact that, for example, Mistral has only been reporting active params as a matter of efficiency.
+[00:46:11.500 --> 00:46:17.120]   And as the number of experts increases, this divergence and the ratio will get higher.
+[00:46:17.120 --> 00:46:19.360]   Okay.
+[00:46:19.360 --> 00:46:22.700]   Let's go to multimodal MOE.
+[00:46:22.700 --> 00:46:26.620]   So they spend a lot of time talking about this, and we have more diagrams on their training.
+[00:46:27.780 --> 00:46:33.460]   But they always have, like, these kinds of commentary.
+[00:46:33.460 --> 00:46:37.720]   We'll talk about this later.
+[00:46:37.720 --> 00:46:40.440]   I don't think this slide comes in at the right point.
+[00:46:40.440 --> 00:46:48.080]   Datasets, basically no info, as far as I can tell, not even about, like, the number of trillions of parameters they train on.
+[00:46:48.080 --> 00:46:48.940]   They don't even say that.
+[00:46:48.940 --> 00:46:51.180]   So there was a lot of blah, blah, blah.
+[00:46:51.180 --> 00:46:54.880]   This originally was, like, datasets, nothing important was said.
+[00:46:55.180 --> 00:46:59.380]   But actually, if you read it closely, they actually do make a couple of comments.
+[00:46:59.380 --> 00:47:05.020]   So basically, there's a lot of natural language data that is useless.
+[00:47:05.020 --> 00:47:07.640]   So they use this DIKW framework.
+[00:47:07.640 --> 00:47:08.680]   I don't know what that is.
+[00:47:08.680 --> 00:47:14.040]   But they develop the five tiers of knowledge and basically mine for data knowledge.
+[00:47:14.040 --> 00:47:17.460]   And you also use synthetic data, which is kind of cool.
+[00:47:17.460 --> 00:47:22.660]   For multimodality, they use interleaved text and image.
+[00:47:22.660 --> 00:47:24.040]   This is a very common technique now.
+[00:47:24.720 --> 00:47:27.320]   Not just for vision, but also for image generation.
+[00:47:27.320 --> 00:47:41.560]   And then finally, for domain-specific data, again, a lot of, like, mining of data, but also particularly audio transcription of podcasts and YouTube.
+[00:47:42.420 --> 00:47:45.300]   So they don't say anything about where to get their video and podcasts.
+[00:47:45.300 --> 00:47:49.140]   But I think if you make more podcasts, you will become part of the training data, which is good.
+[00:47:49.140 --> 00:47:52.160]   But that's it on data.
+[00:47:52.160 --> 00:47:54.900]   It's really, really nothing specific.
+[00:47:54.900 --> 00:47:57.980]   But, like, it has some hints as to what they think is important.
+[00:48:00.460 --> 00:48:00.920]   Let's see.
+[00:48:00.920 --> 00:48:00.920]   Let's see.
+[00:48:00.920 --> 00:48:01.640]   How much time do we have?
+[00:48:01.640 --> 00:48:02.320]   We have nine minutes.
+[00:48:02.320 --> 00:48:02.780]   Okay.
+[00:48:02.780 --> 00:48:07.260]   They have two kinds of losses, which I thought was worth highlighting.
+[00:48:09.140 --> 00:48:17.820]   So, you know, I think a lot of sort of pre-training and innovation is in figuring out a better objective than the standard.
+[00:48:18.700 --> 00:48:28.240]   One is router with organization, which is really, you know, focused on expert specialization, which I thought was kind of cool.
+[00:48:29.900 --> 00:48:41.140]   And, you know, balancing that with the other loss that they have, which is a sort of standard cross-entropy, they have token balance loss, which normalizes by sequence length.
+[00:48:41.140 --> 00:48:52.400]   So I don't know if this one has as big of an impact, but it was big enough for them to call out as unique contributions, which I think is interesting.
+[00:48:52.780 --> 00:48:59.760]   Probably it also has more to do with multimodality than their sort of multimodal focus.
+[00:48:59.760 --> 00:49:11.720]   So if anything, I think this paper is giving much more insight into vision and multimodality training as well as vision MOEs, which I never really thought about.
+[00:49:11.720 --> 00:49:22.460]   And this is substantiated by the fact that in the post-train section, okay, they have a modality routing section, which I don't like.
+[00:49:22.460 --> 00:49:28.560]   Like this basically, this is their sort of visualization proof that these losses work and are better distributed.
+[00:49:28.560 --> 00:49:36.480]   I don't think you can read much from it apart from just like taking it on principle that this representation is correct.
+[00:49:36.480 --> 00:49:39.440]   It's more balanced.
+[00:49:39.440 --> 00:49:51.520]   There's a vision reasoning side that I wanted to highlight was down here where they talk about the reasoning VLM post-train.
+[00:49:52.140 --> 00:49:55.020]   which maybe has been written about by Quinn.
+[00:49:55.020 --> 00:49:56.160]   I don't think so.
+[00:49:56.160 --> 00:49:59.860]   I think I've browsed the Quinn blog posts, but they only put up blog posts.
+[00:49:59.860 --> 00:50:01.640]   I don't think that I've seen the technical report yet.
+[00:50:01.640 --> 00:50:08.960]   But here, they actually give you the whole recipe for training vision reasoning models.
+[00:50:08.960 --> 00:50:15.420]   And surprise, surprise, it is not just take a reasoning model, add a vision adapter, and you're done.
+[00:50:16.220 --> 00:50:20.160]   Actually, they do a lot of vision reasoning as well.
+[00:50:20.160 --> 00:50:23.440]   Part of it is caption synthesis of STEM images.
+[00:50:23.440 --> 00:50:29.520]   Part of it is this sort of three-stage process that they illustrate here.
+[00:50:29.520 --> 00:50:31.940]   But all of this is custom data.
+[00:50:32.560 --> 00:50:35.500]   This is a lot of work.
+[00:50:35.500 --> 00:50:40.200]   Visual STEM, visual puzzles, UI to code, hybrid reinforcement learning.
+[00:50:40.200 --> 00:50:48.900]   Just a lot of post-train data that they use to post-train their reasoning VLM capabilities.
+[00:50:49.440 --> 00:50:58.280]   So probably this is well-known if you train reasoning VLMs, but I think this is the first time it was laid out so clearly as far as I've seen it.
+[00:51:00.040 --> 00:51:06.860]   I'll make a comment also on just their general RL, not just the vision stuff, because we're covering this a little bit out of order.
+[00:51:06.860 --> 00:51:16.520]   So you have the base, and then in order to get the final post-train model, they went through a bunch of normal SFT, but then also three phases of RL.
+[00:51:17.700 --> 00:51:22.660]   This is the general logic corpus, this is math and code, and then this is general again.
+[00:51:22.660 --> 00:51:30.260]   And I like that they separated RL for verifiable domains, as well as RL for open-ended domains.
+[00:51:30.260 --> 00:51:34.460]   And I think these are basically the two categories and terminologies that people are settling on.
+[00:51:34.460 --> 00:51:41.660]   And so it's relatively clear that for math and code, you want something like this in terms of your RL.
+[00:51:42.200 --> 00:51:57.140]   For non-verifiable domains, it is emerging work, including our friend Nathan, that you have some other things that you want to scaffold on, basically just like checklist verifiers and reward models.
+[00:51:57.140 --> 00:52:09.660]   It's still very open-ended, but like, again, I like to see more work in this, and I think definitely this is like kind of the next frontier after verifiable, because verifiable is a little bit boring.
+[00:52:09.660 --> 00:52:12.540]   Like, everyone kind of knows what is verifiable.
+[00:52:12.540 --> 00:52:15.380]   It's the stuff that is not verifiable that is interesting.
+[00:52:15.380 --> 00:52:19.640]   Okay, there's five minutes left.
+[00:52:19.640 --> 00:52:22.320]   I don't know if there's any other interesting notables.
+[00:52:22.320 --> 00:52:26.620]   Oh, video sampling, video understanding.
+[00:52:26.620 --> 00:52:32.120]   Again, not just a series of images in chat format, and they are done.
+[00:52:32.660 --> 00:52:43.200]   They also do even more data and sort of post-trained work, including timestamp rendering that overlays absolute timestamp onto each frame.
+[00:52:43.200 --> 00:52:48.380]   So they just slap the timestamp on there.
+[00:52:49.520 --> 00:52:58.460]   So apparently, it improves temporal understanding by just kind of reusing the ability to read text from the image frame, which is kind of cool.
+[00:52:58.460 --> 00:53:03.580]   I don't know if this is like controversial or not, because obviously you're going to lose information.
+[00:53:03.580 --> 00:53:06.040]   That seems very bitter lesson.
+[00:53:06.040 --> 00:53:07.800]   Actually, you don't have to lose information.
+[00:53:07.800 --> 00:53:14.060]   You can mess with images, just add it in like two colors that cancel each other out.
+[00:53:14.060 --> 00:53:15.020]   The model can read it.
+[00:53:15.020 --> 00:53:19.700]   Or just append frames to the image, and now you can add in text.
+[00:53:19.700 --> 00:53:27.180]   But it feels like you should be able to just learn temporal consistency without a straight time overlay.
+[00:53:28.000 --> 00:53:46.000]   But anyway, if there's not that much more important, especially because I feel like you actually mess with a bit of temporal consistency when you have frames that go back and forth, and now you've overlaid time.
+[00:53:46.000 --> 00:53:51.520]   Some videos try to have time jumps and stuff.
+[00:53:51.520 --> 00:53:52.860]   And yeah, I don't know.
+[00:53:52.860 --> 00:53:53.560]   It just seems weird.
+[00:53:53.560 --> 00:54:00.000]   But the more interesting thing was actually the separation of vision thinking.
+[00:54:00.000 --> 00:54:09.400]   So like I was talking to someone about this quite a bit last week about how different models do either hybrid thinking or thinking and non-thinking models, right?
+[00:54:09.400 --> 00:54:14.840]   Like for OpenAI, you have the O-series, which are all thinking-only models.
+[00:54:14.840 --> 00:54:20.160]   And then you have like the regular models, which are not thinking models, and they separated them.
+[00:54:20.160 --> 00:54:25.640]   And you have to like do your own, like you have to basically load the entire model and serve it separately.
+[00:54:25.640 --> 00:54:30.020]   But then there's like Claude, which has hybrid thinking models.
+[00:54:30.020 --> 00:54:33.860]   And it's not that different to do these.
+[00:54:33.860 --> 00:54:42.460]   But then for like vision thinking, one thing that you can do is basically you already have, it's not like a different model architecture to do thinking, right?
+[00:54:42.700 --> 00:54:48.960]   It's just RL on next token prediction, and now the model will put out more thinkings before kind of boxing its answer.
+[00:54:48.960 --> 00:55:03.700]   So as long as you can encode the same modality in the same latent space, like if you can encode in images into a thinking model, it should be able to do the same reasoning style thinking per se over the image domain.
+[00:55:03.700 --> 00:55:13.280]   Now, stuff like this just shows that you can have specific visual, like reasoning questions in the training data, but you don't necessarily need it, right?
+[00:55:13.280 --> 00:55:17.120]   And like, it's kind of a switch that you can turn on and off with an adapter.
+[00:55:17.120 --> 00:55:19.540]   But yeah, they just take it further.
+[00:55:19.540 --> 00:55:26.760]   But then I thought the more interesting broader discussion is like, when to do thinking and non-thinking versus hybrid models.
+[00:55:29.640 --> 00:55:32.580]   But anyway, two minutes, I don't want to take care of paper time.
+[00:55:32.580 --> 00:55:36.220]   You're muted, by the way, Six.
+[00:55:36.220 --> 00:55:38.140]   Yeah, I'm done.
+[00:55:38.140 --> 00:55:44.300]   I think a lot of cool ideas and unclear how much they work.
+[00:55:44.300 --> 00:55:54.600]   And, you know, obviously, I think, you know, we have like two paragraphs here on video, like two paragraphs on data management, no code.
+[00:55:55.080 --> 00:55:59.700]   So it's just all like, cool, man, good for you, you know, that's where I'm at.
+[00:55:59.700 --> 00:56:05.060]   But like, for model architecture wise, they were actually very, very open, which is very cool.
+[00:56:05.060 --> 00:56:07.460]   So I think that's, that's, that's...
+[00:56:07.460 --> 00:56:17.140]   I feel like, I feel like once you give out weights, and like people know how to inference those weights, you know, you'll find out anyway, like, you'll find out active.
+[00:56:17.140 --> 00:56:27.280]   Yeah, so like exposing the thinking and why and doing this stuff helps people to learn and also contrast models easier.
+[00:56:29.360 --> 00:56:34.160]   Okay, any other questions, thoughts, comments?
+[00:56:34.160 --> 00:56:36.720]   I'm catching up on questions.
+[00:56:36.720 --> 00:56:42.140]   Your Discord invite server link is apparently broken.
+[00:56:42.140 --> 00:56:43.380]   Okay.
+[00:56:43.380 --> 00:56:44.920]   I created a new one.
+[00:56:44.920 --> 00:56:45.940]   I think it should work now.
+[00:56:45.940 --> 00:56:47.180]   Link is broken.
+[00:56:47.180 --> 00:56:48.100]   Where is it broken?
+[00:56:48.100 --> 00:56:49.400]   Yeah, yeah.
+[00:56:49.400 --> 00:56:55.200]   I think the invite link usually only lasts seven days by default if you try to invite someone.
+[00:56:55.200 --> 00:56:55.840]   Right.
+[00:56:55.980 --> 00:56:58.260]   So I changed it to an evergreen invite.
+[00:56:58.260 --> 00:57:02.260]   Maybe on the paper club link, it didn't do that.
+[00:57:02.260 --> 00:57:05.800]   But it's good to know if we have like a big one that's broken.
+[00:57:05.800 --> 00:57:07.500]   It should just update us in place.
+[00:57:07.500 --> 00:57:08.820]   Yeah, it's okay.
+[00:57:08.820 --> 00:57:09.800]   Anyway.
+[00:57:09.800 --> 00:57:11.620]   Thank you, guys.
+[00:57:11.620 --> 00:57:12.940]   Thank you.
+[00:57:12.940 --> 00:57:14.460]   Any volunteers for next week?
+[00:57:14.460 --> 00:57:15.200]   Volunteers, volunteers?
+[00:57:15.200 --> 00:57:16.060]   Yeah, any volunteers?
+[00:57:16.060 --> 00:57:17.500]   Latte, are you volunteering for next week?
+[00:57:17.500 --> 00:57:18.140]   No.
+[00:57:18.140 --> 00:57:19.260]   Someone do the menstrual thinking.
+[00:57:19.260 --> 00:57:20.300]   I will volunteer.
+[00:57:20.300 --> 00:57:21.460]   Yeah, we need a menstrual.
+[00:57:21.460 --> 00:57:22.560]   Yeah, you caught me.
+[00:57:22.560 --> 00:57:25.040]   If someone wants, we can half and half it.
+[00:57:25.460 --> 00:57:26.540]   You do half, I do half.
+[00:57:26.540 --> 00:57:27.700]   I did half, you don't want to do.
+[00:57:27.700 --> 00:57:29.060]   Yeah.
+[00:57:29.060 --> 00:57:32.800]   I'm going to volunteer myself to do half, so someone has to take the other half.
+[00:57:32.800 --> 00:57:34.840]   Unless we want half of paper next week.
+[00:57:34.840 --> 00:57:36.580]   Someone do half the fucking paper.
+[00:57:36.580 --> 00:57:37.920]   No, thank you.
+[00:57:37.920 --> 00:57:39.080]   Someone do half.
+[00:57:39.080 --> 00:57:39.820]   Pardon me.
+[00:57:39.820 --> 00:57:43.800]   Just a quick question on like, before we get to the shared experts and things like that from the Ernie paper,
+[00:57:43.920 --> 00:57:49.220]   is there a definitive paper on like MOE and like how mixture of experts came about or with a certain model paper?
+[00:57:49.220 --> 00:57:50.040]   Oh, yeah.
+[00:57:50.040 --> 00:57:50.980]   There is an MOE.
+[00:57:50.980 --> 00:57:52.920]   The OG one is no Shazir.
+[00:57:52.920 --> 00:57:54.000]   Okay.
+[00:57:54.000 --> 00:57:55.420]   What did he wrote about?
+[00:57:55.420 --> 00:57:57.020]   Is it the LSTM MOE?
+[00:57:57.020 --> 00:57:58.880]   I don't know.
+[00:57:58.880 --> 00:58:01.360]   Just look up Shazir et al MOE.
+[00:58:01.920 --> 00:58:05.940]   I have a list of good MOE papers you can post at some point.
+[00:58:05.940 --> 00:58:07.060]   I'm dropping the list.
+[00:58:07.060 --> 00:58:10.520]   I'm dropping the paper in the chat.
+[00:58:10.520 --> 00:58:11.340]   Appreciate it.
+[00:58:11.340 --> 00:58:11.640]   Thank you.
+[00:58:12.260 --> 00:58:19.340]   Yeah, I think there's basically, there's a history of MOEs.
+[00:58:19.340 --> 00:58:23.840]   You would definitely have to put Mistral 8x22B there.
+[00:58:23.840 --> 00:58:26.920]   Like Most, Mostral?
+[00:58:26.920 --> 00:58:29.040]   I forget.
+[00:58:29.040 --> 00:58:29.820]   Mistral.
+[00:58:29.820 --> 00:58:30.560]   Mistral.
+[00:58:30.560 --> 00:58:32.620]   Mistral 8x22B.
+[00:58:32.620 --> 00:58:36.260]   That was probably the biggest launch of that MOE, huh?
+[00:58:36.260 --> 00:58:38.620]   I don't know if it was the 8x22B.
+[00:58:38.620 --> 00:58:41.120]   It was first, it was the 8x7B.
+[00:58:41.420 --> 00:58:42.660]   Oh, 7B.
+[00:58:42.660 --> 00:58:43.240]   Oh, okay.
+[00:58:43.240 --> 00:58:45.440]   7B was first, the 22B was their update.
+[00:58:45.440 --> 00:58:51.800]   But the more interesting thing in like history of Mixture of Experts is like sparsity, like
+[00:58:51.800 --> 00:58:55.140]   dynamic active versus not active.
+[00:58:55.140 --> 00:59:00.760]   So like you have a super sparse one, like LAMA is 16B active, but 400 total, right?
+[00:59:00.760 --> 00:59:03.420]   So like those were kind of the advancements.
+[00:59:03.420 --> 00:59:07.020]   And then the very basic papers are just like, okay, here's a routing layer.
+[00:59:09.580 --> 00:59:11.700]   Here's what Mixture of Experts is.
+[00:59:11.700 --> 00:59:13.800]   Yeah, they'd be cool if we go over there.
+[00:59:13.800 --> 00:59:15.800]   We'll be part of Endless Paper Club.
+[00:59:15.800 --> 00:59:17.260]   We'll have a whole MOE day.
+[00:59:17.260 --> 00:59:17.900]   Got it.
+[00:59:17.900 --> 00:59:18.340]   Thank you, guys.
+[00:59:18.340 --> 00:59:19.960]   Cool, guys.
+[00:59:19.960 --> 00:59:23.540]   So who wants to do the Mistral paper with Vibu next week?
+[00:59:23.540 --> 00:59:25.860]   Volunteers get a special Discord badge.
+[00:59:25.860 --> 00:59:30.200]   Swix is going to create a special latent space volunteer badge.
+[00:59:30.260 --> 00:59:31.120]   And you get privileges.
+[00:59:31.120 --> 00:59:36.380]   Give me a badge like this.
+[00:59:36.380 --> 00:59:37.400]   Yeah.
+[00:59:37.400 --> 00:59:39.760]   Or you can have a badge like this.
+[00:59:39.760 --> 00:59:41.120]   Hang on, let me give you a badge too.
+[00:59:41.120 --> 00:59:42.760]   It's a digital badge.
+[00:59:42.760 --> 00:59:44.980]   I can give you this badge.
+[00:59:44.980 --> 00:59:46.040]   Oh, should I, should I, should I?
+[00:59:46.040 --> 00:59:48.000]   Virtual badge.
+[00:59:48.000 --> 00:59:49.280]   Oh, there.
+[00:59:49.280 --> 00:59:50.280]   You can have this badge.
+[00:59:50.280 --> 00:59:53.200]   Okay, I'm going to up it.
+[00:59:53.200 --> 00:59:53.520]   Mochi.
+[00:59:54.280 --> 00:59:55.440]   I'm going to give you this badge.
+[00:59:55.440 --> 00:59:57.700]   If you, if you volunteer.
+[00:59:57.700 --> 00:59:57.960]   Okay.
+[00:59:57.960 --> 01:00:00.500]   Mochi is up for now.
+[01:00:00.500 --> 01:00:04.260]   Just volunteer on the LM Paper Club Discord channel.
+[01:00:04.260 --> 01:00:05.600]   Yes, please.
+[01:00:05.600 --> 01:00:07.740]   Otherwise, yeah.
+[01:00:07.740 --> 01:00:09.140]   We'll probably have Nigel Strong.
+[01:00:09.140 --> 01:00:10.800]   I'm going to volunteer Fatima at one point.
+[01:00:10.800 --> 01:00:11.760]   Because I know she's watching.
+[01:00:11.760 --> 01:00:12.860]   Hi, Fatima.
+[01:00:12.860 --> 01:00:19.080]   I would, but we have a product launch next week.
+[01:00:19.080 --> 01:00:19.520]   So.
+[01:00:19.520 --> 01:00:21.960]   Okay, you can do the week after.
+[01:00:24.260 --> 01:00:26.380]   Okay, no pressure, no pressure.
+[01:00:26.380 --> 01:00:30.540]   I want the badge, the dog, the pin, and Discord privilege.
+[01:00:30.540 --> 01:00:32.580]   Jesus.
+[01:00:32.580 --> 01:00:34.580]   How about, how about we get the second dog?
+[01:00:34.580 --> 01:00:36.780]   Latte.
+[01:00:36.780 --> 01:00:38.220]   Where's Latte?
+[01:00:38.220 --> 01:00:42.320]   Oh, someone is taking, someone is volunteering in the chat.
+[01:00:42.320 --> 01:00:43.620]   Yikes.
+[01:00:43.620 --> 01:00:44.220]   Sicko.
+[01:00:44.220 --> 01:00:45.580]   So many puppies.
+[01:00:45.580 --> 01:00:46.660]   Yikes.
+[01:00:46.660 --> 01:00:47.700]   Yeah, yikes.
+[01:00:47.700 --> 01:00:48.580]   Oh, yikes.
+[01:00:48.580 --> 01:00:53.960]   Yeah, I'll, I'll, I'll, I'll take like a backup slot, but somebody that hasn't done it
+[01:00:53.960 --> 01:00:55.380]   before should definitely do it.
+[01:00:55.380 --> 01:00:56.580]   Yeah.
+[01:00:56.580 --> 01:01:03.100]   Because I've done it before and I can give myself the badge because I have mod privileges.
+[01:01:03.100 --> 01:01:07.860]   Volunteering is the gift that keeps on giving.
+[01:01:08.520 --> 01:01:13.020]   Yeah, so if anybody finds it, or if anybody finds the topic interesting, then you should
+[01:01:13.020 --> 01:01:16.760]   definitely take it from me, but I will take it if nobody takes it.
+[01:01:16.760 --> 01:01:19.120]   This, you can have this one-year-old doggo.
+[01:01:19.120 --> 01:01:20.320]   Doggo is one now.
+[01:01:20.320 --> 01:01:22.500]   You can have the whole, the whole girlie.
+[01:01:22.500 --> 01:01:23.520]   I'm going to have some.
+[01:01:23.520 --> 01:01:24.640]   Happy birthday to Vivo.
+[01:01:24.640 --> 01:01:26.460]   Doggo birthday.
+[01:01:26.460 --> 01:01:26.900]   Birthday?
+[01:01:26.900 --> 01:01:27.820]   Happy birthday, dude.
+[01:01:27.820 --> 01:01:29.340]   And mochi.
+[01:01:29.340 --> 01:01:30.660]   And mochi.
+[01:01:30.660 --> 01:01:32.560]   Actually, it was my birthday yesterday, too.
+[01:01:32.560 --> 01:01:33.600]   So, happy birthday, guys.
+[01:01:33.600 --> 01:01:34.360]   Wow.
+[01:01:34.360 --> 01:01:35.880]   You should have the same birthday as Hassan.
+[01:01:35.880 --> 01:01:37.520]   Hassan, too.
+[01:01:37.520 --> 01:01:39.420]   Okay, guys.
+[01:01:39.420 --> 01:01:41.220]   We're going to have happy birthday dumplings.
+[01:01:41.220 --> 01:01:43.560]   Okay.
+[01:01:43.560 --> 01:01:44.320]   Thanks, guys.
+[01:01:44.320 --> 01:01:45.300]   See you, everyone.
+[01:01:45.300 --> 01:01:45.920]   Bye.
+
