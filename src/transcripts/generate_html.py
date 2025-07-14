@@ -418,6 +418,10 @@ def generate_index_page(video_ids, channel_name):
                 video_id = extract_yt_id(video_id)
             details = fetch_video_details(video_id)
 
+            if details is None:
+                logging.warning(f"Could not fetch details for video ID {video_id}, skipping.")
+                continue
+
             video_id = details["id"]
             whisper_transcript_file = f"{video_id}.html"
 
