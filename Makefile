@@ -27,6 +27,12 @@ install:
 html:
 	python3 src/transcripts/generate_html.py
 
+indexes:
+	python src/transcripts/generate_html.py --force-indexes
+
+html_all:
+	python3 src/transcripts/generate_html.py --force-all
+
 transcribe_new:
 	./bash_transcribe_new_videos.sh
 #################################################################################
