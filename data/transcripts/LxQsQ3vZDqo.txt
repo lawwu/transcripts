@@ -1,0 +1,402 @@
+
+[00:00:00.000 --> 00:00:15.000]   .
+[00:00:15.000 --> 00:00:17.500]   There's a lot of attention in terms of how LLMs
+[00:00:17.500 --> 00:00:19.840]   are going to transform search.
+[00:00:19.840 --> 00:00:22.080]   Google search is having a revolution.
+[00:00:22.080 --> 00:00:24.400]   ChatGPT has a big chat interface.
+[00:00:24.400 --> 00:00:27.760]   Perplexity is a product that a lot of people use.
+[00:00:27.760 --> 00:00:32.160]   But I think recommendations is probably a bigger problem
+[00:00:32.160 --> 00:00:35.980]   that is under-hyped because it's kind of transparent
+[00:00:35.980 --> 00:00:37.540]   to the user.
+[00:00:37.540 --> 00:00:40.240]   And I think the application of LLMs to recommendations
+[00:00:40.240 --> 00:00:44.580]   is going to be a bigger consumer application than search.
+[00:00:44.580 --> 00:00:46.300]   So in terms of my talk, I just want
+[00:00:46.300 --> 00:00:48.460]   to introduce the problem of YouTube recommendations
+[00:00:48.460 --> 00:00:52.360]   and then talk about how we've built large recommender models.
+[00:00:52.360 --> 00:00:54.700]   We're adapting Gemini for YouTube.
+[00:00:54.700 --> 00:00:57.520]   How we build semantic ID and how we're using that.
+[00:00:57.520 --> 00:01:00.600]   And then end with this recipe of how you might use an LLM
+[00:01:00.600 --> 00:01:03.920]   to make a recommendation system.
+[00:01:03.920 --> 00:01:08.700]   To start, why this is important, who here watches YouTube
+[00:01:08.700 --> 00:01:10.620]   every day?
+[00:01:10.620 --> 00:01:13.860]   It's one of the biggest consumer apps in the world.
+[00:01:13.860 --> 00:01:17.300]   And a large majority of the watch time on YouTube
+[00:01:17.300 --> 00:01:20.080]   is driven by the recommendation system.
+[00:01:20.080 --> 00:01:22.700]   And we serve recommendations across home, Watch Next.
+[00:01:22.700 --> 00:01:24.360]   We have a big Shorts product.
+[00:01:24.360 --> 00:01:25.780]   And even a lot of our search results
+[00:01:25.780 --> 00:01:29.300]   are personalized in some way.
+[00:01:29.300 --> 00:01:34.500]   And so if you think about consumer applications of LLMs,
+[00:01:34.500 --> 00:01:37.600]   I think in terms of consumer engagement and impact,
+[00:01:37.600 --> 00:01:43.180]   recommendations is going to be a much bigger application
+[00:01:43.180 --> 00:01:44.100]   than searches.
+[00:01:44.100 --> 00:01:48.880]   And this is true of any consumer app with a billion DAO.
+[00:01:48.880 --> 00:01:51.960]   The way I think about the recommendation problem is you're
+[00:01:51.960 --> 00:01:57.700]   trying to learn this function of you get a user and their context
+[00:01:57.700 --> 00:01:58.640]   as input.
+[00:01:58.640 --> 00:02:02.320]   And you're trying to give them a bunch of recommendations.
+[00:02:02.320 --> 00:02:04.520]   At YouTube, we have a bunch of user information
+[00:02:04.520 --> 00:02:07.480]   like their demographics, their age, their gender,
+[00:02:07.480 --> 00:02:08.840]   where they're located.
+[00:02:08.840 --> 00:02:11.160]   We have a lot of context about them.
+[00:02:11.160 --> 00:02:13.780]   What are the last 100 videos they watched?
+[00:02:13.780 --> 00:02:15.700]   How deeply did they engage with them?
+[00:02:15.700 --> 00:02:16.840]   What did they comment on?
+[00:02:16.840 --> 00:02:18.660]   Who are they subscribed to?
+[00:02:18.660 --> 00:02:22.720]   And we use all of that to make video recommendations.
+[00:02:22.720 --> 00:02:25.720]   We've tried a lot of different modeling techniques here--
+[00:02:25.720 --> 00:02:28.480]   multi-headed rankers, embedding models,
+[00:02:28.480 --> 00:02:30.420]   sequence-to-sequence, transformers.
+[00:02:30.420 --> 00:02:32.860]   There's a long history.
+[00:02:32.860 --> 00:02:35.280]   And about two years ago, we started thinking,
+[00:02:35.280 --> 00:02:38.740]   how can we rethink this recommendation system
+[00:02:38.740 --> 00:02:42.880]   on top of Gemini, which has been making incredible progress
+[00:02:42.880 --> 00:02:43.860]   in modeling?
+[00:02:43.860 --> 00:02:47.740]   How can we adapt that for YouTube?
+[00:02:47.740 --> 00:02:49.360]   And so we've built this system, which
+[00:02:49.360 --> 00:02:53.580]   we call LRM, Large Recommender Model,
+[00:02:53.580 --> 00:02:56.240]   where we adapt Gemini for recommendations.
+[00:02:56.240 --> 00:03:00.760]   So we start with this base Gemini checkpoint.
+[00:03:00.760 --> 00:03:03.940]   And then we are adapting it for YouTube recommendations,
+[00:03:03.940 --> 00:03:06.940]   teaching it a lot of information about YouTube
+[00:03:06.940 --> 00:03:11.040]   to get this unified YouTube-specific checkpoint
+[00:03:11.040 --> 00:03:14.100]   of Gemini, which we call LRM.
+[00:03:14.100 --> 00:03:17.960]   Then we can align it for different recommendation-related tasks,
+[00:03:17.960 --> 00:03:22.240]   like retrieval and ranking, and basically
+[00:03:22.240 --> 00:03:24.400]   make a small custom version of this model
+[00:03:24.400 --> 00:03:27.600]   for all of the major recommendation surfaces.
+[00:03:27.600 --> 00:03:30.000]   And so this is a model that we have launched in production
+[00:03:30.000 --> 00:03:33.560]   at YouTube for a while in terms of the retrieval system.
+[00:03:33.560 --> 00:03:36.780]   And we're experimenting a lot on the ranking side.
+[00:03:36.780 --> 00:03:38.580]   So I want to start with just kind of explaining
+[00:03:38.580 --> 00:03:41.060]   how we built this YouTube and Gemini model.
+[00:03:41.060 --> 00:03:44.420]   And then we'll talk about how we use it for retrieval.
+[00:03:44.420 --> 00:03:46.680]   The first step of this kind of a model
+[00:03:46.680 --> 00:03:50.100]   is you have to develop a way to tokenize videos.
+[00:03:50.100 --> 00:03:56.280]   So in terms of an LLM, when you give it an input,
+[00:03:56.280 --> 00:03:58.860]   it tokenizes that text and then is predicting
+[00:03:58.860 --> 00:04:00.800]   the next text token.
+[00:04:00.800 --> 00:04:02.200]   The ideal product we wanted to make
+[00:04:02.200 --> 00:04:06.580]   was we want to give this model an input of a number of video
+[00:04:06.580 --> 00:04:09.540]   tokens and then just get video tokens out that would be
+[00:04:09.540 --> 00:04:12.520]   good recommendations.
+[00:04:12.520 --> 00:04:14.740]   We had to build this because even with a million tokens
+[00:04:14.740 --> 00:04:18.420]   of context, when you want to reason over many videos,
+[00:04:18.420 --> 00:04:22.280]   you have to compress that video representation in some way.
+[00:04:22.280 --> 00:04:24.220]   And before we kind of settle on this approach,
+[00:04:24.220 --> 00:04:28.220]   we tried a bunch of other things like predicting search queries
+[00:04:28.220 --> 00:04:31.580]   and retrieving videos through that or trying to just recommend
+[00:04:31.580 --> 00:04:32.780]   videos directly.
+[00:04:32.780 --> 00:04:35.000]   And those solutions were just not good enough.
+[00:04:35.000 --> 00:04:39.980]   So we built SemanticID, which we actually wrote a paper about last year,
+[00:04:39.980 --> 00:04:41.900]   and it was presented at Rexis.
+[00:04:41.900 --> 00:04:46.600]   The way that this SemanticID works is you take a video.
+[00:04:46.600 --> 00:04:48.380]   You extract a number of features out of it,
+[00:04:48.380 --> 00:04:51.160]   like the title, description, transcript,
+[00:04:51.160 --> 00:04:53.840]   even the audio and video frame level data.
+[00:04:53.840 --> 00:04:58.120]   You put all of that into a multidimensional embedding.
+[00:04:58.120 --> 00:05:05.220]   And then you quantize it using RQVAE to give every video a token.
+[00:05:05.220 --> 00:05:07.060]   We've written a pretty detailed paper about this,
+[00:05:07.060 --> 00:05:08.100]   if people are interested.
+[00:05:08.100 --> 00:05:10.000]   But at a high level, the way I think about this
+[00:05:10.000 --> 00:05:14.320]   is we're making the atomic units for a new language
+[00:05:14.320 --> 00:05:16.600]   of YouTube videos.
+[00:05:16.600 --> 00:05:18.340]   Once we have these tokens, you can
+[00:05:18.340 --> 00:05:21.880]   imagine the whole corpus of billions of videos on YouTube
+[00:05:21.880 --> 00:05:25.820]   gets organized around these semantically meaningful tokens.
+[00:05:25.820 --> 00:05:27.520]   And so you could imagine the first token
+[00:05:27.520 --> 00:05:30.280]   representing topics like music, gaming, sports.
+[00:05:30.280 --> 00:05:32.900]   Within sports, you would have different sports.
+[00:05:32.900 --> 00:05:35.600]   And then you can get to volleyball.
+[00:05:35.600 --> 00:05:37.240]   And so these two volleyball videos
+[00:05:37.240 --> 00:05:40.000]   would share some tokens in the prefix,
+[00:05:40.000 --> 00:05:43.600]   but also then have a unique identifier.
+[00:05:43.600 --> 00:05:46.900]   And this, I think, in itself is an interesting milestone
+[00:05:46.900 --> 00:05:48.980]   to move away from hash-based tokenization
+[00:05:48.980 --> 00:05:51.480]   into a semantically meaningful one.
+[00:05:51.480 --> 00:05:55.620]   And we use this in production at YouTube.
+[00:05:55.620 --> 00:05:58.300]   What we then tried to do is this process
+[00:05:58.300 --> 00:06:00.360]   of what we call continued pre-training,
+[00:06:00.360 --> 00:06:01.720]   where we're trying to take this model
+[00:06:01.720 --> 00:06:05.640]   and have it understand both English and this new YouTube
+[00:06:05.640 --> 00:06:06.880]   language.
+[00:06:06.880 --> 00:06:09.840]   And we do this in two big steps.
+[00:06:09.840 --> 00:06:12.880]   One is around linking text and SID.
+[00:06:12.880 --> 00:06:15.220]   And then the second step is around having it
+[00:06:15.220 --> 00:06:17.840]   understand sequences of watches and be able to reason
+[00:06:17.840 --> 00:06:19.880]   across this video space.
+[00:06:19.880 --> 00:06:22.340]   And so some of the example training tasks
+[00:06:22.340 --> 00:06:24.440]   that we're teaching this model--
+[00:06:24.440 --> 00:06:25.460]   you have this video.
+[00:06:25.460 --> 00:06:28.680]   It's a tennis highlights video which has some semantic ID.
+[00:06:28.680 --> 00:06:32.400]   And you can prompt it and say, hey, this video has title XYZ.
+[00:06:32.400 --> 00:06:36.180]   And the model starts to learn to output the title.
+[00:06:36.180 --> 00:06:38.520]   You could imagine a very similar thing where you could say,
+[00:06:38.520 --> 00:06:42.680]   it has creator, or it has topics, and so on.
+[00:06:42.680 --> 00:06:45.840]   And so you're basically trying to connect text and this video
+[00:06:45.840 --> 00:06:47.680]   token.
+[00:06:47.680 --> 00:06:51.480]   Then what we can try to do is we have a corpus of all the YouTube
+[00:06:51.480 --> 00:06:55.180]   engagement data, all the paths that users took through YouTube
+[00:06:55.180 --> 00:06:57.180]   when they watch videos together.
+[00:06:57.180 --> 00:06:58.720]   And you can prompt the model with things
+[00:06:58.720 --> 00:07:01.980]   like, a user has watched the following videos, A, B, C, D,
+[00:07:01.980 --> 00:07:04.180]   and you mask some of those videos.
+[00:07:04.180 --> 00:07:07.220]   And the model starts to learn to predict those masks.
+[00:07:07.220 --> 00:07:09.520]   And now it's starting to understand what are videos that
+[00:07:09.520 --> 00:07:13.740]   are watched together and make relationships between videos
+[00:07:13.740 --> 00:07:17.460]   on the basis of user engagement, right?
+[00:07:17.460 --> 00:07:21.200]   After a bunch of pre-training tasks like this,
+[00:07:21.200 --> 00:07:23.100]   we get this really interesting model
+[00:07:23.100 --> 00:07:26.880]   that can reason across English and YouTube videos.
+[00:07:26.880 --> 00:07:30.460]   And so this is an example from a user's watch history.
+[00:07:30.460 --> 00:07:35.300]   And we find that this model can now reason across these videos.
+[00:07:35.300 --> 00:07:37.200]   So you could prompt it with things like, hey,
+[00:07:37.200 --> 00:07:39.300]   video one is interesting to tennis fans
+[00:07:39.300 --> 00:07:40.840]   because it's about Wimbledon.
+[00:07:40.840 --> 00:07:43.640]   Video two is interesting for F1 because it's
+[00:07:43.640 --> 00:07:45.120]   about the Spanish Grand Prix.
+[00:07:45.120 --> 00:07:48.280]   Video three is interesting to math fans because it's about Pi.
+[00:07:48.280 --> 00:07:50.580]   And then you prompt video four is going to be interesting, too.
+[00:07:50.580 --> 00:07:53.640]   And the model starts to be able to understand
+[00:07:53.640 --> 00:07:56.920]   that it's interesting technology fans because it's about AI.
+[00:07:56.920 --> 00:08:03.780]   And this is just based on the semantic ID definition of a video.
+[00:08:03.780 --> 00:08:07.560]   It doesn't really have a lot of other information to go off of.
+[00:08:07.560 --> 00:08:11.800]   So I think this in itself is a very interesting checkpoint
+[00:08:11.800 --> 00:08:15.880]   that is starting to reason across English and YouTube.
+[00:08:15.880 --> 00:08:20.160]   Once we have this model, we think about how we can use this
+[00:08:20.160 --> 00:08:24.160]   for different video recommendation tasks at YouTube.
+[00:08:24.160 --> 00:08:27.060]   And the first one that we focus on is generative retrieval.
+[00:08:27.060 --> 00:08:31.120]   And so here, you could just construct a prompt for every user
+[00:08:31.120 --> 00:08:32.860]   and see what this model recommends.
+[00:08:32.860 --> 00:08:36.180]   And so in this example, you have a user.
+[00:08:36.180 --> 00:08:40.260]   They would be a 24-year-old woman in the US on Android.
+[00:08:40.260 --> 00:08:45.140]   They're watching this highlight video from the Olympics.
+[00:08:45.140 --> 00:08:48.540]   And they have some watch history of 50 videos
+[00:08:48.540 --> 00:08:51.820]   they've watched in the past, how they engaged with it.
+[00:08:51.820 --> 00:08:54.360]   And you can just construct a prompt like we have on the right
+[00:08:54.360 --> 00:08:58.140]   with this user demographic information, the context video,
+[00:08:58.140 --> 00:09:04.000]   and have the model decode some video recommendations as SIDs.
+[00:09:04.000 --> 00:09:09.340]   We find that this gives really interesting, unique recommendations,
+[00:09:09.340 --> 00:09:12.520]   especially for our hardest recommendation tasks.
+[00:09:12.520 --> 00:09:16.400]   So in this example, when you're watching this highlight
+[00:09:16.400 --> 00:09:18.940]   from the Olympics, the production system
+[00:09:18.940 --> 00:09:25.160]   before LRM would give you other men's track races.
+[00:09:25.160 --> 00:09:28.720]   Now, with this new model, it's able to find this unique connection
+[00:09:28.720 --> 00:09:33.020]   between the user demographic and their past watch history
+[00:09:33.020 --> 00:09:38.260]   and find related women's races that we weren't able to recommend
+[00:09:38.260 --> 00:09:39.660]   in the past.
+[00:09:39.660 --> 00:09:42.500]   And so we find that, especially for users
+[00:09:42.500 --> 00:09:45.080]   where we don't know as much about them,
+[00:09:45.080 --> 00:09:47.540]   we get very interesting and unique recommendations
+[00:09:47.540 --> 00:09:48.380]   out of this strategy.
+[00:09:48.380 --> 00:09:53.260]   And so we've experimented with this
+[00:09:53.260 --> 00:09:56.600]   and launched it in a few places at YouTube.
+[00:09:56.600 --> 00:10:00.420]   The big findings from this is that LRM is a very powerful model,
+[00:10:00.420 --> 00:10:02.360]   but it's really expensive to serve.
+[00:10:02.360 --> 00:10:04.440]   It learns very quickly.
+[00:10:04.440 --> 00:10:06.860]   It's very training data efficient.
+[00:10:06.860 --> 00:10:09.340]   And it handles our toughest recs tasks.
+[00:10:09.340 --> 00:10:12.720]   But the biggest limitation was that the serving costs are too high,
+[00:10:12.720 --> 00:10:14.960]   especially for the scale that YouTube operates at,
+[00:10:14.960 --> 00:10:16.420]   with billions of users.
+[00:10:16.420 --> 00:10:19.160]   And so after we got our first experiments working,
+[00:10:19.160 --> 00:10:22.820]   we spent a lot of time just reducing the TPU serving cost.
+[00:10:22.820 --> 00:10:27.480]   And we got 95% plus cost savings to be able to actually launch this
+[00:10:27.480 --> 00:10:30.260]   in production.
+[00:10:30.260 --> 00:10:34.060]   One other strategy that we used, which I think is kind of interesting,
+[00:10:34.060 --> 00:10:39.740]   is we tried to turn this into an offline problem, where it's the same prompt
+[00:10:39.740 --> 00:10:41.200]   in the same model.
+[00:10:41.200 --> 00:10:45.880]   We just removed the personalized aspects of this prompt.
+[00:10:45.880 --> 00:10:49.380]   And we wanted to build just an offline recommendations table,
+[00:10:49.380 --> 00:10:53.140]   where if you're watching video A, what are the candid videos
+[00:10:53.140 --> 00:10:55.200]   that would be good to watch next?
+[00:10:55.200 --> 00:11:01.620]   And normally, these unpersonalized recommendation models just don't hold a candle
+[00:11:01.620 --> 00:11:03.340]   to a personalized recommender.
+[00:11:03.340 --> 00:11:08.000]   But because this LRM is trained from a really big checkpoint,
+[00:11:08.000 --> 00:11:11.400]   it actually gives us some differentiated recommendations.
+[00:11:11.400 --> 00:11:15.400]   And so in the YouTube context, we can take our corpus of billions of videos,
+[00:11:15.400 --> 00:11:18.740]   look at the head, which represent a lot of the watch time,
+[00:11:18.740 --> 00:11:24.340]   and do offline inference, make this offline RECS table,
+[00:11:24.340 --> 00:11:27.480]   and then we can just do a simple lookup to serve some recommendations.
+[00:11:27.480 --> 00:11:31.840]   And so this was kind of a complete way around our serving problems.
+[00:11:31.840 --> 00:11:37.200]   I want to talk a bit about the challenges for YouTube.
+[00:11:37.200 --> 00:11:41.800]   And I think in some ways, making an LLM-based recommendation system
+[00:11:41.800 --> 00:11:43.600]   is harder than training an LLM.
+[00:11:44.800 --> 00:11:49.200]   One of the big differences is the vocabulary and size of the corpus, right?
+[00:11:49.200 --> 00:11:52.260]   So for Gemini, if you're training an English LLM,
+[00:11:52.260 --> 00:11:56.940]   your vocabulary is about 100,000 words in the Oxford Dictionary,
+[00:11:56.940 --> 00:11:58.940]   and they add about 1,000 words every year.
+[00:11:58.940 --> 00:12:03.660]   At YouTube, if you imagine the library of YouTube,
+[00:12:03.660 --> 00:12:05.200]   it has billions of videos.
+[00:12:05.200 --> 00:12:06.900]   We have 20 billion videos on YouTube,
+[00:12:06.900 --> 00:12:10.200]   with millions added every day.
+[00:12:12.700 --> 00:12:15.200]   And the freshness of videos is really important,
+[00:12:15.200 --> 00:12:16.700]   much more so than LLMs.
+[00:12:16.700 --> 00:12:19.900]   So if you think about a new word that's added to the English Dictionary,
+[00:12:19.900 --> 00:12:21.560]   word of 2023 was Riz.
+[00:12:21.560 --> 00:12:25.740]   If your model Gemini doesn't know about Riz,
+[00:12:25.740 --> 00:12:29.560]   it can still answer 99% of questions that people would have.
+[00:12:29.560 --> 00:12:30.800]   Maybe it misses some jokes.
+[00:12:30.800 --> 00:12:32.700]   Maybe it misses some pop culture references.
+[00:12:32.700 --> 00:12:35.240]   But in the world of YouTube,
+[00:12:35.240 --> 00:12:38.060]   if Taylor Swift drops a new music video,
+[00:12:38.060 --> 00:12:41.900]   you have to be able to recommend it within the next minutes or hours.
+[00:12:42.100 --> 00:12:44.300]   Otherwise, a lot of users are going to be upset.
+[00:12:44.300 --> 00:12:47.560]   So, even within this large corpus,
+[00:12:47.560 --> 00:12:49.100]   you have to very quickly understand
+[00:12:49.100 --> 00:12:50.800]   what are the videos that are important
+[00:12:50.800 --> 00:12:52.800]   and start recommending them to the right user.
+[00:12:52.800 --> 00:12:57.100]   And so, what we do with this LRM recommender
+[00:12:57.100 --> 00:13:00.300]   is we have to continuously pre-train it
+[00:13:00.300 --> 00:13:02.300]   on the order of days and hours,
+[00:13:02.300 --> 00:13:06.700]   which is very different than classical LLM pre-training like Gemini,
+[00:13:06.700 --> 00:13:09.360]   which happens maybe like once in three to six months.
+[00:13:09.360 --> 00:13:12.900]   And so, in that way, it's a much harder problem.
+[00:13:12.900 --> 00:13:15.800]   And then the last part is scale.
+[00:13:15.800 --> 00:13:18.400]   We have great models in Gemini.
+[00:13:18.400 --> 00:13:19.900]   Gemini Pro is incredible.
+[00:13:19.900 --> 00:13:21.900]   But there's no way that you can serve that
+[00:13:21.900 --> 00:13:23.900]   to billions of daily active users.
+[00:13:25.200 --> 00:13:27.400]   And so, for YouTube, we had to focus on
+[00:13:27.400 --> 00:13:30.400]   the smaller, more efficient models like Flash
+[00:13:30.400 --> 00:13:32.400]   and even smaller checkpoints than that
+[00:13:32.400 --> 00:13:36.200]   just to be able to hit the latency and scale requirements that we have.
+[00:13:38.400 --> 00:13:41.600]   So, I kind of want to summarize the journey that we've been on YouTube
+[00:13:41.600 --> 00:13:45.400]   in this, what I think of as a LLM and Rexxus recipe
+[00:13:45.400 --> 00:13:47.900]   that you can maybe adapt to your own application.
+[00:13:47.900 --> 00:13:50.400]   And there's three major steps to this, right?
+[00:13:50.400 --> 00:13:53.400]   The first is you want to find a way to tokenize your content.
+[00:13:53.400 --> 00:13:56.400]   Just like LLM's tokenized text,
+[00:13:56.400 --> 00:14:01.400]   you want to make some essence of your content into an atomic token.
+[00:14:01.400 --> 00:14:03.900]   One way to do that, which we've done,
+[00:14:03.900 --> 00:14:06.900]   is you find some rich representation, a bunch of features,
+[00:14:06.900 --> 00:14:10.900]   build an embedding, and then find a way to tokenize or quantize it.
+[00:14:10.900 --> 00:14:12.800]   And the outcome of this is like,
+[00:14:12.800 --> 00:14:15.500]   you're making your own domain-specific language.
+[00:14:15.500 --> 00:14:19.900]   The second step is, you then want to adapt the LLM
+[00:14:19.900 --> 00:14:24.100]   and basically make links between English and your domain language,
+[00:14:24.100 --> 00:14:28.600]   and find training tasks that help you reason across English
+[00:14:28.600 --> 00:14:30.200]   and these new tokens you've built.
+[00:14:30.200 --> 00:14:33.000]   And so, the outcome after this step in my mind is,
+[00:14:33.000 --> 00:14:36.200]   it's a bilingual LLM that can speak English
+[00:14:36.200 --> 00:14:37.100]   such a natural language,
+[00:14:37.100 --> 00:14:40.100]   but it can also speak your domain-specific language.
+[00:14:40.100 --> 00:14:42.100]   And then once you have this,
+[00:14:42.100 --> 00:14:44.800]   you can do the third step of prompting it with user information,
+[00:14:44.800 --> 00:14:49.800]   where you can just construct personalized prompts with user demographic,
+[00:14:49.800 --> 00:14:52.100]   user activity, different actions,
+[00:14:52.100 --> 00:14:55.700]   and then train task-specific or surface-specific models.
+[00:14:55.900 --> 00:15:00.800]   And you have a generative recommendation system on top of an LLM.
+[00:15:00.800 --> 00:15:04.800]   And this is like a tweet-sized summary of maybe two years of work.
+[00:15:04.800 --> 00:15:11.800]   Maybe the last thing that I want to talk about is kind of where I see this going,
+[00:15:11.800 --> 00:15:15.800]   and some possible future directions for LLM and Rexis.
+[00:15:15.800 --> 00:15:21.700]   I think the stage that we're at right now is that LLMs are just augmenting recommendations.
+[00:15:21.700 --> 00:15:25.700]   They bring these magical recommendation experiences.
+[00:15:25.700 --> 00:15:29.700]   They enhance the quality, but they're largely invisible to users.
+[00:15:29.700 --> 00:15:32.600]   Like, your YouTube feed just got better,
+[00:15:32.600 --> 00:15:35.600]   but you don't really know whether a Gemini inference happened or not.
+[00:15:35.600 --> 00:15:40.600]   This is why I think the LLM application of Rexis is very under-hyped,
+[00:15:40.600 --> 00:15:43.600]   because users don't directly know what's happening.
+[00:15:43.600 --> 00:15:47.600]   I think we're close to a world and we're experimenting with this.
+[00:15:47.600 --> 00:15:52.500]   If you have, like, we talked about a bilingual LLM across English and recommendations,
+[00:15:52.500 --> 00:15:55.500]   users can then talk to it in natural language.
+[00:15:55.500 --> 00:15:57.500]   And I think you're going to start to see experiences
+[00:15:57.500 --> 00:16:01.500]   where users can steer recommendations to their own goals.
+[00:16:01.500 --> 00:16:06.500]   The recommender can explain why a candidate was recommended to a user.
+[00:16:06.500 --> 00:16:11.500]   And users can start to align it towards their own goals expressed in natural language.
+[00:16:11.500 --> 00:16:16.500]   And I think also the lines between search and recommendations start to blur in this world.
+[00:16:16.500 --> 00:16:23.400]   And then maybe a hint of the future is I think you're going to see recommendation
+[00:16:23.400 --> 00:16:27.400]   and generative content start to come together in the future,
+[00:16:27.400 --> 00:16:33.400]   where we're going to be recommending a personalized version of a piece of content.
+[00:16:33.400 --> 00:16:35.400]   And in the future, instead of recommending content,
+[00:16:35.400 --> 00:16:37.400]   we may even start creating it.
+[00:16:37.400 --> 00:16:42.400]   And you can get to really interesting NF1 content that's generated for the user.
+[00:16:42.400 --> 00:16:45.400]   I think we're a bit away from this,
+[00:16:45.400 --> 00:16:52.300]   but it's going to come sooner than you expect with all of the advances happening in AI.
+[00:16:52.300 --> 00:16:54.300]   So, yeah.
+[00:16:54.300 --> 00:16:55.300]   Thank you.
+[00:16:55.300 --> 00:16:56.300]   I'll take any questions.
+[00:16:56.300 --> 00:16:57.300]   Thank you, Devan.
+[00:16:57.300 --> 00:16:58.300]   We have time for a few questions.
+[00:16:58.300 --> 00:16:59.300]   Hi.
+[00:16:59.300 --> 00:17:00.300]   Great talk.
+[00:17:00.300 --> 00:17:13.200]   One question on generally how you balance the learning of the semantic ID embeddings
+[00:17:13.200 --> 00:17:21.200]   within the model versus keeping the general language capability not damaged by learning through,
+[00:17:21.200 --> 00:17:27.200]   for example, a tokenized user history, which is a very second language, very different from English.
+[00:17:27.200 --> 00:17:31.100]   Any high-level takeaway that you can share?
+[00:17:31.100 --> 00:17:34.100]   That's a super interesting question.
+[00:17:34.100 --> 00:17:36.100]   We've struggled with this a lot.
+[00:17:36.100 --> 00:17:42.100]   In terms of some of our early applications, we mostly cared just about recommendation quality,
+[00:17:42.100 --> 00:17:46.100]   in which case we over-indexed on speaking the semantic ID language.
+[00:17:46.100 --> 00:17:52.000]   And as you over-train on more and more of those examples, actually the model forgets to speak English.
+[00:17:52.000 --> 00:17:58.000]   Maybe it's reasoning in some intermediate layers, which finally end up in semantic ID language.
+[00:17:58.000 --> 00:18:07.000]   We are trying a bunch of things like, you know, with mixture of experts, maybe we can have a few experts that retain the text capability,
+[00:18:07.000 --> 00:18:11.900]   while other experts focus on the semantic ID capability.
+[00:18:11.900 --> 00:18:19.800]   And so, it's a balance, and I think we're going to shift more towards text as we try to build these interactive experiences,
+[00:18:19.800 --> 00:18:22.800]   where text input from users is going to become more important.
+[00:18:22.800 --> 00:18:23.800]   Thank you.
+[00:18:23.800 --> 00:18:36.800]   So, during this process, did you learn any good suggestions for cold-starting embeddings on these domain-specific tokens?
+[00:18:36.800 --> 00:18:42.700]   Yeah, so the semantic, one thing is semantic ID training process is entirely unsupervised.
+[00:18:42.700 --> 00:18:47.700]   We're not telling, like, it's making its own quantization of the video corpus.
+[00:18:47.700 --> 00:18:54.700]   When you sample to see what the model is doing, we find that it's learning concepts like sports versus movies and entertainment.
+[00:18:54.700 --> 00:18:59.700]   But we didn't actually try to teach that explicitly, which I think is very interesting.
+[00:18:59.700 --> 00:19:07.600]   I think the sidekick aspect is, because of semantic ID, we can warm start into a semantically meaningful space.
+[00:19:07.600 --> 00:19:15.600]   And what we find is performance for videos that were uploaded in the last day or the last week gets much better,
+[00:19:15.600 --> 00:19:19.600]   because we're better understanding this fresh entailed content.
+[00:19:19.600 --> 00:19:21.600]   Got it. Thank you.
+[00:19:21.600 --> 00:19:24.500]   Hey, quick question.
+[00:19:24.500 --> 00:19:30.500]   So, when you said you extract frames as part of making the semantic ID, are you just running a video at,
+[00:19:30.500 --> 00:19:37.500]   let's say, 3 to 30 FPS, making a grid of them, running siglip or siglip2, and inserting that?
+[00:19:37.500 --> 00:19:41.500]   We're just trying to sample video frames.
+[00:19:41.500 --> 00:19:49.200]   We've tried a few different approaches where, like, maybe we try to sample from, like, key moments in the video.
+[00:19:49.200 --> 00:19:57.100]   We actually have the engagement data, if you've seen in the YouTube player, it can highlight what are the places where people had the most engagement.
+[00:19:57.100 --> 00:19:59.100]   So we try to sample from there.
+[00:19:59.100 --> 00:20:05.100]   You know, given the scale, we can't sample a lot of video frames, so we try to intelligently select it.
+[00:20:05.100 --> 00:20:09.100]   But we do have video frames, and over time, I think we'll get more.
+[00:20:09.100 --> 00:20:18.100]   In this way of selecting it, are you able to highlight important things that are based on small objects in a video pretty well?
+[00:20:18.100 --> 00:20:24.000]   Let's say it's a person in the distance that's of attention of this video.
+[00:20:24.000 --> 00:20:30.000]   Hard to say, because, like, at the end, all of this video information gets compressed into eight tokens.
+[00:20:30.000 --> 00:20:40.000]   So, it's probably learning something, but it's hard to know exactly, you know, what it picked up from that video frame.
+[00:20:40.000 --> 00:20:41.900]   So, yeah.
+[00:20:41.900 --> 00:20:43.900]   So, it's unclear.
+[00:20:43.900 --> 00:20:44.900]   Thank you.
+[00:20:44.900 --> 00:20:45.900]   Yeah.
+[00:20:45.900 --> 00:20:46.900]   So, yeah.
+[00:20:46.900 --> 00:20:48.900]   It was a pretty good talk.
+[00:20:48.900 --> 00:20:51.900]   I want to have a question regarding pre-training.
+[00:20:51.900 --> 00:20:52.900]   Okay.
+[00:20:52.900 --> 00:20:59.900]   So, did you also fit in a user query and what they watched also as a pre-training data?
+[00:20:59.900 --> 00:21:09.800]   If yes, then did you also use semantic ID for user as well in a pre-training or just semantic ID is only for the videos?
+[00:21:09.800 --> 00:21:10.800]   Yeah.
+[00:21:10.800 --> 00:21:11.800]   Yeah.
+[00:21:11.800 --> 00:21:15.800]   So, in this case, we have only tokenized videos.
+[00:21:15.800 --> 00:21:27.700]   And we focused more on sequences of watches rather than search query to what watch originated from that search query.
+[00:21:27.700 --> 00:21:37.700]   You could imagine some parallel work where you try to tokenize users and build some kind of user token that represents, like, the last 500 watches that they have had and so on.
+[00:21:37.700 --> 00:21:40.600]   We've experimented with some stuff there.
+[00:21:40.600 --> 00:21:42.600]   I think it's less far along.
+[00:21:42.600 --> 00:21:43.600]   But, yeah.
+[00:21:43.600 --> 00:21:46.600]   I think it's a very interesting, like, research direction to do.
+[00:21:46.600 --> 00:21:52.600]   So, the pre-training was done on top of existing Gemini pre-trained model, right?
+[00:21:52.600 --> 00:21:53.600]   Yeah.
+[00:21:53.600 --> 00:22:02.600]   We basically take a Gemini checkpoint and then adapt it for this YouTube purpose and get this, like, YouTube and Gemini LRM checkpoint.
+[00:22:02.600 --> 00:22:03.600]   Okay.
+[00:22:03.600 --> 00:22:04.600]   Yeah.
+[00:22:04.600 --> 00:22:09.500]   So, last -- it would be cool to see cementing ID of videos to V03, you know.
+[00:22:09.500 --> 00:22:10.500]   Yeah.
+[00:22:10.500 --> 00:22:11.500]   Hey.
+[00:22:11.500 --> 00:22:12.500]   I'm kind of curious.
+[00:22:12.500 --> 00:22:18.500]   How much improvement do we see compared to the non-LLM or more traditional recommendation system?
+[00:22:18.500 --> 00:22:21.500]   And when should we use a more traditional one?
+[00:22:21.500 --> 00:22:24.500]   And when should we use LLM-based recommendation system?
+[00:22:24.500 --> 00:22:25.500]   Yeah.
+[00:22:25.500 --> 00:22:27.500]   I can't really share metrics.
+[00:22:27.500 --> 00:22:31.500]   Like, I was -- I can share everything except code and metrics, you know?
+[00:22:31.500 --> 00:22:36.500]   And so, we've given you as much conceptual steps of what we did.
+[00:22:36.500 --> 00:22:42.400]   Maybe what I'll say is, I think it's been the biggest improvement to recommendation quality we've seen in the last few years.
+[00:22:42.400 --> 00:22:44.400]   So, I do think it's quite significant.
+[00:22:44.400 --> 00:22:45.400]   Thank you.
+[00:22:45.400 --> 00:22:45.400]   Thank you.
+[00:22:45.400 --> 00:22:45.400]   Thank you.
+[00:22:45.400 --> 00:22:46.400]   Thank you.
+[00:22:46.400 --> 00:22:50.460]   We'll see you next time.
+
