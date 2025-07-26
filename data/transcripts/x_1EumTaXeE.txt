@@ -1,0 +1,151 @@
+
+[00:00:00.000 --> 00:00:25.320]   it's great to be here so I'm Josh Albrecht I'm the CTO of imbue and our focus is on making more
+[00:00:25.320 --> 00:00:31.800]   robust useful AI agents in particular focusing on software agents right now and the main product
+[00:00:31.800 --> 00:00:37.880]   that we're working on today is called sculptor so the purpose of sculptor is to kind of help us with
+[00:00:37.880 --> 00:00:42.940]   something that we've all experienced you know we've all tried these vibe coding tools and you
+[00:00:42.940 --> 00:00:48.660]   you know tell it to go off and do something it goes off and creates a bunch of code for you and then
+[00:00:48.660 --> 00:00:53.880]   you know voila you're done right well not quite like at least today there's a big gap between kind
+[00:00:53.880 --> 00:00:58.080]   of the stuff that comes back and what you want to ship to production especially as you get away
+[00:00:58.080 --> 00:01:03.700]   from the prototyping into a larger more established code bases so today I'm going to go over some of
+[00:01:03.700 --> 00:01:09.780]   the technical decisions that went into the design of sculptor our experimental coding agent environment
+[00:01:09.780 --> 00:01:16.700]   and kind of go through some of the context and motivations for the various ideas that we've
+[00:01:16.700 --> 00:01:21.780]   explored and the features that we've implemented it's still a research preview so these features may
+[00:01:21.780 --> 00:01:27.720]   change before we actually release it but I hope that you know whether you're an individual using these
+[00:01:27.720 --> 00:01:32.460]   tools or you're someone who's developing the tools yourself you'll find these kind of learnings from our
+[00:01:32.460 --> 00:01:39.160]   experiments to be useful for yourselves so today if you're thinking about how you can make coding agents
+[00:01:39.160 --> 00:01:44.160]   better then there's a million different things that you could build you could build something that
+[00:01:44.160 --> 00:01:51.000]   helps improve the performance on really large context windows you can make something to make it cheaper or
+[00:01:51.000 --> 00:01:57.200]   faster you could make something that does a better job of parsing the outputs but I don't think that we
+[00:01:57.200 --> 00:02:02.780]   really should be building any of these things I think that what we really want to be building is things
+[00:02:02.780 --> 00:02:08.720]   that are much more specific to the use case or to like the problem domain or the thing that you are like
+[00:02:08.720 --> 00:02:14.720]   really specialized in most of the things that I just mentioned are going to get solved over the next call
+[00:02:14.720 --> 00:02:20.540]   it three to twelve to twenty four months as models get better coding agents get better etc and so I
+[00:02:20.540 --> 00:02:25.640]   think you know just like you wouldn't want to make your own database I don't think we want to be spending a lot of
+[00:02:25.640 --> 00:02:32.000]   time working on the problems that are going to get solved instead we want to focus on the particular part
+[00:02:32.000 --> 00:02:37.400]   of the problem that really matters for for us for our business and so and in Pew the problem that we're
+[00:02:37.400 --> 00:02:43.700]   focusing on is basically this like what is wrong with this diff you get a coding agent output and it
+[00:02:43.700 --> 00:02:49.100]   tells you like okay I've added 59 new lines are those good like right now you have an awkward choice
+[00:02:49.100 --> 00:02:55.040]   between either looking at each of the lines yourself or just hitting merge and kind of hoping for the best
+[00:02:55.040 --> 00:03:03.140]   trust and neither of those are a really great place to be so we try to give you a third option the goal
+[00:03:03.140 --> 00:03:10.160]   is to help build user trust by allowing another AI system to come and take a look at this and understand
+[00:03:10.160 --> 00:03:17.060]   like hey are there any race conditions did you leave your API key in there etc so we want to think about
+[00:03:17.060 --> 00:03:23.060]   how do we help leverage AI tools not just to generate the code but to help us build trust in that code and
+[00:03:24.440 --> 00:03:30.540]   and kind of the way that we think about it is about like identifying problems with the code because
+[00:03:30.540 --> 00:03:35.540]   if there's no problems then that's probably high quality code and that's kind of the definition of
+[00:03:35.540 --> 00:03:42.740]   high quality code if you think about it from like an academic perspective the way that people normally
+[00:03:42.740 --> 00:03:48.340]   measure software quality is by looking at the number of defects and they look at like how long does it
+[00:03:48.340 --> 00:03:53.840]   take to fix a particular defect or how many defects are caught by this particular technique so this is sort of
+[00:03:53.840 --> 00:03:58.940]   the definition that at least we're working on from when we're thinking about making high quality software
+[00:03:58.940 --> 00:04:04.940]   and then if we think about you know the software development process what you want to be doing is
+[00:04:04.940 --> 00:04:11.540]   getting to a place where you have identified these problems as early as possible so sculptor does not work as
+[00:04:11.540 --> 00:04:16.940]   like a pull request review tool because that's much much later in the process rather we want something
+[00:04:16.940 --> 00:04:22.940]   that's synchronous and immediate and giving you immediate feedback as soon as you generated that code as soon as you've changed that line
+[00:04:22.940 --> 00:04:28.040]   you want to know like is there something wrong with it that's easier both for you to fix and also for the
+[00:04:28.040 --> 00:04:30.040]   agent to fix
+[00:04:30.040 --> 00:04:36.040]   so what are some ways that you can prevent problems in AI generated code we're going to go through five different ways
+[00:04:36.040 --> 00:04:45.140]   the first is learning planning or sorry only four different ways learning planning writing specs and having a
+[00:04:45.140 --> 00:04:53.140]   really strict style guide and we'll see how those manifest in sculptor so the first thing you want to do when
+[00:04:53.140 --> 00:04:57.140]   you're using coding agents if you're trying to prevent problems is learn what's out there we try to make this as easy as
+[00:04:57.140 --> 00:05:02.240]   we try to make this as easy as possible in sculptor by letting you ask questions
+[00:05:02.240 --> 00:05:04.240]   have it do research get answers about
+[00:05:04.240 --> 00:05:06.240]   what are the technologies et cetera that exist
+[00:05:06.240 --> 00:05:10.240]   what are the ways that other people have solved similar problems so that you don't end up
+[00:05:10.240 --> 00:05:13.240]   reproducing a bunch of work for what's already out there
+[00:05:13.240 --> 00:05:19.340]   next we want to think about how we can encourage people to start by planning
+[00:05:19.340 --> 00:05:25.340]   here's a little example workflow where you can you know kick off the agent to go do something simple like
+[00:05:25.340 --> 00:05:32.340]   you know implement this gravel solver and change the system prompt here to force the AI agent to first make a plan
+[00:05:32.340 --> 00:05:39.440]   without writing any code at all then you can wait a little while it'll generate the plan and then you can go and
+[00:05:39.440 --> 00:05:45.440]   change the system prompt again to say like okay now we can actually create some code so make it really easy to kind of
+[00:05:45.440 --> 00:05:51.640]   change these types of meta parameters of the coding agent itself of course you can just tell the agent to do that but by
+[00:05:51.640 --> 00:05:58.040]   changing its system prompt you sort of force it in a much stronger way to change its behavior and you can build up
+[00:05:58.040 --> 00:06:04.540]   larger workflows by making sort of customized agents for always plan first then always do the code then always
+[00:06:04.540 --> 00:06:13.140]   run the checks etc third you want to think about writing specs and docs as a kind of first-class part of the
+[00:06:13.140 --> 00:06:20.540]   workflow one of the main reasons why at least I don't normally write lots of specs and docs in the past has been that
+[00:06:20.540 --> 00:06:26.140]   it's kind of annoying to keep them all up to date to spend all this time kind of typing everything out if I already know what
+[00:06:26.140 --> 00:06:32.040]   the code is supposed to be but this is really important to do if you want the coding agents to actually have
+[00:06:32.040 --> 00:06:37.640]   context on the project that you're trying to do because they don't have access to your email your slack etc
+[00:06:37.640 --> 00:06:43.840]   necessarily and even if they did they might not know exactly how to turn that into code so in Sculptor
+[00:06:43.840 --> 00:06:52.640]   one of the ways that we try to make this easier is by helping detect if the code and the docs have become outdated
+[00:06:52.640 --> 00:06:58.540]   so it reduces the barrier to writing and maintaining documentation and doc strings because now you have
+[00:06:58.540 --> 00:07:05.840]   a way of more automatically fixing the inconsistencies it can also highlight inconsistencies or parts of the
+[00:07:05.840 --> 00:07:10.440]   specifications that conflict with each other making it easier to make sure that your system makes sense from the very
+[00:07:10.440 --> 00:07:18.540]   beginning and finally you want to have a really strict style guide and try to enforce it this is important even if you're just doing
+[00:07:18.540 --> 00:07:24.440]   regular coding without AI agents just with other human software engineers but one of the things that is special in
+[00:07:24.440 --> 00:07:32.000]   Sculptor is that we make suggestions which you can see towards the bottom here that help keep the AI system on a
+[00:07:32.000 --> 00:07:38.440]   reasonable path so here it's highlighting that you could you know make this particular class immutable to prevent race
+[00:07:38.440 --> 00:07:44.340]   conditions was this something that comes from our style guide where we try to encourage both the coding agents
+[00:07:44.340 --> 00:07:51.340]   and our teammates to write things in a more functional immutable style to prevent certain classes of errors we're also
+[00:07:51.340 --> 00:07:58.340]   working on developing a style guide that's sort of custom tailored to AI agents to make it even easier for them to avoid some of the
+[00:07:58.340 --> 00:08:08.240]   avoid some of the most egregious mistakes that they normally make but no matter how many things you do to prevent the AI system from
+[00:08:08.240 --> 00:08:16.240]   making mistakes in the first place it's going to make some mistakes and there are many things that we can do to prevent or to
+[00:08:16.240 --> 00:08:20.240]   detect those problems and prevent them from getting into production so we'll go through three here
+[00:08:20.240 --> 00:08:30.580]   first running linters second writing and running tests third asking an LLM and we'll dig into each and see how that manifests in
+[00:08:30.580 --> 00:08:38.000]   Sculptor so for the first one for running linters there are many automated tools that are out there like rough or my pie
+[00:08:38.000 --> 00:08:48.220]   pile and pyre etc that you can use to automatically detect certain classes of errors in normal development this is sort of
+[00:08:48.220 --> 00:08:55.060]   obnoxious because you have to go fix all these like really small errors that don't necessarily cause problems it's a lot of
+[00:08:55.060 --> 00:09:01.760]   like churn and extra work but one of the great things about AI systems is that they're really good at fixing these so one of
+[00:09:01.760 --> 00:09:08.060]   the things that we've built into Sculptor is the ability for the system to very easily detect these types of issues and
+[00:09:08.060 --> 00:09:16.840]   automatically fix them for you without you having to get involved another thing that we've done is make it easy to use these tools in
+[00:09:16.840 --> 00:09:23.680]   practice a lot of tools end up like these you know how many people here maybe a show of hands
+[00:09:23.680 --> 00:09:32.520]   how many people have a linter set up at all okay how many people have zero linting errors in their code base
+[00:09:32.520 --> 00:09:39.520]   two great that will hire you okay cool but you know it's a it's not it's not easy but one of the things that we've done in
+[00:09:39.520 --> 00:09:52.520]   Sculptor is make it so that the AI system understands what issues were there before it started and then what issues were there after it ran so at least you can prevent the AI system from creating more errors without you even if it doesn't work in a perfectly clean code base
+[00:09:52.520 --> 00:09:59.360]   okay third testing so why should you write tests at all
+[00:09:59.360 --> 00:10:07.360]   I think I was pretty lazy as a developer for a long time and did not want to write tests because it took a you know a lot of effort you have to maintain them
+[00:10:07.360 --> 00:10:22.200]   okay I already wrote the code it works okay but one of the major objections to writing tests has kind of disappeared now that we have AI systems the ability to generate tests is now so easy that you might as well write tests especially if you have correct code
+[00:10:22.200 --> 00:10:36.200]   you can tell the agent hey just write a bunch of tests throughout the ones that don't pass and just keep the rest so there's no real reason to not write tests at all and be echo as they say at Google if you liked it you should have put a test on it
+[00:10:36.200 --> 00:10:47.040]   this becomes much more important with coding agents the reason is that you don't want your coding agent to go change the behavior of your system in a way that you don't understand and don't expect and don't want to see happen
+[00:10:47.040 --> 00:10:57.880]   so at Google this matters a lot for their infrastructure because they don't want your site to crash when someone changes something but if you really care about the behavior of your system you want to make sure that it's fully tested
+[00:10:57.880 --> 00:11:08.720]   so how do we actually write good tests I'll go through a bunch of different components to this so first one of the things that you can do is write code in a functional style
+[00:11:08.720 --> 00:11:35.720]   by this I mean code that has no side effects this makes it much much easier to run LLMs and understand if the code is actually successful you really don't want to be running a test that has access to say your live Gmail environment where if you make a single mistake you can delete all of your email you really want to isolate those types of side effects and be able to focus most of the code on the kind of functional transformations that matter for your program
+[00:11:35.720 --> 00:12:02.720]   second you can try and write two different types of unit tests happy path unit tests are those that are ones that show you that your code is working it's happy hooray it worked you don't need that many of those you just need a small number to show that things are working as you hope the unhappy unit tests are the ones that help us find bugs and here LLMs can be really really helpful so especially if you've written your code in a functional style
+[00:12:02.720 --> 00:12:14.720]   you can have the LLM generate hundreds or even thousands of potential inputs see what happens to those inputs and then ask the LLM does that look weird and often when it says yes that will be a bug
+[00:12:14.720 --> 00:12:26.720]   and so now you have a perfect test case replicating a bug third after you've written your unit tests it's maybe a good idea to throw them away in some cases this is a little bit counterintuitive
+[00:12:26.720 --> 00:12:38.720]   in the past it spent we took all this effort and spent all this time trying to write good unit tests and so we feel some aversion to throwing away but now that it's so easy to run LLMs and generate the test suite
+[00:12:38.720 --> 00:12:50.720]   again from scratch there's a reason a good reason to not keep around too many unit tests of behavior you don't care about too much you might also want to just refactor the ones that you generated into something that's slightly more maintainable
+[00:12:50.720 --> 00:13:02.720]   but when you do keep them around it does kind of confuse the LLM when you come back and change this behavior so it's something that's at least worth thinking about whether you want to keep the test that were originally generated clean them up how many of them should you keep etc
+[00:13:02.720 --> 00:13:17.720]   fourth you should probably focus on integration tests as opposed to testing only the kind of code level functional behavior of your program integration tests are those that show you that your program actually works like from the user's perspective
+[00:13:17.720 --> 00:13:31.720]   like when the user clicks on this thing does this other thing happen AI systems can be extremely good at writing these especially if you create nice test plans where you can write okay when the user clicks on the button to add the item to the shopping cart
+[00:13:31.720 --> 00:13:50.720]   then the item is in the shopping cart if you write that out and then you write the test then you can write another test plan like if the user clicks to remove the button the thing from the shopping cart then it is gone that systems can almost always get this right and so it allows you to work at the level of meaning for your testing which can be much more efficient
+[00:13:50.720 --> 00:14:00.720]   fifth you want to think about test coverage as a core part of your testing suite so if you're having cloud code write things for you then you
+[00:14:00.720 --> 00:14:07.720]   you don't care just about the tests working on their own but you also care are there enough tests in the first place
+[00:14:07.720 --> 00:14:15.720]   if you think back to the original screenshot where we get back our PR of you know how many lines have changed if I tell you how many lines have changed it's not that helpful
+[00:14:15.720 --> 00:14:28.720]   if I tell you so many lines have changed and also there's a hundred percent test coverage and also all the test paths and also a thing looked at the test and thought they were reasonable now you can probably click on that merge button without quite as much fear
+[00:14:28.720 --> 00:14:43.720]   and sixth we try to make it easy to run tests and sandboxes and without secrets as much as possible this makes it a lot easier to actually fix things and makes it a lot easier to make sure that you're not accidentally causing problems or making flaky tests
+[00:14:43.720 --> 00:14:50.720]   The third thing that we can do to detect errors is ask an LLM there are many different things that we can check for including if there are issues before you commit with your current change if the thing that you're trying to do even makes sense if there are issues in the current branch you're working on if there are violations of rules in your style guide or in your architecture documents if there are details that are missing from the specs if the specs aren't implemented if they're not well tested or
+[00:14:50.720 --> 00:14:55.560]   is ask an LLM. There are many different things that we can check for, including if there are
+[00:14:55.560 --> 00:14:59.340]   issues before you commit with your current change, if the thing that you're trying to
+[00:14:59.340 --> 00:15:03.780]   do even makes sense, if there are issues in the current branch you're working on, if there
+[00:15:03.780 --> 00:15:07.740]   are violations of rules in your style guide or in your architecture documents, if there
+[00:15:07.740 --> 00:15:11.440]   are details that are missing from the specs, if the specs aren't implemented, if they're
+[00:15:11.440 --> 00:15:16.940]   not well tested, or whatever other custom things that you want to check for. One of the
+[00:15:16.940 --> 00:15:20.240]   things that we're trying to enable in Sculptor is for people to extend the checks that we
+[00:15:20.240 --> 00:15:25.580]   have so that they can add their own types of best practices into the code base and make
+[00:15:25.580 --> 00:15:34.420]   sure that they are continually checked. After you've found issues, then you have to fix them.
+[00:15:34.420 --> 00:15:38.960]   Very little of this talk is about fixing the issues because it ends up being a lot easier
+[00:15:38.960 --> 00:15:44.620]   for the systems to fix issues than you would expect. I think this quote captures it relatively
+[00:15:44.620 --> 00:15:49.760]   well and that a problem well stated is half solved. What this means is that if you really
+[00:15:49.760 --> 00:15:55.100]   understand what went wrong, then it's much easier to solve the problem. This is especially
+[00:15:55.100 --> 00:16:01.600]   true for coding agents because the really simple strategies work really well. So even just try
+[00:16:01.600 --> 00:16:07.100]   multiple times, try a hundred times with a different agent, it actually ends up working out quite
+[00:16:07.100 --> 00:16:12.640]   well. And one of the things that enables this is having really good sandboxing. If you have
+[00:16:12.640 --> 00:16:19.280]   agents that can run safely, then you can run an almost unlimited number, subject to cost constraints, in parallel,
+[00:16:19.280 --> 00:16:22.620]   and then if anyone of them succeeds, then you can use that solution.
+[00:16:22.620 --> 00:16:30.500]   And this is really just the beginning. There are going to be so many more tools that are released
+[00:16:30.500 --> 00:16:35.120]   over the next year or two and many of the people in this room are working on those tools. There will be
+[00:16:35.120 --> 00:16:40.460]   things that are not just for writing code like we've been talking about, but for after deployment,
+[00:16:40.460 --> 00:16:47.340]   for debugging, logging, tracing, profiling, etc. There are tools for doing automated quality assurance,
+[00:16:47.340 --> 00:16:52.460]   where you can have an AI system click around on your website and check if it can actually do the thing
+[00:16:52.460 --> 00:16:58.340]   that you want the user to do. There are tools for generating code from visual designs. There are tons of
+[00:16:58.340 --> 00:17:03.680]   dev tools coming out every week. You will have much better contextual search systems that are useful for
+[00:17:03.680 --> 00:17:10.680]   both you and for the agent. And of course, we'll get better AI based models as well. If anyone is working
+[00:17:10.680 --> 00:17:19.180]   on these other sorts of tools that are adjacent to developer experience and helping you fix this much
+[00:17:19.180 --> 00:17:23.700]   smaller piece of the process, we would love to work together and find out a way to integrate that into
+[00:17:23.700 --> 00:17:28.020]   Sculptor so that people can take advantage of that. I think what we'll see over the next year or two is that
+[00:17:28.020 --> 00:17:33.600]   most of these things will be accessible and it'll make the development experience just a lot easier
+[00:17:33.600 --> 00:17:39.420]   once all these things are working together. So that's pretty much all that I have for today. If you're
+[00:17:39.420 --> 00:17:44.940]   interested, feel free to take a look at the QR code, go to our website at imbue.com and sign up to try out
+[00:17:44.940 --> 00:17:49.240]   Sculptor. And of course, if you're interested in working on things like this, we're always hiring,
+[00:17:49.240 --> 00:17:52.200]   we're always happy to chat, so feel free to reach out. Thank you.
+[00:17:52.200 --> 00:17:58.200]   Thank you.
+
