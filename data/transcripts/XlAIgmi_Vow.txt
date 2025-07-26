@@ -1,0 +1,167 @@
+
+[00:00:00.000 --> 00:00:21.600]   Welcome! So glad to see you all here. Welcome to When Vectors Break Down: Graph-based RAG for
+[00:00:21.600 --> 00:00:27.360]   dense enterprise knowledge. And big thank you to SWIX and Ben for putting on yet another amazing
+[00:00:27.360 --> 00:00:34.720]   event. So it's a pretty interesting signal that we have an entire track dedicated to graph-based RAG.
+[00:00:34.720 --> 00:00:40.800]   And I think in addition to all of the agentic promise of graph-based RAG, we're also seeing that
+[00:00:40.800 --> 00:00:46.000]   the market is starting to catch up, that vector search is just not enough for RAG at scale. You
+[00:00:46.000 --> 00:00:50.720]   may have seen this really interesting article by Joe Christian Burgum, who is around here somewhere
+[00:00:50.720 --> 00:00:56.080]   on the rise and fall of the vector database infrastructure category and his subsequent
+[00:00:56.080 --> 00:01:01.360]   interview on Latentspace, where he talked about how vector databases have experienced this gold rush
+[00:01:01.360 --> 00:01:07.120]   after ChatGPT's launch, but that the industry is starting to recognize that vector search alone is
+[00:01:07.120 --> 00:01:13.760]   just insufficient for sophisticated retrieval and that we're going to need multiple strategies beyond
+[00:01:13.760 --> 00:01:15.440]   simple vector similarity.
+[00:01:15.440 --> 00:01:20.560]   This is music to our ears at Rider because we've actually been talking about this for a long time. We've
+[00:01:20.560 --> 00:01:25.200]   been talking about the benefits of graph-based RAG for a couple of years now. In fact, if you look at
+[00:01:25.200 --> 00:01:32.880]   this article from November 2023, which in AI time is like prehistoric times, we actually talk about the
+[00:01:32.880 --> 00:01:39.040]   benefits of knowledge graphs and the shortcomings of vector databases and simple similarity search for
+[00:01:39.040 --> 00:01:45.920]   enterprise RAG at scale. And if you're not familiar with Rider, we're this end-to-end agentic platform for
+[00:01:45.920 --> 00:01:50.720]   enterprises where we build our own models, we build our own graph-based RAG system and have this suite of
+[00:01:50.720 --> 00:01:56.880]   software tools on top of that for enterprises to be able to build agents and AI applications. And so,
+[00:01:56.880 --> 00:02:01.600]   as we've been building Knowledge Graph over the years, it's been an interesting journey as we've been
+[00:02:01.600 --> 00:02:08.400]   working with these Fortune 500 and Global 2000 companies at scale. Most of them or many of them
+[00:02:08.400 --> 00:02:14.880]   are in highly regulated industries like healthcare and finance, where accuracy and low hallucinations are
+[00:02:14.880 --> 00:02:20.720]   super important. And so, our team has been putting together this system over the years of different
+[00:02:20.720 --> 00:02:26.800]   components put together and different techniques that we could really drive our accuracy rate up high and
+[00:02:26.800 --> 00:02:31.520]   reduce our hallucinations. And so, what I wanted to share in this talk was kind of the journey
+[00:02:31.520 --> 00:02:35.920]   of how we got there. And the main takeaway being, as you're seeing in several of these talks, like
+[00:02:35.920 --> 00:02:40.000]   the first talk about hybrid search, there are many different ways that you can get the benefits of
+[00:02:40.000 --> 00:02:46.640]   knowledge graphs in RAG. And also, how you get there and what you learn along the way is actually
+[00:02:46.640 --> 00:02:52.720]   often very valuable as you're building out your retrieval system, almost just as valuable as the end result
+[00:02:52.720 --> 00:02:59.200]   itself. So, I'm going to weave together these two stories of our journey to graph-based RAG and sort of the
+[00:02:59.200 --> 00:03:04.240]   first principles thinking that I think has made our team successful in putting together this system as
+[00:03:04.240 --> 00:03:09.200]   we continue to iterate and improve on it. So, I'm Sam Julien. I'm the director of developer relations at
+[00:03:09.200 --> 00:03:14.560]   Rider, and you can find most of my writing and books and newsletters and all of those things at samjulien.com.
+[00:03:14.560 --> 00:03:20.720]   So, I talked about this system composed of multiple pieces put together over a couple of different
+[00:03:20.720 --> 00:03:27.360]   years. And I want to talk about sort of how we got to this point and where we are now. And I'm just going to put a
+[00:03:27.360 --> 00:03:32.560]   blanket caveat on here that please consider this a sketch and not a blueprint of what is currently
+[00:03:32.560 --> 00:03:37.360]   in production. Of course, there are like many moving pieces and many layers to this, but I want to
+[00:03:37.360 --> 00:03:43.840]   abstract it enough to make it something that is practical and usable for people. So, our research
+[00:03:43.840 --> 00:03:50.400]   team, we have a cracked research team at Rider, and they have four main areas of focus. Enterprise models,
+[00:03:50.400 --> 00:03:55.600]   like our Palmyra X5 model, that's the one powering the chat on the AI engineer website right now.
+[00:03:55.600 --> 00:04:02.960]   Practical evaluations, like our finance benchmark called Failsafe QA. Domain specific specialization,
+[00:04:02.960 --> 00:04:07.760]   these are our domain specific models like Palmyra Med and Palmyra Finn. And then what our focus is here,
+[00:04:07.760 --> 00:04:14.400]   retrieval and knowledge integration. So, bringing enterprise data to work with our models in a secure,
+[00:04:15.040 --> 00:04:19.520]   reliable way. And I think what's really cool about the way our research team works is that
+[00:04:19.520 --> 00:04:25.440]   they're very focused on solving practical problems for our customers. They're not just sort of like
+[00:04:25.440 --> 00:04:30.720]   working in isolation, working on theoretical things. They're actually driven by customer insights.
+[00:04:30.720 --> 00:04:36.560]   And that's really what I would consider like sort of the first meta lesson of why I think this is
+[00:04:36.560 --> 00:04:41.360]   working so well for Rider right now. We're really focused on solving the customer problems rather than
+[00:04:41.360 --> 00:04:47.680]   implementing specific solutions. So, the problem that we are trying to solve kind of constantly,
+[00:04:47.680 --> 00:04:53.360]   as most of us are here, is that enterprise data is really dense, specialized, and massive. So,
+[00:04:53.360 --> 00:04:59.600]   we're often dealing with terabytes of data, and it uses very specific language, and it's often very
+[00:04:59.600 --> 00:05:04.640]   clustered together. There's not a lot of diversity in the language used in these documents. And that's what
+[00:05:04.640 --> 00:05:07.680]   our research and engineering teams have been focused on these last few years.
+[00:05:07.680 --> 00:05:14.800]   So, like most, we kind of started out with a regular search of querying a knowledge base,
+[00:05:14.800 --> 00:05:20.880]   using an algorithm, and passing that to the LLM. But that quickly sort of like ran out because of,
+[00:05:20.880 --> 00:05:24.800]   you know, it was good for basic keyword searches, but not really great for that advanced similarity
+[00:05:24.800 --> 00:05:31.680]   search that we needed. So, then, again, like most, we went to vector embeddings and did chunking and
+[00:05:31.680 --> 00:05:38.000]   embeddings and put it in a database and then similarity search and passing it to the LLM for the end user to
+[00:05:38.000 --> 00:05:46.880]   query. But we ran into two major problems with this. The first is that with vector retrieval, chunking and
+[00:05:46.880 --> 00:05:53.200]   nearest neighbors can give inaccurate answers. So, if you look at this example of kind of this text about
+[00:05:53.200 --> 00:05:58.640]   the founding of Apple and the timeline, it's very easy for us as humans to look at these text chunks
+[00:05:58.640 --> 00:06:04.720]   and pick out the fact that the Macintosh was created in 1984. But when you chunk this text naively and
+[00:06:04.720 --> 00:06:09.280]   you just give it to a nearest neighbor search, it can get confused. And it thinks that it was actually in
+[00:06:09.280 --> 00:06:15.440]   1983 instead of 1984 because it's in the same chunk as the introduction of the Lisa. Side note, I'm a huge
+[00:06:15.440 --> 00:06:22.480]   vintage Apple nerd, and so I liked this example. The other big problem that we ran into with vector
+[00:06:22.480 --> 00:06:26.800]   retrieval was that it was failing with really concentrated data. So, if you think about a lot of
+[00:06:26.800 --> 00:06:30.480]   large enterprises, it's not like they're dealing with documents where, like, some of them are talking
+[00:06:30.480 --> 00:06:35.680]   about animals and some of them are talking about fruit, right? So, if you have a mobile phone company,
+[00:06:35.680 --> 00:06:41.120]   for example, and they have thousands and thousands of documents that all use megapixels and cameras and
+[00:06:41.120 --> 00:06:46.640]   battery life and things like that, and you ask the RAG system and the LLM to compare two different phone
+[00:06:46.640 --> 00:06:50.160]   models, it's going to really struggle with that because it's going to find all these answers and have
+[00:06:50.160 --> 00:06:58.080]   no idea how to make sense of them. And so that's what took us to graph-based RAG, where instead we would
+[00:06:58.080 --> 00:07:04.400]   query a graph database and get back the relevant documents using keys and generate an answer. And
+[00:07:04.400 --> 00:07:08.720]   especially powerful if you combine that with, like, full text and similarity search and things like that.
+[00:07:10.080 --> 00:07:16.880]   And so this really helped us with our accuracy because we were able to preserve the relationships
+[00:07:16.880 --> 00:07:22.160]   with the text and provide more context to the model. And this was really interesting because,
+[00:07:22.160 --> 00:07:27.360]   at the time, there actually weren't that many people doing graph-based RAG over the last couple of years.
+[00:07:27.360 --> 00:07:32.320]   And that's why I think the focus of the team on really trying to solve the problem of the customer
+[00:07:32.320 --> 00:07:39.040]   rather than chase whatever was being hyped up at the time was really important. So that was really great.
+[00:07:39.040 --> 00:07:44.720]   But we did run into some challenges back then with using graph databases. Now this is not an indictment
+[00:07:44.720 --> 00:07:50.240]   of any graph database technology. It's just that we were running into these issues at the time a couple
+[00:07:50.240 --> 00:07:56.960]   of years ago. And so there were four things that we ran into. First, that converting the data into the
+[00:07:56.960 --> 00:08:03.760]   structured graph was getting really challenging and costly at scale. As the graph database scaled, we were
+[00:08:03.760 --> 00:08:09.280]   hitting the limits of our team's expertise as well as hitting some cost issues. And then we were running
+[00:08:09.280 --> 00:08:14.320]   into some problems where Cypher was struggling with the advanced similarity matching that we needed. And we
+[00:08:14.320 --> 00:08:19.360]   were noticing that LLMs were doing better with text-based queries rather than complex graph structures. Now,
+[00:08:19.360 --> 00:08:23.440]   again, if you were to do this now, you might not run into those problems, but this is what we ran into
+[00:08:23.440 --> 00:08:28.720]   historically. And so I think the way that the team approached this is also very interesting, where
+[00:08:28.720 --> 00:08:34.240]   they decided to stay flexible based on their expertise. So they were running into these problems
+[00:08:34.240 --> 00:08:38.880]   that I think were not necessarily fundamental to the technology itself, but more like, okay, how can we
+[00:08:38.880 --> 00:08:44.080]   solve the problems for our customers using the expertise that we have on the team? And so they came up with a
+[00:08:44.080 --> 00:08:50.240]   few really interesting solutions to this problem, to these problems. So first, when it came to converting
+[00:08:50.240 --> 00:08:54.320]   the data into the graph structure, the team went back to their expertise and they say, what do we know
+[00:08:54.320 --> 00:09:01.760]   how to do? We know how to build models. So let's build a specialized model that can scale and run on CPUs or
+[00:09:01.760 --> 00:09:07.840]   smaller GPUs, which I think is a really clever solution. Now, if you were to do this now, there's probably enough
+[00:09:07.840 --> 00:09:11.440]   fast, small models out there that you could fine tune something like that. You wouldn't have to build it
+[00:09:11.440 --> 00:09:15.680]   yourself. But at the time, we didn't really have any options like that. So the team built it themselves
+[00:09:15.680 --> 00:09:21.200]   and fine tuned a model that was trained to map this data into graph structures of nodes and edges. And
+[00:09:21.200 --> 00:09:27.040]   we did some better context-aware splitting and chunking to preserve the context and the semantic
+[00:09:27.040 --> 00:09:34.720]   relationships. And this really helped preserve the reliability. Okay. And so then the issues with the
+[00:09:34.720 --> 00:09:40.240]   scaling of the graph databases and the limitations of the expertise on the team with the cost at scale.
+[00:09:40.240 --> 00:09:45.120]   So again, we went back and thought about what is our team's expertise in and what can we do? And so
+[00:09:45.120 --> 00:09:51.040]   what we did was instead, we stored the data points as JSON in a Lucene-based search engine. So we take the
+[00:09:51.040 --> 00:09:56.720]   graph structure, we convert it into JSON, we put it in the search engine. And this allowed us to easily
+[00:09:56.720 --> 00:10:03.520]   handle the large amounts of data without any performance or speed degradation at scale, while still
+[00:10:03.520 --> 00:10:09.680]   being something that the team was really good at. And so the team had started to assemble this concept
+[00:10:09.680 --> 00:10:15.680]   of what our RAG system was looking like. And again, this is kind of more of a historical snapshot and a
+[00:10:15.680 --> 00:10:21.040]   sketch over time. But where we do the context-aware splitting and text-to-graph with this specialized
+[00:10:21.040 --> 00:10:26.560]   model and then pass it to a search engine. And we were really starting to drive up our accuracy.
+[00:10:26.560 --> 00:10:33.760]   But we still have those problems with the similarity matching and the text-based queries doing better
+[00:10:33.760 --> 00:10:39.520]   than the complex graph structures. And so again, the team sort of went back to first principles and
+[00:10:39.520 --> 00:10:44.720]   thought, okay, what is it that we're trying to solve here? And let's go back to the research and figure out
+[00:10:44.720 --> 00:10:49.440]   what we can build on to build a solution that's best for our customers and our specific needs.
+[00:10:49.440 --> 00:10:55.840]   And I think this is kind of the final meta point of letting research challenge your assumptions. So
+[00:10:55.840 --> 00:11:01.520]   rather than staying focused on the solution, step back, look at the research, and figure out what you
+[00:11:01.520 --> 00:11:06.000]   can do to solve the challenges for your customers. So they went back to the original RAG paper. And if you
+[00:11:06.000 --> 00:11:10.880]   go back to the original RAG paper, it doesn't actually ever talk about using prompt context and questions,
+[00:11:10.880 --> 00:11:16.080]   which is super interesting. It's sort of like the de facto way of doing RAG now. But the original RAG
+[00:11:16.080 --> 00:11:22.000]   paper actually proposed this whole two-component architecture with a retriever and a generator with
+[00:11:22.000 --> 00:11:27.760]   a pre-trained sequence-to-sequence model. It never actually talks about prompt and context and questions.
+[00:11:27.760 --> 00:11:33.120]   And so that's where they came across Fusion and Decoder, which I kind of think of as an alternate timeline
+[00:11:33.120 --> 00:11:39.600]   for RAG, like if we didn't go down the road of prompt and context and questions. And so Fusion and Decoder is
+[00:11:39.600 --> 00:11:45.200]   this technique that kind of builds upon the original proposal of the original RAG paper, where it processes the
+[00:11:45.200 --> 00:11:50.880]   passages independently in the encoder to get linear scaling instead of quadratic scaling, but then jointly
+[00:11:50.880 --> 00:11:56.400]   in the decoder for better evidence aggregation. So big efficiency breakthrough and lots of state-of-the-art
+[00:11:56.400 --> 00:12:01.760]   performance. I know there's a super abstract. So if you go to Facebook, they actually have a Fusion and Decoder
+[00:12:01.760 --> 00:12:08.320]   library that you can play around with and actually do the steps of Fusion and Decoder. I also know that at this point you're going,
+[00:12:08.320 --> 00:12:12.400]   "What the heck is this guy talking about in a graph RAG track? Why are we talking about Fusion and Decoder?"
+[00:12:12.400 --> 00:12:17.120]   Well, I'm glad you asked, because the next big breakthrough was knowledge graph with Fusion and Decoder.
+[00:12:17.120 --> 00:12:23.360]   So you can use knowledge graphs with Fusion and Decoder as a technique. And this sort of improves upon
+[00:12:23.360 --> 00:12:28.480]   the Fusion and Decoder paper by using knowledge graphs to understand the relationships between
+[00:12:28.480 --> 00:12:32.880]   the retrieved passages. And so it helps with this efficiency bottleneck and improves
+[00:12:32.880 --> 00:12:37.680]   the process. I'm not going to walk through this diagram step by step, but this is the diagram
+[00:12:37.680 --> 00:12:43.680]   in the paper of the architecture where it uses the graph and then does this kind of two-stage re-ranking
+[00:12:43.680 --> 00:12:48.960]   of the passages. And it helps with improving the efficiency while also lowering the cost.
+[00:12:48.960 --> 00:12:54.000]   And so the team took all this research and came together to build their own implementation of Fusion and
+[00:12:54.000 --> 00:12:58.880]   Decoder, since we actually build our own models, to make that kind of the final piece of the puzzle.
+[00:12:58.880 --> 00:13:03.680]   And it really helped our hallucination rate. It really drove it down. And then we published a white
+[00:13:03.680 --> 00:13:09.120]   paper with our own findings of it. And so then we kind of had that piece of the puzzle. And there's a few
+[00:13:09.120 --> 00:13:14.160]   other techniques that we don't have time to go over. But point being, we're assembling together multiple
+[00:13:14.160 --> 00:13:17.760]   techniques based on research to get the best results we can for our customers.
+[00:13:18.800 --> 00:13:23.040]   So that's all well and good, but does it actually work? That's the important part, right? So we did
+[00:13:23.040 --> 00:13:28.960]   some benchmarking last year. We used Amazon's robust QA data set and compared our retrieval system with
+[00:13:28.960 --> 00:13:36.720]   Knowledge Graph and Fusion to Decoder and everything with seven different vector search systems. And we
+[00:13:36.720 --> 00:13:42.080]   found that we had the best accuracy and the fastest response time. So I encourage you to check that out and
+[00:13:42.080 --> 00:13:48.080]   kind of check out this process. Benchmarks are really cool. But what's even cooler is what it unlocks for
+[00:13:48.080 --> 00:13:55.680]   our customers, which are various features in the product. For one, like most graph structures, we can
+[00:13:55.680 --> 00:14:01.680]   actually expose the thought process because we have that relationships and the additional context where you
+[00:14:01.680 --> 00:14:06.880]   can show the snippets and the sub queries and the sources for how the RAG system is actually getting the
+[00:14:06.880 --> 00:14:11.120]   answers. And we can expose this in the API to developers as well as in the product.
+[00:14:11.120 --> 00:14:15.440]   Benchmarks: Yes. Benchmarks: And then we're also able to have knowledge graphics sell it multi-hop
+[00:14:15.440 --> 00:14:23.200]   questions where we can reason across multiple documents and multiple topics without any struggles.
+[00:14:23.200 --> 00:14:27.920]   Benchmarks: And then lastly, it can handle complex data formats where vector retrieval struggles, where
+[00:14:27.920 --> 00:14:33.920]   an answer might be split into multiple pages or maybe there's a similar term that doesn't quite match
+[00:14:33.920 --> 00:14:39.120]   what the user is looking for. But because we have that graph structure and Fusion and Decoder with the
+[00:14:39.120 --> 00:14:44.240]   additional context and relationships, we're able to formulate these correct answers.
+[00:14:44.240 --> 00:14:50.800]   Benchmarks: So again, my main takeaway here is that there are many ways that you can get the benefits of
+[00:14:50.800 --> 00:14:55.360]   knowledge graphs in RAG. That could be through a graph database. It could be through doing something
+[00:14:55.360 --> 00:15:01.920]   creative with Postgres. It could be through a search engine. But you can take advantage of the relationships
+[00:15:01.920 --> 00:15:06.720]   that you can build with knowledge graphs in your RAG system. And as you get there, you can challenge your
+[00:15:06.720 --> 00:15:12.400]   assumptions and focus on the customers to be able to get to the end result to make the team successful.
+[00:15:12.400 --> 00:15:17.680]   Benchmarks: And so for our team, it was focusing on the customer needs instead of what was hyped, staying flexible based
+[00:15:17.680 --> 00:15:24.400]   on the expertise of the team, and letting research challenge their assumptions. So if you want to join this
+[00:15:24.400 --> 00:15:29.520]   amazing team, we're hiring across research engineering and products. We would love to talk to you about any of
+[00:15:29.520 --> 00:15:34.880]   our open roles. And I'm available for questions. You can come find me in the hallway or reach out to me
+[00:15:34.880 --> 00:15:45.920]   on Twitter or LinkedIn. And that's all I've got for you. Thank you so much.
+
