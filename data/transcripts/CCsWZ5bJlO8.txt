@@ -1,0 +1,209 @@
+
+[00:00:00.000 --> 00:00:19.360]   We're going to talk about Apple's private cloud compute. This is an unofficial guide. I don't
+[00:00:19.360 --> 00:00:27.280]   work at Apple. We'll talk about it in a sec. So this is my background, my PhD in data science,
+[00:00:27.280 --> 00:00:32.000]   biomedical informatics. I've sold two companies, one in AI and data, one in cyber security and
+[00:00:32.000 --> 00:00:35.760]   infrastructure. I'm at South Park Commons. I'm building a company called Confidence Security,
+[00:00:35.760 --> 00:00:40.400]   which we'll get to at the end. But again, disclaimer, I'm not an Apple employee. I'm
+[00:00:40.400 --> 00:00:44.720]   not speaking on their behalf. Everything I've gleaned is from public sources. And hopefully,
+[00:00:44.720 --> 00:00:49.440]   what we'll learn today is some tools that we can use ourselves. There's really six key components
+[00:00:49.440 --> 00:00:54.720]   and some approaches to ensure privacy. And privacy and security are very related, not perfectly
+[00:00:54.720 --> 00:00:59.680]   overlapping, but related. So before I get there, I know that we're in the security track,
+[00:00:59.680 --> 00:01:04.160]   but I want to motivate why you might care about privacy. Not everyone believes that you should
+[00:01:04.160 --> 00:01:12.560]   have privacy. So let me just give some examples. This year, DeepSeq leaked a million sensitive
+[00:01:12.560 --> 00:01:17.600]   records of chat logs. And you might say to yourself, like, well, that's DeepSeq. Everyone knew that was
+[00:01:17.600 --> 00:01:23.920]   going to happen. But before I show you the next piece, I want to poll the audience. How many here
+[00:01:23.920 --> 00:01:33.600]   care about privacy? All right. How many of us use ChatGPT? All right. How many consider ChatGPT to be
+[00:01:33.600 --> 00:01:43.360]   private? Okay, good. How many use the ChatGPT private mode? And then how many use the API but with zero data
+[00:01:43.360 --> 00:01:50.000]   retention, kind of like the default state? Okay, great. Well, as of yesterday, OpenAI has to retain
+[00:01:50.000 --> 00:01:55.920]   everything anyway, whether or not you flagged it as private or not. And I don't want to get into the
+[00:01:55.920 --> 00:02:01.840]   comments of why they have to do that. But the point is, is that they have the capability of retaining
+[00:02:01.840 --> 00:02:08.320]   your private chats that you can flag on the UI as not private other things. And obviously, being forced to
+[00:02:08.320 --> 00:02:16.000]   do that is not great. But this is why we should all care about privacy. So Apple doesn't want to have
+[00:02:16.000 --> 00:02:20.800]   these headlines because they're one of their major value props is privacy. So let's talk a little bit
+[00:02:20.800 --> 00:02:26.960]   about the problems that Apple solved and then how we might use it. So fundamentally, AI requires more
+[00:02:26.960 --> 00:02:32.480]   compute than a phone. But obviously, they want to bundle AI into their phones. Privacy is a major selling
+[00:02:32.480 --> 00:02:38.160]   point. Anytime you give up private data to something remote, you're inherently reducing your privacy
+[00:02:38.160 --> 00:02:43.680]   rate. Anytime I give you my data, it's not as private as it was the second before. So the question
+[00:02:43.680 --> 00:02:48.560]   that Apple is trying to answer in their PCC system, which is now available on all of our iPhones and
+[00:02:48.560 --> 00:02:53.280]   used for inference, is how do you get remote compute while remaining private? And the simple way to do
+[00:02:53.280 --> 00:02:58.400]   that would be to buy all the iPhones H100s, pair them in the cloud, you get your own H100, boom. But
+[00:02:58.400 --> 00:03:04.480]   obviously, AI is even more expensive. So that's not going to work. So they actually need some approach,
+[00:03:04.480 --> 00:03:10.800]   which is how do you get remote compute while remaining private and cheap? Otherwise, it doesn't work. So
+[00:03:10.800 --> 00:03:15.680]   I'm going to kind of frame the problem this way. You've got an iPhone, you've got an untrusted remote
+[00:03:15.680 --> 00:03:20.240]   server, you can't see inside of it. It's a black box. Once you give them your data, you have no idea what
+[00:03:20.240 --> 00:03:25.440]   happens inside. And what Apple does is tries to make it not a black box so that the iPhone has some
+[00:03:25.440 --> 00:03:32.640]   control of what happens to the data inside Apple's remote servers. And then hopefully that this trusted
+[00:03:32.640 --> 00:03:38.080]   remote service is also hard to hack. So for the remainder of the talk, and we're not going to be
+[00:03:38.080 --> 00:03:43.840]   able to get into all of it in 16 minutes, but we're going to talk about Apple's PCC requirements that they
+[00:03:43.840 --> 00:03:48.880]   set up. And I'll review a conceptual architecture about how they meet those requirements. Then we'll go
+[00:03:48.880 --> 00:03:53.600]   into two specific components of the six because I don't have time to go through all six and you'll
+[00:03:53.600 --> 00:03:58.720]   be bored by that point. And then talk about some pros and cons of Apple's things and how we might
+[00:03:58.720 --> 00:04:06.080]   use some of those components ourselves. So there are five key requirements to Apple's private cloud
+[00:04:06.080 --> 00:04:10.560]   compute that they're trying to meet when they design the system. The first one is stateless computation.
+[00:04:10.560 --> 00:04:15.040]   This is essentially the guarantee that when Apple receives your data, it's only used to satisfy the
+[00:04:15.040 --> 00:04:19.040]   request and cannot be used. It's impossible to use it for anything else. You can't log it,
+[00:04:19.040 --> 00:04:26.400]   anything like that. The second thing is enforceable guarantees. The notion that the code, everything's
+[00:04:26.400 --> 00:04:32.000]   enforced with code, not by some sort of policy, not I shouldn't SSH to the instance, but I can SSH to the
+[00:04:32.000 --> 00:04:37.680]   instances. No, there's no SSH on the instance. You can't SSH to it. You don't want to save things? Well,
+[00:04:37.680 --> 00:04:43.120]   don't have a disk, right? So these are what they call enforceable guarantees, not just policies. The third
+[00:04:43.120 --> 00:04:49.600]   principle or requirement is non-targetability. That means that if you wanted to hack my data on PCC,
+[00:04:49.600 --> 00:04:55.040]   you'd have to target everyone and sift through all of it rather than having some easy way to find just me.
+[00:04:55.040 --> 00:05:03.040]   No privileged runtime access. I just briefly touched on it earlier, but essentially there's no way to
+[00:05:03.040 --> 00:05:09.120]   bypass these restrictions in production. And then the final one and the most important one is verifiable
+[00:05:09.120 --> 00:05:15.600]   transparency. Verifiable transparency essentially says we can prove that all of the above items are true.
+[00:05:15.600 --> 00:05:23.840]   Great. So let's talk about, again, this is a little more bigger representation of the black box.
+[00:05:23.840 --> 00:05:29.680]   In a classic, you know, kind of remote system, you have some sort of auth service, and then we have an
+[00:05:29.680 --> 00:05:35.200]   AI engine. And in this AI engine, you have some SRE who can access it and some disk that you can write to
+[00:05:35.200 --> 00:05:40.800]   it. But again, the iPhone doesn't know what it's sending its data to, but this is fundamental. So let's
+[00:05:40.800 --> 00:05:47.360]   see how we can change this to get to some of these at a conceptual level. So the first thing that Apple does
+[00:05:48.160 --> 00:05:57.760]   is it adds an anonymizer. And this anonymizer is the first part of two parts of non-targetability. But
+[00:05:57.760 --> 00:06:02.320]   ideally, right, Apple can't tell who the data is coming from, so it would be harder for an attacker
+[00:06:02.320 --> 00:06:10.720]   to come and, like, fish out my particular set of data. If you're a student looking at this, you're still
+[00:06:10.720 --> 00:06:14.880]   off behind the anonymizer, and so the iPhone provides some sort of auth credentials, and those auth credentials
+[00:06:14.880 --> 00:06:20.880]   are obviously tied to the user. So the second thing that Apple does is separates auth. And conceptually,
+[00:06:20.880 --> 00:06:24.960]   you think of this as if you're going to the arcade and you want to go spend your money on arcade
+[00:06:24.960 --> 00:06:29.920]   machines, you first put your money into the coin machine, you get some coins out. These coins are
+[00:06:29.920 --> 00:06:34.720]   anonymous. Now you can go to the machine and no one knows what machines you spend your money on. That's
+[00:06:34.720 --> 00:06:38.640]   essentially what happens here. It's called blind signatures. We're not going to have time to get into
+[00:06:38.640 --> 00:06:44.640]   it today, but that's what happens. So now the iPhone is making an anonymous request, going through an
+[00:06:44.640 --> 00:06:49.120]   anonymizer that's taking everyone's. It's kind of like Tor. It's like laundering everyone's data,
+[00:06:49.120 --> 00:06:55.360]   so that if someone were to access the system internally, they wouldn't know who it's coming
+[00:06:55.360 --> 00:07:00.960]   from. So that gets us non-targetability. The second thing that Apple does is it changes the set of
+[00:07:00.960 --> 00:07:05.040]   requests that are happening. The first thing it does is, before it sends its data, it says, "What are you
+[00:07:05.040 --> 00:07:14.400]   running?" And if the AI engine replies, "Well, I'm running this and only this," the iPhone might say, "Okay, I trust that." And if that remains
+[00:07:14.400 --> 00:07:22.000]   true, then you can run this AI on the data that I'm submitting. This is how they achieve verifiable
+[00:07:22.000 --> 00:07:26.160]   transparency. There's a little more subtlety to that, which we are going to get into, but it's
+[00:07:26.160 --> 00:07:29.840]   essentially the iPhone says, "I trust the code that you're running. You can only decrypt my data if you're
+[00:07:29.840 --> 00:07:35.120]   still running that code." So the iPhone can verify what they're doing. The next thing, no privilege runtime
+[00:07:35.120 --> 00:07:42.000]   access. That was easy. Just get rid of SSHD. Make it no way of accessing those machines. Enforceable guarantees.
+[00:07:42.000 --> 00:07:46.800]   Get rid of the disk. We talked about that. And then stateless computation, again,
+[00:07:46.800 --> 00:07:50.960]   with no disk, no access. There's nothing to do with the data other than respond to the iPhone.
+[00:07:50.960 --> 00:07:56.880]   And since the iPhone verified the code that was running on this machine, it knows it's not being
+[00:07:56.880 --> 00:08:04.560]   logged anywhere before it gives them the data. Okay. So they achieve those five guarantees that I talked
+[00:08:04.560 --> 00:08:09.760]   about here using six technical components. And again, we're going to go into two of them.
+[00:08:09.760 --> 00:08:17.440]   But I'll describe them all very briefly. Oblivious HTTP is a spec developed by Cloudflare and Apple and
+[00:08:17.440 --> 00:08:25.040]   others that allows you to essentially make anonymous requests using a third party to use the launder your
+[00:08:25.040 --> 00:08:30.000]   requests through this third party. So all of their requests that goes to Apple's private cloud compute first goes through Cloudflare.
+[00:08:30.480 --> 00:08:35.440]   So when Apple receives it, it only knows that it came from Cloudflare, not from an individual user's IP address.
+[00:08:35.440 --> 00:08:41.120]   The second thing that they use is blind signatures. Blind signatures is that arcade analogy that I gave
+[00:08:41.120 --> 00:08:48.000]   you. But it essentially is a way to auth separately and then verify that you're bearing true authentication,
+[00:08:48.000 --> 00:08:52.080]   but you can't link it to your identity. And again, we don't have time to go into that. But if you want to look
+[00:08:52.080 --> 00:08:56.880]   it up, it's a formal spec as well. There's lots of packages and open source libraries that let you use
+[00:08:56.880 --> 00:09:04.800]   that. Third component is the secure enclave. This is an equivalent we have in our world, if we're not
+[00:09:04.800 --> 00:09:09.680]   programming on Apple, is TPMs, if you've heard of that. But they're essentially a place, a separate piece
+[00:09:09.680 --> 00:09:16.240]   of hardware where the private keys are kept. And that makes a guarantee that those keys can never be removed
+[00:09:16.240 --> 00:09:23.440]   from the hardware. That's really important because you don't want the keys to be given away that does
+[00:09:23.440 --> 00:09:28.320]   all of these. All of the interactions that this is doing is with keys that they prove who they are.
+[00:09:28.320 --> 00:09:32.400]   If they could move it and have some third party hold it, then it wouldn't be trusted. You could
+[00:09:32.400 --> 00:09:36.960]   essentially fake everyone out that you are an official AI engine, but actually you're somewhere
+[00:09:36.960 --> 00:09:40.720]   else. So the secure enclave helps with that. Again, we won't be getting into those. We're going to get into
+[00:09:40.720 --> 00:09:46.960]   these two. The last one is secure boot and hardened operating system. This is like a standard technique,
+[00:09:46.960 --> 00:09:52.720]   but it's essentially they run a very limited version of iOS that makes it very difficult to hack or
+[00:09:52.720 --> 00:09:58.240]   modify. Everything has to be signed just like if you've done an iOS app. Now you have to do signatures,
+[00:09:58.240 --> 00:10:04.880]   but theirs is like even crazier. Okay, so the ones we're going to talk about are remote attestation.
+[00:10:04.880 --> 00:10:12.160]   That was this flow I talked about here. Great. Then the other one is the transparency log. The
+[00:10:12.160 --> 00:10:17.760]   transparency log is a record of all of the software that Apple is deploying on their private nodes so
+[00:10:17.760 --> 00:10:22.240]   that you can go and verify what's on the record is actually what's being sent to you during the
+[00:10:22.240 --> 00:10:29.360]   attestation. Okay, so let's talk about remote attestation very briefly. I'm going to talk about it
+[00:10:29.360 --> 00:10:34.400]   abstractly not with iPhones. So you have some client and the client says, "What are you running?"
+[00:10:34.400 --> 00:10:40.960]   And the server replies with two things: a set of signed claims and then a public key. And the signed
+[00:10:40.960 --> 00:10:48.880]   claims essentially say, "I'm on genuine hardware. I'm running a genuine GPU. I am running this set of
+[00:10:48.880 --> 00:10:55.120]   software. I use this bootloader. I use this version of Linux." And then the client gets to look at those
+[00:10:55.120 --> 00:11:01.520]   claims and decide whether it trusts that version. It might be like, "Oh, I only trust this version of
+[00:11:01.520 --> 00:11:09.520]   the Linux kernel and above." Or, "I only trust that it's been signed by Apple." And if so, it can use this
+[00:11:09.520 --> 00:11:18.560]   public key that comes across to encrypt data that is later sent to the server. And this is really important,
+[00:11:18.560 --> 00:11:23.840]   which is this public key and these claims are tied together. So during later interactions with the server,
+[00:11:23.840 --> 00:11:28.400]   the client will encrypt using the public key and the signed claims. And the server will only be able
+[00:11:28.400 --> 00:11:33.920]   to decrypt if it is still matching those signed claims. There's a whole bunch of cryptography that
+[00:11:33.920 --> 00:11:39.280]   makes this possible and a bunch of certificate chains and a bunch of like trusts and vendors. But that's
+[00:11:39.280 --> 00:11:44.080]   the fundamental idea. And this is what is letting you change it black box to something that's a little
+[00:11:44.080 --> 00:11:47.680]   more translucent, right? Not just throwing it over the wall. You can kind of see what's going on inside.
+[00:11:50.240 --> 00:11:56.240]   Okay. The second thing is the transparency log. Transparency log is actually very simple conceptually.
+[00:11:56.240 --> 00:12:03.040]   It's just a database with records for each software release or each component in a software release signed by a
+[00:12:03.040 --> 00:12:12.240]   particular person. So, for example, in this record, Bob added this binary or piece of compiled source code.
+[00:12:13.200 --> 00:12:19.760]   And this is the hash of that binary on November 1st, 24. And then that's it. It's just a declaration that
+[00:12:19.760 --> 00:12:26.160]   this binary was signed by Bob. Why does that matter? Why would you care about this? Well, first of all,
+[00:12:26.160 --> 00:12:33.840]   reviewers can go through and offline look at these binaries that are made publicly available
+[00:12:33.840 --> 00:12:39.600]   and verify their behavior. And so then when you get a remote attestation and the remote attestation
+[00:12:39.600 --> 00:12:43.440]   says this hash of this binary is there, you can be like, oh yeah, I've already checked this binary.
+[00:12:43.440 --> 00:12:48.880]   I believe that it's doing the right thing. The second thing, so that's what I said the second point,
+[00:12:48.880 --> 00:12:53.840]   which is you can check the remote attestations match what's in the log. And then finally, if you see an
+[00:12:53.840 --> 00:12:59.760]   attestation that's not on the log, you know the whole system's been compromised. Because if it's not on the log,
+[00:12:59.760 --> 00:13:03.840]   definitely someone is like doing some sort of shenanigans, right? They might have like hijacked
+[00:13:03.840 --> 00:13:09.600]   your connection, whatever. And it's just because like a limited set of people can write to this log
+[00:13:09.600 --> 00:13:14.400]   and there's no way to modify the log, right? It's append only. It uses like a Merkle tree so that you can't
+[00:13:14.400 --> 00:13:23.680]   change the contents. Great. So that is the transparency log. So let me tell you how this all comes together,
+[00:13:23.680 --> 00:13:31.760]   right? So remote attestation is this flow. Again, the iPhone firsts through the anonymizer,
+[00:13:31.760 --> 00:13:37.360]   requests a remote attestation package and then says, well, if I believe that remote attestation package,
+[00:13:37.360 --> 00:13:43.440]   I trust the contents that is running on the server. I can then send my data and I phrase this as try to
+[00:13:43.440 --> 00:13:49.920]   decrypt the data on the AI. Again, if the attestation changed, the AI engine would not be able to decrypt the
+[00:13:49.920 --> 00:13:54.000]   data, right? So that's the most important part, right? It says, I'm running this thing. Trust me.
+[00:13:54.000 --> 00:13:58.160]   And it says, I trust you. Okay, great. Encrypt it. And I can only decrypt it as long as it's still
+[00:13:58.160 --> 00:14:04.720]   running the exact thing I said I trusted. And the second item we talked about is the transparency log,
+[00:14:04.720 --> 00:14:09.200]   which is check if the attested claims match the transparency log. And this transparency log we
+[00:14:09.200 --> 00:14:14.720]   talked about. So on here, Apple is writing a lot, a lot of software onto the log and then essentially
+[00:14:14.720 --> 00:14:20.400]   saying, trust what's on the log, you can verify it offline. And then when the attestation claims come
+[00:14:20.400 --> 00:14:28.000]   in, just double check that they do indeed match. Okay, and then I don't have time to get into all of
+[00:14:28.000 --> 00:14:36.240]   these. But here are some of the other items that we talked about, the blind signatures, the oblivious
+[00:14:36.240 --> 00:14:42.160]   HTTP is the anonymizer, blind signatures are the way they do the auth. And then of course,
+[00:14:42.160 --> 00:14:48.880]   over here, we have the secure enclave, I kind of put that outside of the AI engine, they're separate
+[00:14:48.880 --> 00:14:53.280]   pieces of hardware. And then the hardening is just this little lock, but you know, we don't have time
+[00:14:53.280 --> 00:15:01.440]   to get into it. And that's kind of at a very conceptual level, like you could essentially do a PhD on
+[00:15:01.440 --> 00:15:09.760]   each of these, how Apple's PCC works. So what are the gaps? What are the downsides? Well, first, you have
+[00:15:09.760 --> 00:15:15.360]   to put all of your trust in Apple still, right? On the bright side, like Apple runs their whole supply chain,
+[00:15:15.360 --> 00:15:21.200]   they verify the nodes when they get them at their data center, they actually re-sign them with what's
+[00:15:21.200 --> 00:15:28.160]   called data center identity keys or something like that, DCI case. But there's no guarantee that Apple
+[00:15:28.160 --> 00:15:33.360]   doesn't share the certs with anyone, or insecurely generate them, or set the private key to one
+[00:15:33.360 --> 00:15:39.600]   everywhere. Now, I think they are trying to do their best effort, but you still have to trust. You've
+[00:15:39.600 --> 00:15:45.120]   shifted the trust now into like Apple's behavior rather than the hardware. But anyhow,
+[00:15:45.120 --> 00:15:50.800]   they're only available on Apple devices for consumer use on official apps. Maybe at some point,
+[00:15:50.800 --> 00:15:57.760]   they'll make PCC available to everyone else, but not yet. So what trade-offs do is Apple PCC make,
+[00:15:57.760 --> 00:16:05.040]   they're limited by latencies to Apple data centers. So they do have local models first that they try and
+[00:16:05.040 --> 00:16:11.760]   use, but if those local models aren't adequate, they'll send them to data centers. As we start to do
+[00:16:11.760 --> 00:16:17.600]   like real-time voice and other things, this is a little more latencies, like adds a lot more latency
+[00:16:17.600 --> 00:16:22.480]   to the system. The compute costs are higher. There's doing a lot more encryption. There's like,
+[00:16:22.480 --> 00:16:26.400]   I didn't, I mean, you're not seeing it, but there's like six layers of encryption before it even gets to
+[00:16:26.400 --> 00:16:30.080]   that node. That actually, that actually makes it happen. So you're spending a little bit more compute
+[00:16:30.080 --> 00:16:36.000]   there. Like I told you, no custom models, no fine tuning. The client libraries are very complicated.
+[00:16:36.000 --> 00:16:42.480]   The client having to orchestrate all of these requests, this transparency log, this auth,
+[00:16:42.480 --> 00:16:48.480]   that's way more complicated than a simple HTTP request, which kind of sucks. And what if
+[00:16:48.480 --> 00:16:54.400]   your iPhone goes down after it's authenticated, and then it loses all the authentication keys? Like,
+[00:16:54.400 --> 00:16:58.080]   you've essentially like lost all of your state, right? So there's a lot more stateful.
+[00:16:58.080 --> 00:17:06.080]   Operationally complex. You can't SSH into the machine and there's no logging. So that's difficult.
+[00:17:06.080 --> 00:17:11.840]   Not everyone would sign up for that. You can't do any usage tracking. If you could do usage tracking,
+[00:17:11.840 --> 00:17:18.160]   then you'd be identified, right? And so Apple can't like parcel out, you know, you get 2000 tokens.
+[00:17:18.160 --> 00:17:23.840]   They do do some fraud and abuse tracking at a very gross level. But if you wanted to use this and
+[00:17:23.840 --> 00:17:28.080]   maybe pass on your costs, a similar architecture and pass on your costs to the customer, you wouldn't
+[00:17:28.080 --> 00:17:33.760]   be able to know which customer was doing what, right? And then not open to third party developers.
+[00:17:33.760 --> 00:17:40.480]   Okay. What can I learn from this? I gave you the list of six that Apple uses. And here's what's
+[00:17:40.480 --> 00:17:45.440]   available in our world. If you're not developing on Apple Silicon and Apple hardware, you still have
+[00:17:45.440 --> 00:17:50.320]   oblivious HTTP and blind signatures. There are libraries to do that. So we don't have secure enclaves,
+[00:17:50.320 --> 00:17:56.720]   but we have TPMs. Almost all Intel and AMD hardware now has TPMs. And then in the cloud environment,
+[00:17:56.720 --> 00:18:02.560]   they have virtual TPMs that provide the same behavior as a TPM. And again, that's where you put a bunch of
+[00:18:02.560 --> 00:18:08.560]   your private keys that are tied to that public key that I talked about. These are available for us. Secure boot
+[00:18:08.560 --> 00:18:16.800]   and hardened operating system. Remote attestation is kind of available. It's kind of tied to the TPM.
+[00:18:16.800 --> 00:18:22.560]   There aren't great standards yet, but there is a little bit of work there. Transparency log. There
+[00:18:22.560 --> 00:18:27.360]   are two open ones. One's called SIGSUM. The other one's called SIGSTORE. If you've heard of them, if not.
+[00:18:29.440 --> 00:18:36.800]   And then confidential VMs are just becoming available on cloud providers with GPUs. So confidential computing
+[00:18:36.800 --> 00:18:42.880]   has been around for a while, but now you also have to have confidential H100s. And only H100s support,
+[00:18:42.880 --> 00:18:47.520]   and H200s support confidentiality. What that means is that their memory is encrypted. So if you were to
+[00:18:47.520 --> 00:18:52.800]   physically go up to the H100 and like try to look at its RAM, you wouldn't be able to see what's going on
+[00:18:52.800 --> 00:18:57.680]   there or figure out what's going on there. And then finally, what we have that Apple doesn't have is we
+[00:18:57.680 --> 00:19:01.440]   have open source and we have reproducible builds. We have the ability to link the source code to the
+[00:19:01.440 --> 00:19:08.080]   binaries. And so we can have security research look at the source code as well as, you know, black box
+[00:19:08.080 --> 00:19:13.920]   test the binaries and develop confidence in what the server might be running. All right, what's next?
+[00:19:13.920 --> 00:19:19.280]   Okay, so Apple has set the standard for private AI and the market is definitely following.
+[00:19:21.280 --> 00:19:26.960]   That was in June of 2024. It wasn't actually released until October of 2024. Azure Open AI,
+[00:19:26.960 --> 00:19:31.280]   or sorry, Azure AI, not Azure Open AI, is doing private inferencing starting as in September.
+[00:19:31.280 --> 00:19:36.160]   They're still in private preview. And then about a month ago, Meta of all companies, I guess I'm
+[00:19:36.160 --> 00:19:43.200]   recorded, Meta of all these great companies, also added private processing, which if you read their blog
+[00:19:43.200 --> 00:19:48.320]   post, it's like they copy and pasted this. Maybe they used Llama to rewrite it into their language,
+[00:19:48.320 --> 00:19:52.960]   but it's essentially identical, which is great for all of us thinking about privacy. And sure,
+[00:19:52.960 --> 00:19:56.800]   I'm sure WhatsApp also doesn't want those like press releases like I showed earlier.
+[00:19:56.800 --> 00:20:03.040]   So I'll just close by saying we're building the same thing. But for everyone else, if you're not on
+[00:20:03.040 --> 00:20:08.800]   Apple or you're not in WhatsApp, we have it. It's called Confident Security. And if you'd like to
+[00:20:09.600 --> 00:20:14.640]   talk more, let me know. By the way, this is an anti-AI shirt, which means that if you take pictures
+[00:20:14.640 --> 00:20:19.920]   of me, it will confuse all the facial recognition stuff. We have others. If you have some cool
+[00:20:19.920 --> 00:20:24.960]   questions and want to talk afterward, if it deems it worthy, I will give you an anti-AI shirt. We also
+[00:20:24.960 --> 00:20:35.360]   have some other privacy-based swag in the back. So come hit me up. Thanks, everyone.
+

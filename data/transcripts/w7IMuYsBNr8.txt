@@ -1,0 +1,310 @@
+
+[00:00:00.000 --> 00:00:02.000]   -
+[00:00:02.000 --> 00:00:16.440]   - Hi everyone, I'm Fouad,
+[00:00:16.440 --> 00:00:18.280]   and I'm here to talk about safety and security
+[00:00:18.280 --> 00:00:20.200]   for code-executing agents.
+[00:00:20.200 --> 00:00:22.520]   And a little intro about myself.
+[00:00:22.520 --> 00:00:25.640]   I actually started on the OpenAI security team
+[00:00:25.640 --> 00:00:27.900]   after running a startup for about six years,
+[00:00:27.900 --> 00:00:31.080]   a security company, and now I work on agent robustness
+[00:00:31.080 --> 00:00:32.940]   and control as part of post training.
+[00:00:32.940 --> 00:00:36.280]   One of the things I did in the last couple of months
+[00:00:36.280 --> 00:00:38.580]   is work on Codex and Codex CLI,
+[00:00:38.580 --> 00:00:40.140]   which is our open source library
+[00:00:40.140 --> 00:00:42.960]   for actually running Codex directly on your computer.
+[00:00:42.960 --> 00:00:45.000]   And there's a lot of things we learned in building Codex
+[00:00:45.000 --> 00:00:46.220]   that I'm excited to share with you all,
+[00:00:46.220 --> 00:00:48.540]   but there's definitely a lot more work for us to do,
+[00:00:48.540 --> 00:00:52.380]   and excited to hear what you think afterwards.
+[00:00:52.380 --> 00:00:55.560]   One high level point I want to start with is that
+[00:00:55.560 --> 00:00:57.820]   every frontier research lab is focusing
+[00:00:57.820 --> 00:01:00.740]   on how to push the benchmarks around coding,
+[00:01:00.740 --> 00:01:03.100]   and not just the benchmarks, but also usability
+[00:01:03.100 --> 00:01:05.540]   and actually deployability of these agents.
+[00:01:05.540 --> 00:01:06.920]   So they're making them really good
+[00:01:06.920 --> 00:01:08.620]   at writing and executing code.
+[00:01:08.620 --> 00:01:11.240]   And as a result, every agent will become
+[00:01:11.240 --> 00:01:12.400]   a code-executing agent.
+[00:01:12.400 --> 00:01:14.240]   It's not just actually about writing code,
+[00:01:14.240 --> 00:01:16.780]   but it's about achieving the objective most efficiently.
+[00:01:16.780 --> 00:01:20.620]   And if you look at where the models were just even a year ago,
+[00:01:20.620 --> 00:01:25.260]   or under a year ago with 01, it showed us a very early preview
+[00:01:25.260 --> 00:01:27.180]   of what these recent models can do.
+[00:01:27.180 --> 00:01:29.920]   But with more recent models like 03, 04 Mini,
+[00:01:29.920 --> 00:01:31.500]   and other models in the space,
+[00:01:31.500 --> 00:01:34.360]   you can see a higher reliability and more capabilities.
+[00:01:34.360 --> 00:01:36.460]   And now the new constraint isn't just,
+[00:01:36.460 --> 00:01:37.800]   can these models do things,
+[00:01:37.800 --> 00:01:39.380]   but actually what should they be able to do,
+[00:01:39.380 --> 00:01:40.760]   and what should the guardrails be
+[00:01:40.760 --> 00:01:44.140]   when you allow them to work in your environments?
+[00:01:45.680 --> 00:01:47.920]   And as I mentioned, code isn't just for SWE tasks,
+[00:01:47.920 --> 00:01:49.560]   which is kind of what I thought initially
+[00:01:49.560 --> 00:01:51.560]   when I started at OpenAI,
+[00:01:51.560 --> 00:01:53.060]   but it actually helps across the stack.
+[00:01:53.060 --> 00:01:55.620]   Here's an example from our 03 release
+[00:01:55.620 --> 00:01:57.200]   around multimodal reasoning,
+[00:01:57.200 --> 00:01:59.920]   where previously 01 would look at the image
+[00:01:59.920 --> 00:02:01.740]   and try to just reason about it
+[00:02:01.740 --> 00:02:03.600]   based on the image as it's given.
+[00:02:03.600 --> 00:02:06.340]   But what we've noticed with code-executing agents,
+[00:02:06.340 --> 00:02:08.160]   even outside of a SWE scenario,
+[00:02:08.160 --> 00:02:09.780]   they're able to actually run code
+[00:02:09.780 --> 00:02:13.540]   to decipher the text that's on the page using OCR,
+[00:02:13.540 --> 00:02:15.180]   or to crop images.
+[00:02:15.180 --> 00:02:17.220]   There's some really exciting behaviors
+[00:02:17.220 --> 00:02:18.960]   that we've seen from models
+[00:02:18.960 --> 00:02:21.180]   when you just give them the ability to run code.
+[00:02:21.180 --> 00:02:23.660]   We didn't tell it in this prompt that it should run code.
+[00:02:23.660 --> 00:02:25.920]   It just knew that with that tool as an option,
+[00:02:25.920 --> 00:02:29.160]   it's able to do it more efficiently.
+[00:02:29.160 --> 00:02:30.940]   And what we'll, I think, observe
+[00:02:30.940 --> 00:02:33.540]   when it comes to building AI agents
+[00:02:33.540 --> 00:02:36.540]   is this shift from the kind of complex inner loop,
+[00:02:36.540 --> 00:02:39.380]   where you have a model that might determine
+[00:02:39.380 --> 00:02:42.300]   what type of task the user is asking for given a prompt.
+[00:02:42.300 --> 00:02:45.100]   You'll then load a more task-specific prompt and tool
+[00:02:45.100 --> 00:02:45.640]   set.
+[00:02:45.640 --> 00:02:47.400]   You'll then chain a bunch of these loops together
+[00:02:47.400 --> 00:02:48.880]   in order to achieve some sort of goal.
+[00:02:48.880 --> 00:02:51.440]   Maybe just ask the model, hey, are you done yet?
+[00:02:51.440 --> 00:02:52.840]   Or to keep going.
+[00:02:52.840 --> 00:02:54.280]   And then finally, use another model
+[00:02:54.280 --> 00:02:57.040]   to respond back to the user.
+[00:02:57.040 --> 00:02:59.180]   Generally, we don't need these anymore.
+[00:02:59.180 --> 00:03:01.620]   You can actually just have the model decide
+[00:03:01.620 --> 00:03:03.220]   when it should use which tools and when
+[00:03:03.220 --> 00:03:04.720]   it should write or run code.
+[00:03:04.720 --> 00:03:09.620]   And it can just write and run that code on its own.
+[00:03:09.620 --> 00:03:13.420]   Now, that's what we in security would call a RCE or remote code
+[00:03:13.420 --> 00:03:13.920]   exploitation.
+[00:03:13.920 --> 00:03:16.800]   So when we're looking at these new behaviors,
+[00:03:16.800 --> 00:03:19.340]   it's important to consider not just the capabilities,
+[00:03:19.340 --> 00:03:22.280]   but also how do we ensure that those capabilities are not
+[00:03:22.280 --> 00:03:24.680]   going to backfire on us when we allow it to be able to perform
+[00:03:24.680 --> 00:03:26.880]   those operations.
+[00:03:26.880 --> 00:03:29.320]   And there's a couple of different ways that we've observed
+[00:03:29.320 --> 00:03:30.820]   how models can go wrong.
+[00:03:30.820 --> 00:03:33.220]   And the most common ones that we think about consistently
+[00:03:33.220 --> 00:03:35.520]   is prompt injection and data exfiltration.
+[00:03:35.520 --> 00:03:36.740]   There's a lot of different examples
+[00:03:36.740 --> 00:03:39.420]   that we'll be documenting in the coming months.
+[00:03:39.420 --> 00:03:41.580]   But that's probably number one in our priority queue.
+[00:03:41.580 --> 00:03:43.360]   But then you also have things like the agent just
+[00:03:43.360 --> 00:03:44.100]   makes a mistake.
+[00:03:44.100 --> 00:03:45.920]   It just does something wrong.
+[00:03:45.920 --> 00:03:48.480]   Maybe it installs a malicious package unintentionally.
+[00:03:48.480 --> 00:03:51.000]   Or it writes vulnerable code, again, unintentionally.
+[00:03:51.000 --> 00:03:55.920]   Or you have privilege escalation or sandbox escape.
+[00:03:55.920 --> 00:03:59.020]   And when we think about our responsibility of deploying
+[00:03:59.020 --> 00:04:00.920]   these agents both internally and externally,
+[00:04:00.920 --> 00:04:02.440]   we have this preparedness framework where
+[00:04:02.440 --> 00:04:05.040]   we document some of the recommendations and also
+[00:04:05.040 --> 00:04:07.860]   some of the standards that we hold ourselves to.
+[00:04:07.860 --> 00:04:09.740]   But one of the ones that I want to emphasize
+[00:04:09.740 --> 00:04:14.160]   is requiring safeguards to avoid misalignment
+[00:04:14.160 --> 00:04:15.300]   at large scale deployment.
+[00:04:15.300 --> 00:04:17.200]   And this is something that we think about ourselves
+[00:04:17.200 --> 00:04:19.720]   when we are building Codex, but also something
+[00:04:19.720 --> 00:04:21.680]   that organizations, as you deploy coding agents
+[00:04:21.680 --> 00:04:24.380]   into your workplace, that you should also be considering.
+[00:04:24.380 --> 00:04:26.620]   And one of the first safeguards that we put in place
+[00:04:26.620 --> 00:04:28.400]   is to sandbox the agent, especially if you're
+[00:04:28.400 --> 00:04:30.240]   running it locally.
+[00:04:30.240 --> 00:04:33.000]   Generally, the best method is just to give it its own computer.
+[00:04:33.000 --> 00:04:34.920]   That's what we did with Codex and ChatGPT.
+[00:04:34.920 --> 00:04:37.100]   It spins up a container, fully isolated.
+[00:04:37.100 --> 00:04:38.980]   It then produces a PR at the end.
+[00:04:38.980 --> 00:04:41.300]   That's practically as safe as you can get.
+[00:04:41.300 --> 00:04:44.040]   But if you are going to run it locally, which, of course,
+[00:04:44.040 --> 00:04:46.740]   with Codex CLI, we also encourage,
+[00:04:46.740 --> 00:04:49.120]   making sure that you're actually providing the correct level
+[00:04:49.120 --> 00:04:51.540]   of sandboxing, whether it's containerization
+[00:04:51.540 --> 00:04:53.040]   or it's using app-level sandboxing,
+[00:04:53.040 --> 00:04:55.940]   which we'll talk about in a moment, or OS-level sandboxing,
+[00:04:55.940 --> 00:04:58.080]   making sure that you're providing the right guardrails
+[00:04:58.080 --> 00:05:02.300]   for the model, even if it does attempt to do something wrong.
+[00:05:02.300 --> 00:05:05.660]   Related to that is disabling or limiting internet access.
+[00:05:05.660 --> 00:05:10.120]   And this is probably the highest probability vector of prompt
+[00:05:10.120 --> 00:05:12.100]   injection or data exfil.
+[00:05:12.100 --> 00:05:14.560]   You know, the model goes to read some sort of docs
+[00:05:14.560 --> 00:05:15.860]   or reads a GitHub issue.
+[00:05:15.860 --> 00:05:18.080]   And then in a comment of that GitHub issue,
+[00:05:18.080 --> 00:05:19.720]   maybe there's a prompt injection.
+[00:05:19.720 --> 00:05:23.600]   That kind of untrusted content can leak into the kind of core
+[00:05:23.600 --> 00:05:26.060]   inner loop that you would trust an agent to run code in.
+[00:05:26.060 --> 00:05:29.160]   And if it has access to your code base or other sensitive
+[00:05:29.160 --> 00:05:32.760]   materials, that could be pretty bad.
+[00:05:32.760 --> 00:05:36.680]   And then finally, reviewing all of these operations
+[00:05:36.680 --> 00:05:39.740]   or the actual final diffs that the agents perform,
+[00:05:39.740 --> 00:05:42.860]   whether it's code review in a GitHub PR
+[00:05:42.860 --> 00:05:45.440]   or it's approvals and confirmations,
+[00:05:45.440 --> 00:05:47.680]   and those guardrails are actually really important.
+[00:05:47.680 --> 00:05:50.560]   Ensuring that humans stay in control of these systems
+[00:05:50.560 --> 00:05:52.520]   is one of the strongest mitigations that we have.
+[00:05:52.520 --> 00:05:54.060]   But of course, no one wants to sit there
+[00:05:54.060 --> 00:05:55.660]   and keep clicking approved.
+[00:05:55.660 --> 00:05:58.500]   So avoiding the kind of YOLO mode on one end
+[00:05:58.500 --> 00:06:02.940]   to having to approve every single LS command
+[00:06:02.940 --> 00:06:04.440]   is not practical either.
+[00:06:04.440 --> 00:06:05.960]   So let's talk a little bit about how
+[00:06:05.960 --> 00:06:07.060]   do we actually achieve this.
+[00:06:07.060 --> 00:06:09.600]   So I mentioned our recommendation is
+[00:06:09.600 --> 00:06:10.900]   to give the agent its own computer.
+[00:06:10.900 --> 00:06:13.380]   You see this in Codex and ChatGPT.
+[00:06:13.380 --> 00:06:15.020]   There's a lot of different constraints
+[00:06:15.020 --> 00:06:16.660]   that you need to apply when you think about that,
+[00:06:16.660 --> 00:06:19.420]   making sure that the agent has all of the dependencies
+[00:06:19.420 --> 00:06:21.180]   installed, all of the different access it needs
+[00:06:21.180 --> 00:06:23.280]   to perform its actions.
+[00:06:23.280 --> 00:06:25.360]   And if you want to run it locally,
+[00:06:25.360 --> 00:06:27.460]   being able to use something like Codex CLI,
+[00:06:27.460 --> 00:06:28.920]   which we fully open sourced, for you
+[00:06:28.920 --> 00:06:31.840]   to be able to build out these agents yourself,
+[00:06:31.840 --> 00:06:33.280]   you can use this as a reference point.
+[00:06:33.280 --> 00:06:35.240]   That's part of why we wanted to open source it,
+[00:06:35.240 --> 00:06:37.940]   is really showcase not only here's the agent
+[00:06:37.940 --> 00:06:39.720]   that we built for you, but also here's
+[00:06:39.720 --> 00:06:40.900]   how you can build your own.
+[00:06:40.900 --> 00:06:43.100]   And as I mentioned, fully open sourced,
+[00:06:43.100 --> 00:06:45.380]   you can actually use these, in this case,
+[00:06:45.380 --> 00:06:48.200]   macOS or Linux sandboxing techniques.
+[00:06:48.200 --> 00:06:52.940]   And as an example, here is a portion of the macOS sandboxing
+[00:06:52.940 --> 00:06:53.440]   policy.
+[00:06:53.440 --> 00:06:55.540]   This uses a language called Seatbelt
+[00:06:55.540 --> 00:06:58.940]   and that Apple bundles into operating systems
+[00:06:58.940 --> 00:07:00.720]   since Leopard.
+[00:07:00.720 --> 00:07:04.380]   It's kind of somewhat hard to find documentation for.
+[00:07:04.380 --> 00:07:07.780]   So this is definitely an area where using both our models,
+[00:07:07.780 --> 00:07:09.520]   using deep research to actually understand
+[00:07:09.520 --> 00:07:11.180]   what are the bounds of different examples
+[00:07:11.180 --> 00:07:13.020]   that people have created.
+[00:07:13.020 --> 00:07:14.640]   We were heavily inspired by Chromium, which also
+[00:07:14.640 --> 00:07:19.780]   uses Seatbelt as a sandboxing mechanism on macOS.
+[00:07:19.780 --> 00:07:21.920]   And then separately, you'll actually notice
+[00:07:21.920 --> 00:07:25.180]   this is now in Rust, where we actually tapped
+[00:07:25.180 --> 00:07:29.880]   into our own security teams to build out our Linux sandboxing
+[00:07:29.880 --> 00:07:33.460]   and run it, in this case, using both Seccomp and Landlock
+[00:07:33.460 --> 00:07:34.960]   in order to be able to--
+[00:07:34.960 --> 00:07:36.740]   I think we'll do maybe questions afterwards.
+[00:07:36.740 --> 00:07:41.060]   But in order to have unprivileged sandbox
+[00:07:41.060 --> 00:07:43.900]   and prevent escalation.
+[00:07:43.900 --> 00:07:46.060]   And then next, we have disabling internet access.
+[00:07:46.060 --> 00:07:48.820]   This is really important when it comes to prompt injection,
+[00:07:48.820 --> 00:07:52.240]   which, again, is a primary exfil risk.
+[00:07:52.240 --> 00:07:53.900]   And we have two methods--
+[00:07:53.900 --> 00:07:55.100]   well, actually, before I get into that,
+[00:07:55.100 --> 00:07:56.960]   we have two methods, both in Codex and ChaiGPT,
+[00:07:56.960 --> 00:07:59.860]   but also within CLI, we actually have this full auto mode,
+[00:07:59.860 --> 00:08:04.520]   where effectively what we did was define a sandbox where it can only
+[00:08:04.520 --> 00:08:06.960]   read and write files within the directory that it's run in.
+[00:08:06.960 --> 00:08:09.800]   It can only make network calls based on commands that you ought
+[00:08:09.800 --> 00:08:10.800]   to approve it for.
+[00:08:10.800 --> 00:08:14.720]   But otherwise, it just runs in this kind of fully sandbox and lockdown
+[00:08:14.720 --> 00:08:18.140]   environment that allows the agent to be able to go and test--
+[00:08:18.140 --> 00:08:22.300]   run PyTest, run NPM test, but not actually have some second order
+[00:08:22.300 --> 00:08:23.300]   consequences.
+[00:08:23.300 --> 00:08:25.960]   And then when it comes to Codex and ChaiGPT, we actually just
+[00:08:25.960 --> 00:08:29.800]   launched this yesterday or two days ago, maybe.
+[00:08:29.800 --> 00:08:32.140]   But you can now turn on internet access,
+[00:08:32.140 --> 00:08:34.720]   but it comes with a set of configurable allow lists.
+[00:08:34.720 --> 00:08:38.260]   This is really important when you consider either using or building
+[00:08:38.260 --> 00:08:41.440]   agents yourself, ensuring that you have both the kind of maximum
+[00:08:41.440 --> 00:08:44.480]   security option and also this more flexible option so people
+[00:08:44.480 --> 00:08:49.600]   can define whatever policy that makes sense for their use case.
+[00:08:49.600 --> 00:08:53.200]   And in here, we even define which HTTP methods are allowed,
+[00:08:53.200 --> 00:08:56.680]   including a warning, letting you know about the risks.
+[00:08:56.680 --> 00:08:58.980]   Just to give you an example-- and we actually linked to this
+[00:08:58.980 --> 00:09:02.340]   from those docs-- let's say my prompt is to fix this issue,
+[00:09:02.340 --> 00:09:03.760]   and I just linked to a GitHub issue.
+[00:09:03.760 --> 00:09:05.920]   And it seems pretty innocuous, but in that GitHub issue,
+[00:09:05.920 --> 00:09:08.960]   which could be in a user-generated content,
+[00:09:08.960 --> 00:09:12.400]   go ahead and grab the last commit and go ahead and post that
+[00:09:12.400 --> 00:09:13.440]   to this random URL.
+[00:09:13.440 --> 00:09:16.700]   And because Codex is really trained with instruction following
+[00:09:16.700 --> 00:09:18.620]   and it tries to do exactly what you ask,
+[00:09:18.620 --> 00:09:19.960]   it'll go ahead and do that.
+[00:09:19.960 --> 00:09:22.940]   Now, a way that we can control that is both at the model level
+[00:09:22.940 --> 00:09:26.080]   and flagging things that seem like they could be suspicious,
+[00:09:26.080 --> 00:09:28.380]   and that's definitely an area when it comes to model training
+[00:09:28.380 --> 00:09:29.680]   that we're actually focusing.
+[00:09:29.680 --> 00:09:34.940]   But ultimately, your most deterministic and authoritative
+[00:09:34.940 --> 00:09:36.880]   control is going to be a system-level control.
+[00:09:36.880 --> 00:09:40.380]   It shouldn't even be able to make a call to HTTP bin in this case.
+[00:09:40.380 --> 00:09:42.740]   So combining those model-level controls
+[00:09:42.740 --> 00:09:45.600]   along with your system-level configurations
+[00:09:45.600 --> 00:09:49.460]   is really key to solving this problem.
+[00:09:49.460 --> 00:09:52.220]   And finally, there's requiring human review.
+[00:09:52.220 --> 00:09:54.220]   Now, this is something that I see a lot of tension
+[00:09:54.220 --> 00:09:59.020]   when it comes to folks who are using LMs and coding agents,
+[00:09:59.020 --> 00:10:02.360]   is that you have this new problem when you're prompting these agents,
+[00:10:02.360 --> 00:10:04.680]   is there's just so much code that you end up having to review.
+[00:10:04.680 --> 00:10:09.800]   Using tools like other PR review or kind of code review tools
+[00:10:09.800 --> 00:10:12.200]   and using LMs as part of the loop, while useful,
+[00:10:12.200 --> 00:10:15.060]   is not a substitute for a human actually going in and reviewing
+[00:10:15.060 --> 00:10:17.500]   the operations that the model is about to perform.
+[00:10:17.500 --> 00:10:19.500]   Ensuring that you're not having a model that
+[00:10:19.500 --> 00:10:22.660]   might have installed a package that maybe is not as well-known
+[00:10:22.660 --> 00:10:25.580]   or it's maybe off by one character,
+[00:10:25.580 --> 00:10:27.780]   and ensuring that that doesn't land in your code base
+[00:10:27.780 --> 00:10:31.920]   that then later gets run in an unprivileged environment--
+[00:10:31.920 --> 00:10:33.580]   or excuse me, in a privileged environment.
+[00:10:33.580 --> 00:10:35.320]   And then we also have, again, since this
+[00:10:35.320 --> 00:10:37.040]   doesn't just apply to coding agents,
+[00:10:37.040 --> 00:10:38.580]   we also have operator as an example,
+[00:10:38.580 --> 00:10:40.660]   where there's different techniques you can use.
+[00:10:40.660 --> 00:10:44.440]   In this case, we have both a domain list and also a monitor
+[00:10:44.440 --> 00:10:46.540]   that is in the loop identifying any kind
+[00:10:46.540 --> 00:10:49.180]   of potential sensitive operations that a model might go out
+[00:10:49.180 --> 00:10:50.540]   and do on your behalf.
+[00:10:50.540 --> 00:10:52.880]   And we have this monitoring task and watch mode,
+[00:10:52.880 --> 00:10:55.220]   as we call it, where we ensure that a human is actually
+[00:10:55.220 --> 00:10:57.300]   reviewing any kind of actions that it can take.
+[00:10:57.300 --> 00:10:59.700]   So again, balancing the maximum security
+[00:10:59.700 --> 00:11:03.740]   with the maximum flexibility is really important here.
+[00:11:03.740 --> 00:11:05.420]   And so as an example of how to think
+[00:11:05.420 --> 00:11:09.060]   about actually building these agents, effectively,
+[00:11:09.060 --> 00:11:10.640]   where previously you might have had a loop that
+[00:11:10.640 --> 00:11:13.380]   is doing a bunch of different elements of software-based logic,
+[00:11:13.380 --> 00:11:15.300]   now you can actually just defer most of that logic
+[00:11:15.300 --> 00:11:17.220]   to the reasoning model and give it the right tools
+[00:11:17.220 --> 00:11:19.200]   to accomplish the task.
+[00:11:19.200 --> 00:11:22.740]   We released this exec tool on local shell, as it's called,
+[00:11:22.740 --> 00:11:25.660]   in the API, where it actually is exactly the way that we train
+[00:11:25.660 --> 00:11:28.360]   our models to be able to write and execute code.
+[00:11:28.360 --> 00:11:31.900]   We also released tools like apply patch, which models aren't particularly good
+[00:11:31.900 --> 00:11:34.820]   at getting line numbers correct for like a get diff.
+[00:11:34.820 --> 00:11:39.020]   So we provided this new format for actually applying diffs to files.
+[00:11:39.020 --> 00:11:42.820]   But then, of course, you can hear more standard tools, things like MCP, web search.
+[00:11:42.820 --> 00:11:46.820]   I'm actually going to give an example of how you can use these in combination.
+[00:11:46.820 --> 00:11:53.280]   So let's say Socket, which is a dependency vulnerability checking service,
+[00:11:53.280 --> 00:11:55.280]   now has an MCP server.
+[00:11:55.280 --> 00:11:59.480]   You can expose that to the agent to then go in and verify whether or not a given dependency
+[00:11:59.480 --> 00:12:04.280]   it's about to install could be vulnerable or suspicious, and ensure that the model either
+[00:12:04.280 --> 00:12:09.740]   as part of its own operations or you can apply a system level check after the rollout has completed
+[00:12:09.740 --> 00:12:14.740]   to make sure that any dependencies it's going to install are actually safe to do so.
+[00:12:14.740 --> 00:12:18.440]   But again, one thing we'd emphasize is to use a remote container.
+[00:12:18.440 --> 00:12:25.740]   We are releasing a container service as part of our agent's SDK and as part of a responses API.
+[00:12:25.740 --> 00:12:33.740]   And so you can either run it locally or run it in your own environment or you can let OpenAI kind of host it for you.
+[00:12:33.740 --> 00:12:39.040]   And so as a recap, I would strongly recommend sandboxing these agents, whether it's through containerization
+[00:12:39.040 --> 00:12:42.980]   or it's through OS level sandboxing, disabling and limiting Internet.
+[00:12:42.980 --> 00:12:47.900]   I think that balance between capability where you want to be able to let it just run and do its own thing
+[00:12:47.900 --> 00:12:54.400]   for as long as possible, which you can do when it's fully network disabled versus I wanted to go out and read docs.
+[00:12:54.400 --> 00:12:56.060]   I want to go install packages.
+[00:12:56.060 --> 00:13:02.140]   We give you that flexibility, but being really thoughtful about when you employ each and then finally requiring human review.
+[00:13:02.140 --> 00:13:08.740]   This is definitely an area where we expect there to be a lot more research and employing monitors and LM based monitors in the loop.
+[00:13:08.740 --> 00:13:15.060]   While valuable is not quite there yet in terms of the kind of certainty that you get from, again, a deterministic control.
+[00:13:15.060 --> 00:13:21.300]   And so in that vein, there is more tooling that we plan to release here.
+[00:13:21.300 --> 00:13:24.960]   So stay tuned in the Codex repo on the OpenAI org.
+[00:13:24.960 --> 00:13:32.040]   And there's also more documentation that we plan to publish around both the ML based interventions and the systems controls.
+[00:13:32.040 --> 00:13:38.140]   And if you're interested in working on problems like this, we are hiring for this new team, agent robustness and control.
+[00:13:38.140 --> 00:13:45.800]   And so if you also write Rust, we are also hiring for the Codex CLI to build out more of those integrations and making sure that everyone can benefit from them.
+[00:13:45.800 --> 00:13:48.800]   So if you're interested or you know someone who would be interested, definitely let us know.
+[00:13:48.800 --> 00:13:51.800]   But with that, thank you so much.
+[00:13:51.800 --> 00:13:52.460]   Thank you.
+[00:13:52.460 --> 00:13:53.460]   Thank you.
+[00:13:53.460 --> 00:13:54.040]   Thank you.
+[00:13:54.040 --> 00:13:54.780]   Thank you.
+[00:13:54.780 --> 00:13:54.880]   Thank you.
+[00:13:54.880 --> 00:13:59.240]   We'll see you next time.
+

@@ -1,0 +1,203 @@
+
+[00:00:00.040 --> 00:00:18.760]   Hey there, everyone. I'm Kyle Cranin and today I'll be talking about how to break the inference
+[00:00:18.760 --> 00:00:25.240]   Pareto frontier in your advantage. Really, the thing that enables the success is that a good
+[00:00:25.240 --> 00:00:30.460]   model and a good system that takes into account the actual constraints for what you need from
+[00:00:30.460 --> 00:00:35.260]   your deployment is actually key to the success of both your deployment and the application
+[00:00:35.260 --> 00:00:42.120]   that is backed by it. So, who am I and why am I talking about this? As I said, my name
+[00:00:42.120 --> 00:00:50.680]   is Kyle Cranin. Currently, I work at NVIDIA. Previously at NVIDIA, I was leading and GMing
+[00:00:50.680 --> 00:00:56.080]   the largest inference deployment at NVIDIA with a multiple tens of millions dollar quarterly
+[00:00:56.080 --> 00:01:01.420]   cloud bill. And now I'm an architect and lead for a project that we just released an open
+[00:01:01.420 --> 00:01:07.300]   source called NVIDIA Dynamo that aims to do things like enable data center scale inference
+[00:01:07.300 --> 00:01:12.020]   to manipulate your deployment and manipulate the Pareto frontier in order to achieve better
+[00:01:12.020 --> 00:01:17.880]   SLAs or achieve lower costs for existing SLAs with techniques like disaggregation or more
+[00:01:17.880 --> 00:01:23.600]   techniques that we'll talk about later in the talk. Dynamo is... The Dynamo meetup is linked
+[00:01:23.600 --> 00:01:27.240]   right here. You can learn more about Dynamo there if you want to look it up. And I'll also have
+[00:01:27.240 --> 00:01:33.620]   that at the end of the talk as well. So, the three things that we or I like to think about
+[00:01:33.620 --> 00:01:39.020]   when I'm thinking about whether or not something can actually be deployed and used is really simple.
+[00:01:39.020 --> 00:01:44.420]   It's quality. Whether or not your application and the system around your model is capable of, you know,
+[00:01:44.420 --> 00:01:50.720]   completing tasks with some level of accuracy or quality. Latency. Whether or not the task can be
+[00:01:50.720 --> 00:01:55.520]   completed in a fast enough envelope for, you know, either the user to be happy or to meet safety
+[00:01:55.520 --> 00:02:03.200]   guarantees like for robotics. And cost. Can the LLM complete the task cheaply enough per request in
+[00:02:03.200 --> 00:02:07.160]   order for you to meet whatever, you know, margin requirements you have for your application.
+[00:02:07.160 --> 00:02:14.720]   And one of the ways that we generally compare these three things is through Pareto frontier. Now,
+[00:02:14.720 --> 00:02:19.700]   the frontier I'm showing here is two-dimensional. It's actually really hard to plot things in 3D on
+[00:02:19.700 --> 00:02:24.600]   a 2D slide. So, I'm gonna just show two dimensions. Really what this looks like is you have this, like,
+[00:02:24.600 --> 00:02:35.700]   edge. We have this edge that sort of represents the best or to the top and rightmost points that we
+[00:02:35.700 --> 00:02:42.700]   achieve for, you know, a specific set of attributes. So, in this case, we have the TPS per GPU, which is
+[00:02:42.700 --> 00:02:48.000]   effectively a cost metric. How many requests can you handle per GPU per second? And the user TPS,
+[00:02:48.000 --> 00:02:53.340]   which is a responsiveness metric, right? So, this is the latency versus the cost. And for different
+[00:02:53.340 --> 00:03:00.540]   applications, really, you want to enable your Pareto front -- enable -- you actually really only want one
+[00:03:00.540 --> 00:03:04.440]   point on the Pareto frontier. It's right. What is your operating latency? What is the operating quality
+[00:03:04.440 --> 00:03:09.960]   you need? And how can you minimize cost for that? Now, this really actually depends on the application
+[00:03:09.960 --> 00:03:14.460]   you're talking about. So, one of the most important things you're doing when you're thinking about breaking
+[00:03:14.460 --> 00:03:18.840]   the Pareto frontier is you're thinking about your application. So, for example, if we're talking
+[00:03:18.840 --> 00:03:24.060]   about personal cancer cures, which is a topic that's talked about a lot in the context of generative AI,
+[00:03:24.060 --> 00:03:30.940]   in that situation, latency and cost are pretty much no object, right? You could spend millions of dollars
+[00:03:30.940 --> 00:03:36.140]   on proving out a single cure. And if it works, the return on investment is so high that it doesn't
+[00:03:36.140 --> 00:03:41.660]   really matter. To take a different example, tab completion like those that you see in popular
+[00:03:42.380 --> 00:03:48.540]   IDEs, like cursor, all are very, very dependent upon snappiness. The user expects that when they
+[00:03:48.540 --> 00:03:54.780]   press tab, they will see a recommendation for the next line or the next set of, you know, tokens very,
+[00:03:54.780 --> 00:04:01.100]   very quickly. And then to take another code example, with respect to async code commits, things like,
+[00:04:01.100 --> 00:04:11.900]   you know, cursors, what's it called? It's agent mode. And, you know, other applications where the chatbot or
+[00:04:11.900 --> 00:04:17.100]   applications working next to the user, there's not as much a consideration for latency, but there is
+[00:04:17.100 --> 00:04:25.020]   a concern for both quality and cost. And this sort of breaks down, or this sort of depends upon what
+[00:04:25.020 --> 00:04:30.780]   the user expects from the application. Does it, do they expect it to be fast? Do they expect it to be
+[00:04:30.780 --> 00:04:37.180]   slow? Are they involved in the loop with this application? Now, there are a series of, you know,
+[00:04:37.180 --> 00:04:41.980]   techniques that are pretty commonly known about that all, you know, support the manipulation of this
+[00:04:41.980 --> 00:04:47.100]   frontier. For example, quantization speeds up your latency and it also decreases your cost because you
+[00:04:47.100 --> 00:04:52.300]   can produce higher batch sizes. Retrieval augmented generation generally slows down your application,
+[00:04:52.300 --> 00:04:58.220]   makes it higher latency, increases the cost, but also increases the quality. And reasoning, for example,
+[00:04:58.220 --> 00:05:03.340]   similar, you know, you produce more tokens to think. And changing the model config allows you to do any of
+[00:05:03.340 --> 00:05:08.700]   these things. If you change how the model is represented in a parallel manner, you can significantly
+[00:05:08.700 --> 00:05:13.980]   change the characteristics of speed, cost, and theoretically quality if you're talking about
+[00:05:13.980 --> 00:05:19.740]   non-haloed context parallelism. The thing that I want to impart upon you before we jump into, like,
+[00:05:19.740 --> 00:05:23.980]   a lot more of these advanced techniques is that these techniques can be compounded. So, for example,
+[00:05:23.980 --> 00:05:28.860]   if you have an initial application and has some required performance, you can actually stack,
+[00:05:28.860 --> 00:05:34.140]   for example, retrieval augmented generation in order to increase the quality, but make the latency worse.
+[00:05:34.140 --> 00:05:40.620]   And you can also stack on top of that quantization of the model in order to speed up your latency.
+[00:05:40.620 --> 00:05:47.500]   The point I'm, you know, trying to make here is that you really have this toolbox of sets of large sets
+[00:05:47.500 --> 00:05:53.020]   of tools that you can use together. And the tools themselves are not independent and can be combined
+[00:05:53.020 --> 00:05:59.740]   in very sometimes non-obvious ways in order to actually break your Pareto frontier or squeeze it
+[00:05:59.740 --> 00:06:05.820]   in different directions in order to support your application. So, there are three things outside of
+[00:06:05.820 --> 00:06:16.300]   those techniques that I tend to think drive, you know, how you can modify the Pareto frontier going forward.
+[00:06:16.300 --> 00:06:22.860]   Those three are scale, structure, and dynamism. So, one of the things that is, you know,
+[00:06:22.860 --> 00:06:29.420]   really relevant in the realm of scale is disaggregation. So, for those that aren't aware,
+[00:06:29.420 --> 00:06:37.100]   KV caching is a technique by which you take the key and value vectors that are associated with each token
+[00:06:37.100 --> 00:06:41.740]   and you cache them so that when you're doing autoregressive generation, you don't have to generate
+[00:06:41.740 --> 00:06:46.140]   the entire set of key and value vectors for the entire sequence up to this point. You can just
+[00:06:46.140 --> 00:06:52.460]   generate new ones and put them back into the KV cache. What this actually means is that we effectively
+[00:06:52.460 --> 00:06:59.500]   have two phases of generation. One in which you're generating the pre-fill or filling up your KV cache
+[00:06:59.500 --> 00:07:05.500]   and one in which you're actually generating new KV cache as well as new tokens and producing output.
+[00:07:05.500 --> 00:07:12.940]   Now, disaggregation as a technique basically allows you to have these, you know, two phases which were
+[00:07:12.940 --> 00:07:18.860]   typically used on the same set of GPUs onto multiple different workers and sets of GPUs.
+[00:07:19.500 --> 00:07:25.260]   And this provides a couple of key benefits that we'll go into right now. The three really big
+[00:07:25.260 --> 00:07:32.380]   benefits here are that you can really now take two sort of phases that have very different needs.
+[00:07:32.380 --> 00:07:37.900]   Pre-fill is very compute bound and decode depending on that application and model can be very memory bound.
+[00:07:38.620 --> 00:07:43.420]   And it allows you to do a granular load matching between those two phases. And what this means is,
+[00:07:43.420 --> 00:07:49.420]   you know, compute saturates relatively early to use DeepSea as an example. Compute saturates
+[00:07:49.420 --> 00:07:55.980]   relatively early and you may use relatively few GPUs for your pre-fill instances and have them handle a
+[00:07:55.980 --> 00:08:02.700]   lower batch size. But handle a much larger batch size with many more GPUs for your decode instances.
+[00:08:02.700 --> 00:08:09.500]   And this split and this heterogeneity between the two actually allows you to produce far more performance.
+[00:08:09.500 --> 00:08:16.620]   The other thing is that, you know, one of the problems is that if you have in-flight batching,
+[00:08:16.620 --> 00:08:20.860]   you have many tokens coming in at the same time that are in different phases of generation, right,
+[00:08:20.860 --> 00:08:24.300]   if you have a request that's doing pre-fill and a request that's doing decode on the same machine,
+[00:08:24.300 --> 00:08:28.380]   you get scheduling conflicts and the scheduler basically has to decide whether or not it handles
+[00:08:28.380 --> 00:08:33.820]   new tokens. There's some techniques to handle this, like in-flight batching and chunk piggybacking,
+[00:08:33.820 --> 00:08:39.340]   or sorry, chunk piggybacking. But generally, there is a cost to doing that mutual scheduling.
+[00:08:39.340 --> 00:08:44.060]   So splitting this out makes the scheduling simpler. Now, there's an asterisk to this, which is that,
+[00:08:44.060 --> 00:08:48.620]   sorry, really quickly, and I'll go over the performance numbers. I'm going to use Llama70B as an
+[00:08:48.620 --> 00:08:54.540]   example. Right here, we have on our left axis, or our Y axis, we have the tokens per second per GPU.
+[00:08:54.540 --> 00:08:59.020]   On our X axis, we have the tokens per second per user, right? Up and to the right is better.
+[00:08:59.020 --> 00:09:05.820]   If we choose one operating point at latency, disaggregating on the same number of GPUs, 16 total H100s,
+[00:09:05.820 --> 00:09:12.300]   we can achieve up to two times the tokens per second per GPU at a fixed latency, which means that
+[00:09:12.300 --> 00:09:17.900]   you're now paying two times less for your application. There are some constraints, though.
+[00:09:18.460 --> 00:09:25.500]   The use case really does dictate performance for disaggregation. For example, low input length
+[00:09:25.500 --> 00:09:31.180]   use cases have little to no speed up, because you don't actually have as much of the scheduling
+[00:09:31.180 --> 00:09:34.300]   problem. They're very pre-filled light, so you're basically just doing decode the entire time.
+[00:09:34.300 --> 00:09:41.820]   And then, per the graph, disaggregation, and I'll go back to the graph, actually, disaggregation is useful
+[00:09:41.820 --> 00:09:47.900]   usually in the middle of the graph. In very high latency, high throughput scenarios, which would be the left and
+[00:09:47.900 --> 00:09:52.220]   top of the graph. And low latency, low throughput scenarios, the bottom right,
+[00:09:52.220 --> 00:09:58.620]   aggregated tends to reconverge with disaggregated and produce a little bit more performance in those
+[00:09:58.620 --> 00:10:05.980]   cases. That being said, for a lot of user, you know, interactive applications, disaggregation makes
+[00:10:05.980 --> 00:10:11.900]   the most sense because users tend to read that between or care about things in the realm of 20 to
+[00:10:13.100 --> 00:10:20.140]   200 tokens per second. The other thing that's kind of a caveat about this is that configuration is
+[00:10:20.140 --> 00:10:25.820]   really important. Since you're separating these two phases into pre-fill and generation, the balance
+[00:10:25.820 --> 00:10:30.860]   between the number of workers for pre-fill and decoding dictates the performance. So, for example,
+[00:10:30.860 --> 00:10:36.460]   if you have too many decode workers, you're basically gonna have decode workers that are starving for
+[00:10:36.460 --> 00:10:41.500]   work. And if you pre-fill workers, they're going to be generating work for the decode workers, and the
+[00:10:41.500 --> 00:10:46.540]   decode workers are gonna be being pushed down by, you know, just an increasing amount of load and
+[00:10:46.540 --> 00:10:53.580]   increasing queue depth. And the other thing is that modifying this is kind of expensive and hard,
+[00:10:53.580 --> 00:10:58.060]   because the balance between pre-fill and decode depends on the parallel configs of each. So,
+[00:10:58.060 --> 00:11:03.580]   it's like this really wide configuration space. One other thing that we talk about with respect to
+[00:11:03.580 --> 00:11:09.900]   scale is routing. So, we talked about how this KV is important. One of the things that we have to do for
+[00:11:09.900 --> 00:11:16.060]   pre-fill decode disaggregation is that we need to actually transfer the KV between machines. And
+[00:11:16.060 --> 00:11:21.820]   in some sense, there's actually an affinity for some machines to do some work, since the KV cache of
+[00:11:21.820 --> 00:11:29.580]   previous request is actually stored on those GPUs or offloaded onto system memory, host, or external
+[00:11:29.580 --> 00:11:37.260]   storage during the course of inference. So, I actually labeled this wrong. This is not the smart router.
+[00:11:37.260 --> 00:11:47.580]   This -- in a naive case, you would route pretty much exclusively randomly, right? Or towards, you know,
+[00:11:48.860 --> 00:11:54.300]   anything. So, in this case, we're biasing towards -- we're not biasing towards anything. We're sampling
+[00:11:54.300 --> 00:11:58.620]   randomly. Alternatively, you know, if we're talking about this -- if routing to worker three in this
+[00:11:58.620 --> 00:12:05.420]   case, it could also be that you're optimizing for purely your KV match. If you're doing -- this is
+[00:12:05.420 --> 00:12:13.580]   actually inverted -- if you're doing a KV-based router, you may end up biasing towards machines that
+[00:12:13.580 --> 00:12:16.780]   have too high KV load and, therefore, are not going to be able to handle the request and you end up with
+[00:12:16.780 --> 00:12:23.260]   queueing. In a smart case, you actually want to minimize the -- sort of this cost function that
+[00:12:23.260 --> 00:12:29.580]   includes both the amount of prefix match that you can get from -- or maximize the prefix match that you
+[00:12:29.580 --> 00:12:35.660]   can get from the work that's already been done on that node and the amount of load that already exists
+[00:12:35.660 --> 00:12:44.300]   on that node. And as you scale out, as you get more and more GPUs in a deployment, you actually end up
+[00:12:44.300 --> 00:12:50.540]   with more and more represented KV space that's local to those machines. And because of that, having a
+[00:12:50.540 --> 00:12:56.220]   larger and larger deployment means that you get an asymptotically increasing KV cache hit rate, which
+[00:12:56.220 --> 00:13:03.660]   means that you're doing less and less pre-fill work over time. So routing, you know, here to give it a report
+[00:13:03.660 --> 00:13:08.460]   card, increases your speed and cost, and doesn't really have an effect upon quality because it's -- it's doing
+[00:13:08.460 --> 00:13:14.380]   the same work that it would normally do. Now, we talk about structure. Structure is really important
+[00:13:14.380 --> 00:13:19.180]   because we have a lot of these workloads that you guys have probably seen at the AI Engineers World Fair, like
+[00:13:19.180 --> 00:13:26.060]   agents, for example. Agents impart a structure on the workload in that they have moderately predictable
+[00:13:26.060 --> 00:13:30.940]   usage patterns between concurrent requests. So an example here is inference time scaling. This is a
+[00:13:30.940 --> 00:13:35.820]   cool graph I'll go over really quickly. For example, we have three models here. In green, we have an 8b
+[00:13:35.820 --> 00:13:42.380]   model. In yellow, we have a 49b model. And in red, we have a 235b model. We find that with inference time
+[00:13:42.380 --> 00:13:47.740]   scaling -- that is to re-query the model and to, you know, prompt it to reconsider its results or reason more
+[00:13:47.740 --> 00:13:52.140]   about its results, we can produce better and better results. And you actually see this really interesting
+[00:13:52.140 --> 00:14:00.140]   trend where with about three or four times of re-querying, we can see that the 8b model is basically
+[00:14:00.140 --> 00:14:06.860]   on par with respect to quality as the 49b model. And the 49b is almost on par with respect to quality
+[00:14:06.860 --> 00:14:15.500]   as the 235b model. And we note here that, like, the cost of querying that 8b model,
+[00:14:16.620 --> 00:14:24.460]   you know, even querying it multiple times is actually lower than querying the larger model,
+[00:14:24.460 --> 00:14:31.180]   right? And in this sense, you know, we basically see that inference time scaling can be considered
+[00:14:31.180 --> 00:14:37.820]   sort of as, you know, increasing quality at the cost of speed and at the cost of cost, right? Because
+[00:14:37.820 --> 00:14:46.700]   you're re-querying it. But alternatively, if you keep quality fixed, you can basically get lower
+[00:14:46.700 --> 00:14:53.340]   latency and lower cost by using a smaller model and re-querying it multiple times. And the structure
+[00:14:53.340 --> 00:14:59.660]   that we infer from doing that re-querying allows us to do better scheduling. So in this graph, we have a
+[00:14:59.660 --> 00:15:06.540]   series of curves that represent basically the runtime of a given reasoning example from the natural plan
+[00:15:06.540 --> 00:15:14.140]   dataset. And the -- basically the concurrency. So this is, like, a graph of, like, how many you can -- how
+[00:15:14.140 --> 00:15:20.780]   many concurrent instances you can run at once. And we sample across all this concurrency. We see that
+[00:15:20.780 --> 00:15:26.940]   implanting disaggregation gives us a small benefit, mostly because this dataset is very ISL -- short ISL,
+[00:15:26.940 --> 00:15:30.860]   long OSL. You don't get a whole ton of benefit from disaggregation. In this case,
+[00:15:30.860 --> 00:15:38.060]   basically making -- you know, removing a round trip by making the re-queries come from the router
+[00:15:38.060 --> 00:15:43.340]   instead of coming from the user or the client on the outside, allows you to really decrease these
+[00:15:43.340 --> 00:15:48.300]   round trips with respect to latency. And then on top of that, making the router aware and making the LLM
+[00:15:48.300 --> 00:15:54.860]   scheduler aware that you are doing, you know, repeat work, you're re-querying it, actually gives you an
+[00:15:54.860 --> 00:16:00.700]   increased benefit that is the red line to the green line. That is to say, amongst a wide variety of
+[00:16:00.700 --> 00:16:06.780]   models, if we assume that the quality is fixed, we can actually use inference time scaling and some smart
+[00:16:06.780 --> 00:16:11.260]   techniques in order to significantly decrease latency and increase throughput while maintaining the same
+[00:16:11.260 --> 00:16:16.860]   quality. One last thing, and I'm going to go through this really quick because I'm getting low on time,
+[00:16:16.860 --> 00:16:22.620]   is manipulating K and V values, right? We've sort of talked about how before there's this work that
+[00:16:22.620 --> 00:16:29.500]   we do in pre-fill that we don't want to lose. We do routing to ensure that we don't lose this KV.
+[00:16:29.500 --> 00:16:35.900]   And, you know, if we have, like, a workflow where we know the run times of things -- so, for example,
+[00:16:35.900 --> 00:16:43.980]   if we do a, you know, a tool call, for example, and we know this tool call takes a moderately
+[00:16:43.980 --> 00:16:48.860]   deterministic amount of time, we basically end up with this KV eviction, right? If we have a tool call
+[00:16:48.860 --> 00:16:53.500]   that takes 30 seconds, the KV is going to be swept out from HBM and you're not going to be able to use
+[00:16:53.500 --> 00:16:59.260]   it in the future because it's no longer being cached. But if we know that it's going to be used again,
+[00:16:59.260 --> 00:17:05.900]   why not just offload it, right? Basically, inference time scaling gives you structure to manipulate your
+[00:17:05.900 --> 00:17:10.860]   KV. Tool calling gives you structure to manipulate your KV. So, instead of doing another pre-fill
+[00:17:10.860 --> 00:17:18.940]   the second time, you might, for example, do pre-fill once, do, you know, the LM call, the decode once,
+[00:17:18.940 --> 00:17:24.140]   move it to host memory, and then, you know, at the time at which you expect the tool to complete,
+[00:17:24.140 --> 00:17:28.860]   you move it right back into GPU memory so it's ready for the next LM call that will include this
+[00:17:28.860 --> 00:17:35.580]   added context from the tool. So, KV manipulation, you know, again, increases your speed and decreases
+[00:17:35.580 --> 00:17:40.700]   your cost while also, you know, improving your quality. Or not improving quality, keeping quality
+[00:17:40.700 --> 00:17:46.380]   constant. The last thing that we have to talk about here is dynamism. Worker specialization is really
+[00:17:46.380 --> 00:17:52.300]   important. As I said, since you have different characteristics of disaggregation at different
+[00:17:52.300 --> 00:17:56.940]   input sequence lengths and output sequence lengths, you actually want to have a mix of aggregated and
+[00:17:56.940 --> 00:18:03.740]   disaggregated workers based on where you are in the OSL/ISL histogram. So, at, you know, lower input
+[00:18:03.740 --> 00:18:07.260]   sequence lengths and higher output sequence lengths, you might want to do aggregated with a higher tensor
+[00:18:07.260 --> 00:18:11.180]   parallelism. In the middle of the range, you may want to use... In the middle of the input sequence
+[00:18:11.180 --> 00:18:18.860]   range, you may want to use disaggregated. And in the, you know, long context, you know, regime,
+[00:18:18.860 --> 00:18:23.980]   you may want to use disaggregated with context parallelism. Now, again, this differs model to
+[00:18:23.980 --> 00:18:31.180]   model. And this is just an exemplary graph. But generally, if you specialize workers, you can also
+[00:18:31.180 --> 00:18:35.660]   increase... Increase your speed, decrease your cost while keeping quality the same. Because, again,
+[00:18:35.660 --> 00:18:40.220]   you're not actually touching the execution... What the model is executing. You're not touching the math it's
+[00:18:40.220 --> 00:18:48.220]   doing. One last thing about dynamism is load balance is quite important. As I mentioned earlier, doing...
+[00:18:48.220 --> 00:18:54.620]   Looking at the amount of P and D workers is really important to determine whether or not your disaggregated
+[00:18:54.620 --> 00:18:58.780]   deployment is going to be successful. So, for example, if you have a histogram that you initially create
+[00:18:58.780 --> 00:19:03.100]   your configuration based off of, for example, if you have app A and app B that have, like,
+[00:19:03.100 --> 00:19:08.540]   these two input sequence length and output sequence lengths, you may end up with a scenario where a
+[00:19:08.540 --> 00:19:14.780]   change in user distribution causes significant issues with your deployment. Your dec... In this case,
+[00:19:14.780 --> 00:19:19.900]   by... When you increase your input sequence length and output sequence length by a little bit more,
+[00:19:19.900 --> 00:19:24.780]   your input sequence length, you might create more demand for prefill workers than you do for decode
+[00:19:24.780 --> 00:19:30.540]   workers. So, your balance will change over time. And this has been empirically proven by a wide variety
+[00:19:30.540 --> 00:19:39.500]   of people that publish data. And you actually have to do auto-scaling across these two types of instances
+[00:19:39.500 --> 00:19:46.140]   in real time to account for changes in user usage distribution of your platform. So, in this case,
+[00:19:46.140 --> 00:19:53.100]   dynamic load balancing increases your speed and keeps your costs low. But mostly, it's really just
+[00:19:53.100 --> 00:19:58.940]   essential to ensuring that disaggregation actually works to maximum potential.
+[00:19:58.940 --> 00:20:07.180]   Okay. Last things. Here is the Dynamo repo. It's right here. It's github.com/ai-dynamo.
+[00:20:07.180 --> 00:20:12.540]   We also have a Dynamo meetup that is being hosted tomorrow, Thursday from 5:00 to 8:00 PM here in San
+[00:20:12.540 --> 00:20:17.420]   Francisco. Please come. We're going to be talking a lot more about how we actually implement these things at
+[00:20:17.420 --> 00:20:23.900]   the event.
+
