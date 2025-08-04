@@ -1,0 +1,246 @@
+
+[00:00:00.000 --> 00:00:21.000]   Hi everybody, so I'm Christopher Lovejoy. I'm a medical doctor turned AI engineer and I'm going
+[00:00:21.000 --> 00:00:26.280]   to share a playbook for building a domain native LLM application. So I spent about eight years
+[00:00:26.280 --> 00:00:30.120]   training and working as a medical doctor and then I spent the last seven years
+[00:00:30.120 --> 00:00:35.940]   building AI systems that incorporate medical domain expertise and I did that
+[00:00:35.940 --> 00:00:39.420]   at a few different startups. So I worked at a health tech startup called Sarah Care
+[00:00:39.420 --> 00:00:45.240]   doing tech-enabled home care. The startup recently hit 500 million ARR, worked at
+[00:00:45.240 --> 00:00:51.420]   various other startups and I currently work at Anterior. And Anterior is a New
+[00:00:51.420 --> 00:00:55.380]   York-based clinician-led company. We provide clinical reasoning tools to
+[00:00:55.380 --> 00:01:01.860]   automate and accelerate health insurance and healthcare administration. We serve
+[00:01:01.860 --> 00:01:05.280]   about 50 million, we serve health insurance providers that cover about 50 million
+[00:01:05.280 --> 00:01:10.140]   lives in the US and we spend a lot of time thinking about what does it mean to build
+[00:01:10.140 --> 00:01:16.300]   a domain native LLM application, whether it's in healthcare or otherwise. And that's
+[00:01:16.300 --> 00:01:21.600]   what I'm going to talk about today. And in particular our bet really is that when it
+[00:01:21.600 --> 00:01:27.360]   comes to vertical AI applications, the system that you build for incorporating your domain insights is far
+[00:01:27.360 --> 00:01:31.500]   more important than the sophistication of your models and your pipelines. So the limitation these
+[00:01:31.500 --> 00:01:36.960]   days is not like how powerful is your model and whether it can reason to the level you need it to,
+[00:01:36.960 --> 00:01:43.440]   it's more it's more can your model understand the context in that industry for that particular customer
+[00:01:43.440 --> 00:01:49.920]   and perform the reason that it needs to. And the way that you enable that and the way that you kind of
+[00:01:49.920 --> 00:01:56.400]   iterate quickly with your customers is by building the system around it. And there's various components to that and that's what I'm going to talk about.
+[00:01:56.400 --> 00:02:02.160]   So this is the kind of a high level schematic. And we're going to go through each of these parts throughout the talk.
+[00:02:02.160 --> 00:02:11.160]   As you'll see right in the middle, there's the PM. And this is, you know, in our experience, it makes sense for this to be a domain expert product manager.
+[00:02:11.160 --> 00:02:16.160]   So in our context, it's clinical. And I'm going to go through this in more detail shortly.
+[00:02:16.160 --> 00:02:24.680]   But first, I think it's worth taking a quick step back and asking, you know, why is it so hard to successfully apply large language models to specialised industries?
+[00:02:24.680 --> 00:02:42.440]   We think it's because of the last mile problem. And what I mean by the last mile problem is this problem that I kind of touched on just now around giving the model and your kind of AI system more generally context and understanding of the specific workflow for that customer, for that industry.
+[00:02:42.440 --> 00:02:59.320]   And I'm going to illustrate that with an example from a clinical case that we've processed, our AI anteriors called Florence and a 78 year old female patient presented with right knee pain.
+[00:02:59.320 --> 00:03:09.360]   The doctor recommended a knee arthroscopy. And as part of deciding whether this treatment was appropriate, whether the doctor made an appropriate decision, Florence needs to answer various questions.
+[00:03:09.360 --> 00:03:15.200]   One of those questions is, is there documentation of unsuccessful conservative therapy for at least six weeks?
+[00:03:15.200 --> 00:03:24.840]   And, you know, on the surface of it, that might seem relatively simple. I mean, I appreciate maybe not a lot of doctors in the room, so you might not know necessarily what conservative therapy is.
+[00:03:24.840 --> 00:03:30.720]   But actually, there's a lot of kind of like hidden complexity in answering a question like this.
+[00:03:30.720 --> 00:03:41.560]   So for example, you know, conservative therapy, typically what we mean by conservative therapy is when there's some kind of option for, you know, a more aggressive treatment, maybe a surgical operation.
+[00:03:41.560 --> 00:03:49.440]   That's like the, you know, the surgical treatment. And then if you're deciding not to operate and you want to try something conservative first, that's like the conservative therapy.
+[00:03:49.440 --> 00:03:57.280]   So it might be, you know, do physiotherapy, lose weight, do kind of, you know, non-invasive things that might help resolve the problem.
+[00:03:57.280 --> 00:04:04.160]   But actually, there's still some ambiguity there because, you know, in some cases, giving medication might be a conservative therapy.
+[00:04:04.160 --> 00:04:08.000]   In some cases, that's actually the more aggressive treatment and there's something else that's more conservative.
+[00:04:08.000 --> 00:04:14.240]   So there's one layer of ambiguity there. Then when we talk about unsuccessful, well, what does unsuccessful mean?
+[00:04:14.240 --> 00:04:22.320]   Let's say that somebody has some knee pain, they do some treatment, and their symptoms improve significantly, but they don't like fully resolve.
+[00:04:22.320 --> 00:04:27.880]   So is that successful? Do we need like a full resolution of symptoms? Or is it just like a partial resolution is enough?
+[00:04:27.880 --> 00:04:32.760]   If it's partial, like at what point is that enough to be quantified as successful?
+[00:04:32.760 --> 00:04:36.560]   So again, there's kind of complexity and nuance with how that's interpreted.
+[00:04:36.560 --> 00:04:39.560]   And then finally, documentation for at least six weeks.
+[00:04:39.560 --> 00:04:46.720]   Again, you know, documentation, are we saying that the medical record said they started physical therapy eight weeks ago,
+[00:04:46.720 --> 00:04:51.680]   then it's never mentioned again? We can therefore assume that they've been doing it for eight weeks?
+[00:04:51.680 --> 00:05:00.280]   Or do we need like explicit documentation that they started treatment, they did it for eight weeks, and, you know, it's completed?
+[00:05:00.280 --> 00:05:05.280]   Where do we draw the line there in terms of what we can infer?
+[00:05:06.480 --> 00:05:11.480]   And yeah, just kind of coming back to echo our point. So this is really our bet that the system is more important.
+[00:05:11.480 --> 00:05:23.480]   We believe that in every vertical industry, the, you know, the team, the company that wins, is the one that builds the best system for taking those domain insights and quickly translating them into the pipeline,
+[00:05:23.480 --> 00:05:30.480]   And then giving it that context and iterating to create this improvements.
+[00:05:30.480 --> 00:05:36.480]   And we also, you know, I guess to talk to this counterpoint, the models, I mean, models obviously are important.
+[00:05:36.480 --> 00:05:40.480]   And the progress in models makes it easier to have a good starting point.
+[00:05:40.480 --> 00:05:46.480]   But that's only getting up to a certain baseline. And we found we kind of hit a saturation around like 95% level.
+[00:05:46.480 --> 00:05:49.480]   So we invested a lot of time and effort in improving our pipelines.
+[00:05:49.480 --> 00:05:52.480]   Obviously, 95% is still pretty reasonable.
+[00:05:52.480 --> 00:05:59.480]   And this is that performing the, like, primary task that our AI system does, which is approving these care requests in a health insurance context.
+[00:05:59.480 --> 00:06:05.480]   So we're at 95%. And we then iterated based on this system that I'm going to walk through.
+[00:06:05.480 --> 00:06:09.480]   And we really got to, you know, kind of almost silly accuracy of like 99%.
+[00:06:09.480 --> 00:06:13.480]   We got this class point of light award a few weeks ago for this.
+[00:06:13.480 --> 00:06:20.480]   And really what we found here and what we observed is that the models reason very well.
+[00:06:20.480 --> 00:06:21.480]   They get to a great baseline.
+[00:06:21.480 --> 00:06:26.480]   But if you're in an industry where you really need to eke out that, like, final mile of performance,
+[00:06:26.480 --> 00:06:30.480]   you need to be able to then kind of give the model, give the pipeline that context.
+[00:06:30.480 --> 00:06:34.480]   So how do we do that?
+[00:06:34.480 --> 00:06:38.480]   Well, we call this our adaptive domain intelligence engine.
+[00:06:38.480 --> 00:06:43.480]   And what this is performing is it's taking customer-specific domain insights
+[00:06:43.480 --> 00:06:48.480]   and it's converting them into performance improvements and kind of building a system around that.
+[00:06:48.480 --> 00:06:50.480]   And there's broadly two main parts to this.
+[00:06:50.480 --> 00:06:53.480]   The first part is the measurement side of things.
+[00:06:53.480 --> 00:06:56.480]   So, you know, how is our current pipeline doing?
+[00:06:56.480 --> 00:07:00.480]   And then the rest of this is the improvement side.
+[00:07:00.480 --> 00:07:05.480]   So I'm going to talk first a bit more about measurement in more detail and then a bit about improvements.
+[00:07:05.480 --> 00:07:08.480]   So measuring domain-specific performance.
+[00:07:08.480 --> 00:07:14.480]   The first thing, and I think, you know, a lot of this is really just kind of best practice more generally.
+[00:07:14.480 --> 00:07:21.480]   But the first step is to define what is it that your users really care about as metrics.
+[00:07:21.480 --> 00:07:24.480]   So in a health context, obviously, I've been talking about medical necessity reviews.
+[00:07:24.480 --> 00:07:26.480]   This is our bread and butter.
+[00:07:26.480 --> 00:07:28.480]   And there, the customers really care about false approvals.
+[00:07:28.480 --> 00:07:33.480]   They want to minimize false approvals because a false approval where you've approved care means that, you know,
+[00:07:33.480 --> 00:07:36.480]   a patient who didn't need the care might get given some care they don't need.
+[00:07:36.480 --> 00:07:40.480]   And obviously, from an insurance provider point of view, they're then paying for treatment that they don't necessarily want to pay for.
+[00:07:40.480 --> 00:07:50.480]   And often, defining these metrics is like a collaboration between the domain experts in your company and the customers to kind of like really translate what are the metrics that you care about.
+[00:07:50.480 --> 00:07:54.480]   There might be like one or two, or like usually there's a few metrics that matter most.
+[00:07:54.480 --> 00:08:03.480]   So in a few other industries, like legal, when you're analyzing contracts, it might be that you really want to minimize the number of missed critical terms when you're identifying these clauses in the contract.
+[00:08:03.480 --> 00:08:07.480]   For fraud detection, your top-line metric might be something like preventing dollar loss from fraud.
+[00:08:07.480 --> 00:08:10.480]   You know, education, it might be you want to optimize for test score improvements.
+[00:08:10.480 --> 00:08:19.480]   I think it's definitely a helpful exercise to push yourself to think of like really, if I'm optimizing for like one or two metrics, what is like the metric that is most important?
+[00:08:19.480 --> 00:08:31.480]   And then what you can also do hand in hand with that, which is very helpful, just going off the bottom there a little bit, but is designing a failure mode ontology.
+[00:08:31.480 --> 00:08:38.480]   And what I mean by this is taking the task that you're performing and identifying what are all the different ways in which my AI fails.
+[00:08:38.480 --> 00:08:41.480]   And it might be at the level of like higher order categories.
+[00:08:41.480 --> 00:08:45.480]   So for example, here we've got medical record extraction, clinical reasoning and rules interpretation.
+[00:08:45.480 --> 00:08:51.480]   We found that for medical necessity review, these are the three broad categories, the three broad ways in which the AI can fail.
+[00:08:51.480 --> 00:08:54.480]   And then within those, there's various like different subtypes.
+[00:08:54.480 --> 00:08:55.480]   And this is an iterative process.
+[00:08:55.480 --> 00:08:57.480]   There's like various techniques for doing this.
+[00:08:57.480 --> 00:09:00.480]   I think it's important here to bring in your domain experts.
+[00:09:00.480 --> 00:09:08.480]   I think one failure mode is that you have somebody kind of looking at your AI traces in isolation and coming up with these who don't necessarily have the context on how things are working.
+[00:09:08.480 --> 00:09:15.480]   I think this is a step that's critical to have domain experts leading this process.
+[00:09:15.480 --> 00:09:21.480]   But really, I think the big value add is when you do both of these at the same time together.
+[00:09:21.480 --> 00:09:25.480]   Because what this gives you, and this is a dashboard that we've built internally.
+[00:09:25.480 --> 00:09:27.480]   I appreciate the text might be a little bit small.
+[00:09:27.480 --> 00:09:31.480]   But essentially, on the right hand side, you have a patient's medical record.
+[00:09:31.480 --> 00:09:34.480]   You also have the guidelines that the record is being appraised against.
+[00:09:34.480 --> 00:09:37.480]   On the left hand side, you have the AI outputs.
+[00:09:37.480 --> 00:09:41.480]   So this is the decision that it's made, the reasoning behind its decision.
+[00:09:41.480 --> 00:09:47.480]   And what we enable our domain experts to do here, enable our clinicians, is they can come in, they can mark whether it's correct or incorrect.
+[00:09:47.480 --> 00:09:51.480]   And if it's incorrect, then this box here is for defining the failure mode.
+[00:09:51.480 --> 00:09:56.480]   So from that ontology we just saw on the slide before, they can say, this failed in this way.
+[00:09:56.480 --> 00:10:03.480]   And doing those at the same point and having your domain experts sit at that point doing both of these is super valuable.
+[00:10:03.480 --> 00:10:07.480]   Because it then enables you to understand things like this.
+[00:10:07.480 --> 00:10:10.480]   So on the x-axis here, we have number of false approvals.
+[00:10:10.480 --> 00:10:12.480]   That's the metric that we really care about in our context.
+[00:10:12.480 --> 00:10:16.480]   And then we have the different failure modes on the y-axis.
+[00:10:16.480 --> 00:10:20.480]   And obviously, that tells us that if we want to minimize our false approvals and we want to optimize for this,
+[00:10:20.480 --> 00:10:25.480]   this top North Star metric that we care about, these are what we want to address first.
+[00:10:25.480 --> 00:10:26.480]   Kind of in this order.
+[00:10:26.480 --> 00:10:31.480]   Which, as a PM, is then a useful piece of information to help you prioritize the work that you want to do.
+[00:10:31.480 --> 00:10:36.480]   So that's the measure side of things.
+[00:10:36.480 --> 00:10:39.480]   I'm now going to go on to talk about the improvements.
+[00:10:39.480 --> 00:10:44.480]   And particularly with this domain-specific context.
+[00:10:44.480 --> 00:10:55.480]   So what that also gives you, this kind of failure mode labeling we talked about before, is you get these ready-made data sets that you can iterate against.
+[00:10:55.480 --> 00:11:06.480]   And these data sets are super valuable because they're coming directly from production data, which means you know that they're representative of the kind of input data distribution that you're going to see, more so than synthetic data would be.
+[00:11:06.480 --> 00:11:13.480]   And you can now, you know, when you had those priorities on the previous slide, we saw which sort of failure modes were causing the most false approvals.
+[00:11:13.480 --> 00:11:19.480]   We can then pick that data set of, you know, 100 cases that came through prod in the last week that had this particular failure mode.
+[00:11:19.480 --> 00:11:25.480]   You can give that to an engineer, an engineer can iterate against it, and you can keep on testing, okay, how is my performance against that particular failure mode right now.
+[00:11:25.480 --> 00:11:32.480]   And that lets you do something like this, where on the x-axis here, we have the pipeline version.
+[00:11:32.480 --> 00:11:34.480]   On the y-axis, we have the performance score.
+[00:11:34.480 --> 00:11:39.480]   And by definition, on these floors, we're starting very low for each of these, like, failure mode data sets.
+[00:11:39.480 --> 00:11:46.480]   But every time you increment your pipeline version, maybe you spent some time focusing on this particular failure mode, and you were able to get a big jump in performance.
+[00:11:46.480 --> 00:11:51.480]   And then you can see the other ones also jumping up as well on kind of subsequent releases.
+[00:11:51.480 --> 00:11:56.480]   And you can also use this to then track that you're not regressing on any particular failure mode as well.
+[00:11:56.480 --> 00:12:01.480]   So it's a useful visualization to be able to make.
+[00:12:01.480 --> 00:12:09.480]   And you can then go one step further and actually bring your domain experts into the kind of improvements in the iteration itself.
+[00:12:09.480 --> 00:12:15.480]   And what that looks like is creating this tooling that enables a domain expert who's not necessarily technical to come in.
+[00:12:15.480 --> 00:12:18.480]   They can then suggest changes to the application pipeline.
+[00:12:18.480 --> 00:12:22.480]   They can also suggest new domain knowledge that's made available to the pipeline.
+[00:12:22.480 --> 00:12:29.480]   And obviously, they're the best position to be making these kind of, you know, opinions of what sort of domain knowledge might be relevant.
+[00:12:29.480 --> 00:12:33.480]   And then you have your pipeline in the middle that's ready to use those if it wants to.
+[00:12:33.480 --> 00:12:37.480]   And on the right-hand side, you have those domain evals, which might be these failure set evals.
+[00:12:37.480 --> 00:12:39.480]   You might have more generic eval sets as well.
+[00:12:39.480 --> 00:12:45.480]   And they can then tell you in a data-driven way, okay, given this domain knowledge suggestion from a domain expert,
+[00:12:45.480 --> 00:12:48.480]   should that go live in the platform and now it's in production.
+[00:12:48.480 --> 00:12:52.480]   And then, you know, it should be improving the performance for live customers.
+[00:12:52.480 --> 00:12:54.480]   And this whole loop can happen very quickly.
+[00:12:54.480 --> 00:12:58.480]   So, for example, and I think actually on the next slide, yeah, I'll just show.
+[00:12:58.480 --> 00:13:00.480]   So this is a dashboard we saw before.
+[00:13:00.480 --> 00:13:04.480]   But this is with this extra button, which is like a domain knowledge addition button.
+[00:13:04.480 --> 00:13:06.480]   And so, again, we're keeping the same context.
+[00:13:06.480 --> 00:13:09.480]   We have, you know, a domain expert clinician coming in here.
+[00:13:09.480 --> 00:13:10.480]   They're reviewing the case.
+[00:13:10.480 --> 00:13:11.480]   They're saying, is it correct?
+[00:13:11.480 --> 00:13:12.480]   Is it incorrect?
+[00:13:12.480 --> 00:13:13.480]   They're saying, what's the failure mode?
+[00:13:13.480 --> 00:13:19.480]   And now they can say, I think this domain knowledge would be helpful for the application's performance.
+[00:13:19.480 --> 00:13:23.480]   And, you know, it might be, I think in this case, I appreciate it might not be that easy to read.
+[00:13:23.480 --> 00:13:29.480]   But the model is kind of making some mistake related to understanding suspicion of a condition.
+[00:13:29.480 --> 00:13:34.480]   Because the patient like has the condition and it says, oh, there's no suspicion of the condition.
+[00:13:34.480 --> 00:13:36.480]   But actually they have it.
+[00:13:36.480 --> 00:13:43.480]   And, like, you could give some information to the model for the medical context of how we interpret suspicious or suspicion as a word.
+[00:13:43.480 --> 00:13:45.480]   That would then influence the answer.
+[00:13:45.480 --> 00:13:51.480]   Or it could be that maybe the reasoning uses some kind of scoring system and you realize actually the model doesn't have access to that scoring system.
+[00:13:51.480 --> 00:13:56.480]   You could, again, you could add that as domain knowledge to continually build out what the model can handle.
+[00:13:56.480 --> 00:14:03.480]   And what that helps with, yeah, in terms of kind of the iteration speed from that, you can do that.
+[00:14:03.480 --> 00:14:06.480]   Maybe you want to let your evals automatically let that go in.
+[00:14:06.480 --> 00:14:08.480]   Or maybe you want to have some kind of human in the loop.
+[00:14:08.480 --> 00:14:10.480]   But it just means that you can have this very quick process.
+[00:14:10.480 --> 00:14:12.480]   This prod case comes through.
+[00:14:12.480 --> 00:14:15.480]   You analyze it through a clinical lens.
+[00:14:15.480 --> 00:14:19.480]   And then the same day, you've essentially fixed it because you added the domain knowledge that should solve it.
+[00:14:19.480 --> 00:14:20.480]   You can prove that with the evals.
+[00:14:20.480 --> 00:14:21.480]   And then it's live.
+[00:14:25.480 --> 00:14:32.480]   And what this means is that these domain expert reviews that are really kind of powering a lot of the insights you're getting here are giving you three main things.
+[00:14:32.480 --> 00:14:33.480]   They're giving you performance metrics.
+[00:14:33.480 --> 00:14:35.480]   They're giving you these failure modes.
+[00:14:35.480 --> 00:14:37.480]   And they're giving you these suggested improvements all in one.
+[00:14:37.480 --> 00:14:38.480]   Yep.
+[00:14:38.480 --> 00:14:39.480]   Can you define domain expert?
+[00:14:39.480 --> 00:14:44.480]   Like, what level are we talking about?
+[00:14:44.480 --> 00:14:45.480]   Yeah, good question.
+[00:14:45.480 --> 00:14:47.480]   So the question is, how do you define a domain expert?
+[00:14:47.480 --> 00:14:49.480]   Like, what level of expertise do you need here?
+[00:14:49.480 --> 00:14:54.480]   I think it really depends on the specific workflow that you're doing and what you're kind of optimizing for.
+[00:14:54.480 --> 00:15:04.480]   So in our context, if you're optimizing for clinical reasoning and the quality of the clinical reasoning, you therefore want somebody with as much clinical experience, ideally a doctor.
+[00:15:04.480 --> 00:15:08.480]   Ideally, they have relevant expertise in the speciality that you're dealing with.
+[00:15:08.480 --> 00:15:11.480]   But it kind of really depends on your use case.
+[00:15:11.480 --> 00:15:17.480]   It might be that there's actually simpler things we also can do, in which case that level of expertise is not necessary.
+[00:15:17.480 --> 00:15:19.480]   And you could have a more junior clinical person.
+[00:15:19.480 --> 00:15:26.480]   But the idea being that it's either like a nurse or a doctor or somebody that has experience of doing this workflow in the real world.
+[00:15:26.480 --> 00:15:27.480]   Does that make sense?
+[00:15:27.480 --> 00:15:28.480]   Yeah, another question?
+[00:15:28.480 --> 00:15:32.480]   Can you elaborate a little bit more on the tooling for the domain expert?
+[00:15:32.480 --> 00:15:34.480]   Like, is this bespoke tooling or is this something off the shelf?
+[00:15:34.480 --> 00:15:37.480]   Yeah, this is bespoke tooling.
+[00:15:37.480 --> 00:15:49.480]   And I think in general, my philosophy on this is that if you're really placing a lot of weight on what you're kind of generating and this feeds into your system in various other different ways in the kind of ways I'm describing,
+[00:15:49.480 --> 00:15:55.480]   it probably makes most sense to do this with bespoke tooling that you build yourself because you want to integrate it into the rest of your platform.
+[00:15:55.480 --> 00:16:00.480]   And it's just generally going to be easier to do that if you're kind of like doing everything yourself.
+[00:16:00.480 --> 00:16:01.480]   Yeah.
+[00:16:01.480 --> 00:16:07.480]   Are these, like are your domain experts users or are you paying them to come in and eval?
+[00:16:07.480 --> 00:16:09.480]   Yeah, great question.
+[00:16:09.480 --> 00:16:12.480]   I think it can be both.
+[00:16:12.480 --> 00:16:19.480]   We, like in our experience, typically we start with we will hire some people in-house who kind of come and do this for us to give us this initial data so that we can do
+[00:16:19.480 --> 00:16:20.480]   that iteration.
+[00:16:20.480 --> 00:16:27.480]   I think there's definitely a world in which the customer themselves might also want to do validation of your AI and they might actually do this kind of process themselves,
+[00:16:27.480 --> 00:16:32.480]   in which case this then becomes a customer facing product for them to use as well.
+[00:16:32.480 --> 00:16:33.480]   Yeah.
+[00:16:33.480 --> 00:16:35.480]   Okay, so.
+[00:16:35.480 --> 00:16:39.480]   I love the questions, but we're going to reserve time for Chris to keep going.
+[00:16:39.480 --> 00:16:40.480]   Yeah, sounds good.
+[00:16:40.480 --> 00:16:42.480]   And I'm just, there's the last couple of slides now as well.
+[00:16:42.480 --> 00:16:47.480]   So putting everything together, this is the overall flow.
+[00:16:47.480 --> 00:16:53.480]   And essentially what this can look like is you have your production application.
+[00:16:53.480 --> 00:16:56.480]   It's generating these decisions, these AI outputs.
+[00:16:56.480 --> 00:16:59.480]   You're having your domain experts review that, giving these performance insights.
+[00:16:59.480 --> 00:17:02.480]   That's things like the metrics, the failure modes.
+[00:17:02.480 --> 00:17:06.480]   You then have your PM, your domain expert PM who sits in the middle.
+[00:17:06.480 --> 00:17:10.480]   They then have this rich information on, okay, what should I prioritize based on the failure modes, based on the metrics.
+[00:17:10.480 --> 00:17:15.480]   They can then turn to an engineer and say, I want you to fix this failure mode because I really care about it.
+[00:17:15.480 --> 00:17:17.480]   And I want you to fix it up to this performance threshold.
+[00:17:17.480 --> 00:17:22.480]   So they can say right now, you know, in production, we're getting 0% or 10% on this particular data set.
+[00:17:22.480 --> 00:17:25.480]   I want you to go away and work on this until you get to 50%.
+[00:17:25.480 --> 00:17:33.480]   And then the engineer can go and, you know, run different experiments, have different ideas of how they might improve this, changing prompting, changing models, doing fine tuning, all this kind of thing.
+[00:17:33.480 --> 00:17:38.480]   They then have a very tight iteration loop because they have these ready-made failure mode data sets.
+[00:17:38.480 --> 00:17:39.480]   They can run the eval.
+[00:17:39.480 --> 00:17:41.480]   They can see the impact of those evals.
+[00:17:41.480 --> 00:17:48.480]   And then once they've kind of done that loop and they're hitting the percentage that they need, they can then go and give it back to the PM and say, hey, here are the changes I made.
+[00:17:48.480 --> 00:17:49.480]   This is the impact.
+[00:17:49.480 --> 00:17:55.480]   The PM can then take that information and make some decision about going live.
+[00:17:55.480 --> 00:17:57.480]   They can take those eval metrics.
+[00:17:57.480 --> 00:18:07.480]   They can look at the kind of wider context of what this change might impact elsewhere in the product and then decide whether to go live with that in production.
+[00:18:07.480 --> 00:18:10.480]   So final takeaways just to wrap up.
+[00:18:10.480 --> 00:18:14.480]   You know, to build a domain-native application, you need to solve the last mile problem.
+[00:18:14.480 --> 00:18:18.480]   This isn't solved by just using more powerful models or more sophisticated pipelines.
+[00:18:18.480 --> 00:18:21.480]   You need what we call an adaptive domain intelligence engine.
+[00:18:21.480 --> 00:18:28.480]   Domain experts can power their system by reviewing their AI outputs to generate metrics, to generate failure modes, and to generate suggested improvements.
+[00:18:28.480 --> 00:18:33.480]   And this is really powerful because it takes production data live from kind of inside your customer's context.
+[00:18:33.480 --> 00:18:42.480]   And it uses that to give your LLM product the nuanced understanding of the customer workflows and continually iterate towards that and eke out the kind of final performance level.
+[00:18:42.480 --> 00:18:50.480]   And the end result is you have this self-improving data-driven process that can be managed by a domain expert PM sitting in the middle.
+[00:18:50.480 --> 00:18:55.480]   So thank you for your attention.
+[00:18:55.480 --> 00:19:02.480]   If you're interested in kind of vertical AI applications or like evals and AI product management or generally, I've written about that at my website, chrislovejoy.me.
+[00:19:02.480 --> 00:19:04.480]   Always interested to talk about this.
+[00:19:04.480 --> 00:19:06.480]   So feel free to drop an email at chris@antirio.com.
+[00:19:06.480 --> 00:19:08.480]   And we're also hiring as well at the moment.
+[00:19:08.480 --> 00:19:11.480]   So check out antirio.com/company for open roles.
+[00:19:11.480 --> 00:19:12.480]   Thank you.
+[00:19:12.480 --> 00:19:13.480]   Thank you.
+[00:19:13.480 --> 00:19:13.480]   Thank you.
+[00:19:13.480 --> 00:19:17.840]   We'll see you next time.
+
