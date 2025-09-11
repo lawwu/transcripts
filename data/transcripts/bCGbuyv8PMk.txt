@@ -1,0 +1,251 @@
+
+[00:00:00.000 --> 00:00:15.000]   .
+[00:00:15.000 --> 00:00:18.000]   Good afternoon, everyone, and really excited to be here today.
+[00:00:18.000 --> 00:00:22.000]   Really exciting stuff so far, so many models, so many new ideas.
+[00:00:22.000 --> 00:00:27.000]   And today I want to talk about what happens between the controller and the wire.
+[00:00:27.000 --> 00:00:30.000]   Now, we have seen so many policies that work, that control robots.
+[00:00:30.000 --> 00:00:34.000]   But again, we need to get that data to the actuators.
+[00:00:34.000 --> 00:00:37.000]   We need to get that data from sensors and feed the whole system.
+[00:00:37.000 --> 00:00:41.000]   And what happens if your carefully crafted policy does not work as expected?
+[00:00:41.000 --> 00:00:44.000]   Like, is this issue in the policy or is it in the software system?
+[00:00:44.000 --> 00:00:49.000]   So today we look at a lot of instances where the issue will look like it's the policy,
+[00:00:49.000 --> 00:00:51.000]   but it's actually the software system.
+[00:00:51.000 --> 00:00:56.000]   And along the way, we'll try to design a very small robotics robot.
+[00:00:56.000 --> 00:00:57.000]   So why this talk?
+[00:00:57.000 --> 00:00:58.000]   Again, well, robots are complex.
+[00:00:58.000 --> 00:01:01.000]   So many systems, so many different software components.
+[00:01:01.000 --> 00:01:05.000]   And yet we're focused on, like, one big question.
+[00:01:05.000 --> 00:01:10.000]   When things go wrong on the robot, when you don't see that motor move, what's the root cause?
+[00:01:10.000 --> 00:01:14.000]   Is the policy that is not giving the command or is it the software system?
+[00:01:14.000 --> 00:01:17.000]   And this is a question that I grapple almost every day.
+[00:01:17.000 --> 00:01:22.000]   And so I want to talk about what I've seen so far and how to diagnose these issues on the robot.
+[00:01:22.000 --> 00:01:23.000]   So let's go to the buildup.
+[00:01:23.000 --> 00:01:27.000]   Let's try to build a very small toy robotics general architecture, right?
+[00:01:27.000 --> 00:01:29.000]   Like, this is what a general robot would look like.
+[00:01:29.000 --> 00:01:33.000]   You'd have some actuators, a CPU, maybe a hybrid accelerator, and then a sensor.
+[00:01:33.000 --> 00:01:34.000]   Perfect.
+[00:01:34.000 --> 00:01:39.000]   Now, one of the most critical aspects is the communication protocol.
+[00:01:39.000 --> 00:01:41.000]   So for our talk, we'll use CAN.
+[00:01:41.000 --> 00:01:42.000]   CAN is great.
+[00:01:42.000 --> 00:01:43.000]   CAN is open source.
+[00:01:43.000 --> 00:01:44.000]   Everyone can use CAN.
+[00:01:44.000 --> 00:01:45.000]   It's cheap.
+[00:01:45.000 --> 00:01:46.000]   It's affordable.
+[00:01:46.000 --> 00:01:51.000]   And it has enough data rate and enough compatibility for a lot of components out there.
+[00:01:51.000 --> 00:01:57.000]   So we'll stick to CAN and we'll see how that influences a lot of the design decisions down the line.
+[00:01:57.000 --> 00:01:58.000]   All right.
+[00:01:58.000 --> 00:02:00.000]   So let's also start simple with the code.
+[00:02:00.000 --> 00:02:06.000]   We'll start with receiving the data, giving that to the policy, and basically sending it back out.
+[00:02:06.000 --> 00:02:07.000]   Nothing happening.
+[00:02:07.000 --> 00:02:08.000]   Nothing fancy, right?
+[00:02:08.000 --> 00:02:13.000]   And let's assume that we have approximately two milliseconds for our policy.
+[00:02:13.000 --> 00:02:16.000]   And this is what we should expect to see, right?
+[00:02:16.000 --> 00:02:18.000]   Our loop's running every two milliseconds.
+[00:02:18.000 --> 00:02:19.000]   We are able to see our policy output.
+[00:02:19.000 --> 00:02:20.000]   We read data.
+[00:02:20.000 --> 00:02:21.000]   We send it out.
+[00:02:21.000 --> 00:02:22.000]   Standard.
+[00:02:22.000 --> 00:02:26.000]   But as soon as we deploy it on the robot, this is what happens.
+[00:02:26.000 --> 00:02:28.000]   There's a gap.
+[00:02:28.000 --> 00:02:30.000]   Every two milliseconds, there's a gap.
+[00:02:30.000 --> 00:02:31.000]   Wait.
+[00:02:31.000 --> 00:02:32.000]   What's going on?
+[00:02:32.000 --> 00:02:33.000]   Well, let's look at the loop again.
+[00:02:33.000 --> 00:02:36.000]   So at the edge of the loop, we have question marks.
+[00:02:36.000 --> 00:02:39.000]   We see that we're transmitting and receiving CAN data.
+[00:02:39.000 --> 00:02:40.000]   So let's look at the CAN bus.
+[00:02:40.000 --> 00:02:42.000]   Maybe we'll find some hints there.
+[00:02:42.000 --> 00:02:43.000]   Okay.
+[00:02:43.000 --> 00:02:46.000]   So let's say we have 100 bits per message.
+[00:02:46.000 --> 00:02:49.000]   And we have about 10 messages, five to be sent out, five to be received.
+[00:02:49.000 --> 00:02:52.000]   That gives us a total of 1,000 bits.
+[00:02:52.000 --> 00:02:57.000]   And for a CAN bus that's operating at one megabit per second, that's about 0.1 milliseconds per
+[00:02:57.000 --> 00:03:00.000]   message or one milliseconds per 10 message.
+[00:03:00.000 --> 00:03:05.000]   You can see how even a small number of messages are saturating the CAN bus to the point that the
+[00:03:05.000 --> 00:03:10.000]   loop time, how much our system takes to run, is on the same order as the transmission
+[00:03:10.000 --> 00:03:11.000]   time.
+[00:03:11.000 --> 00:03:13.000]   And this explains the one millisecond gap.
+[00:03:13.000 --> 00:03:14.000]   So great.
+[00:03:14.000 --> 00:03:15.000]   But then what to do about it?
+[00:03:15.000 --> 00:03:17.000]   It's like, it's almost unavoidable, right?
+[00:03:17.000 --> 00:03:20.000]   Like we cannot go around this one millisecond gap.
+[00:03:20.000 --> 00:03:22.000]   Well, that's solution number one.
+[00:03:22.000 --> 00:03:23.000]   You just accept the delay.
+[00:03:23.000 --> 00:03:26.000]   Hopefully it's three milliseconds and that's not too bad.
+[00:03:26.000 --> 00:03:30.000]   But again, a system would not be high performance if we let that stop us.
+[00:03:30.000 --> 00:03:33.000]   So we'll multithread and we'll pipeline.
+[00:03:33.000 --> 00:03:37.000]   We'll try to figure out how we can work around that one millisecond and see how we can sort
+[00:03:37.000 --> 00:03:42.000]   of organize our tasks differently to still get that two millisecond loop time.
+[00:03:42.000 --> 00:03:46.000]   So here we'll take a moment to pause and see that, you know, the loop, it has multiple components
+[00:03:46.000 --> 00:03:47.000]   broken down into three now.
+[00:03:47.000 --> 00:03:49.000]   TX, RX, and the policy.
+[00:03:49.000 --> 00:03:54.000]   And we'll be running the communication in a different thread and the policy in a different thread.
+[00:03:54.000 --> 00:03:58.000]   And now we'll see how we'll take the simple building block and stagger it so that we can actually
+[00:03:58.000 --> 00:04:00.000]   achieve faster loop times.
+[00:04:00.000 --> 00:04:01.000]   And this is it.
+[00:04:01.000 --> 00:04:04.000]   So what we do, we seek the policy the first time.
+[00:04:04.000 --> 00:04:05.000]   We get some data.
+[00:04:05.000 --> 00:04:07.000]   We feed it to the policy.
+[00:04:07.000 --> 00:04:11.000]   But before we conclude the policy, we start receiving the next set of data.
+[00:04:11.000 --> 00:04:13.000]   And that's for the next iteration.
+[00:04:13.000 --> 00:04:17.000]   When the next iteration starts, we transmit the data from the last policy.
+[00:04:17.000 --> 00:04:21.000]   And we continue resuming the next iteration of this policy.
+[00:04:21.000 --> 00:04:24.000]   Essentially, we have parallelized our RX and TX.
+[00:04:24.000 --> 00:04:28.000]   But we're still receiving data for the same policy at the same cadence.
+[00:04:28.000 --> 00:04:29.000]   This is great.
+[00:04:29.000 --> 00:04:31.000]   We might have solved our problems.
+[00:04:31.000 --> 00:04:33.000]   Let's move on.
+[00:04:33.000 --> 00:04:36.000]   So we deployed the system on the robot.
+[00:04:36.000 --> 00:04:38.000]   And now we see new problems.
+[00:04:38.000 --> 00:04:39.000]   Our system is stuttering.
+[00:04:39.000 --> 00:04:45.000]   Our actuators are making sounds like catching up or like we're seeing weird motions on the actuator.
+[00:04:45.000 --> 00:04:46.000]   This has to be policy.
+[00:04:46.000 --> 00:04:48.000]   There's no way this can be software.
+[00:04:48.000 --> 00:04:50.000]   Well, let's investigate more.
+[00:04:50.000 --> 00:04:52.000]   Let's get some more data from the CAN bus.
+[00:04:52.000 --> 00:04:56.000]   So, again, like here we have our CAN bus again.
+[00:04:56.000 --> 00:04:59.000]   And we see our CPU, GPU, all our accelerators.
+[00:04:59.000 --> 00:05:02.000]   And what we'll try to do is get an external transceiver.
+[00:05:02.000 --> 00:05:05.000]   These are, again, very cheap, very open source products that you can get anywhere.
+[00:05:05.000 --> 00:05:09.000]   And we connect it to the CAN bus and we get data off the CAN bus.
+[00:05:09.000 --> 00:05:13.000]   We take this data, we feed it to another host computer, let's say a laptop.
+[00:05:13.000 --> 00:05:20.000]   And on there we can run utilities like CAN dump, which will actually give you a timestamp data of what message was seen at what time.
+[00:05:20.000 --> 00:05:24.000]   So once we get this raw data off the bus, we can start plotting it.
+[00:05:24.000 --> 00:05:26.000]   And this is what we should expect.
+[00:05:26.000 --> 00:05:31.000]   That every two milliseconds, we have a message on the bus that is being sent out.
+[00:05:31.000 --> 00:05:35.000]   It should be very nicely spaced and it should reach the actuators in time.
+[00:05:35.000 --> 00:05:38.000]   And if we see this on the bus, we're really happy.
+[00:05:38.000 --> 00:05:44.000]   Now, what happens a lot of the times in systems is you will not see this, you will see something like this.
+[00:05:44.000 --> 00:05:49.000]   Here we'll see, like, between message number three and four, there's almost no gap.
+[00:05:49.000 --> 00:05:50.000]   What happened there?
+[00:05:50.000 --> 00:05:53.000]   And between two and three, there's four milliseconds of gap.
+[00:05:53.000 --> 00:05:58.000]   It's almost like message number three was just late and four was on time.
+[00:05:58.000 --> 00:06:07.000]   And because of that, we had this weird jitter where the actuator would try to catch up or try to follow two commands at the same time.
+[00:06:07.000 --> 00:06:10.000]   Okay, same thing happened with seven and eight.
+[00:06:10.000 --> 00:06:14.000]   So let's take a deeper look, but first let's try to plot this differently.
+[00:06:14.000 --> 00:06:17.000]   So there's this plot called the cycle time plot.
+[00:06:17.000 --> 00:06:21.000]   And what we plot here is the time since last message.
+[00:06:21.000 --> 00:06:27.000]   Time since last message is just a way to say, like, hey, last message came in at two milliseconds interval.
+[00:06:27.000 --> 00:06:28.000]   This one should also come at two milliseconds.
+[00:06:28.000 --> 00:06:32.000]   So we should see a straight line around the two millisecond mark.
+[00:06:32.000 --> 00:06:37.000]   But here we see some messages jump at four milliseconds and the one after that comes to zero.
+[00:06:37.000 --> 00:06:42.000]   This is expected because if a message is delayed, the cycle time for that would be late.
+[00:06:42.000 --> 00:06:47.000]   But then for the next one, it would be much closer to zero because that one was not late.
+[00:06:47.000 --> 00:06:51.000]   And the difference between the last message and the current one is basically nothing.
+[00:06:51.000 --> 00:06:53.000]   Okay, so now we've characterized the system.
+[00:06:53.000 --> 00:06:57.000]   We know what's going on and we can start solving it.
+[00:06:57.000 --> 00:07:00.000]   But this is what's going on with the TX side.
+[00:07:00.000 --> 00:07:01.000]   So let's see.
+[00:07:01.000 --> 00:07:03.000]   So we missed sending the data and queued it.
+[00:07:03.000 --> 00:07:05.000]   Why would that happen?
+[00:07:05.000 --> 00:07:08.000]   Well, policies are not very real time.
+[00:07:08.000 --> 00:07:09.000]   At times they can take longer.
+[00:07:09.000 --> 00:07:10.000]   At times they can take shorter.
+[00:07:10.000 --> 00:07:12.000]   And what happens if a policy takes longer?
+[00:07:12.000 --> 00:07:16.000]   Well, you miss the time when you were supposed to send it out.
+[00:07:16.000 --> 00:07:18.000]   So all you can do is just queue it somewhere.
+[00:07:18.000 --> 00:07:19.000]   You can store it.
+[00:07:19.000 --> 00:07:21.000]   But that cannot be sent out anymore.
+[00:07:21.000 --> 00:07:27.000]   And when the next iteration comes around, that's when you send both the last message and the current message.
+[00:07:27.000 --> 00:07:30.000]   So you'll see two messages just go on the bus at the same time.
+[00:07:30.000 --> 00:07:34.000]   And this can also happen if our TX and RX threads start desynchronizing.
+[00:07:34.000 --> 00:07:38.000]   But this is one of the issues that is very commonly seen with like a multi-threaded system.
+[00:07:38.000 --> 00:07:41.000]   And it's very important to have synchronization in the systems.
+[00:07:41.000 --> 00:07:47.000]   But let's say we do synchronize it and we are able to fix our TX side.
+[00:07:47.000 --> 00:07:49.000]   Well, we see some improvement.
+[00:07:49.000 --> 00:07:51.000]   We don't see that like everything is solved.
+[00:07:51.000 --> 00:07:53.000]   We see some improvement.
+[00:07:53.000 --> 00:07:55.000]   Okay, but now this has to be policy.
+[00:07:55.000 --> 00:07:56.000]   Our graphs are looking fine.
+[00:07:56.000 --> 00:07:57.000]   Everything is on the bus is fine.
+[00:07:57.000 --> 00:07:58.000]   This has to be policy.
+[00:07:58.000 --> 00:08:00.000]   There's no other systems.
+[00:08:00.000 --> 00:08:04.000]   Well, there's one last issue that we have to check.
+[00:08:04.000 --> 00:08:08.000]   And that is what happens if we desynchronize in the RX side?
+[00:08:08.000 --> 00:08:10.000]   What happens if our thread is delayed?
+[00:08:10.000 --> 00:08:14.000]   Well, now our policy will not get the new data and it will work with the last data.
+[00:08:14.000 --> 00:08:18.000]   And because of that, the output will also be based on the last data.
+[00:08:18.000 --> 00:08:23.000]   And so in policy number two or iteration number two, we'll actually have an old command still.
+[00:08:23.000 --> 00:08:25.000]   Like which is relatively older.
+[00:08:25.000 --> 00:08:27.000]   And in policy number three, we'll directly jump.
+[00:08:27.000 --> 00:08:29.000]   We'll skip one of the data processing.
+[00:08:29.000 --> 00:08:34.000]   And because of that, we'll see a sort of skip of catching up behavior on the motors,
+[00:08:34.000 --> 00:08:36.000]   which will sound like almost like a jitter.
+[00:08:36.000 --> 00:08:39.000]   Okay, so how do we resolve these two things?
+[00:08:39.000 --> 00:08:41.000]   Well, there are synchronization primitives.
+[00:08:41.000 --> 00:08:44.000]   You can make conditional variables, semaphores.
+[00:08:44.000 --> 00:08:47.000]   These are like very low-level system things that are widely used in robotics
+[00:08:47.000 --> 00:08:50.000]   and should be used as well for this toy system.
+[00:08:50.000 --> 00:08:53.000]   But again, if these are not available, which is sometimes the case,
+[00:08:53.000 --> 00:08:55.000]   like we're not working with Linux-based system.
+[00:08:55.000 --> 00:08:58.000]   We'll work with like a real-time OS or like a microcontroller,
+[00:08:58.000 --> 00:09:00.000]   where we may not have all these semaphores.
+[00:09:00.000 --> 00:09:02.000]   We can just add padding.
+[00:09:02.000 --> 00:09:04.000]   Just have some cushion, right?
+[00:09:04.000 --> 00:09:06.000]   Like have some cushion so that if some desynchronization happens,
+[00:09:06.000 --> 00:09:13.000]   you still have the same Rx going into the right policy and coming out the other way in a timely manner.
+[00:09:13.000 --> 00:09:15.000]   We don't miss messages.
+[00:09:15.000 --> 00:09:16.000]   Okay, perfect.
+[00:09:16.000 --> 00:09:20.000]   So this makes our system fairly robust, fairly high-performant.
+[00:09:20.000 --> 00:09:23.000]   But there are a few other related problems which will happen with a system like this,
+[00:09:23.000 --> 00:09:25.000]   which we should also talk about.
+[00:09:25.000 --> 00:09:27.000]   So let's talk about logging.
+[00:09:27.000 --> 00:09:28.000]   Logging is benign, right?
+[00:09:28.000 --> 00:09:32.000]   We just log that, hey, that message is coming in.
+[00:09:32.000 --> 00:09:35.000]   We want to just log that this is the data that we got, this is the output.
+[00:09:35.000 --> 00:09:36.000]   It's fine, right?
+[00:09:36.000 --> 00:09:40.000]   But if we log too much, at some point we have to send those logs to a disk.
+[00:09:40.000 --> 00:09:42.000]   And that is very costly.
+[00:09:42.000 --> 00:09:45.000]   Imagine what happens if your main control loop starts logging
+[00:09:45.000 --> 00:09:50.000]   and decides just one day that, hey, I'm done, I'll just start putting this on the hard disk.
+[00:09:50.000 --> 00:09:55.000]   Well, your robot would stay frozen for 30 milliseconds, as we saw on the Raspberry Pi with an SD card.
+[00:09:55.000 --> 00:09:56.000]   So that's bad.
+[00:09:56.000 --> 00:09:58.000]   How do we fix that?
+[00:09:58.000 --> 00:10:00.000]   Well, we just throw more CPU at it.
+[00:10:00.000 --> 00:10:04.000]   We just add another CPU, and now all our logging is handled by that third CPU.
+[00:10:04.000 --> 00:10:05.000]   Cool.
+[00:10:05.000 --> 00:10:09.000]   Okay, so now we have, like, we're seeing how multithreaded is slowly getting baked into the system,
+[00:10:09.000 --> 00:10:12.000]   how the robot is operating in a real-time deadline guarantee,
+[00:10:12.000 --> 00:10:15.000]   and how we are able to, like, avoid the pitfalls.
+[00:10:15.000 --> 00:10:16.000]   Perfect.
+[00:10:16.000 --> 00:10:20.000]   Let's talk about something a little more low-level again, like microcontrollers.
+[00:10:20.000 --> 00:10:25.000]   Microcontrollers are fairly simple, and their logging doesn't actually go through a whole disk
+[00:10:25.000 --> 00:10:26.000]   and file system way.
+[00:10:26.000 --> 00:10:29.000]   They just log to some other peripheral.
+[00:10:29.000 --> 00:10:30.000]   That takes time.
+[00:10:30.000 --> 00:10:34.000]   In fact, for UART, it can be on the order of milliseconds, depending on how much we are logging.
+[00:10:34.000 --> 00:10:36.000]   So here's an interesting problem.
+[00:10:36.000 --> 00:10:40.000]   Let's say we drop a packet, and we log that, hey, we dropped the packet.
+[00:10:40.000 --> 00:10:45.000]   Well, that log itself would take enough time that we'll drop the next packet.
+[00:10:45.000 --> 00:10:48.000]   And then, because you drop the next packet, you log again.
+[00:10:48.000 --> 00:10:53.000]   So basically, just keep logging, and you see a complete blackout on the canvas.
+[00:10:53.000 --> 00:10:58.000]   And it's very hard to debug, like, why am I getting logs and seeing packet drops but no data?
+[00:10:58.000 --> 00:11:03.000]   These are mysterious things that, in my experience, like, it's really good to, like, know about the pitfalls beforehand
+[00:11:03.000 --> 00:11:09.000]   before we dive in the system and really figure out that, hey, this can also be a problem, just a log statement.
+[00:11:09.000 --> 00:11:12.000]   Finally, there's also priority inversion.
+[00:11:12.000 --> 00:11:17.000]   So in the kernel, in the Linux kernel, there are ways in which data is received by the user process.
+[00:11:17.000 --> 00:11:18.000]   It's not direct.
+[00:11:18.000 --> 00:11:23.000]   Like, it takes a while between the interrupt, the kernel process handling, and then it goes to the user process.
+[00:11:23.000 --> 00:11:30.000]   In robotics, we tend to just boost the priority of all our processes so high that we start just blocking the kernel almost.
+[00:11:30.000 --> 00:11:37.000]   Like, if the kernel doesn't run, we won't get the data, but we're trying to get the data, and we're blocking the very thing that will give us the data.
+[00:11:37.000 --> 00:11:43.000]   Well, this is inversion in action, and it will see your system again drop out for, like, seconds almost at a time.
+[00:11:43.000 --> 00:11:48.000]   So again, this is something we fix by just making sure we know the parts of the pipeline.
+[00:11:48.000 --> 00:11:53.000]   We fix the right priorities and we make sure that our whole system as a whole, like, it works together well.
+[00:11:53.000 --> 00:11:56.000]   So this is how, like, software and robotics have to work together.
+[00:11:56.000 --> 00:12:04.000]   We have to talk about hardware, the various profiling, the various priority stuff, and actually just take a recap from the top.
+[00:12:04.000 --> 00:12:10.000]   So we went over a pipeline, we saw how to reduce cycle time, beat how the communication delays.
+[00:12:10.000 --> 00:12:15.000]   We saw how synchronization can actually cause some unexpected jitter, which are hard to diagnose.
+[00:12:15.000 --> 00:12:17.000]   Could be the policy, could be the system.
+[00:12:17.000 --> 00:12:19.000]   So we want to make sure that that doesn't happen.
+[00:12:19.000 --> 00:12:24.000]   Logging strategies so that we don't block the system while we're trying to tell the user that, hey, this is happening.
+[00:12:24.000 --> 00:12:27.000]   And finally, priority inversion to avoid starvation.
+[00:12:27.000 --> 00:12:31.000]   And that's how we start designing high-performance robotic systems, at least on a very basic level.
+[00:12:31.000 --> 00:12:33.000]   And that's my talk for today.
+[00:12:33.000 --> 00:12:35.000]   And thank you so much for being here and listening.
+[00:12:35.000 --> 00:12:36.000]   Thank you.
+[00:12:36.000 --> 00:12:36.000]   Thank you.
+[00:12:36.000 --> 00:12:36.000]   Thank you.
+[00:12:36.000 --> 00:12:37.000]   Thank you.
+[00:12:37.000 --> 00:12:38.000]   Thank you.
+[00:12:38.000 --> 00:12:42.440]   We'll see you next time.
+
