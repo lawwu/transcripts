@@ -1,0 +1,108 @@
+name: Merge Dependabot security fixes
+
+on:
+  # This job reads GitHub metadata and never checks out or runs pull request code.
+  pull_request_target: # zizmor: ignore[dangerous-triggers]
+    types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pull_request:
+        description: Pull request number to recheck
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: dependabot-security-merge-${{ github.event.pull_request.number || inputs.pull_request }}
+  cancel-in-progress: true
+
+jobs:
+  merge:
+    if: >-
+      github.repository == 'lawwu/transcripts' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.pull_request.user.login == 'dependabot[bot]' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.base.ref == github.event.repository.default_branch &&
+        !github.event.pull_request.draft))
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      checks: read
+      contents: write
+      pull-requests: write
+      statuses: read
+      vulnerability-alerts: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number || inputs.pull_request }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - name: Identify the security update
+        id: security
+        shell: bash
+        run: |
+          [[ "$PR" =~ ^[1-9][0-9]*$ ]]
+          query='query($owner:String!, $name:String!, $endCursor:String) {
+            repository(owner:$owner, name:$name) {
+              vulnerabilityAlerts(first:100, after:$endCursor, states:[OPEN]) {
+                nodes { dependabotUpdate { pullRequest { number } } }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+          }'
+          # Allow GitHub time to attach a newly opened PR to its alert.
+          for delay in 0 15 30; do
+            sleep "$delay"
+            linked=$(gh api graphql --paginate -f query="$query" -f owner="${GH_REPO%/*}" -f name="${GH_REPO#*/}" \
+              --jq '.data.repository.vulnerabilityAlerts.nodes[].dependabotUpdate.pullRequest.number // empty')
+            if grep -Fxq "$PR" <<< "$linked"; then
+              echo 'linked=true' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "GitHub has no open Dependabot alert linked to PR #$PR."
+
+      - name: Verify the update and merge after checks
+        if: steps.security.outputs.linked == 'true'
+        shell: bash
+        run: |
+          pr=$(gh api "repos/$GH_REPO/pulls/$PR")
+          jq -e '
+            .state == "open" and (.draft | not) and
+            .user.login == "dependabot[bot]" and .head.repo.full_name == env.GH_REPO and
+            (.head.ref | startswith("dependabot/")) and .base.ref == env.DEFAULT_BRANCH
+          ' <<< "$pr" >/dev/null
+          head=$(jq -r '.head.sha' <<< "$pr")
+          count=$(jq -r '.commits' <<< "$pr")
+          gh api --paginate --slurp "repos/$GH_REPO/pulls/$PR/commits" |
+            jq -e --arg head "$head" --argjson count "$count" 'flatten |
+              length == $count and last.sha == $head and
+              all(.[]; .author.login == "dependabot[bot]" and
+                (.committer.login == "web-flow" or .committer.login == "dependabot[bot]") and
+                .commit.verification.verified == true)' >/dev/null
+
+          # Give optional CI time to register, including in repos without required checks.
+          sleep 30
+          while true; do
+            current=$(gh pr view "$PR" --repo "$GH_REPO" \
+              --json headRefOid,baseRefName,state,isDraft,reviewDecision,statusCheckRollup)
+            jq -e --arg head "$head" '.headRefOid == $head and .state == "OPEN" and
+              (.isDraft | not) and .baseRefName == env.DEFAULT_BRANCH and
+              .reviewDecision != "CHANGES_REQUESTED"' <<< "$current" >/dev/null
+            result=$(jq -r --arg job "/actions/runs/$GITHUB_RUN_ID/" '
+              [.statusCheckRollup[] | select(((.detailsUrl // "") | contains($job)) | not) |
+                if .__typename == "CheckRun" then
+                  if .status == "COMPLETED" then .conclusion else "PENDING" end
+                else .state end] |
+              if any(.[]; IN("SUCCESS","NEUTRAL","SKIPPED","PENDING","EXPECTED") | not) then "failed"
+              elif any(.[]; IN("PENDING","EXPECTED")) then "pending" else "ready" end' <<< "$current")
+            case "$result" in
+              ready) break ;;
+              failed) echo "A check did not pass. Re-run this workflow once checks pass."; exit 1 ;;
+              pending) sleep 30 ;;
+            esac
+          done
+          gh pr merge "$PR" --repo "$GH_REPO" --auto --squash --match-head-commit "$head"
